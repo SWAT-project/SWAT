@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!DOCTYPE benchmark PUBLIC "+//IDN sosy-lab.org//DTD BenchExec benchmark 1.9//EN" "https://www.sosy-lab.org/benchexec/benchmark-2.3.dtd">
+<benchmark tool="swat" timelimit="15 min" memlimit="15 GB" cpuCores="8">
+
+    <require cpuModel="Intel Xeon E3-1230 v5 @ 3.40 GHz"/>
+
+    <resultfiles>**/*.graphml</resultfiles>
+
+    <rundefinition name="SV-COMP24_assert_java">
+        <tasks name="ReachSafety-Java">
+            <includesfile>../sv-benchmarks/java/ReachSafety-Java.set</includesfile>
+            <propertyfile>../sv-benchmarks/java/properties/assert_java.prp</propertyfile>
+        </tasks>
+    </rundefinition>
+
+</benchmark>
