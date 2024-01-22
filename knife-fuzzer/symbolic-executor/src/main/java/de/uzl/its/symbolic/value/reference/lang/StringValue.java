@@ -419,6 +419,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      */
     private Value<?, ?> invokeEquals(Value<?, ?>[] args, Type[] desc) {
         if (args.length == 1) {
+            System.out.println("Equals is called");
             Value<?, ?> anObject = args[0];
             try {
                 StringValue str = anObject.asStringValue();

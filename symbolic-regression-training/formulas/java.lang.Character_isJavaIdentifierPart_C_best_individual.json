@@ -1,0 +1,1 @@
+{"hof": "int_compare_range(int_abs(int_sub(ARG0, int_abs(int_sub(ARG0, int_sub(37, ARG0))))), 10, 255)", "score": 0.2992332472994441}

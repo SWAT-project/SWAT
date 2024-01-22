@@ -1,0 +1,1 @@
+{"hof": "int_add(int_less_than(int_abs(int_add(int_abs(int_sub(138, ARG0)), int_neg(135))), int_floor(88)), int_add(int_add(int_add(int_add(ARG0, 5), int_neg(int_less_than(int_floor(ARG0), 65))), int_neg(int_less_than(int_floor(79), int_abs(int_sub(144, ARG0))))), int_neg(int_less_than(int_floor(79), int_abs(int_sub(144, ARG0))))))", "score": 9.135843195728642}

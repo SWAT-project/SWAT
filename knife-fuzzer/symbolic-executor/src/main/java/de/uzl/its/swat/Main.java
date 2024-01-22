@@ -15,6 +15,7 @@ import de.uzl.its.swat.interpreters.SymbolicInterpreter;
 import de.uzl.its.swat.invoke.InternalInvocation;
 import de.uzl.its.swat.logger.DJVM;
 import de.uzl.its.swat.logger.SystemLogger;
+import de.uzl.its.swat.solver.LocalSolver;
 import de.uzl.its.swat.thread.ThreadHandler;
 import de.uzl.its.symbolic.value.Value;
 import java.util.ArrayList;
@@ -125,10 +126,15 @@ public class Main {
                     + ")",
         };
 
-        if (Objects.requireNonNull(config.getSolverRequest()) == Config.SolverRequestImpl.HTTP) {
-            ThreadHandler.sendData(currentThread().getId());
-        } else {
-            throw new RuntimeException("Unknown solver request");
+        switch (config.getSolverRequest()) {
+            case LOCAL:
+                LocalSolver.solve();
+                break;
+            case HTTP:
+                ThreadHandler.sendData(currentThread().getId());
+                break;
+            default:
+                throw new RuntimeException("Unknown solver request");
         }
 
         DJVM.flush(); // TODO WTF does that do? calls log(null)

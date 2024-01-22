@@ -1,0 +1,1 @@
+{"hof": "logic_xor(logic_or(logic_or(logic_or(int_compare_range(165, ARG0, int_sub(ARG0, -3)), int_compare(ARG0, 215)), logic_or(logic_or(int_compare_range(ARG0, 65, 122), int_compare(ARG0, 170)), logic_or(int_compare(36, ARG0), int_compare(ARG0, 181)))), int_compare(ARG0, 186)), int_compare_range(ARG0, 192, 254))", "score": 0.08625955037932197}

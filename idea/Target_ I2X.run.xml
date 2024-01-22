@@ -1,0 +1,19 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Target: I2X" type="Application" factoryName="Application">
+    <classpathModifications>
+      <entry path="$PROJECT_DIR$/libs/local_z3_installation/lib" />
+    </classpathModifications>
+    <option name="MAIN_CLASS_NAME" value="de.uzl.its.tests.I2X" />
+    <module name="SWAT.targets.instruction-tests.I2X" />
+    <selectedOptions>
+      <option name="environmentVariables" visible="false" />
+    </selectedOptions>
+    <option name="VM_PARAMETERS" value="-Xmx32g -Dswat.cfg=targets/instruction-tests/I2X/swat.cfg -javaagent:symbolic-executor/lib/symbolic-executor.jar -Djava.library.path=$PROJECT_DIR$/knife-fuzzer/libs/" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/knife-fuzzer" />
+    <method v="2">
+      <option name="RunConfigurationTask" enabled="true" run_configuration_name="knife-fuzzer [clean build]" run_configuration_type="GradleRunConfiguration" />
+      <option name="Make" enabled="true" />
+      <option name="RunConfigurationTask" enabled="false" run_configuration_name="knife-fuzzer [build]" run_configuration_type="GradleRunConfiguration" />
+    </method>
+  </configuration>
+</component>

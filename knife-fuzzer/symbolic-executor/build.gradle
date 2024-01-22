@@ -58,6 +58,7 @@ dependencies {
     testAnnotationProcessor libs.lombok
     testImplementation libs.spock.core
 
+    implementation 'com.google.code.gson:gson:2.10.1'
 
     implementation libs.jackson.databind
     implementation libs.gson

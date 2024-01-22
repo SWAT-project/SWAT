@@ -4,6 +4,7 @@ import static de.uzl.its.symbolic.value.reference.ObjectValue.ADDRESS_UNKNOWN;
 
 import de.uzl.its.swat.executionData.SymbolicStateHandler;
 import de.uzl.its.swat.interpreters.ValueFactory;
+import de.uzl.its.swat.symbolicRegression.ProxyInvoke;
 import de.uzl.its.symbolic.value.PlaceHolder;
 import de.uzl.its.symbolic.value.Value;
 import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
@@ -23,7 +24,21 @@ public final class StaticInvocation {
             SymbolicStateHandler symbolicStateHandler) {
         if (owner.equals("de/uzl/its/swat/Main")) {
             return InternalInvocation.invokeMethod(name, args, desc, symbolicStateHandler);
-        } else if (owner.equals("java/lang/String")) {
+        }
+
+        try {
+            ProxyInvoke proxyInvoke = new ProxyInvoke(owner, name, desc, args);
+            Value result = proxyInvoke.invoke();
+            if (result != null)
+                return result;
+
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+        //if (1==1)
+        //throw new RuntimeException("Unexpected case!");
+
+        if (owner.equals("java/lang/String")) {
             return StringInvocation.invokeMethod(name, args, desc, symbolicStateHandler);
         } else if (owner.equals("java/lang/Character")) {
             return CharacterInvocation.invokeMethod(name, args, desc, symbolicStateHandler);

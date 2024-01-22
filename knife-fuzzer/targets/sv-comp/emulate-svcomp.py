@@ -5,6 +5,7 @@ from enum import Enum
 import os
 import subprocess
 import logging
+import random
 
 # get the dir of this file
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -119,7 +120,30 @@ if __name__ == "__main__":
         'CRASH': 0
     }
 
-    for i, cmd in enumerate(commands):
+    #commands = [x for x in commands if "jbmc-regression/StaticCharMethods03" in x[-1]]
+    #print(commands[0])
+    #import sys
+    #sys.exit(0)
+
+    random.seed(42)
+    random.shuffle(commands)
+
+    """
+    No custom Formulas:
+    Score distribution: {'CORRECT_OK': 62, 'CORRECT_VIOLATION': 169, 'INCORRECT_OK': 95, 'INCORRECT_VIOLATION': 114, 'DONT-KNOW': 70, 'TIMEOUT': 74, 'CRASH': 4}
+    FINAL SCORE:  -4571
+    
+    With custom formulas:
+    Score distribution: {'CORRECT_OK': 61, 'CORRECT_VIOLATION': 164, 'INCORRECT_OK': 96, 'INCORRECT_VIOLATION': 111, 'DONT-KNOW': 75, 'TIMEOUT': 77, 'CRASH': 4}
+    FINAL SCORE: -4562
+    
+    With custom formulas and < 0.1 check:
+    Score distribution: {'CORRECT_OK': 61, 'CORRECT_VIOLATION': 161, 'INCORRECT_OK': 94, 'INCORRECT_VIOLATION': 114, 'DONT-KNOW': 74, 'TIMEOUT': 80, 'CRASH': 4}
+   FINAL SCORE: -4549
+    
+    """
+
+    for i, cmd in enumerate(commands[0:]):
         path = f'{cmd[-1]}'
         log_dir = f'{path}/logs'
         cmd[-1] = f"{cmd[-1]}/build"

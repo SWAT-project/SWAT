@@ -138,6 +138,10 @@ public abstract class Transformer implements ClassFileTransformer {
         if (cname.equals("de/uzl/its/swat/instrument/svcomp/Verifier")
                 && config.getTransformerType().equals(TransformerType.SV_COMP)) return true;
 
+        // IntelliJ Debugger
+        if (cname.contains("groovyResetJarjarAsm")) return false;
+        if (cname.contains("org/groovy/")) return false;
+
         boolean shouldInst = true;
         if (config.getInstrumentPackages() != null) {
             shouldInst = false;

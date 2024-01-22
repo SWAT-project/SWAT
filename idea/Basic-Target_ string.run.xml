@@ -1,0 +1,15 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Basic-Target: string" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="de.uzl.its.tests.StringTests" />
+    <module name="SWAT.targets.instruction-tests.Test1" />
+    <selectedOptions>
+      <option name="environmentVariables" visible="false" />
+    </selectedOptions>
+    <option name="VM_PARAMETERS" value="-Xmx32g -Dswat.cfg=targets/basic-tests/string/swat.cfg -javaagent:symbolic-executor/lib/symbolic-executor.jar" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+      <option name="RunConfigurationTask" enabled="false" run_configuration_name="knife-fuzzer [build]" run_configuration_type="GradleRunConfiguration" />
+    </method>
+  </configuration>
+</component>

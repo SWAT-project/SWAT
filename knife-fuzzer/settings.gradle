@@ -5,6 +5,7 @@ include 'symbolic-executor'
 
 include 'targets:instruction-tests:IFXX'
 include 'targets:instruction-tests:I2X'
+include 'targets:instruction-tests:Test1'
 include 'targets:instruction-tests:IXXX'
 include 'targets:instruction-tests:TRYCATCH'
 include 'targets:instruction-tests:XASTORE'

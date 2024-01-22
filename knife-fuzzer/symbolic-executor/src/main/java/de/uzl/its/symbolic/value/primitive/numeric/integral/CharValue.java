@@ -1,6 +1,7 @@
 package de.uzl.its.symbolic.value.primitive.numeric.integral;
 
 import de.uzl.its.symbolic.value.primitive.numeric.NumericalValue;
+import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.symbolic.value.reference.lang.StringValue;
 import java.util.ArrayList;
 import org.sosy_lab.java_smt.api.*;
@@ -121,6 +122,17 @@ public class CharValue extends NumericalValue<NumeralFormula.IntegerFormula, Cha
     @Override
     public IntValue asIntValue() {
         return new IntValue(context, concrete, formula);
+    }
+
+    @Override
+    public FloatValue asFloatValue() {
+        FloatingPointFormulaManager fpmgr = context.getFormulaManager().getFloatingPointFormulaManager();
+        // TODO is signed true or false?
+        return new FloatValue(
+                context,
+                concrete,
+                fpmgr.castFrom(formula, true, FormulaType.getSinglePrecisionFloatingPointType())
+        );
     }
 
     @Override
