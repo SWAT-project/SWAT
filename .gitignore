@@ -1,0 +1,6 @@
+.idea
+.gradle
+/symbolic-executor/build/
+/symbolic-executor/lib/
+/symbolic-executor/logs/
+/symbolic-executor/src/main/java-delomboked/

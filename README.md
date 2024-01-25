@@ -1,4 +1,4 @@
 # SWAT
-
-SWAT (Symbolic Web Application Testing) was primarily developed to analyze modern Java web applications for vulnerabilities and bugs using concolic execution. The framework is originally based on CATG, a concolic unit testing engine. However, the code was in large parts rewritten and advanced to suite it's new purpose.
-SWAT features a modular and extensible design. The dynamic symbolic execution is instrumented into the target application via a Java Agent using the ASM library. To dynamically construct symbolic formulas, SWAT wraps JavaSMT. After the execution finishes, SWAT sends all recorded constraints in SMT-LIB format to a coordinator. The coordinator decides, based on an exchangeable Strategy, which dynamically recorded constraints to solve next, and either sends the new inputs to the endpoints of the target web application or invokes the software under test with them. As of now, SWAT supports Z3 as symbolic solver.
+This repository contains the source code for the SWAt symbolic engine. 
+The documentation will soon be available on [our website](https://swat-smt.github.io/swat/).
+The repository is also still under construction.  
