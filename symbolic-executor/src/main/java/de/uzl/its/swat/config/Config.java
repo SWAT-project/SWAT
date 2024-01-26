@@ -173,7 +173,7 @@ public class Config {
                 }
                         : properties.getProperty("instrumentPackages", null).split(":");
         debug = properties.getProperty("debug", "false").equals("true");
-        exitOnError = properties.getProperty("exitOnError", "false").equals("true");
+        exitOnError = properties.getProperty("exitOnError", "true").equals("true");
         instructionIds =
                 properties.getProperty("instructionIds", String.valueOf(debug)).equals("true");
         logging = properties.getProperty("logging", "true").equals("true");

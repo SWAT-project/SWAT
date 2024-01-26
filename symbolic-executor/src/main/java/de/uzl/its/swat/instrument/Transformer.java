@@ -6,6 +6,7 @@ import de.uzl.its.swat.instrument.instruction.InstructionTransformer;
 import de.uzl.its.swat.instrument.parameter.ParameterTransformer;
 import de.uzl.its.swat.instrument.svcomp.SVCompTransformer;
 import de.uzl.its.swat.instrument.symbolicwrapper.SymbolicWrapperTransformer;
+import de.uzl.its.swat.thread.ThreadHandler;
 import de.uzl.its.swat.logger.SystemLogger;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
@@ -77,7 +78,7 @@ public abstract class Transformer implements ClassFileTransformer {
 
     @SuppressWarnings("unused")
     public static void premain(String agentArgs, Instrumentation inst) {
-
+        ThreadHandler.init();
         systemLogger = new SystemLogger();
 
         try {

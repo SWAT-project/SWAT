@@ -33,6 +33,7 @@ public class ThreadContext {
     }
 
     private int endpointID;
+    private String endpointName;
 
     public ThreadContext(long id) {
         this.symbolicInterpreter = new SymbolicInterpreter(ClassNames.getInstance());
@@ -112,6 +113,14 @@ public class ThreadContext {
 
     public int getEndpointID() {
         return endpointID;
+    }
+
+    public String getEndpointName() {
+        return endpointName;
+    }
+
+    public void setEndpointName(String endpointName) {
+        this.endpointName = endpointName;
     }
 
     public void setEndpointID(int endpointID) {

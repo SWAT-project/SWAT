@@ -35,12 +35,12 @@ public final class ThreadHandler {
     private static final HashMap<Long, ThreadContext> threadContextHashMap = new HashMap<>();
 
     @SuppressWarnings("unused")
-    private static final SolverContext solverContext;
+    private static SolverContext solverContext;
 
     private static final LogFormatter logFormatter = new LogFormatter();
     private static final Config config = Config.instance();
 
-    static {
+    public static void init() {
         try {
             solverContext =
                     SolverContextFactory.createSolverContext(
@@ -197,6 +197,23 @@ public final class ThreadHandler {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
             return context.getSymbolicInterpreter();
+        } else {
+            throw new RuntimeException("No thread context found for thread " + id);
+        }
+    }
+
+    public static void setEndpointName(long id, String endpointName) {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            context.setEndpointName(endpointName);
+        } else {
+            throw new RuntimeException("No thread context found for thread " + id);
+        }
+    }
+    public static String getEndpointName(long id) {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            return context.getEndpointName();
         } else {
             throw new RuntimeException("No thread context found for thread " + id);
         }

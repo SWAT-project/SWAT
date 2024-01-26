@@ -50,8 +50,7 @@ public class ParameterTransformer implements ClassFileTransformer {
             String cname,
             Class<?> classBeingRedefined,
             ProtectionDomain d,
-            byte[] cbuf)
-            throws IllegalClassFormatException {
+            byte[] cbuf) {
 
         if (classBeingRedefined != null || !cname.equals(config.getMakeSymbolicClassPath())) {
             return cbuf;
