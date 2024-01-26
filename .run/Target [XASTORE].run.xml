@@ -1,0 +1,18 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Target [XASTORE]" type="Application" factoryName="Application">
+    <classpathModifications>
+      <entry path="$PROJECT_DIR$/libs/local_z3_installation/lib" />
+    </classpathModifications>
+    <option name="MAIN_CLASS_NAME" value="de.uzl.its.tests.XASTORE" />
+    <module name="SWAT.targets.instruction-tests.XASTORE" />
+    <selectedOptions>
+      <option name="environmentVariables" visible="false" />
+    </selectedOptions>
+    <option name="VM_PARAMETERS" value="-Xmx32g -Dswat.cfg=targets/instruction-tests/XASTORE/swat.cfg -javaagent:symbolic-executor/lib/symbolic-executor.jar" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+      <option name="RunConfigurationTask" enabled="false" run_configuration_name="knife-fuzzer [build]" run_configuration_type="GradleRunConfiguration" />
+    </method>
+  </configuration>
+</component>
