@@ -5,3 +5,7 @@
 /symbolic-executor/logs/
 /symbolic-executor/src/main/java-delomboked/
 /symbolic-explorer/venv/
+**/*.log
+targets/**/bin/
+targets/**/build/
+/logs/

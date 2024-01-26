@@ -2,29 +2,12 @@ rootProject.name = "SWAT"
 
 include 'symbolic-executor'
 
-
 include 'targets:instruction-tests:IFXX'
 include 'targets:instruction-tests:I2X'
 include 'targets:instruction-tests:IXXX'
 include 'targets:instruction-tests:TRYCATCH'
 include 'targets:instruction-tests:XASTORE'
 
-include 'targets:basic-tests:string'
-
-include 'targets:basic-tests:loop1'
-include 'targets:basic-tests:exectree-example'
-include 'targets:basic-tests:loop2'
-include 'targets:basic-tests:if-string1'
-include 'targets:basic-tests:long-shift'
-include 'targets:basic-tests:type-change1'
-include 'targets:springboot-rest-mysql-docker-crud-ops'
-include 'targets:web-apps:spring-simple'
-include 'targets:web-apps:spring-object-parameter'
-include 'targets:web-apps:spring-invoke-dynamic'
-include 'targets:basic-tests:invoke-dynamic'
-include 'targets:web-apps:spring-in-memory-db'
-include 'targets:web-apps:restler-test-app'
-findProject(':targets:web-apps:spring-in-memory-db')?.name = 'spring-in-memory-db'
 
 dependencyResolutionManagement {
     versionCatalogs {
