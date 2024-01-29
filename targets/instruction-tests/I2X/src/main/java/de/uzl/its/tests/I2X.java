@@ -84,6 +84,5 @@ public class I2X {
             test.I2L(testCase);
             test.I2S(testCase);
         }
-        System.out.println("Done!");
     }
 }

@@ -210,6 +210,7 @@ public final class ThreadHandler {
             throw new RuntimeException("No thread context found for thread " + id);
         }
     }
+
     public static String getEndpointName(long id) {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {

@@ -3,10 +3,10 @@ package de.uzl.its.swat.solver;
 import static java.lang.Thread.currentThread;
 
 import de.uzl.its.swat.executionData.SymbolicStateHandler;
+import de.uzl.its.swat.thread.ThreadHandler;
 import de.uzl.its.symbolic.BranchElement;
 import de.uzl.its.symbolic.Element;
 import de.uzl.its.symbolic.InputElement;
-import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.HashSet;
 import java.util.Map;
 import org.sosy_lab.java_smt.api.*;
@@ -55,9 +55,9 @@ public class LocalSolver {
                 Map<String, Formula> freeVars = fmgr.extractVariablesAndUFs(constraint);
                 if (!freeVars.isEmpty()) {
                     try (ProverEnvironment prover =
-                                 ThreadHandler.getSolverContext(currentThread().getId())
-                                         .newProverEnvironment(
-                                                 SolverContext.ProverOptions.GENERATE_MODELS)) {
+                            ThreadHandler.getSolverContext(currentThread().getId())
+                                    .newProverEnvironment(
+                                            SolverContext.ProverOptions.GENERATE_MODELS)) {
                         String inputs = "Inputs: [";
                         for (InputElement input :
                                 symbolicStateHandler.getExecutionData().getInputs()) {

@@ -7,7 +7,6 @@ import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
 import de.uzl.its.swat.logger.SystemLogger;
 import java.lang.instrument.ClassFileTransformer;
-import java.lang.instrument.IllegalClassFormatException;
 import java.security.ProtectionDomain;
 import java.util.logging.Logger;
 import org.objectweb.asm.ClassReader;

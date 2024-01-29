@@ -13,6 +13,7 @@ import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
+
 /**
  * Main runtime environment for parsing inputs and writing state files. Holds functions that are
  * added during instrumentation.
@@ -165,8 +166,7 @@ public class Main {
      * during runtime. The actual symbolic processing is performed elsewhere.
      *
      * @param charValue The concrete value to be considered for symbolic analysis.
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static char MakeSymbolic(char charValue) {
@@ -180,8 +180,7 @@ public class Main {
      * during runtime. The actual symbolic processing is performed elsewhere.
      *
      * @param byteValue The concrete value to be considered for symbolic analysis.
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static byte MakeSymbolic(byte byteValue) {
@@ -195,8 +194,7 @@ public class Main {
      * during runtime. The actual symbolic processing is performed elsewhere.
      *
      * @param shortValue The concrete value to be considered for symbolic analysis.
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static short MakeSymbolic(short shortValue) {
@@ -210,8 +208,7 @@ public class Main {
      * during runtime. The actual symbolic processing is performed elsewhere.
      *
      * @param boolValue The concrete value to be considered for symbolic analysis.
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static boolean MakeSymbolic(boolean boolValue) {
@@ -225,8 +222,7 @@ public class Main {
      * during runtime. The actual symbolic processing is performed elsewhere.
      *
      * @param stringValue The concrete value to be considered for symbolic analysis.
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static String MakeSymbolic(String stringValue) {
@@ -240,8 +236,7 @@ public class Main {
      * during runtime. The actual symbolic processing is performed elsewhere.
      *
      * @param floatValue The concrete value to be considered for symbolic analysis.
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static float MakeSymbolic(float floatValue) {
@@ -255,8 +250,7 @@ public class Main {
      * during runtime. The actual symbolic processing is performed elsewhere.
      *
      * @param doubleValue The concrete value to be considered for symbolic analysis.
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static double MakeSymbolic(double doubleValue) {
@@ -270,8 +264,7 @@ public class Main {
      * during runtime. The actual symbolic processing is performed elsewhere.
      *
      * @param longValue The concrete value to be considered for symbolic analysis.
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static Long MakeSymbolic(Long longValue) {
@@ -286,13 +279,15 @@ public class Main {
      *
      * @param intValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static int MakeSymbolic(int intValue, String namePrefix) {
         systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + intValue + " with identifier " + namePrefix);
+                "[DSE] Initializing symbolic tracking for the following value "
+                        + intValue
+                        + " with identifier "
+                        + namePrefix);
         return intValue;
     }
 
@@ -302,13 +297,15 @@ public class Main {
      *
      * @param longValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static long MakeSymbolic(long longValue, String namePrefix) {
         systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + longValue + " with identifier " + namePrefix);
+                "[DSE] Initializing symbolic tracking for the following value "
+                        + longValue
+                        + " with identifier "
+                        + namePrefix);
         return longValue;
     }
 
@@ -318,8 +315,7 @@ public class Main {
      *
      * @param charValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static char MakeSymbolic(char charValue, String namePrefix) {
@@ -334,8 +330,7 @@ public class Main {
      *
      * @param byteValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static byte MakeSymbolic(byte byteValue, String namePrefix) {
@@ -350,8 +345,7 @@ public class Main {
      *
      * @param shortValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static short MakeSymbolic(short shortValue, String namePrefix) {
@@ -366,8 +360,7 @@ public class Main {
      *
      * @param boolValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static boolean MakeSymbolic(boolean boolValue, String namePrefix) {
@@ -382,8 +375,7 @@ public class Main {
      *
      * @param stringValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static String MakeSymbolic(String stringValue, String namePrefix) {
@@ -398,8 +390,7 @@ public class Main {
      *
      * @param floatValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static float MakeSymbolic(float floatValue, String namePrefix) {
@@ -414,8 +405,7 @@ public class Main {
      *
      * @param doubleValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static double MakeSymbolic(double doubleValue, String namePrefix) {
@@ -430,8 +420,7 @@ public class Main {
      *
      * @param longValue The concrete value to be considered for symbolic analysis.
      * @param namePrefix The symbolic identifier of the variable
-     * @return The original value, with instrumentation logic potentially applied during
-     *     runtime.
+     * @return The original value, with instrumentation logic potentially applied during runtime.
      */
     @SuppressWarnings("unused")
     public static Long MakeSymbolic(Long longValue, String namePrefix) {

@@ -100,7 +100,7 @@ public class Config {
                 new FileInputStream(System.getProperty("swat.cfg", DEFAULT_CONFIG_FILE))) {
             properties.load(input);
         } catch (IOException ex) {
-            //throw new RuntimeException("Could not find a configuration file!", ex);
+            // throw new RuntimeException("Could not find a configuration file!", ex);
             System.err.println("Could not find a configuration file, using default values!");
         }
         solverRequest =
@@ -110,8 +110,7 @@ public class Config {
         coordinatorPort = properties.getProperty("coordinatorPort", "8079");
         solverPath = properties.getProperty("solverPath", "constraints/submit");
         coveragePath = properties.getProperty("coveragePath", "coverage/submit");
-        coverageTotalPath =
-                properties.getProperty("coverageTotalPath", "coverage/total/submit");
+        coverageTotalPath = properties.getProperty("coverageTotalPath", "coverage/total/submit");
         loggingPath = properties.getProperty("loggingPath", "logs/");
         useSymbolicDataEndpoint =
                 properties
@@ -134,7 +133,8 @@ public class Config {
         String symbolicStartFunction = properties.getProperty("symbolicStartFunction", "");
         String[] symbolicStartParts = symbolicStartFunction.split(":", 2);
         symbolicStartPath = symbolicStartParts[0];
-        symbolicStartFunctionPattern = processPattern(symbolicStartParts.length > 1 ? symbolicStartParts[1] : "");
+        symbolicStartFunctionPattern =
+                processPattern(symbolicStartParts.length > 1 ? symbolicStartParts[1] : "");
 
         instDir = properties.getProperty("instDir", "instrumented");
         writeInstrumentedClasses =
@@ -150,27 +150,27 @@ public class Config {
         excludePackages =
                 properties.getOrDefault("excludePackages", null) == null
                         ? new String[] {
-                        "org/springframework/boot/loader",
-                        "de/uzl/its/swat/",
-                        "de/uzl/its/symbolic",
-                        "de/uzl/its/dto",
-                        "com/intellij/",
-                        "com/fasterxml/",
-                        "sun/",
-                        "jdk/",
-                        "org/h2/",
-                        "org/sosy_lab",
-                        "java/",
-                        "javax/",
-                        "com/sun/",
-                        "org/apache/",
-                        "com/microsoft",
-                        "com/google",
-                        "org/w3c",
-                        "org/jcp",
-                        "org/objectweb/asm",
-                        "apple/security",
-                }
+                            "org/springframework/boot/loader",
+                            "de/uzl/its/swat/",
+                            "de/uzl/its/symbolic",
+                            "de/uzl/its/dto",
+                            "com/intellij/",
+                            "com/fasterxml/",
+                            "sun/",
+                            "jdk/",
+                            "org/h2/",
+                            "org/sosy_lab",
+                            "java/",
+                            "javax/",
+                            "com/sun/",
+                            "org/apache/",
+                            "com/microsoft",
+                            "com/google",
+                            "org/w3c",
+                            "org/jcp",
+                            "org/objectweb/asm",
+                            "apple/security",
+                        }
                         : properties.getProperty("instrumentPackages", null).split(":");
         debug = properties.getProperty("debug", "false").equals("true");
         exitOnError = properties.getProperty("exitOnError", "true").equals("true");
