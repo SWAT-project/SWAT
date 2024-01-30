@@ -43,7 +43,7 @@ public class ConstraintRequest extends Request {
      */
     public static void sendConstraints(SymbolicState symbolicState, int endpointID, int traceID) {
 
-        if (symbolicState.getTrace().size() > 0 && symbolicState.getInputs().size() > 0) {
+        if (!symbolicState.getTrace().isEmpty() && !symbolicState.getInputs().isEmpty()) {
 
             String host = config.getCoordinatorHost();
             int port = Integer.parseInt(config.getCoordinatorPort());

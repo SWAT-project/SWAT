@@ -1,5 +1,7 @@
 from data.Database import Database
+from parse.TraceParser import Parser
 
+from log import logger
 
 class ConstraintService:
     """
@@ -28,7 +30,9 @@ class ConstraintService:
         Returns:
         None: The result is the side effect of adding data to the database.
         """
-        
-        
+
+        trace = Parser.parse_trace(trace, trace_id=trace_id)
+        inputs = Parser.parse_inputs(inputs)
         # Adding the trace and inputs to the database for the specified endpoint.
         Database.instance().add_trace(endpoint_id, trace_id, trace, inputs)
+        logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')

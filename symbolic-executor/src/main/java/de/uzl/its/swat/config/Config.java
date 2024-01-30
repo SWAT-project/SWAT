@@ -107,7 +107,7 @@ public class Config {
                 SolverRequestImpl.valueOf(
                         properties.getProperty("solverRequest", SolverRequestImpl.HTTP.name()));
         coordinatorHost = properties.getProperty("coordinatorHost", "localhost");
-        coordinatorPort = properties.getProperty("coordinatorPort", "8079");
+        coordinatorPort = properties.getProperty("coordinatorPort", "8078");
         solverPath = properties.getProperty("solverPath", "constraints/submit");
         coveragePath = properties.getProperty("coveragePath", "coverage/submit");
         coverageTotalPath = properties.getProperty("coverageTotalPath", "coverage/total/submit");

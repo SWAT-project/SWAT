@@ -3,8 +3,6 @@ from data.trace.Input import Input
 from z3 import Solver, is_true, Not
 from enum import Enum
 from typing import Union, Dict, Tuple, Any
-from log import solution_logger as logger
-
 class DataTypes(Enum):
     BOOLEAN = 'Z'
     CHAR = 'C'    
@@ -26,8 +24,8 @@ class SymbolicStorage:
         for var in vars:
             v = SymbolicVar(identifier=var.name, value=var.value)
             self.vars[v.idx] = v
-            
-            
+
+
     def store_solution(self, sol: dict):
         for s in sol.values():
             self.vars[s['index']].newValue = s['encoded_value']

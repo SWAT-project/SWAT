@@ -7,7 +7,6 @@ from data.BinaryExecutionTree.Node import Node
 from data.Database import Database
 from strategy.DFS import dfs
 from solver.SolverHandler import SATResult, Z3Handler
-from log import strategy_logger as logger
 
 
 class StrategyService:
