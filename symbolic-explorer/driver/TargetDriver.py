@@ -81,6 +81,7 @@ class TargetDriver:
         return cmd
 
     def add_values(self, cmd: [str]) -> [str]:
+        cmd = cmd.copy()
         """Adds the symbolic values to the Java command."""
         for var in self.sym_storage.vars.values():
             if var.newValue is None:
@@ -124,7 +125,7 @@ class TargetDriver:
     def record_violation(self):
         """Records the violation in the database."""
         db = Database.instance()
-        db.add_violation(endpoint_id=self.endpoint_id, sym_vars=self.sym_storage.vars.values())
+        db.add_violation(endpoint_id=self.endpoint_id, sym_vars=list(self.sym_storage.vars.values()))
 
 
     def determine_next_step(self, status: ExecutionStatus, stdout: [str] ) -> Action:
@@ -250,17 +251,22 @@ class TargetDriver:
             assert len(Database.instance().get_endpoint_ids()) == 1
             self.endpoint_id = Database.instance().get_endpoint_ids()[0]
             if next_step == Action.REPORTVERDICT:
-                logger.info(f'[EXPLORER] Next step: REPORTVERDICT')
-                return self.state.verdict
+                break
 
             if next_step == Action.SYMBOLICNEXT:
                 logger.info(f'[EXPLORER] Next step: SYMBOLIC EXPLORATION')
 
                 next_step = self.retrieve_solution()
                 if next_step == Action.REPORTVERDICT:
-                    return self.state.verdict
+                    break
 
 
+        logger.info(f'[EXPLORER] Symbolic execution terminated')
+        violations = Database.instance().get_violations(self.endpoint_id)
+        logger.info(f'[EXPLORER] Found {len(violations)} violations')
+        if len(violations) > 0:
+            for v in violations:
+                logger.info(f'[EXPLORER] Violation: {[vv.__str__() for vv in v]}')
 
 
     def kill_current_process(self):
