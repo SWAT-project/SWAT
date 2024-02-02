@@ -1,23 +1,16 @@
-import glob
-import re
+import os
 import signal
 import subprocess
-import os, sys
 from contextlib import contextmanager
-
-from driver.SymbolicStorage import SymbolicStorage
-from solver.SolverHandler import SATResult
+from enum import Enum
 
 from data.Database import Database
-
+from driver.SymbolicStorage import SymbolicStorage
+# import logging
+from log import logger
+from solver.SolverHandler import SATResult
 from strategy.StrategyService import StrategyService
 
-from enum import Enum
-#import logging
-from log import logger
-#logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-
-#logger = logging.getLogger(__name__)
 
 class ExecutionStatus(Enum):
     SUCCESS = 1
@@ -26,22 +19,24 @@ class ExecutionStatus(Enum):
     CRASH = 4
     VIOLATION = 5
 
+
 class Verdict(Enum):
     VIOLATION = "== ERROR"
     SAFE = "== OK"
     UNKNOWN = "== DONT-KNOW"
     NO_SYMBOLIC_VARS = "== NON-SYMBOLIC"
 
+
 class Action(Enum):
     RANDOMNEXT = 1
     SYMBOLICNEXT = 2
     REPORTVERDICT = 3
 
+
 class INPUTTYPE(Enum):
     RANDOM = 1
     SYMBOLIC = 2
     MAGIC = 3
-
 
 
 class State:
@@ -53,20 +48,9 @@ class TargetDriver:
     def __init__(self):
         self.state = State()
         self.sym_storage = SymbolicStorage()
-        self.shutdown_flag = False
         self.endpoint_id = None
 
-    @contextmanager
-    def pushd(self, dirname):
-        """Context manager to temporarily change the working directory."""
-        original_dir = os.getcwd()
-        os.chdir(dirname)
-        try:
-            yield
-        finally:
-            os.chdir(original_dir)
-
-    def build_command(self, args, mem:int=32) -> [str]:
+    def build_command(self, args, mem: int = 32) -> [str]:
         """Builds the Java command list with given parameters."""
         cmd = [
             'java',
@@ -92,14 +76,14 @@ class TargetDriver:
             cmd.append(f'{val}')
         return cmd
 
-
     def run_command_with_timeout(self, cmd: [str], timeout: int = 60) -> (ExecutionStatus, dict):
         """Executes the given command and returns the status and message."""
 
         logger.info(f'[EXPLORER] Java Output Begin')
         try:
-            stdout =  []
-            with subprocess.Popen(cmd, stdout=subprocess.PIPE,stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True) as proc:
+            stdout = []
+            with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
+                                  universal_newlines=True) as proc:
                 for line in proc.stdout:
                     logger.info(f'[EXECUTOR] --> {line.strip()}')
                     stdout.append(line)
@@ -120,15 +104,12 @@ class TargetDriver:
             logger.critical(f'[EXPLORER] Exception: {e}')
             return ExecutionStatus.CRASH, str(e)
 
-
-
     def record_violation(self):
         """Records the violation in the database."""
         db = Database.instance()
         db.add_violation(endpoint_id=self.endpoint_id, sym_vars=list(self.sym_storage.vars.values()))
 
-
-    def determine_next_step(self, status: ExecutionStatus, stdout: [str] ) -> Action:
+    def determine_next_step(self, status: ExecutionStatus, stdout: [str]) -> Action:
         """Determines the next step based on the execution status."""
         match status:
             case ExecutionStatus.SUCCESS:
@@ -151,41 +132,6 @@ class TargetDriver:
                 return Action.REPORTVERDICT
 
         raise Exception(f'Unknown execution status: {status}')
-
-    def run_testcase(self, base_dir: str, classpath: [str], agentpath: str, configpath: str, z3path) -> Verdict:
-        """Runs the testcase using the constructed Java command."""
-        db = Database.instance()
-
-        next_step = Action.RANDOMNEXT
-        idx = 0
-        while True:
-
-            logger.info(f'[EXPLORER] ============================= ROUND ({idx}) =============================')
-            idx +=1
-            command = self.build_command(javaagent=agentpath, config=configpath, Z3_DIR=z3path)
-            logger.info(f'[EXPLORER] Execution command: {command}')
-
-            status, output = self.run_command_with_timeout(cmd=command, timeout=60)
-            logger.info(f'[STATUS] {status}')
-            next_step = self.determine_next_step(status, output)
-
-
-            if next_step == Action.REPORTVERDICT:
-                logger.info(f'[SVCOMP] Next step: REPORTVERDICT')
-                return self.state.verdict
-
-
-            elif next_step == Action.SYMBOLICNEXT:
-                logger.info(f'[SVCOMP] Next step: SYMBOLIC EXPLORATION')
-
-                next_step = self.retrieve_solution()
-                if next_step == Action.REPORTVERDICT:
-                    return self.state.verdict
-                elif next_step == Action.SYMBOLICNEXT:
-                    self.symbolicStorage.input_type = INPUTTYPE.SYMBOLIC
-
-
-
 
     def retrieve_solution(self):
         possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id)
@@ -215,21 +161,15 @@ class TargetDriver:
 
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
         logger.info(f'[EXPLORER] Found new solution: {sol_viz}')
-        #self.sym_storage.register_vars(symbolic_vars)
+        # self.sym_storage.register_vars(symbolic_vars)
         self.sym_storage.store_solution(sol)
         return Action.SYMBOLICNEXT
-
-    def check_missing_invocations(self):
-        for l in glob.glob("logs/invocation-*.log"):
-            with open(l, "r") as f:
-                if f.read().strip() != "":
-                    return True
-        return False
 
     def run(self, args):
         verdict = self.exec(args)
         logger.info(f'[EXPLORER] Verdict: {verdict}')
         self.kill_current_process()
+
     def exec(self, args):
 
         """Runs the symbolic execution on the given testcase."""
@@ -260,7 +200,6 @@ class TargetDriver:
                 if next_step == Action.REPORTVERDICT:
                     break
 
-
         logger.info(f'[EXPLORER] Symbolic execution terminated')
         violations = Database.instance().get_violations(self.endpoint_id)
         logger.info(f'[EXPLORER] Found {len(violations)} violations')
@@ -268,10 +207,7 @@ class TargetDriver:
             for v in violations:
                 logger.info(f'[EXPLORER] Violation: {[vv.__str__() for vv in v]}')
 
-
     def kill_current_process(self):
         pid = os.getpid()
         os.kill(pid, signal.SIGTERM)  # Send termination signal
         # os.kill(pid, signal.SIGKILL)  # Use this for a more forceful kill if needed
-
-
