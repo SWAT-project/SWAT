@@ -32,6 +32,7 @@ dependencyResolutionManagement {
             library('gson', 'com.google.code.gson:gson:2.9.0')
             library('junit-jupiter-api', 'org.junit.jupiter:junit-jupiter-api:5.7.2')
             library('junit-jupiter-engine', 'org.junit.jupiter:junit-jupiter-engine:5.7.2')
+            library('mockito-core', 'org.mockito:mockito-core:3.12.4')
 
             bundle('httpcomponents', ['httpcomponents-httpclient', 'httpcomponents-httpasyncclient'])
             bundle('asm', ['asm-core', 'asm-commons', 'asm-util', 'asm-tree'])

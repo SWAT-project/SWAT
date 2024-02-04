@@ -3,75 +3,32 @@ plugins {
     id 'groovy'
     id 'eclipse'
     id 'application'
+    id 'io.freefair.lombok' version '8.4'
 }
 
-
-javadoc {
-    configurations.implementation.setCanBeResolved(true)
-    source = sourceSets.main.allJava
-}
-configurations {
-    all {
-        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
-    }
-}
-tasks.withType(JavaCompile) {
+tasks.withType(JavaCompile).configureEach {
     options.incremental = true // one flag, and things will get MUCH faster
-    options.compilerArgs += ['--add-opens=java.base/jdk.internal.access=ALL-UNNAMED','--add-exports=java.base/jdk.internal.access=ALL-UNNAMED']
-    options.compilerArgs += ['--add-opens=java.base/jdk.internal.access=ALL-UNNAMED','--add-exports=java.base/jdk.internal.access=ALL-UNNAMED']
-    options.compilerArgs += ['--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED','--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED']
-    options.compilerArgs += ['--add-opens=java.base/jdk.unsupported=ALL-UNNAMED','--add-exports=java.base/jdk.unsupported=ALL-UNNAMED']
-    options.compilerArgs += ['--add-opens=java.base/sun.security.util=ALL-UNNAMED','--add-exports=java.base/sun.security.util=ALL-UNNAMED']
-    options.compilerArgs += ['--add-opens=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED','--add-exports=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED']
 }
+
 
 repositories {
     mavenCentral()
 }
 
-javadoc {
-    //source = sourceSets.main.allJava
-    source = fileTree('src/main/java-delomboked')
-    classpath = configurations.implementation
-}
-
-task delombok(type: JavaExec) {
-    main = 'lombok.launch.Main'
-    classpath = configurations.implementation //configurations.compileOnly + configurations.annotationProcessor
-    args = ['delombok',
-            'src/main/java',
-            '-d', 'src/main/java-delomboked']
-}
 // In this section you declare the dependencies for your production and test code
 dependencies {
 
     implementation libs.bundles.asm
     implementation libs.bundles.httpcomponents
-
-    implementation libs.lombok
-    annotationProcessor libs.lombok
-    testCompileOnly libs.lombok
-    testAnnotationProcessor libs.lombok
-    testImplementation libs.spock.core
-
-
     implementation libs.jackson.databind
     implementation libs.gson
-    // Internal Dependencies
     implementation libs.java.smt
+
     implementation rootProject.fileTree(dir: 'libs', include: ['*.jar']) // loads com.microsoft.z3
 
-
-    testImplementation 'ch.qos.logback:logback-classic:1.1.2'
-    testImplementation 'org.testcontainers:testcontainers:1.17.2'
-    testRuntimeOnly 'org.springframework.boot:spring-boot-starter-web'
-    testRuntimeOnly platform('org.springframework.boot:spring-boot-dependencies:2.7.6')
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
-    testImplementation 'org.assertj:assertj-core:3.23.1'
-    testImplementation "io.github.openfeign:feign-core:11.9"
-    testImplementation 'com.fasterxml.jackson.core:jackson-core:2.13.3'
-    testImplementation 'org.mockito:mockito-core:3.12.4'  // Adjust the version as needed
+    testImplementation libs.spock.core
+    testImplementation libs.jackson.databind
+    testImplementation libs.mockito.core
 }
 
 
@@ -88,6 +45,7 @@ jar {
         exclude '**/module-info.class'
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
+
 }
 
 
