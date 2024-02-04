@@ -3,19 +3,8 @@ plugins {
     id "com.diffplug.spotless" version "6.9.0"
 }
 
-def javaVer = JavaVersion.VERSION_17
-java {
-    sourceCompatibility = javaVer
-    targetCompatibility = javaVer
-}
-
-
 repositories {
     mavenCentral()
-}
-
-dependencies {
-
 }
 
 jar {

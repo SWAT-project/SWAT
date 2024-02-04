@@ -6,15 +6,7 @@ plugins {
     id 'com.diffplug.spotless' version '6.9.0'
 }
 
-version = projectVersion
 
-def javaVer = JavaVersion.VERSION_17
-println "Required JAVA version: ${javaVer}"
-
-java {
-    sourceCompatibility = javaVer
-    targetCompatibility = javaVer
-}
 javadoc {
     configurations.implementation.setCanBeResolved(true)
     source = sourceSets.main.allJava
@@ -103,15 +95,6 @@ jar {
     }
 }
 
-task enforceJavaVersion {
-    doLast {
-        def activeJavaVersion = JavaVersion.current()
-        if(activeJavaVersion != javaVer) {
-            throw new IllegalStateException("Wrong active Java version; Found: "
-                    + activeJavaVersion + " Required: " + javaVer)
-        }
-    }
-}
 
 task copyJar(type: Copy) {
     from jar
@@ -148,4 +131,3 @@ distTar.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
 distZip.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
 
 build.finalizedBy copyJar
-compileJava.dependsOn(enforceJavaVersion)

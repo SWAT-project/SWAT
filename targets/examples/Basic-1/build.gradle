@@ -3,19 +3,8 @@ plugins {
     id "com.diffplug.spotless" version "6.9.0"
 }
 
-def javaVer = JavaVersion.VERSION_17
-java {
-    sourceCompatibility = javaVer
-    targetCompatibility = javaVer
-}
-
-
 repositories {
     mavenCentral()
-}
-
-dependencies {
-
 }
 
 jar {
@@ -23,6 +12,7 @@ jar {
         attributes 'Main-Class': 'de.uzl.its.examples.Basic1'
     }
 }
+
 spotless {
     // optional: limit format enforcement to just the files changed by this feature branch
     //ratchetFrom 'origin/main'
