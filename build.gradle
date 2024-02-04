@@ -1,0 +1,13 @@
+plugins {
+    id 'com.diffplug.spotless' version '6.9.0'
+}
+
+allprojects {
+    apply plugin: 'com.diffplug.spotless'
+    apply plugin: 'java'
+    repositories {
+        mavenCentral()
+    }
+
+    apply from: "${rootProject.projectDir}/spotless.gradle"
+}

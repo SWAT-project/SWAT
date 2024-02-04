@@ -1,6 +1,5 @@
 plugins {
     id 'java'
-    id "com.diffplug.spotless" version "6.9.0"
 }
 
 repositories {
@@ -10,25 +9,5 @@ repositories {
 jar {
     manifest {
         attributes 'Main-Class': 'de.uzl.its.tests.XASTORE'
-    }
-}
-spotless {
-    // optional: limit format enforcement to just the files changed by this feature branch
-    //ratchetFrom 'origin/main'
-    enforceCheck false
-
-    format 'misc', {
-        // define the files to apply `misc` to
-        target '*.gradle', '*.md', '.gitignore','.conf'
-
-        // define the steps to apply to those files
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-    java {
-        importOrder()
-        removeUnusedImports()
-        googleJavaFormat().aosp().reflowLongStrings()
     }
 }

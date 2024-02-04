@@ -3,7 +3,6 @@ plugins {
     id 'groovy'
     id 'eclipse'
     id 'application'
-    id 'com.diffplug.spotless' version '6.9.0'
 }
 
 
@@ -26,11 +25,7 @@ tasks.withType(JavaCompile) {
     options.compilerArgs += ['--add-opens=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED','--add-exports=java.base/jdk.internal.org.objectweb.asm.tree=ALL-UNNAMED']
 }
 
-// repositories {
-//    mavenCentral()
-// }
 repositories {
-    // try to resolve by pom first
     mavenCentral()
 }
 
@@ -104,26 +99,6 @@ task copyJar(type: Copy) {
 
 test {
     useJUnitPlatform()
-}
-spotless {
-    // optional: limit format enforcement to just the files changed by this feature branch
-    //ratchetFrom 'origin/main'
-    enforceCheck false
-
-    format 'misc', {
-        // define the files to apply `misc` to
-        target '*.gradle', '*.md', '.gitignore','.conf'
-
-        // define the steps to apply to those files
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-    java {
-        importOrder()
-        removeUnusedImports()
-        googleJavaFormat().aosp().reflowLongStrings()
-    }
 }
 
 // Set duplicate strategy to remove a warning
