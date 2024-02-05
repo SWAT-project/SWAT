@@ -38,6 +38,13 @@ jobs:
       
     - name: Test
       run: ./gradlew test
+      
+    - name: Upload test reports if failed
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-reports
+        path: /home/runner/work/SWAT/SWAT/symbolic-executor/build/reports/tests
 
 
   dependency-submission:
