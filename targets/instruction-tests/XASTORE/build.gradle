@@ -11,3 +11,17 @@ jar {
         attributes 'Main-Class': 'de.uzl.its.tests.XASTORE'
     }
 }
+
+
+tasks.register('runXASTORE', JavaExec) {
+    mainClass = 'de.uzl.its.tests.XASTORE'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g',
+            "-Dswat.cfg=${rootDir}/targets/instruction-tests/XASTORE/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path"
+    ]
+}
+
+jar.dependsOn runXASTORE

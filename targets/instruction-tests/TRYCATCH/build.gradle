@@ -11,3 +11,16 @@ jar {
         attributes 'Main-Class': 'de.uzl.its.tests.TRYCATCH'
     }
 }
+
+tasks.register('runTRYCATCH', JavaExec) {
+    mainClass = 'de.uzl.its.tests.TRYCATCH'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g',
+            "-Dswat.cfg=${rootDir}/targets/instruction-tests/TRYCATCH/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path"
+    ]
+}
+
+jar.dependsOn runTRYCATCH

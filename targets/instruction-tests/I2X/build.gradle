@@ -2,14 +2,28 @@ plugins {
     id 'java'
 }
 
-
 repositories {
     mavenCentral()
 }
 
+dependencies {
+}
 
 jar {
     manifest {
         attributes 'Main-Class': 'de.uzl.its.tests.I2X'
     }
 }
+
+tasks.register('runI2X', JavaExec) {
+    mainClass = 'de.uzl.its.tests.I2X'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g',
+            "-Dswat.cfg=${rootDir}/targets/instruction-tests/I2X/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path"
+    ]
+}
+
+jar.dependsOn runI2X

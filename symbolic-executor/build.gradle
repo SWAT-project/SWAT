@@ -31,6 +31,9 @@ dependencies {
     testImplementation libs.mockito.core
 }
 
+test {
+    systemProperty "java.library.path", "../libs/java-library-path"
+}
 
 jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
