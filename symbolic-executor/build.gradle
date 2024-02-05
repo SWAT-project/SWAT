@@ -24,7 +24,7 @@ dependencies {
     implementation libs.gson
     implementation libs.java.smt
 
-    implementation rootProject.fileTree(dir: 'libs', include: ['*.jar']) // loads com.microsoft.z3
+    implementation rootProject.fileTree(dir: 'libs/java-library-path', include: ['*.jar']) // loads com.microsoft.z3
 
     testImplementation libs.spock.core
     testImplementation libs.jackson.databind
@@ -49,11 +49,14 @@ jar {
 }
 
 
-task copyJar(type: Copy) {
+tasks.register('copyJar', Copy) {
     from jar
     into 'lib'
-    rename (String fileName) -> {fileName = 'symbolic-executor.jar'}
+    rename (String fileName) -> { fileName = 'symbolic-executor.jar' }
 }
+
+
+
 
 test {
     useJUnitPlatform()
