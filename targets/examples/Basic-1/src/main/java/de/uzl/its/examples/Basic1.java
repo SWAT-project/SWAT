@@ -15,12 +15,19 @@ public class Basic1 {
         // ensure the ordering of the parameters is identical to the args array
     }
 
-    public static void test(String symbolicString, int symbolicInt) {
+    public static void test2(String symbolicString, int symbolicInt) {
         if (symbolicString.equals("Hello")) {
             if (symbolicInt == 42) {
                 System.out.println("Hello World!");
             } else {
                 assert symbolicInt != 99;
+            }
+        }
+    }
+    public static void test(String symbolicString, int symbolicInt) {
+        if (symbolicString.startsWith("SuperSecretString")) {
+            if (symbolicInt % 11 == 0 && symbolicInt > 0) {
+                assert symbolicString.charAt(symbolicInt) != '#';
             }
         }
     }

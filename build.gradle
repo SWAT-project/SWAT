@@ -21,13 +21,13 @@ tasks.register('copyNativeLibs', Copy) { // copies correct native z3 files to li
         switch (os) {
             case OperatingSystem.LINUX:
                 osKey = arch == "aarch64" ? "linux-arm64" : "linux-x64"
-                break;
+                break
             case OperatingSystem.MAC_OS:
                 osKey = arch == "aarch64" ? "osx-arm64" : "osx-x64"
-                break;
+                break
             case OperatingSystem.WINDOWS:
                 osKey = arch == "x86" ? "windows-x86" : "windows-x64"
-                break;
+                break
         }
         println("Operating system key: $osKey")
         if (!osKey) {
