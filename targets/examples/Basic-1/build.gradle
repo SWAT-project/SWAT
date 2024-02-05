@@ -22,5 +22,5 @@ tasks.register('runBasic1', Exec) {
     environment "PYTHONUNBUFFERED", "1"
 
     // Use this if you need to depend on another task, like building your Java project first
-    dependsOn 'build'
+    dependsOn build
 }

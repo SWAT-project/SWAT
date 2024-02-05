@@ -22,6 +22,5 @@ tasks.register('runIXXX', JavaExec) {
             "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
             "-Djava.library.path=${rootDir}/libs/java-library-path"
     ]
+    dependsOn build
 }
-
-jar.dependsOn runIXXX
