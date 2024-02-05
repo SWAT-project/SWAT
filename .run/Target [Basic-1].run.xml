@@ -15,7 +15,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="SCRIPT_NAME" value="symbolic-explorer/SymbolicExplorer.py" />
-    <option name="PARAMETERS" value="--mode active --target targets/examples/Basic-1/build/libs/Basic-1.jar --symbolicvars Ljava/lang/String I --config targets/examples/Basic-1/swat.cfg --agent symbolic-executor/lib/symbolic-executor.jar --z3dir libs" />
+    <option name="PARAMETERS" value="--mode active --target targets/examples/Basic-1/build/libs/Basic-1.jar --symbolicvars Ljava/lang/String I --config targets/examples/Basic-1/swat.cfg --agent symbolic-executor/lib/symbolic-executor.jar --z3dir libs/java-library-path" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />

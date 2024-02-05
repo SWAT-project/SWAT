@@ -1,21 +1,9 @@
 plugins {
     id 'java'
-    id "com.diffplug.spotless" version "6.9.0"
 }
-
-def javaVer = JavaVersion.VERSION_17
-java {
-    sourceCompatibility = javaVer
-    targetCompatibility = javaVer
-}
-
 
 repositories {
     mavenCentral()
-}
-
-dependencies {
-
 }
 
 jar {
@@ -23,23 +11,16 @@ jar {
         attributes 'Main-Class': 'de.uzl.its.examples.Basic1'
     }
 }
-spotless {
-    // optional: limit format enforcement to just the files changed by this feature branch
-    //ratchetFrom 'origin/main'
-    enforceCheck false
+tasks.register('runBasic1', Exec) {
+    // Set the working directory if it's different from the root
+    workingDir "${rootDir}"
 
-    format 'misc', {
-        // define the files to apply `misc` to
-        target '*.gradle', '*.md', '.gitignore','.conf'
+    // Set the command line to execute the Python script
+    commandLine 'python3', "${rootDir}/symbolic-explorer/SymbolicExplorer.py", "--mode", "active", "--target", "${rootDir}/targets/examples/Basic-1/build/libs/Basic-1.jar", "--symbolicvars", "Ljava/lang/String", "I", "--config", "${rootDir}/targets/examples/Basic-1/swat.cfg", "--agent", "${rootDir}/symbolic-executor/lib/symbolic-executor.jar", "--z3dir", "${rootDir}/libs/java-library-path"
 
-        // define the steps to apply to those files
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-    java {
-        importOrder()
-        removeUnusedImports()
-        googleJavaFormat().aosp().reflowLongStrings()
-    }
+    // Set environment variables
+    environment "PYTHONUNBUFFERED", "1"
+
+    // Use this if you need to depend on another task, like building your Java project first
+    dependsOn build
 }

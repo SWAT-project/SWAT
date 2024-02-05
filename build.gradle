@@ -1,0 +1,74 @@
+import org.gradle.internal.os.OperatingSystem
+
+plugins {
+    id 'com.diffplug.spotless' version '6.9.0'
+}
+
+tasks.register('copyNativeLibs', Copy) { // copies correct native z3 files to libs/
+        def osArchMap = [
+                'windows-x64': 'z3-4.12.5-x64-win',
+                'windows-x86': 'z3-4.12.5-x86-win',
+                'osx-x64'    : 'z3-4.12.5-x64-osx-11.7.10',
+                'osx-arm64'  : 'z3-4.12.5-arm64-osx-11.0',
+                'linux-x64'  : 'z3-4.12.5-x64-glibc-2.31',
+                'linux-arm64': 'z3-4.12.5-arm64-glibc-2.35'
+        ]
+
+        def os = OperatingSystem.current()
+        println("Operating system: $os")
+        def arch = os.getArch()
+        def osKey = ''
+        switch (os) {
+            case OperatingSystem.LINUX:
+                osKey = arch == "aarch64" ? "linux-arm64" : "linux-x64"
+                break;
+            case OperatingSystem.MAC_OS:
+                osKey = arch == "aarch64" ? "osx-arm64" : "osx-x64"
+                break;
+            case OperatingSystem.WINDOWS:
+                osKey = arch == "x86" ? "windows-x86" : "windows-x64"
+                break;
+        }
+        println("Operating system key: $osKey")
+        if (!osKey) {
+            throw new GradleException("Unsupported operating system or architecture.")
+        }
+
+        def z3Zip = file("libs/${osArchMap[osKey]}.zip")
+        if (!z3Zip.exists()) {
+            throw new GradleException("Z3 distribution zip file not found at ${z3Zip.path}")
+        }
+            from zipTree(z3Zip)
+            into 'libs/java-library-path'
+            include "${osArchMap[osKey]}/bin/z3*"
+            include "${osArchMap[osKey]}/bin/libz3.*"
+            include "${osArchMap[osKey]}/bin/libz3java.*"
+            include "${osArchMap[osKey]}/bin/com.microsoft.z3.jar"
+            eachFile { FileCopyDetails fcp ->
+                fcp.relativePath = new RelativePath(true, fcp.name)
+            }
+            includeEmptyDirs false
+
+    }
+
+
+allprojects {
+    apply plugin: 'com.diffplug.spotless'
+    apply plugin: 'java'
+    repositories {
+        mavenCentral()
+    }
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
+    }
+    apply from: "${rootProject.projectDir}/spotless.gradle"
+
+    // Ensures that all tasks that run Java code use the correct Java version
+    tasks.withType(JavaExec).configureEach {
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
+    }
+}

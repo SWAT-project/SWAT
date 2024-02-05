@@ -3,10 +3,10 @@
 /symbolic-executor/build/
 /symbolic-executor/lib/
 /symbolic-executor/logs/
-/symbolic-executor/src/main/java-delomboked/
 /symbolic-explorer/venv/
 **/*.log
 targets/**/bin/
 targets/**/build/
 /logs/
 /build/
+/libs/java-library-path/*

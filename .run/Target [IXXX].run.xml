@@ -8,7 +8,7 @@
     <selectedOptions>
       <option name="environmentVariables" visible="false" />
     </selectedOptions>
-    <option name="VM_PARAMETERS" value="-Xmx32g -Dswat.cfg=targets/instruction-tests/IXXX/swat.cfg -javaagent:symbolic-executor/lib/symbolic-executor.jar -Djava.library.path=$PROJECT_DIR$/libs/local_z3_installation/lib" />
+    <option name="VM_PARAMETERS" value="-Xmx32g -Dswat.cfg=targets/instruction-tests/IXXX/swat.cfg -javaagent:symbolic-executor/lib/symbolic-executor.jar -Djava.library.path=libs/java-library-path" />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/" />
     <method v="2">
       <option name="Make" enabled="true" />

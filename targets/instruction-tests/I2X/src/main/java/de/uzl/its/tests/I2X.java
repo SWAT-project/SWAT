@@ -10,6 +10,7 @@ public class I2X {
      */
     public int I2B(int i) {
         byte b = (byte) i;
+
         return b == 0 ? 1 : 0;
     }
 

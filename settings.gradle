@@ -1,3 +1,7 @@
+plugins {
+    id "org.gradle.toolchains.foojay-resolver-convention" version "0.8.0"
+}
+
 rootProject.name = "SWAT"
 
 include 'symbolic-executor'
@@ -14,25 +18,21 @@ include 'targets:examples:Basic-1'
 dependencyResolutionManagement {
     versionCatalogs {
         libs {
-            version('asm','9.4')
+            version('asm','9.6')
             library('asm-core', 'org.ow2.asm','asm').versionRef('asm')
             library('asm-commons', 'org.ow2.asm','asm-commons').versionRef('asm')
             library('asm-util', 'org.ow2.asm','asm-util').versionRef('asm')
             library('asm-tree', 'org.ow2.asm','asm-tree').versionRef('asm')
             library('jackson-databind', 'com.fasterxml.jackson.core:jackson-databind:2.14.1')
-            library('java-smt', 'org.sosy-lab:java-smt:4.0.3')
+            library('java-smt', 'org.sosy-lab:java-smt:4.1.1')
             library('httpcomponents-httpclient', 'org.apache.httpcomponents:httpclient:4.5.14')
             library('httpcomponents-httpasyncclient', 'org.apache.httpcomponents:httpasyncclient:4.1.5')
             library('spock-core', 'org.spockframework:spock-core:2.2-M1-groovy-4.0')
-            library('lombok', 'org.projectlombok:lombok:1.18.22')
             library('gson', 'com.google.code.gson:gson:2.9.0')
-            library('junit-jupiter-api', 'org.junit.jupiter:junit-jupiter-api:5.7.2')
-            library('junit-jupiter-engine', 'org.junit.jupiter:junit-jupiter-engine:5.7.2')
+            library('mockito-core', 'org.mockito:mockito-core:3.12.4')
 
             bundle('httpcomponents', ['httpcomponents-httpclient', 'httpcomponents-httpasyncclient'])
             bundle('asm', ['asm-core', 'asm-commons', 'asm-util', 'asm-tree'])
-            bundle('junit-jupiter', ['junit-jupiter-api', 'junit-jupiter-engine'])
         }
     }
 }
-
