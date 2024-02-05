@@ -64,4 +64,11 @@ allprojects {
         }
     }
     apply from: "${rootProject.projectDir}/spotless.gradle"
+
+    // Ensures that all tasks that run Java code use the correct Java version
+    tasks.withType(JavaExec).configureEach {
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
+    }
 }
