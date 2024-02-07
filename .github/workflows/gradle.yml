@@ -49,6 +49,17 @@ jobs:
         name: test-reports
         path: /home/runner/work/SWAT/SWAT/symbolic-executor/build/reports/tests
 
+    
+    - name: Test
+      run: ./gradlew javadoc
+
+    
+    - name: Upload javadoc
+      uses: actions/upload-artifact@v3
+      with:
+        name: javadoc
+        path: /home/runner/work/SWAT/SWAT/symbolic-executor/build/docs/javadoc
+
 
   dependency-submission:
 
