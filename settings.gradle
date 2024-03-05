@@ -14,6 +14,8 @@ include 'targets:instruction-tests:XASTORE'
 
 include 'targets:examples:Basic-1'
 
+include 'targets:applications:gson'
+
 
 dependencyResolutionManagement {
     versionCatalogs {
