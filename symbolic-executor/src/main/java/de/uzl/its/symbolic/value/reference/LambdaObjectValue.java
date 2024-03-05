@@ -24,9 +24,10 @@ public class LambdaObjectValue extends ObjectValue {
     public String toString() {
         return "LambdaObjectValue @"
                 + Integer.toHexString(address)
-                + ", key: "
+                + " (key: "
                 + key
                 + ", parentAddress: "
-                + Integer.toHexString(parentAddress);
+                + Integer.toHexString(parentAddress)
+                + ")";
     }
 }

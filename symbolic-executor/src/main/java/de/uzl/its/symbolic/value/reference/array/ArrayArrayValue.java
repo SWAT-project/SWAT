@@ -1,11 +1,14 @@
 package de.uzl.its.symbolic.value.reference.array;
 
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.DataType;
 import de.uzl.its.symbolic.value.Value;
 import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.symbolic.value.primitive.numeric.integral.IntValue;
 import java.util.ArrayList;
+import java.util.Arrays;
+
 import org.sosy_lab.java_smt.api.*;
 
 public class ArrayArrayValue<TE extends Formula>
@@ -234,16 +237,19 @@ public class ArrayArrayValue<TE extends Formula>
 
     @Override
     public String toString() {
-        return "ArrayArrayValue @"
+        //concat values in array list with custom char into string
+        String size = Arrays.stream(dims).map(IntValue::toString).reduce("", (a, b) -> a + b + "x");
+        String formulaString = this.formula.toString();
+        if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
+            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+        }
+        return desc
+                + " @"
                 + address
-                + " ["
-                + size
-                + "]"
                 + " ("
-                + desc
-                + ") "
-                + concrete.size()
-                + ", formula="
-                + formula;
+                + size
+                + ", "
+                + formulaString
+                + ")";
     }
 }

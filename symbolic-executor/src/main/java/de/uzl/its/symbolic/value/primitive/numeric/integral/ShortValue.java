@@ -126,8 +126,12 @@ public class ShortValue extends NumericalValue<NumeralFormula.IntegerFormula, Sh
         return Short.toString(concrete);
     }
 
+    /**
+     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * @return the string representation of the value.
+     */
     @Override
     public String toString() {
-        return "ShortValue{" + "formula=" + formula + ", concrete=" + concrete + '}';
+        return genericToString("S");
     }
 }

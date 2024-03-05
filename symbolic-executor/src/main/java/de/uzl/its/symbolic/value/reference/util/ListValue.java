@@ -23,19 +23,21 @@ public class ListValue extends ObjectValue<Object, Object> {
 
     private List<Value<?, ?>> list;
 
-    public ListValue(SolverContext context) {
+    public ListValue(SolverContext context, String className) {
         super(context, 42, -1);
+        this.className = className;
         list = new ArrayList<>();
     }
 
-    public ListValue(SolverContext context, List<?> l) {
+    public ListValue(SolverContext context, String className, List<?> l) {
         super(context, 42, -1);
+        this.className = className;
         list = new ArrayList<>();
         for (Object element : l) {
             if (element instanceof String el) {
                 list.add(new StringValue(context, el, ObjectValue.ADDRESS_UNKNOWN));
             } else if (element instanceof List el) {
-                list.add(new ListValue(context, el));
+                list.add(new ListValue(context, element.getClass().getName(), el));
             } else if (element instanceof Integer el) {
                 list.add(
                         new IntegerObjectValue(

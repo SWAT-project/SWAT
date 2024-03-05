@@ -123,14 +123,12 @@ public class BooleanArrayValue
         return this;
     }
 
+    /**
+     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * @return the string representation of the value.
+     */
     @Override
     public String toString() {
-        return "BooleanArrayValue @"
-                + Integer.toHexString(address)
-                + " { size="
-                + size
-                + ", formula="
-                + formula
-                + "}";
+        return genericToString("[Z");
     }
 }

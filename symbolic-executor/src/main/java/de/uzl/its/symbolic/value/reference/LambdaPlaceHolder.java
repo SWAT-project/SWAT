@@ -23,9 +23,10 @@ public class LambdaPlaceHolder extends Value {
 
     @Override
     public String toString() {
-        return "LambdaPlaceHolder, key: "
+        return "LambdaPlaceHolder (key: "
                 + key
                 + ", parentAddress: "
-                + Integer.toHexString(parentAddress);
+                + Integer.toHexString(parentAddress)
+                + ")";
     }
 }

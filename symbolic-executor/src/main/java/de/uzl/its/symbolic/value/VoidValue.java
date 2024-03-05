@@ -11,6 +11,6 @@ public class VoidValue extends Value {
 
     @Override
     public String toString() {
-        return "VoidValue{}";
+        return "Void ()";
     }
 }

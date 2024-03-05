@@ -12,8 +12,7 @@ public abstract class GETVALUE_primitive extends Instruction {
 
     public abstract void visit(IVisitor visitor);
 
-    @Override
-    public String toString() {
-        return "GETVALUE_primitive v=" + v + ", i=" + i;
+    public String genericToString(String type) {
+        return "[VALUE FETCH] " + type + " " + v + " (" + i + ")";
     }
 }

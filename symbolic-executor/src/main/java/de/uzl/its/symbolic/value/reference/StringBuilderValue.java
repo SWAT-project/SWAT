@@ -1,5 +1,6 @@
 package de.uzl.its.symbolic.value.reference;
 
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.symbolic.value.PlaceHolder;
 import de.uzl.its.symbolic.value.Value;
 import de.uzl.its.symbolic.value.VoidValue;
@@ -870,13 +871,23 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
 
     @Override
     public String toString() {
-        return "StringBuilderValue @"
+        String formulaString = "";
+        String concreteString = "";
+        if (stringValue != null){
+            formulaString =  null != stringValue.formula ? stringValue.formula.toString(): "";
+            concreteString = null != stringValue.concrete ? stringValue.concrete : "";
+        }
+
+        if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
+            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+        }
+
+        return "Ljava/lang/StringBuilder @"
                 + Integer.toHexString(address)
-                + ", string = "
-                + ((stringValue != null)
-                        ? (null != stringValue.getConcrete() ? stringValue.getConcrete() : "")
-                        : "")
-                + ", formula = "
-                + ((stringValue != null) ? stringValue.formula : "");
+                + " ("
+                + concreteString
+                + ", "
+                + formulaString
+                + ")";
     }
 }

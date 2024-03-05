@@ -57,6 +57,6 @@ public class PlaceHolder extends Value {
 
     @Override
     public String toString() {
-        return "PlaceHolder{\"isSymbolic\":\"" + isSymbolic + "\", \"origin\":\"" + origin + "\"}";
+        return "PlaceHolder (" + (isSymbolic ? "symbolic, " : "") + origin + ")";
     }
 }

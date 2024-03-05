@@ -70,7 +70,6 @@ public class DoubleObjectValue extends ObjectValue<Object, Object> {
 
     @Override
     public String toString() {
-        String s = "DoubleObjectValue @" + Integer.toHexString(address);
-        return s;
+        return "Ljava/lang/Double; @" + Integer.toHexString(address);
     }
 }

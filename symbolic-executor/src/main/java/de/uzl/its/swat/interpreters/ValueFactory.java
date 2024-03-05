@@ -76,7 +76,7 @@ public class ValueFactory {
         } else if (concrete instanceof Character c) {
             return new CharacterObjectValue(context, new CharValue(context, c), address);
         } else if (concrete instanceof List<?> list) {
-            return new ListValue(context, list);
+            return new ListValue(context, concrete.getClass().getName(), list);
         }
         throw new RuntimeException("ERROR: Unknown type in getObjectValue");
     }
@@ -87,7 +87,7 @@ public class ValueFactory {
             case "java.lang.Integer" -> new IntegerObjectValue(context);
             case "java.lang.Long" -> new LongObjectValue(context);
             case "java.lang.StringBuilder" -> new StringBuilderValue(context);
-            case "java.util.List", "java.util.ArrayList" -> new ListValue(context);
+            case "java.util.List", "java.util.ArrayList" -> new ListValue(context, className);
             default -> new ObjectValue<>(
                     context,
                     className,

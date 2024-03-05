@@ -1,13 +1,16 @@
 package de.uzl.its.symbolic.value;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.symbolic.value.primitive.numeric.integral.*;
 import de.uzl.its.symbolic.value.reference.ObjectValue;
 import de.uzl.its.symbolic.value.reference.lang.StringValue;
+import lombok.Getter;
 import org.sosy_lab.java_smt.api.BooleanFormula;
+import org.sosy_lab.java_smt.api.Formula;
 import org.sosy_lab.java_smt.api.SolverContext;
 
 /** Abstract value of any type. Base class for the concrete values. */
@@ -22,6 +25,7 @@ public abstract class Value<T, K> {
     public K concrete;
     public SolverContext context;
 
+    @Getter
     protected String name;
 
     public static void reset() {
@@ -117,12 +121,15 @@ public abstract class Value<T, K> {
         throw new RuntimeException("'asStringValue' is not implemented yet for this type: " + this);
     }
 
-    public String getName() {
-        return name;
-    }
-
+    /**
+     * Returns the string representation of the value. Should be implemented by each inheriting class.
+     * @return the string representation of the value
+     */
     @Override
     public String toString() {
-        return "Value{" + "formula=" + formula + ", concrete=" + concrete + '}';
+        throw new RuntimeException("'toString' is not implemented yet for this type: " + this);
     }
+
+
 }
+

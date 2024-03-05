@@ -1,5 +1,6 @@
 package de.uzl.its.symbolic.value.reference.lang;
 
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.symbolic.value.PlaceHolder;
 import de.uzl.its.symbolic.value.Value;
 import de.uzl.its.symbolic.value.VoidValue;
@@ -1115,16 +1116,6 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     @Override
-    public String toString() {
-        return "StringValue @"
-                + Integer.toHexString(address)
-                + ", string = "
-                + (null != concrete ? concrete : "")
-                + ", symbolic value = "
-                + (null != formula ? formula.toString() : "");
-    }
-
-    @Override
     public String getConcreteEncoded() {
         char[] chars = concrete.toCharArray();
         int[] tmp = new int[chars.length];
@@ -1142,5 +1133,18 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     @Override
     public StringValue asObjectValue() {
         return this;
+    }
+
+
+    @Override
+    public String toString() {
+        String formulaString = null != formula ? this.formula.toString(): "";
+        String concreteString = null != concrete ? concrete : "";
+
+        if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
+            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+        }
+
+        return "Ljava/lang/String; @" + Integer.toHexString(address) +" (" + concreteString + ", " + formulaString + ")";
     }
 }

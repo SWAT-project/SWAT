@@ -138,8 +138,12 @@ public class CharValue extends NumericalValue<NumeralFormula.IntegerFormula, Cha
         return Character.toString(concrete);
     }
 
+    /**
+     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * @return the string representation of the value.
+     */
     @Override
     public String toString() {
-        return "CharValue{" + "formula=" + formula + ", concrete=" + concrete + '}';
+        return genericToString("C");
     }
 }

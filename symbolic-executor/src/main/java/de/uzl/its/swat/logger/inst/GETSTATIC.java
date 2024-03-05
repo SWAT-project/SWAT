@@ -1,10 +1,28 @@
 package de.uzl.its.swat.logger.inst;
 
+/**
+ * GETSTATIC - Get static field from class.
+ * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.getstatic">Java VM specification</a>.
+ */
 public class GETSTATIC extends Instruction {
+
+    // The class index
     public int cIdx;
+
+    // The field index
     public int fIdx;
+
+    // The field descriptor
     public String desc;
 
+    /**
+     * Creates a new GETSTATIC instruction.
+     * @param iid instruction id.
+     * @param mid method id.
+     * @param cIdx class index.
+     * @param fIdx field index.
+     * @param desc field descriptor.
+     */
     public GETSTATIC(int iid, int mid, int cIdx, int fIdx, String desc) {
         super(iid, mid);
         this.cIdx = cIdx;
@@ -12,21 +30,20 @@ public class GETSTATIC extends Instruction {
         this.desc = desc;
     }
 
+    /**
+     * Accept method for the visitor.
+     * @param visitor the visitor
+     */
     public void visit(IVisitor visitor) {
         visitor.visitGETSTATIC(this);
     }
 
+    /**
+     * Returns the string representation of the instruction.
+     * @return the representation.
+     */
     @Override
     public String toString() {
-        return "GETSTATIC iid="
-                + iid
-                + " mid="
-                + mid
-                + " cIdx="
-                + cIdx
-                + " fIdx="
-                + fIdx
-                + " desc="
-                + desc;
+        return genericToString("GETSTATIC [" + cIdx + ", " + fIdx + "] " + desc);
     }
 }

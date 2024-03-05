@@ -146,7 +146,7 @@ public abstract class Transformer implements ClassFileTransformer {
                 shouldInst = shouldInst || cname.startsWith(p);
             }
         }
-        if (config.getExcludePackages() != null) {
+        else if (config.getExcludePackages() != null) {
             for (String p : config.getExcludePackages()) {
                 shouldInst = shouldInst && !cname.startsWith(p);
             }

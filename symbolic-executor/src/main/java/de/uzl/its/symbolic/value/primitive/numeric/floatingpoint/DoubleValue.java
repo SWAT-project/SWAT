@@ -262,8 +262,12 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
         return new StringValue(context, String.valueOf(context), -1);
     }
 
+    /**
+     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * @return the string representation of the value.
+     */
     @Override
     public String toString() {
-        return "DoubleValue{" + "formula=" + formula + ", concrete=" + concrete + '}';
+        return genericToString("D");
     }
 }

@@ -128,9 +128,12 @@ public class BooleanValue extends NumericalValue<BooleanFormula, Boolean> {
     public String getConcreteEncoded() {
         return Boolean.toString(concrete);
     }
-
+    /**
+     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * @return the string representation of the value.
+     */
     @Override
     public String toString() {
-        return "BooleanValue{" + "formula=" + formula + ", concrete=" + concrete + '}';
+        return genericToString("Z");
     }
 }

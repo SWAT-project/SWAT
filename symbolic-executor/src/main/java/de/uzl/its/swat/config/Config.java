@@ -90,6 +90,9 @@ public class Config {
     /** Flag to determine if the application should exit on errors. */
     @Getter private boolean exitOnError;
 
+    /** Length to print symbolic formula. */
+    @Getter private int formulaPrintLength;
+
     private Config() {
         loadProperties();
     }
@@ -178,6 +181,7 @@ public class Config {
                 properties.getProperty("instructionIds", String.valueOf(debug)).equals("true");
         logging = properties.getProperty("logging", "true").equals("true");
         invocationLogging = properties.getProperty("invocationLogging", "true").equals("true");
+        formulaPrintLength = Integer.parseInt(properties.getProperty("formulaPrintLength", "100"));
     }
 
     private String processPattern(String pattern) {

@@ -134,14 +134,13 @@ public class DoubleArrayValue
         return this;
     }
 
+
+    /**
+     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * @return the string representation of the value.
+     */
     @Override
     public String toString() {
-        return "DoubleArrayValue @"
-                + Integer.toHexString(address)
-                + " { size="
-                + size
-                + ", formula="
-                + formula
-                + "}";
+        return genericToString("[D");
     }
 }

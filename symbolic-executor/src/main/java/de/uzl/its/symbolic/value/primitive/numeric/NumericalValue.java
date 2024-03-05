@@ -1,5 +1,6 @@
 package de.uzl.its.symbolic.value.primitive.numeric;
 
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.symbolic.value.Value;
 import org.sosy_lab.java_smt.api.*;
 
@@ -106,9 +107,11 @@ public abstract class NumericalValue<T extends Formula, K> extends Value<T, K> {
                                 imgr.makeNumber(Character.MIN_VALUE))),
                 imgr.multiply(imgr.makeNumber(-1), imgr.makeNumber(Character.MIN_VALUE)));
     }
-
-    @Override
-    public String toString() {
-        return "NumericalValue{" + "formula=" + formula + ", concrete=" + concrete + '}';
+    public String genericToString(String type) {
+        String formulaString = this.formula.toString();
+        if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
+            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+        }
+        return type + " (" + concrete + ", " + formulaString + ")";
     }
 }

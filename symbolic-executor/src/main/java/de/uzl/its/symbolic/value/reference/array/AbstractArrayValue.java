@@ -1,5 +1,6 @@
 package de.uzl.its.symbolic.value.reference.array;
 
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.symbolic.value.Value;
 import de.uzl.its.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.symbolic.value.reference.ObjectValue;
@@ -169,8 +170,17 @@ public abstract class AbstractArrayValue<
         return context;
     }
 
-    @Override
-    public String toString() {
-        return "AbstractArrayValue{" + "size=" + size + '}';
+    public String genericToString(String type) {
+        String formulaString = this.formula.toString();
+        if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
+            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+        }
+        return type + " @"
+                + Integer.toHexString(address)
+                + " ("
+                + size
+                + " x 1, "
+                + formulaString
+                + ")";
     }
 }

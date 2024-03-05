@@ -427,7 +427,6 @@ public final class IntegerObjectValue extends ObjectValue<Object, Object> {
 
     @Override
     public String toString() {
-        String s = "IntegerObjectValue @" + Integer.toHexString(address);
-        return s;
+        return "Ljava/lang/Integer; @" + Integer.toHexString(address);
     }
 }

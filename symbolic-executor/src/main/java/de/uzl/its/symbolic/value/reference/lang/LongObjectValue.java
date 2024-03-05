@@ -418,7 +418,6 @@ public class LongObjectValue extends ObjectValue<Object, Object> {
 
     @Override
     public String toString() {
-        String s = "LongObjectValue @" + Integer.toHexString(address);
-        return s;
+        return "Ljava/lang/Long; @" + Integer.toHexString(address);
     }
 }

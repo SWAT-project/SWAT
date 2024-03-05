@@ -177,15 +177,6 @@ public class ObjectValue<T, K> extends Value<T, K> {
         return PlaceHolder.instance;
     }
 
-    public String toString() {
-        return "ObjectValue{\"address:\""
-                + Integer.toHexString(address)
-                + "\",\"name\":\""
-                + name
-                + "\",\"class\":\""
-                + className
-                + "\"}";
-    }
 
     @Override
     public ObjectValue<?, ?> asObjectValue() {
@@ -229,5 +220,12 @@ public class ObjectValue<T, K> extends Value<T, K> {
 
         Runtime.getRuntime().halt(1);
         return null;
+    }
+
+    public String toString() {
+        return
+                className != null ? className : "Ljava/lang/Object;"
+                        + " @"
+                        + Integer.toHexString(address);
     }
 }

@@ -85,16 +85,13 @@ public class ObjectArrayValue extends ObjectValue {
 
     @Override
     public String toString() {
-        String s = "ObjectArrayValue{" + "size=" + size + ", type=" + className; // + '}'
-        if (getFields() != null) {
-            for (Value v : getFields()) {
-                if (v != null) {
-                    s += v.toString();
-                } else {
-                    s += "null";
-                }
-            }
-        }
-        return s;
+        return "["
+                + className
+                + " @"
+                + Integer.toHexString(address)
+                + " ("
+                + size
+                + " x 1"
+                + ")";
     }
 }

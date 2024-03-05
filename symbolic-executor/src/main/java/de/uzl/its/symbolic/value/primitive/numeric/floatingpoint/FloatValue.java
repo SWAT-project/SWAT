@@ -243,8 +243,12 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
         return Integer.toHexString(intBits);
     }
 
+    /**
+     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * @return the string representation of the value.
+     */
     @Override
     public String toString() {
-        return "FloatValue{" + "formula=" + formula + ", concrete=" + concrete + '}';
+        return genericToString("F");
     }
 }

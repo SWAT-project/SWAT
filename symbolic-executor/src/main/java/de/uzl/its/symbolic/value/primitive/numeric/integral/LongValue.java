@@ -374,8 +374,12 @@ public class LongValue extends NumericalValue<NumeralFormula.IntegerFormula, Lon
         return Long.toString(concrete);
     }
 
+    /**
+     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * @return the string representation of the value.
+     */
     @Override
     public String toString() {
-        return "LongValue{" + "formula=" + formula + ", concrete=" + concrete + '}';
+        return genericToString("J");
     }
 }

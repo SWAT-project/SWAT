@@ -67,7 +67,6 @@ public class CharacterObjectValue extends ObjectValue<Object, Object> {
 
     @Override
     public String toString() {
-        String s = "CharacterObjectValue @" + Integer.toHexString(address);
-        return s;
+        return "Ljava/lang/Character; @" + Integer.toHexString(address);
     }
 }

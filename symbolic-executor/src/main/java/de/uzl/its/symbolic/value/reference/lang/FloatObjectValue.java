@@ -75,7 +75,6 @@ public class FloatObjectValue extends ObjectValue<Object, Object> {
 
     @Override
     public String toString() {
-        String s = "FloatObjectValue @" + Integer.toHexString(address);
-        return s;
+        return "Ljava/lang/Float; @" + Integer.toHexString(address);
     }
 }
