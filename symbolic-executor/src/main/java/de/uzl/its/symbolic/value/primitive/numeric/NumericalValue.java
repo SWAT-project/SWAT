@@ -107,10 +107,12 @@ public abstract class NumericalValue<T extends Formula, K> extends Value<T, K> {
                                 imgr.makeNumber(Character.MIN_VALUE))),
                 imgr.multiply(imgr.makeNumber(-1), imgr.makeNumber(Character.MIN_VALUE)));
     }
+
     public String genericToString(String type) {
         String formulaString = this.formula.toString();
         if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
-            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+            formulaString =
+                    formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
         }
         return type + " (" + concrete + ", " + formulaString + ")";
     }

@@ -24,4 +24,3 @@ tasks.register('runXASTORE', JavaExec) {
     ]
     dependsOn build
 }
-

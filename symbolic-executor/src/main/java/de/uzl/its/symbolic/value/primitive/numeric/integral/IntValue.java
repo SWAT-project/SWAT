@@ -1,6 +1,5 @@
 package de.uzl.its.symbolic.value.primitive.numeric.integral;
 
-import de.uzl.its.swat.config.Config;
 import de.uzl.its.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -546,7 +545,9 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
     }
 
     /**
-     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * Returns the string representation of the value used to visualize the stack. The
+     * representation is not complete.
+     *
      * @return the string representation of the value.
      */
     @Override

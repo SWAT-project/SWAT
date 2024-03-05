@@ -8,7 +8,6 @@ import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.symbolic.value.primitive.numeric.integral.IntValue;
 import java.util.ArrayList;
 import java.util.Arrays;
-
 import org.sosy_lab.java_smt.api.*;
 
 public class ArrayArrayValue<TE extends Formula>
@@ -237,19 +236,13 @@ public class ArrayArrayValue<TE extends Formula>
 
     @Override
     public String toString() {
-        //concat values in array list with custom char into string
+        // concat values in array list with custom char into string
         String size = Arrays.stream(dims).map(IntValue::toString).reduce("", (a, b) -> a + b + "x");
         String formulaString = this.formula.toString();
         if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
-            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+            formulaString =
+                    formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
         }
-        return desc
-                + " @"
-                + address
-                + " ("
-                + size
-                + ", "
-                + formulaString
-                + ")";
+        return desc + " @" + address + " (" + size + ", " + formulaString + ")";
     }
 }

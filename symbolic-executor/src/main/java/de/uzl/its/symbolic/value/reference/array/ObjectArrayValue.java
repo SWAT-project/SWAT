@@ -85,13 +85,6 @@ public class ObjectArrayValue extends ObjectValue {
 
     @Override
     public String toString() {
-        return "["
-                + className
-                + " @"
-                + Integer.toHexString(address)
-                + " ("
-                + size
-                + " x 1"
-                + ")";
+        return "[" + className + " @" + Integer.toHexString(address) + " (" + size + " x 1" + ")";
     }
 }

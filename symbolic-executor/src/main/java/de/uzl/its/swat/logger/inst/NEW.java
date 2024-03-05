@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * NEW - Create new object.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.new">Java VM specification</a>.
+ * NEW - Create new object. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.new">Java VM
+ * specification</a>.
  */
 public class NEW extends Instruction {
 
@@ -12,9 +13,9 @@ public class NEW extends Instruction {
     // The class index
     public int cIdx;
 
-
     /**
      * Creates a new NEW instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      * @param type the type of the object to be created
@@ -28,6 +29,7 @@ public class NEW extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -36,6 +38,7 @@ public class NEW extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

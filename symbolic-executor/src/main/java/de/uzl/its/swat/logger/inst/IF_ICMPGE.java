@@ -1,16 +1,17 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * IF_ICMPGE - Branch if int comparison succeeds (greater or equals)
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.if_icmp_cond">Java VM specification</a>.
+ * IF_ICMPGE - Branch if int comparison succeeds (greater or equals) For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.if_icmp_cond">Java
+ * VM specification</a>.
  */
 public class IF_ICMPGE extends Instruction {
     // The jump destination
     int label;
 
-
     /**
      * Creates a new IF_ICMPGE instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      * @param label the jump destination
@@ -22,6 +23,7 @@ public class IF_ICMPGE extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -30,6 +32,7 @@ public class IF_ICMPGE extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

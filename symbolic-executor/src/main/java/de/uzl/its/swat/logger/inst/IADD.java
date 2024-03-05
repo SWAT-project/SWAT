@@ -1,13 +1,15 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * IADD - Add int.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.iadd">Java VM specification</a>.
+ * IADD - Add int. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.iadd">Java VM
+ * specification</a>.
  */
 public class IADD extends Instruction {
 
     /**
      * Creates a new IADD instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      */
@@ -17,6 +19,7 @@ public class IADD extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -25,6 +28,7 @@ public class IADD extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

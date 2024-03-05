@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * INSTANCEOF - Determine if object is of given type.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.instanceof">Java VM specification</a>.
+ * INSTANCEOF - Determine if object is of given type. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.instanceof">Java
+ * VM specification</a>.
  */
 public class INSTANCEOF extends Instruction {
 
@@ -11,6 +12,7 @@ public class INSTANCEOF extends Instruction {
 
     /**
      * Creates a new INSTANCEOF instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      * @param type the type to check against
@@ -22,15 +24,16 @@ public class INSTANCEOF extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
         visitor.visitINSTANCEOF(this);
     }
 
-
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

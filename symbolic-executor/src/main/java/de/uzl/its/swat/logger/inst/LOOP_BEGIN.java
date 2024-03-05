@@ -1,12 +1,11 @@
 package de.uzl.its.swat.logger.inst;
 
-/**
- * LOOP_BEGIN - Custom method call handled as an instruction to detect the beginning of loops.
- */
+/** LOOP_BEGIN - Custom method call handled as an instruction to detect the beginning of loops. */
 public class LOOP_BEGIN extends Instruction {
 
     /**
      * Creates a new loop beginning marker instruction.
+     *
      * @param iid instruction id.
      */
     public LOOP_BEGIN(int iid) {
@@ -15,6 +14,7 @@ public class LOOP_BEGIN extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -23,6 +23,7 @@ public class LOOP_BEGIN extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

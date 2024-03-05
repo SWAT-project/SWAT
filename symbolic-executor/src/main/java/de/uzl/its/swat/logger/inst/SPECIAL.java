@@ -9,9 +9,9 @@ public class SPECIAL extends Instruction {
     // Marker used in symbolic interpreter for example for branch detection
     public int i;
 
-
     /**
      * Creates a new SPECIAL instruction.
+     *
      * @param i marker value
      */
     public SPECIAL(int i) {
@@ -21,6 +21,7 @@ public class SPECIAL extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -29,6 +30,7 @@ public class SPECIAL extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

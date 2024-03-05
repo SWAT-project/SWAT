@@ -20,7 +20,7 @@ public class Harness {
         Gson gson = new Gson();
         String res = gson.toJson(symbolicString);
         System.out.println(res);
-        if(symbolicString == "y") System.out.println(res);
+        if (symbolicString == "y") System.out.println(res);
         else System.out.println("w");
     }
 }

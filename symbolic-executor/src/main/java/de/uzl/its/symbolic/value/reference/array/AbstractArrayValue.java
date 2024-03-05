@@ -173,9 +173,11 @@ public abstract class AbstractArrayValue<
     public String genericToString(String type) {
         String formulaString = this.formula.toString();
         if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
-            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+            formulaString =
+                    formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
         }
-        return type + " @"
+        return type
+                + " @"
                 + Integer.toHexString(address)
                 + " ("
                 + size

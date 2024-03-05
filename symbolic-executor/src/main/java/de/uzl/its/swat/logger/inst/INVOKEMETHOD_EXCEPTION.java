@@ -1,8 +1,8 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * INVOKEMETHOD_EXCEPTION - Custom method handled as an instruction to signalize a method end.
- * Used to detect exceptions.
+ * INVOKEMETHOD_EXCEPTION - Custom method handled as an instruction to signalize a method end. Used
+ * to detect exceptions.
  */
 public class INVOKEMETHOD_EXCEPTION extends Instruction {
 
@@ -12,6 +12,7 @@ public class INVOKEMETHOD_EXCEPTION extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {

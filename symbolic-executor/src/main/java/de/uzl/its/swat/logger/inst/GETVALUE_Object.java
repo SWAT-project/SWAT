@@ -1,7 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * GETVALUE_Object - Custom method call handled as an instruction to fetch the concrete value that was produced/ loaded by another instruction.
+ * GETVALUE_Object - Custom method call handled as an instruction to fetch the concrete value that
+ * was produced/ loaded by another instruction.
+ *
  * @param <T> the type of the concrete object
  */
 public class GETVALUE_Object<T> extends Instruction {
@@ -17,6 +19,7 @@ public class GETVALUE_Object<T> extends Instruction {
 
     /**
      * Creates a new value fetch instruction for objects.
+     *
      * @param v the address of the value
      * @param val the concrete value
      * @param i an identifier
@@ -30,6 +33,7 @@ public class GETVALUE_Object<T> extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -38,13 +42,28 @@ public class GETVALUE_Object<T> extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override
     public String toString() {
         if (val == null) {
-            return "[VALUE FETCH] " + "Ljava/lang/Object; @" + Integer.toHexString(v) + " (" + i + ")";
+            return "[VALUE FETCH] "
+                    + "Ljava/lang/Object; @"
+                    + Integer.toHexString(v)
+                    + " ("
+                    + i
+                    + ")";
         }
-        return "[VALUE FETCH] " + "L" + val.getClass() + "; @" + Integer.toHexString(v) + " " + val + " (" + i + ")";
+        return "[VALUE FETCH] "
+                + "L"
+                + val.getClass()
+                + "; @"
+                + Integer.toHexString(v)
+                + " "
+                + val
+                + " ("
+                + i
+                + ")";
     }
 }

@@ -263,7 +263,9 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
     }
 
     /**
-     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * Returns the string representation of the value used to visualize the stack. The
+     * representation is not complete.
+     *
      * @return the string representation of the value.
      */
     @Override

@@ -1,12 +1,11 @@
 package de.uzl.its.swat.logger.inst;
 
-/**
- * LOOP_END - Custom method call handled as an instruction to detect the end of loops.
- */
+/** LOOP_END - Custom method call handled as an instruction to detect the end of loops. */
 public class LOOP_END extends Instruction {
 
     /**
      * Creates a new loop end marker instruction.
+     *
      * @param iid instruction id.
      */
     public LOOP_END(int iid) {
@@ -15,6 +14,7 @@ public class LOOP_END extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -23,6 +23,7 @@ public class LOOP_END extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

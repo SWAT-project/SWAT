@@ -1135,16 +1135,22 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         return this;
     }
 
-
     @Override
     public String toString() {
-        String formulaString = null != formula ? this.formula.toString(): "";
+        String formulaString = null != formula ? this.formula.toString() : "";
         String concreteString = null != concrete ? concrete : "";
 
         if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
-            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+            formulaString =
+                    formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
         }
 
-        return "Ljava/lang/String; @" + Integer.toHexString(address) +" (" + concreteString + ", " + formulaString + ")";
+        return "Ljava/lang/String; @"
+                + Integer.toHexString(address)
+                + " ("
+                + concreteString
+                + ", "
+                + formulaString
+                + ")";
     }
 }

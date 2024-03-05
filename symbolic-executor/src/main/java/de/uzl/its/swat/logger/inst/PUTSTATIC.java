@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * PUTSTATIC - Set static field in class.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.putstatic">Java VM specification</a>.
+ * PUTSTATIC - Set static field in class. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.putstatic">Java VM
+ * specification</a>.
  */
 public class PUTSTATIC extends Instruction {
 
@@ -15,9 +16,9 @@ public class PUTSTATIC extends Instruction {
     // The field descriptor
     public String desc;
 
-
     /**
      * Creates a new PUTSTATIC instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      * @param cIdx class index.
@@ -33,6 +34,7 @@ public class PUTSTATIC extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -41,6 +43,7 @@ public class PUTSTATIC extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

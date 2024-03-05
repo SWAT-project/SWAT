@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * GETSTATIC - Get static field from class.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.getstatic">Java VM specification</a>.
+ * GETSTATIC - Get static field from class. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.getstatic">Java VM
+ * specification</a>.
  */
 public class GETSTATIC extends Instruction {
 
@@ -17,6 +18,7 @@ public class GETSTATIC extends Instruction {
 
     /**
      * Creates a new GETSTATIC instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      * @param cIdx class index.
@@ -32,6 +34,7 @@ public class GETSTATIC extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -40,6 +43,7 @@ public class GETSTATIC extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

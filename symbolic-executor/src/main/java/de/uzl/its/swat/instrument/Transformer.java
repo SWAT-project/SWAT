@@ -145,8 +145,7 @@ public abstract class Transformer implements ClassFileTransformer {
             for (String p : config.getInstrumentPackages()) {
                 shouldInst = shouldInst || cname.startsWith(p);
             }
-        }
-        else if (config.getExcludePackages() != null) {
+        } else if (config.getExcludePackages() != null) {
             for (String p : config.getExcludePackages()) {
                 shouldInst = shouldInst && !cname.startsWith(p);
             }

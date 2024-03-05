@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * MULTIANEWARRAY - Create new multidimensional array.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.multianewarray">Java VM specification</a>.
+ * MULTIANEWARRAY - Create new multidimensional array. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.multianewarray">Java
+ * VM specification</a>.
  */
 public class MULTIANEWARRAY extends Instruction {
 
@@ -12,9 +13,9 @@ public class MULTIANEWARRAY extends Instruction {
     // The number of dimensions
     public int dims;
 
-
     /**
      * Creates a new MULTIANEWARRAY instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      * @param desc the descriptor of the array
@@ -28,6 +29,7 @@ public class MULTIANEWARRAY extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -36,6 +38,7 @@ public class MULTIANEWARRAY extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

@@ -873,13 +873,14 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     public String toString() {
         String formulaString = "";
         String concreteString = "";
-        if (stringValue != null){
-            formulaString =  null != stringValue.formula ? stringValue.formula.toString(): "";
+        if (stringValue != null) {
+            formulaString = null != stringValue.formula ? stringValue.formula.toString() : "";
             concreteString = null != stringValue.concrete ? stringValue.concrete : "";
         }
 
         if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
-            formulaString = formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+            formulaString =
+                    formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
         }
 
         return "Ljava/lang/StringBuilder @"

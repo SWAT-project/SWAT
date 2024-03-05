@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * INVOKEDYNAMIC - Invoke a dynamically-computed call site.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.invokedynamic">Java VM specification</a>.
+ * INVOKEDYNAMIC - Invoke a dynamically-computed call site. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.invokedynamic">Java
+ * VM specification</a>.
  */
 public class INVOKEDYNAMIC extends Instruction {
     // The owner of the method
@@ -16,6 +17,7 @@ public class INVOKEDYNAMIC extends Instruction {
 
     /**
      * Creates a new INVOKEDYNAMIC instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      * @param owner the owner of the method
@@ -33,6 +35,7 @@ public class INVOKEDYNAMIC extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -41,6 +44,7 @@ public class INVOKEDYNAMIC extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

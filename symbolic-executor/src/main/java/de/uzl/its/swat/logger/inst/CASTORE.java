@@ -1,11 +1,13 @@
 package de.uzl.its.swat.logger.inst;
 /**
- * CASTORE - Store into char array.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.castore">Java VM specification</a>.
+ * CASTORE - Store into char array. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.castore">Java VM
+ * specification</a>.
  */
 public class CASTORE extends Instruction {
     /**
      * Creates a new CASTORE instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      */
@@ -14,6 +16,7 @@ public class CASTORE extends Instruction {
     }
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -22,6 +25,7 @@ public class CASTORE extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

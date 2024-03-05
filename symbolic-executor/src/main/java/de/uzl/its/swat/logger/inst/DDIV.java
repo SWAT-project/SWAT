@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * DDIV - Divide double.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.ddiv">Java VM specification</a>.
+ * DDIV - Divide double. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.ddiv">Java VM
+ * specification</a>.
  */
 public class DDIV extends Instruction {
     public DDIV(int iid, int mid) {
@@ -11,6 +12,7 @@ public class DDIV extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -19,6 +21,7 @@ public class DDIV extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

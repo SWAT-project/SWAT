@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * PUTFIELD - Set field in object.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.putfield">Java VM specification</a>.
+ * PUTFIELD - Set field in object. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.putfield">Java VM
+ * specification</a>.
  */
 public class PUTFIELD extends Instruction {
 
@@ -15,9 +16,9 @@ public class PUTFIELD extends Instruction {
     // The field descriptor
     public String desc;
 
-
     /**
      * Creates a new PUTFIELD instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      * @param cIdx class index.
@@ -33,6 +34,7 @@ public class PUTFIELD extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -41,6 +43,7 @@ public class PUTFIELD extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override

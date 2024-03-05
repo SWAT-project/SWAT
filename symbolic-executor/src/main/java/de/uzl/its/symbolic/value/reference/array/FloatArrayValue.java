@@ -1,6 +1,5 @@
 package de.uzl.its.symbolic.value.reference.array;
 
-import de.uzl.its.swat.config.Config;
 import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.symbolic.value.primitive.numeric.integral.IntValue;
 import org.sosy_lab.java_smt.api.*;
@@ -95,7 +94,9 @@ public class FloatArrayValue
     }
 
     /**
-     * Returns the string representation of the value used to visualize the stack. The representation is not complete.
+     * Returns the string representation of the value used to visualize the stack. The
+     * representation is not complete.
+     *
      * @return the string representation of the value.
      */
     @Override

@@ -26,4 +26,3 @@ tasks.register('runI2X', JavaExec) {
     ]
     dependsOn build
 }
-

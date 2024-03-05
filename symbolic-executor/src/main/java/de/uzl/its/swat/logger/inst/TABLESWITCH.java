@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * TABLESWITCH - Access jump table by index and jump.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.tableswitch">Java VM specification</a>.
+ * TABLESWITCH - Access jump table by index and jump. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.tableswitch">Java
+ * VM specification</a>.
  */
 public class TABLESWITCH extends Instruction {
 
@@ -17,9 +18,9 @@ public class TABLESWITCH extends Instruction {
     // The (table) lookup values
     public int[] values;
 
-
     /**
      * Creates a new TABLESWITCH instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      */
@@ -34,6 +35,7 @@ public class TABLESWITCH extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -42,10 +44,21 @@ public class TABLESWITCH extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override
     public String toString() {
-        return genericToString("TABLESWITCH [" + min + "-" + max +"] labels: " + labels + " values: " + values + " dflt: " + dflt);
+        return genericToString(
+                "TABLESWITCH ["
+                        + min
+                        + "-"
+                        + max
+                        + "] labels: "
+                        + labels
+                        + " values: "
+                        + values
+                        + " dflt: "
+                        + dflt);
     }
 }

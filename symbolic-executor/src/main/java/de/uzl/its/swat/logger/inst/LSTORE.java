@@ -1,8 +1,9 @@
 package de.uzl.its.swat.logger.inst;
 
 /**
- * LSTORE - Store long into local variable.
- * For more information see the  <a href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.lstore">Java VM specification</a>.
+ * LSTORE - Store long into local variable. For more information see the <a
+ * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.lstore">Java VM
+ * specification</a>.
  */
 public class LSTORE extends Instruction {
 
@@ -11,6 +12,7 @@ public class LSTORE extends Instruction {
 
     /**
      * Creates a new LSTORE instruction.
+     *
      * @param iid instruction id.
      * @param mid method id.
      * @param var local variable index.
@@ -22,6 +24,7 @@ public class LSTORE extends Instruction {
 
     /**
      * Accept method for the visitor.
+     *
      * @param visitor the visitor
      */
     public void visit(IVisitor visitor) {
@@ -30,6 +33,7 @@ public class LSTORE extends Instruction {
 
     /**
      * Returns the string representation of the instruction.
+     *
      * @return the representation.
      */
     @Override
