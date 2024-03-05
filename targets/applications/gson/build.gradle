@@ -1,0 +1,30 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.google.code.gson:gson:2.10.1'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.targets.Harness'
+    }
+}
+tasks.register('runGsonHarness', Exec) {
+    // Set the working directory if it's different from the root
+    workingDir "${rootDir}"
+
+    // Set the command line to execute the Python script
+    commandLine 'python3', "${rootDir}/symbolic-explorer/SymbolicExplorer.py", "--mode", "active", "--target", "${rootDir}/targets/applications/gson/build/libs/gson.jar", "--symbolicvars", "Ljava/lang/String", "--config", "${rootDir}/targets/applications/gson/swat.cfg", "--agent", "${rootDir}/symbolic-executor/lib/symbolic-executor.jar", "--z3dir", "${rootDir}/libs/java-library-path"
+
+    // Set environment variables
+    environment "PYTHONUNBUFFERED", "1"
+
+    // Use this if you need to depend on another task, like building your Java project first
+    dependsOn build
+}
