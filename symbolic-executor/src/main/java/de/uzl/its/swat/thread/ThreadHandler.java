@@ -2,13 +2,13 @@ package de.uzl.its.swat.thread;
 
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.request.ConstraintRequest;
-import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+import de.uzl.its.swat.symbolic.ObjectInfo;
 import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor;
-import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
+import de.uzl.its.swat.symbolic.instruction.Instruction;
 import de.uzl.its.swat.symbolic.processor.DummyInstructionProcessor;
 import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
-import de.uzl.its.swat.symbolic.ObjectInfo;
-import de.uzl.its.swat.symbolic.instruction.Instruction;
+import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
+import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.Value;
 import java.util.HashMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -29,8 +29,10 @@ class LogFormatter extends SimpleFormatter {
 }
 
 public final class ThreadHandler {
-    private static final DummyInstructionProcessor DUMMY_INSTRUCTION_PROCESSOR = new DummyInstructionProcessor();
-    private static final SymbolicInstructionProcessor SYMBOLIC_INSTRUCTION_PROCESSOR = new SymbolicInstructionProcessor();
+    private static final DummyInstructionProcessor DUMMY_INSTRUCTION_PROCESSOR =
+            new DummyInstructionProcessor();
+    private static final SymbolicInstructionProcessor SYMBOLIC_INSTRUCTION_PROCESSOR =
+            new SymbolicInstructionProcessor();
 
     private static final HashMap<Long, ThreadContext> threadContextHashMap = new HashMap<>();
 
@@ -117,7 +119,9 @@ public final class ThreadHandler {
     public static InstructionProcessor getProcessor(long id) {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
-            return context.isDisabled() ? DUMMY_INSTRUCTION_PROCESSOR : SYMBOLIC_INSTRUCTION_PROCESSOR;
+            return context.isDisabled()
+                    ? DUMMY_INSTRUCTION_PROCESSOR
+                    : SYMBOLIC_INSTRUCTION_PROCESSOR;
         } else {
             return DUMMY_INSTRUCTION_PROCESSOR;
         }

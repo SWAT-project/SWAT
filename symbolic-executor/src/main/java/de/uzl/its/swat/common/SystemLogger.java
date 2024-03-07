@@ -1,13 +1,9 @@
 package de.uzl.its.swat.common;
 
 import de.uzl.its.swat.config.Config;
+import java.util.ArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
 
 public class SystemLogger {
     private static SystemLogger instance;

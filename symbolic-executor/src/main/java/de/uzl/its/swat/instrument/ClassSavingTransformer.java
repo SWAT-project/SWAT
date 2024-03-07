@@ -1,19 +1,19 @@
 package de.uzl.its.swat.instrument;
 
 import de.uzl.its.swat.common.ErrorHandler;
-import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.config.Config;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.List;
-import org.slf4j.Logger;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import org.slf4j.Logger;
 
 public class ClassSavingTransformer implements ClassFileTransformer {
 

@@ -1,12 +1,12 @@
 package de.uzl.its.swat.instrument.parameter;
 
-import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.common.SystemLogger;
-import org.slf4j.Logger;
+import de.uzl.its.swat.config.Config;
 import java.util.regex.Pattern;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.slf4j.Logger;
 
 /**
  * A visitor to visit a Java class. The methods of this class must be called in the following order:

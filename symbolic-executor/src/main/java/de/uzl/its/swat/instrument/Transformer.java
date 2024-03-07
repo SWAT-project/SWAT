@@ -1,13 +1,12 @@
 package de.uzl.its.swat.instrument;
 
-import de.uzl.its.swat.Main;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.SystemLogger;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.instruction.InstructionTransformer;
 import de.uzl.its.swat.instrument.parameter.ParameterTransformer;
 import de.uzl.its.swat.instrument.svcomp.SVCompTransformer;
 import de.uzl.its.swat.instrument.symbolicwrapper.SymbolicWrapperTransformer;
-import de.uzl.its.swat.common.SystemLogger;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;

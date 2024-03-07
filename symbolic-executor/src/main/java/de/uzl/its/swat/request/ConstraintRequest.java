@@ -20,16 +20,13 @@ public class ConstraintRequest extends Request {
      */
     public static void sendConstraints(String traceDTO, int endpointID, int traceID) {
 
-            String host = config.getCoordinatorHost();
-            int port = Integer.parseInt(config.getCoordinatorPort());
-            String path = config.getSolverPath();
-            try {
-                send(host, port, path, endpointID, traceID, traceDTO);
-            } catch (Exception e) {
-                new ErrorHandler().handleException("Unable to send Constraints", e);
-            }
+        String host = config.getCoordinatorHost();
+        int port = Integer.parseInt(config.getCoordinatorPort());
+        String path = config.getSolverPath();
+        try {
+            send(host, port, path, endpointID, traceID, traceDTO);
+        } catch (Exception e) {
+            new ErrorHandler().handleException("Unable to send Constraints", e);
         }
-
-
-
+    }
 }

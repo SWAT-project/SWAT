@@ -3,9 +3,9 @@ package de.uzl.its.swat.symbolic.invoke;
 import static de.uzl.its.swat.symbolic.value.reference.ObjectValue.ADDRESS_UNKNOWN;
 
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
-import de.uzl.its.swat.symbolic.value.ValueFactory;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
+import de.uzl.its.swat.symbolic.value.ValueFactory;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.LongValue;

@@ -1,15 +1,15 @@
 package de.uzl.its.swat.instrument;
 
-import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.config.Config;
 import java.util.ArrayList;
-import org.slf4j.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.slf4j.Logger;
 
 @Setter
 @Getter
@@ -219,8 +219,7 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         } else if (param.equals("Ljava/lang/Long")) {
             symbolicLongObject(paramIdx);
         } else {
-            logger.warn(
-                    String.format("Unknown DataType in Parameter #%d -> %s", paramIdx, param));
+            logger.warn(String.format("Unknown DataType in Parameter #%d -> %s", paramIdx, param));
         }
     }
 }

@@ -1,16 +1,15 @@
 package de.uzl.its.swat.thread;
 
 import de.uzl.its.swat.config.Config;
-import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor;
 import de.uzl.its.swat.symbolic.ClassNames;
 import de.uzl.its.swat.symbolic.ObjectInfo;
+import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor;
 import de.uzl.its.swat.symbolic.instruction.Instruction;
 import de.uzl.its.swat.symbolic.value.Value;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.util.HashMap;
-
 import lombok.Getter;
 import lombok.Setter;
 import org.sosy_lab.common.ShutdownManager;
@@ -21,17 +20,11 @@ import org.sosy_lab.java_smt.SolverContextFactory;
 import org.sosy_lab.java_smt.api.SolverContext;
 
 public class ThreadContext {
-    @Getter
-    private final SymbolicInstructionVisitor symbolicInstructionVisitor;
-    @Getter
-    @Setter
-    private Instruction current;
-    @Getter
-    private Instruction next;
-    @Getter
-    private PrintStream invocationStream;
-    @Getter
-    private boolean disabled;
+    @Getter private final SymbolicInstructionVisitor symbolicInstructionVisitor;
+    @Getter @Setter private Instruction current;
+    @Getter private Instruction next;
+    @Getter private PrintStream invocationStream;
+    @Getter private boolean disabled;
     Config config = Config.instance();
     private final SolverContext context;
 
@@ -41,12 +34,8 @@ public class ThreadContext {
         return context;
     }
 
-    @Setter
-    @Getter
-    private int endpointID;
-    @Setter
-    @Getter
-    private String endpointName;
+    @Setter @Getter private int endpointID;
+    @Setter @Getter private String endpointName;
 
     public ThreadContext(long id) {
         this.symbolicInstructionVisitor = new SymbolicInstructionVisitor(ClassNames.getInstance());

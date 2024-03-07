@@ -1,8 +1,8 @@
 package de.uzl.its.swat.symbolic.processor;
 
 /**
- * Interface for instruction handling.
- * The implementation of each instruction is called through the static API from the instrumented code.
+ * Interface for instruction handling. The implementation of each instruction is called through the
+ * static API from the instrumented code.
  */
 public interface InstructionProcessor {
     void LDC(int iid, int mid, int c);

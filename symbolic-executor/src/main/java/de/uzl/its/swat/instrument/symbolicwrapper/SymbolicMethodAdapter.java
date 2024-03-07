@@ -1,11 +1,11 @@
 package de.uzl.its.swat.instrument.symbolicwrapper;
 
+import de.uzl.its.swat.common.SystemLogger;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.AbstractMethodAdapter;
-import de.uzl.its.swat.common.SystemLogger;
-import org.slf4j.Logger;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.slf4j.Logger;
 
 public class SymbolicMethodAdapter extends AbstractMethodAdapter {
     private boolean headerPossiblyInserted = false;

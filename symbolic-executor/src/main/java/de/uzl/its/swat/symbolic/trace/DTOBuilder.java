@@ -1,29 +1,28 @@
 package de.uzl.its.swat.symbolic.trace;
 
+import static java.lang.Thread.currentThread;
+
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.uzl.its.swat.common.ErrorHandler;
-import de.uzl.its.swat.symbolic.trace.*;
 import de.uzl.its.swat.symbolic.trace.dto.BranchDTO;
 import de.uzl.its.swat.symbolic.trace.dto.ConstraintDTO;
 import de.uzl.its.swat.symbolic.trace.dto.InputDTO;
 import de.uzl.its.swat.thread.ThreadHandler;
+import java.util.ArrayList;
 import org.sosy_lab.java_smt.api.FormulaManager;
 
-import java.util.ArrayList;
-
-import static java.lang.Thread.currentThread;
-
 /**
- * Builds a data transfer object (DTO) from the {@link SymbolicTrace SuymbolicState} for transportation to the Symbolic Explorer.
- * The trace is encoded as a JSON string.
+ * Builds a data transfer object (DTO) from the {@link SymbolicTrace SuymbolicState} for
+ * transportation to the Symbolic Explorer. The trace is encoded as a JSON string.
  */
 class DTOBuilder {
 
     /**
      * Encodes the symbolic trace as a JSON string.
+     *
      * @param symbolicTrace The symbolic trace to be encoded.
      * @return The symbolic trace encoded as a JSON string.
      */
@@ -72,11 +71,7 @@ class DTOBuilder {
                 } catch (InterruptedException e) {
                     constraint = String.valueOf(fmgr.dumpFormula(be.getConstraint()));
                 }
-                trace.add(
-                        new BranchDTO(
-                                be.getIid(),
-                                constraint,
-                                be.isBranched()));
+                trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched()));
             } else if (el instanceof SpecialElement se) {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }
@@ -84,9 +79,9 @@ class DTOBuilder {
         return new ConstraintDTO(inputs, trace);
     }
 
-
     /**
      * Transforms DTO into JSON string for transportation
+     *
      * @param payload The DTO to be transformed
      * @return The JSON string
      * @throws JsonProcessingException If the transformation fails

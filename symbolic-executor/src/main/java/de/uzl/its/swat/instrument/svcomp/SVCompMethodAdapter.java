@@ -1,13 +1,13 @@
 package de.uzl.its.swat.instrument.svcomp;
 
+import de.uzl.its.swat.common.SystemLogger;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.Transformer;
-import de.uzl.its.swat.common.SystemLogger;
-import org.slf4j.Logger;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.commons.LocalVariablesSorter;
+import org.slf4j.Logger;
 
 /** A visitor to visit a Java method */
 public class SVCompMethodAdapter extends LocalVariablesSorter {

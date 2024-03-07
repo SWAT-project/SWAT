@@ -1,7 +1,5 @@
 package de.uzl.its.swat.symbolic.value;
 
-import de.uzl.its.swat.thread.ThreadHandler;
-import de.uzl.its.swat.symbolic.value.ValueType;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -12,6 +10,7 @@ import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue;
 import de.uzl.its.swat.symbolic.value.reference.array.*;
 import de.uzl.its.swat.symbolic.value.reference.lang.*;
 import de.uzl.its.swat.symbolic.value.reference.util.ListValue;
+import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.List;
 import org.sosy_lab.java_smt.api.SolverContext;
 

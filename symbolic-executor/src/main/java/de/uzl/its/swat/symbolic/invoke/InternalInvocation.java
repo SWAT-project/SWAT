@@ -1,7 +1,6 @@
 package de.uzl.its.swat.symbolic.invoke;
 
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
-import de.uzl.its.swat.thread.ThreadHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
@@ -10,6 +9,7 @@ import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.array.AbstractArrayValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.symbolic.value.reference.util.ListValue;
+import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

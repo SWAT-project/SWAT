@@ -1,12 +1,12 @@
 package de.uzl.its.swat.instrument.svcomp;
 
 import de.uzl.its.swat.Main;
-import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.config.Config;
 import java.util.*;
-import org.slf4j.Logger;
 import lombok.Getter;
 import lombok.Setter;
+import org.slf4j.Logger;
 
 public class Verifier {
     private static long nextId = 0;

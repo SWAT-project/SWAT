@@ -4,35 +4,32 @@ import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.ValueFactory;
+import java.util.ArrayList;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-
 /** A symbolic Stack Frame that stores Values in the symbolic Stack and symbolic locals */
 public class Frame {
 
-    // Special logger used to visualize the shadow state. Useful for debugging and learning purposes.
+    // Special logger used to visualize the shadow state. Useful for debugging and learning
+    // purposes.
     private static final Logger stateLogger = LoggerFactory.getLogger("ShadowStateLogger");
 
     /** Number of words that are returned on invoke method end */
     public final int nReturnWords;
-    /** The symbolic version of Javas locals
-     * -- GETTER --
-     *  Gets all locals of the Frame (used for lambdas)
+    /**
+     * The symbolic version of Javas locals -- GETTER -- Gets all locals of the Frame (used for
+     * lambdas)
      *
      * @return All locals
      */
-    @Getter
-    private final ArrayList<Value<?, ?>> locals = new ArrayList<>(8);
+    @Getter private final ArrayList<Value<?, ?>> locals = new ArrayList<>(8);
 
     /** The symbolic version of Javas stack */
-    @Getter
-    private final ArrayList<Value<?, ?>> stack = new ArrayList<>(8);
+    @Getter private final ArrayList<Value<?, ?>> stack = new ArrayList<>(8);
 
-    @Getter
-    private Value<?, ?> ret;
+    @Getter private Value<?, ?> ret;
 
     /**
      * Constructor for Frame
@@ -181,7 +178,8 @@ public class Frame {
      */
     public Value<?, ?> pop() {
         if (stack.isEmpty()) {
-            new ErrorHandler().handleException(new RuntimeException("Trying to pop from an empty stack!"));
+            new ErrorHandler()
+                    .handleException(new RuntimeException("Trying to pop from an empty stack!"));
         }
         Value<?, ?> v = stack.remove(stack.size() - 1);
         printEntry(true, v);
@@ -194,7 +192,9 @@ public class Frame {
      * @return the top two elements from the symbolic stack
      */
     public Value<?, ?> pop2() {
-        if(stack.size()<2) new ErrorHandler().handleException(new RuntimeException("Trying to pop from an empty stack!"));
+        if (stack.size() < 2)
+            new ErrorHandler()
+                    .handleException(new RuntimeException("Trying to pop from an empty stack!"));
         Value<?, ?> unused = stack.remove(stack.size() - 1);
         printEntry(true, unused);
         assert unused instanceof PlaceHolder;
@@ -230,17 +230,18 @@ public class Frame {
         stack.clear();
     }
 
-    private void printEntry(boolean isRemoved, Value<?, ?> val){
+    private void printEntry(boolean isRemoved, Value<?, ?> val) {
         String prefix = isRemoved ? "[<-- Popped]" : "[--> Pushed]";
         stateLogger.info(prefix + " " + val);
     }
-    public void printStack(){
+
+    public void printStack() {
         int i;
-        for(i = 0; i < stack.size(); i++){
+        for (i = 0; i < stack.size(); i++) {
             stateLogger.info("[" + (stack.size() - i) + "]: " + stack.get(i));
             if (i == 4) break;
         }
-        if(i < stack.size()) stateLogger.info("... (" + (stack.size() - i) + " more)");
+        if (i < stack.size()) stateLogger.info("... (" + (stack.size() - i) + " more)");
     }
     /**
      * Override of the default toString method for printing the Current symbolic stack frame and

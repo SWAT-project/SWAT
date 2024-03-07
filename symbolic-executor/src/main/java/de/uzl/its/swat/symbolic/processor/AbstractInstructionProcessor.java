@@ -2,9 +2,7 @@ package de.uzl.its.swat.symbolic.processor;
 
 import de.uzl.its.swat.symbolic.instruction.*;
 
-/**
- * Template Method pattern for processing instruction processing.
- */
+/** Template Method pattern for processing instruction processing. */
 public abstract class AbstractInstructionProcessor implements InstructionProcessor {
     protected abstract void processInstruction(Instruction insn);
 

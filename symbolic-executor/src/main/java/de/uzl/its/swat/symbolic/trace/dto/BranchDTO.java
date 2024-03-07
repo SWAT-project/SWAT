@@ -16,10 +16,7 @@ public class BranchDTO {
     @SuppressWarnings("unused")
     private String inst;
 
-    public BranchDTO(
-            int iid,
-            String constraint,
-            boolean branched) {
+    public BranchDTO(int iid, String constraint, boolean branched) {
         this.iid = iid;
         this.constraint = constraint;
         this.branched = branched;

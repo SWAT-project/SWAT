@@ -8,23 +8,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This class is used to process instructions and triggers symbolic execution handling through visiting the current instruction.
+ * This class is used to process instructions and triggers symbolic execution handling through
+ * visiting the current instruction.
  */
 public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
 
-
-    // Special logger used to visualize the shadow state. Useful for debugging and learning purposes.
+    // Special logger used to visualize the shadow state. Useful for debugging and learning
+    // purposes.
     private static final Logger logger = LoggerFactory.getLogger("ShadowStateLogger");
 
-    /**
-     * Constructs a new SymbolicInstructionProcessor.
-     */
+    /** Constructs a new SymbolicInstructionProcessor. */
     public SymbolicInstructionProcessor() {}
 
     /**
-     * Initiates the symbolic execution handling by visiting the current instruction.
-     * Importantly, the symbolic execution lags behind by one instruction to allow some peeking into the future.
-     * @param nextInstruction The instruction that was just executed and should be scheduled to be executed symbolically in one step.
+     * Initiates the symbolic execution handling by visiting the current instruction. Importantly,
+     * the symbolic execution lags behind by one instruction to allow some peeking into the future.
+     *
+     * @param nextInstruction The instruction that was just executed and should be scheduled to be
+     *     executed symbolically in one step.
      */
     @Override
     protected void processInstruction(Instruction nextInstruction) {
@@ -39,10 +40,12 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
             ThreadHandler.setNextInstruction(id, nextInstruction);
             visitor.setNext(ThreadHandler.getNextInstruction(id));
             try {
-                logger.info("--------------------------------------------------------------------------------");
+                logger.info(
+                        "--------------------------------------------------------------------------------");
                 logger.info("Stack:");
                 visitor.getCurrentFrame().printStack();
-                logger.info("--------------------------------------------------------------------------------");
+                logger.info(
+                        "--------------------------------------------------------------------------------");
                 logger.info("Instruction: " + currentInstruction);
                 currentInstruction.accept(visitor);
             } catch (Exception e) {

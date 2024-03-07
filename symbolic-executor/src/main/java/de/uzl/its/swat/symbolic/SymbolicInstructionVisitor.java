@@ -4,15 +4,13 @@ import static de.uzl.its.swat.symbolic.value.reference.ObjectValue.ADDRESS_UNKNO
 
 import de.uzl.its.swat.Main;
 import de.uzl.its.swat.common.ErrorHandler;
-import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+import de.uzl.its.swat.symbolic.instruction.*;
 import de.uzl.its.swat.symbolic.invoke.DynamicInvocation;
 import de.uzl.its.swat.symbolic.invoke.StaticInvocation;
-import de.uzl.its.swat.common.SystemLogger;
-import de.uzl.its.swat.symbolic.instruction.*;
-import de.uzl.its.swat.symbolic.value.ValueFactory;
-import de.uzl.its.swat.thread.ThreadHandler;
+import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
+import de.uzl.its.swat.symbolic.value.ValueFactory;
 import de.uzl.its.swat.symbolic.value.ValueType;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -22,10 +20,10 @@ import de.uzl.its.swat.symbolic.value.reference.LambdaPlaceHolder;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.array.*;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
-
 import lombok.Getter;
 import lombok.SneakyThrows;
 import org.objectweb.asm.Type;
@@ -33,19 +31,17 @@ import org.slf4j.LoggerFactory;
 import org.sosy_lab.java_smt.api.*;
 
 public class SymbolicInstructionVisitor implements IVisitor {
-    @Getter
-    private final Stack<Frame> stack;
+    @Getter private final Stack<Frame> stack;
     private final HashMap<Integer, Integer> iidCounter = new HashMap<>();
     private final ClassNames classNames;
     private final Map<Integer, Value<?, ?>> objects;
-    @Getter
-    private final SymbolicTraceHandler symbolicStateHandler;
+    @Getter private final SymbolicTraceHandler symbolicStateHandler;
     Map<Integer, Frame> lambdaFrameStore = new HashMap<>();
-    @Getter
-    private Frame currentFrame;
+    @Getter private Frame currentFrame;
     private Instruction next;
 
-    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(SymbolicInstructionVisitor.class);
+    private static final org.slf4j.Logger logger =
+            LoggerFactory.getLogger(SymbolicInstructionVisitor.class);
 
     public SymbolicInstructionVisitor(ClassNames classNames) {
         stack = new Stack<>();
@@ -177,8 +173,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException(inst);
                 }
             } else {
-                logger.warn(
-                        "[AASTORE]: Unknown array type: " + ref.getClass().getSimpleName());
+                logger.warn("[AASTORE]: Unknown array type: " + ref.getClass().getSimpleName());
             }
         } catch (Exception e) {
             throwError(inst, e);
