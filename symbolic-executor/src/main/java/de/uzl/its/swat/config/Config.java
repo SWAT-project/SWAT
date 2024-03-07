@@ -126,7 +126,7 @@ public class Config {
                 properties.getProperty("verifierRandomnessEnabled", "false").equals("true");
         verbose = getBooleanProperty(properties, "verbose");
         analysisClass =
-                getClassProperty(properties, "analysisClass", "de.uzl.its.swat.logger.DJVM");
+                getClassProperty(properties, "analysisClass", "de.uzl.its.swat.symbolic.SymbolicInstructionDispatcher");
         // Get values for make symbolic
         String symbolicValueFunction = properties.getProperty("symbolicValueFunction", "");
         String[] symbolicValueParts = symbolicValueFunction.split(":", 2);
@@ -156,7 +156,7 @@ public class Config {
                             "org/springframework/boot/loader",
                             "de/uzl/its/swat/",
                             "de/uzl/its/symbolic",
-                            "de/uzl/its/dto",
+                        "de/uzl/its/swat/symbolic/trace/dto",
                             "com/intellij/",
                             "com/fasterxml/",
                             "sun/",
@@ -173,6 +173,8 @@ public class Config {
                             "org/jcp",
                             "org/objectweb/asm",
                             "apple/security",
+                            "org/apache",
+                            "org/slf4j",
                         }
                         : properties.getProperty("instrumentPackages", null).split(":");
         debug = properties.getProperty("debug", "false").equals("true");

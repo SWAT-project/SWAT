@@ -2,12 +2,11 @@ package de.uzl.its.swat.instrument.svcomp;
 
 import de.uzl.its.swat.Main;
 import de.uzl.its.swat.config.Config;
-import de.uzl.its.swat.logger.SystemLogger;
+import de.uzl.its.swat.common.SystemLogger;
 import java.util.*;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.val;
 
 public class Verifier {
     private static long nextId = 0;
@@ -79,7 +78,7 @@ public class Verifier {
             systemLogger.addToBox("Predetermined value available!");
             boolean b = Boolean.parseBoolean(inputs.get(prefixBoolean + id).remove());
             systemLogger.addToBox("Returning: " + b);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return b;
 
         } else {
@@ -93,7 +92,7 @@ public class Verifier {
                             : "Randomness disabled, using fixed value";
             systemLogger.addToBox(msg);
             systemLogger.addToBox("Returning " + rnd);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return rnd;
         }
     }
@@ -105,7 +104,7 @@ public class Verifier {
             systemLogger.addToBox("Predetermined value available!");
             byte b = Byte.parseByte(inputs.get(prefixByte + id).remove());
             systemLogger.addToBox("Returning: " + b);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return b;
         } else {
             byte rnd =
@@ -118,7 +117,7 @@ public class Verifier {
                             : "Randomness disabled, using fixed value";
             systemLogger.addToBox(msg);
             systemLogger.addToBox("Returning " + rnd);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return rnd;
         }
     }
@@ -130,7 +129,7 @@ public class Verifier {
             systemLogger.addToBox("Predetermined value available!");
             char c = inputs.get(prefixChar + id).remove().charAt(0);
             systemLogger.addToBox("Returning: " + c);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return c;
         } else {
             char rnd =
@@ -143,7 +142,7 @@ public class Verifier {
                             : "Randomness disabled, using fixed value";
             systemLogger.addToBox(msg);
             systemLogger.addToBox("Returning " + rnd);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return rnd;
         }
     }
@@ -155,7 +154,7 @@ public class Verifier {
             systemLogger.addToBox("Predetermined value available!");
             short s = Short.parseShort(inputs.get(prefixShort + id).remove());
             systemLogger.addToBox("Returning: " + s);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return s;
         } else {
             short rnd =
@@ -168,7 +167,7 @@ public class Verifier {
                             : "Randomness disabled, using fixed value";
             systemLogger.addToBox(msg);
             systemLogger.addToBox("Returning " + rnd);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return rnd;
         }
     }
@@ -180,7 +179,7 @@ public class Verifier {
             systemLogger.addToBox("Predetermined value available!");
             int i = Integer.parseInt(inputs.get(prefixInt + id).remove());
             systemLogger.addToBox("Returning: " + i);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return i;
         } else {
             int rnd =
@@ -193,7 +192,7 @@ public class Verifier {
                             : "Randomness disabled, using fixed value";
             systemLogger.addToBox(msg);
             systemLogger.addToBox("Returning " + rnd);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return rnd;
         }
     }
@@ -205,7 +204,7 @@ public class Verifier {
             systemLogger.addToBox("Predetermined value available!");
             long l = Long.parseLong(inputs.get(prefixLong + id).remove());
             systemLogger.addToBox("Returning: " + l);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return l;
         } else {
             long rnd =
@@ -218,7 +217,7 @@ public class Verifier {
                             : "Randomness disabled, using fixed value";
             systemLogger.addToBox(msg);
             systemLogger.addToBox("Returning " + rnd);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return rnd;
         }
     }
@@ -231,7 +230,7 @@ public class Verifier {
             int enc = Integer.parseUnsignedInt(inputs.get(prefixFloat + id).remove());
             float f = Float.intBitsToFloat(enc);
             systemLogger.addToBox("Returning: " + f);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return f;
         } else {
             float rnd =
@@ -244,7 +243,7 @@ public class Verifier {
                             : "Randomness disabled, using fixed value";
             systemLogger.addToBox(msg);
             systemLogger.addToBox("Returning " + rnd);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return rnd;
         }
     }
@@ -257,7 +256,7 @@ public class Verifier {
             long enc = Long.parseUnsignedLong(inputs.get(prefixDouble + id).remove());
             double d = Double.longBitsToDouble(enc);
             systemLogger.addToBox("Returning: " + d);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return d;
         } else {
             double rnd =
@@ -270,7 +269,7 @@ public class Verifier {
                             : "Randomness disabled, using fixed value";
             systemLogger.addToBox(msg);
             systemLogger.addToBox("Returning " + rnd);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return rnd;
         }
     }
@@ -282,7 +281,7 @@ public class Verifier {
             systemLogger.addToBox("Predetermined value available!");
             var val = inputs.get(prefixString + id).peek();
             systemLogger.addToBox("Returning: " + val);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return val;
         } else {
             systemLogger.addToBox("No predetermined value available");
@@ -299,7 +298,7 @@ public class Verifier {
                 rnd = new String("fixed");
             }
             systemLogger.addToBox("Returning " + rnd);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return rnd;
         }
     }

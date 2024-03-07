@@ -1,12 +1,13 @@
 package de.uzl.its.swat.instrument;
 
+import de.uzl.its.swat.Main;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.instruction.InstructionTransformer;
 import de.uzl.its.swat.instrument.parameter.ParameterTransformer;
 import de.uzl.its.swat.instrument.svcomp.SVCompTransformer;
 import de.uzl.its.swat.instrument.symbolicwrapper.SymbolicWrapperTransformer;
-import de.uzl.its.swat.logger.SystemLogger;
+import de.uzl.its.swat.common.SystemLogger;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import lombok.Getter;
+import org.slf4j.LoggerFactory;
 
 /** This class runs all the different transformers. */
 public abstract class Transformer implements ClassFileTransformer {
@@ -26,6 +28,7 @@ public abstract class Transformer implements ClassFileTransformer {
     private static final Config config = Config.instance();
 
     private static SystemLogger systemLogger;
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Transformer.class);
 
     public static void retransform(String cname) {
         cname = cname.substring(1);
@@ -78,6 +81,7 @@ public abstract class Transformer implements ClassFileTransformer {
 
     @SuppressWarnings("unused")
     public static void premain(String agentArgs, Instrumentation inst) {
+        System.out.println("Agent started!");
         ThreadHandler.init();
         systemLogger = new SystemLogger();
 
@@ -119,7 +123,7 @@ public abstract class Transformer implements ClassFileTransformer {
             if (config.isWriteInstrumentedClasses()) {
                 inst.addTransformer(new ClassSavingTransformer());
             }
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
         } catch (Exception e) {
             ErrorHandler errorHandler = new ErrorHandler();
             errorHandler.handleException("Error during Transformer initialization!", e);

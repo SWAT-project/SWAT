@@ -5,11 +5,11 @@ import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
-import de.uzl.its.swat.logger.SystemLogger;
+import de.uzl.its.swat.common.SystemLogger;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.security.ProtectionDomain;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -81,7 +81,7 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             ClassVisitor cv = new SymbolicWrapperClassAdapter(cw, cname);
             cr.accept(cv, 0);
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SYMBOLIC_WRAPPER);
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -89,7 +89,7 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SYMBOLIC_WRAPPER);
-        systemLogger.endBox();
+        logger.info(systemLogger.endBox());
 
         return cbuf;
     }

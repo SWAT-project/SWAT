@@ -3,10 +3,10 @@ package de.uzl.its.swat.instrument.svcomp;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.Transformer;
-import de.uzl.its.swat.logger.SystemLogger;
+import de.uzl.its.swat.common.SystemLogger;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -65,7 +65,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             ClassVisitor cv = new SVCompClassAdapter(cname, cw);
             cr.accept(cv, ClassReader.EXPAND_FRAMES);
 
-            systemLogger.endBox();
+            logger.info(systemLogger.endBox());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -73,7 +73,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SV_COMP);
-        systemLogger.endBox();
+        logger.info(systemLogger.endBox());
 
         return cbuf;
     }

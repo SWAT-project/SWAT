@@ -32,9 +32,15 @@ dependencyResolutionManagement {
             library('spock-core', 'org.spockframework:spock-core:2.2-M1-groovy-4.0')
             library('gson', 'com.google.code.gson:gson:2.9.0')
             library('mockito-core', 'org.mockito:mockito-core:3.12.4')
+            library('logback-classic', 'ch.qos.logback:logback-classic:1.5.3')
+            library('logback-core', 'ch.qos.logback:logback-core:1.5.3')
 
             bundle('httpcomponents', ['httpcomponents-httpclient', 'httpcomponents-httpasyncclient'])
             bundle('asm', ['asm-core', 'asm-commons', 'asm-util', 'asm-tree'])
+            bundle('logging', ['logback-core', 'logback-classic'])
+
         }
     }
 }
+
+

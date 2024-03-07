@@ -2,8 +2,8 @@ package de.uzl.its.swat.instrument.svcomp;
 
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.Transformer;
-import de.uzl.its.swat.logger.SystemLogger;
-import java.util.logging.Logger;
+import de.uzl.its.swat.common.SystemLogger;
+import org.slf4j.Logger;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;

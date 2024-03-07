@@ -1,15 +1,18 @@
 package de.uzl.its.swat.thread;
 
 import de.uzl.its.swat.config.Config;
-import de.uzl.its.swat.interpreters.SymbolicInterpreter;
-import de.uzl.its.swat.logger.ClassNames;
-import de.uzl.its.swat.logger.ObjectInfo;
-import de.uzl.its.swat.logger.inst.Instruction;
-import de.uzl.its.symbolic.value.Value;
+import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor;
+import de.uzl.its.swat.symbolic.ClassNames;
+import de.uzl.its.swat.symbolic.ObjectInfo;
+import de.uzl.its.swat.symbolic.instruction.Instruction;
+import de.uzl.its.swat.symbolic.value.Value;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.util.HashMap;
+
+import lombok.Getter;
+import lombok.Setter;
 import org.sosy_lab.common.ShutdownManager;
 import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.log.BasicLogManager;
@@ -18,10 +21,16 @@ import org.sosy_lab.java_smt.SolverContextFactory;
 import org.sosy_lab.java_smt.api.SolverContext;
 
 public class ThreadContext {
-    private final SymbolicInterpreter symbolicInterpreter;
+    @Getter
+    private final SymbolicInstructionVisitor symbolicInstructionVisitor;
+    @Getter
+    @Setter
     private Instruction current;
+    @Getter
     private Instruction next;
+    @Getter
     private PrintStream invocationStream;
+    @Getter
     private boolean disabled;
     Config config = Config.instance();
     private final SolverContext context;
@@ -32,11 +41,15 @@ public class ThreadContext {
         return context;
     }
 
+    @Setter
+    @Getter
     private int endpointID;
+    @Setter
+    @Getter
     private String endpointName;
 
     public ThreadContext(long id) {
-        this.symbolicInterpreter = new SymbolicInterpreter(ClassNames.getInstance());
+        this.symbolicInstructionVisitor = new SymbolicInstructionVisitor(ClassNames.getInstance());
         this.statics = new HashMap<>();
         try {
             Configuration SMTConfig = Configuration.defaultConfiguration();
@@ -82,49 +95,9 @@ public class ThreadContext {
         }
     }
 
-    public Instruction getCurrent() {
-        return current;
-    }
-
-    public void setCurrent(Instruction current) {
-        this.current = current;
-    }
-
-    public Instruction getNext() {
-        return next;
-    }
-
     public void setNext(Instruction next) {
         this.next = next;
-        symbolicInterpreter.setNext(next);
-    }
-
-    public PrintStream getInvocationStream() {
-        return invocationStream;
-    }
-
-    public SymbolicInterpreter getSymbolicInterpreter() {
-        return symbolicInterpreter;
-    }
-
-    public boolean isDisabled() {
-        return disabled;
-    }
-
-    public int getEndpointID() {
-        return endpointID;
-    }
-
-    public String getEndpointName() {
-        return endpointName;
-    }
-
-    public void setEndpointName(String endpointName) {
-        this.endpointName = endpointName;
-    }
-
-    public void setEndpointID(int endpointID) {
-        this.endpointID = endpointID;
+        symbolicInstructionVisitor.setNext(next);
     }
 
     public void setStaticField(ObjectInfo oi, int classId, int fieldId, Value<?, ?> value) {

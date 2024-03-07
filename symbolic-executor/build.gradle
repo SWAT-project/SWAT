@@ -17,7 +17,7 @@ repositories {
 
 // In this section you declare the dependencies for your production and test code
 dependencies {
-
+    implementation libs.bundles.logging
     implementation libs.bundles.asm
     implementation libs.bundles.httpcomponents
     implementation libs.jackson.databind

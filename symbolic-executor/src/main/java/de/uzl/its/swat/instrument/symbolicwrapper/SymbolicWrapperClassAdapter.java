@@ -1,8 +1,8 @@
 package de.uzl.its.swat.instrument.symbolicwrapper;
 
 import de.uzl.its.swat.config.Config;
-import de.uzl.its.swat.logger.SystemLogger;
-import java.util.logging.Logger;
+import de.uzl.its.swat.common.SystemLogger;
+import org.slf4j.Logger;
 import java.util.regex.Pattern;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;

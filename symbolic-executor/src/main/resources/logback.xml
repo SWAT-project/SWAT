@@ -1,0 +1,43 @@
+<configuration>
+    <!-- Console Appender -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File Appender for Specific Logger -->
+    <appender name="SolutionLogger" class="ch.qos.logback.core.FileAppender">
+        <param name="Append" value="false" />
+        <file>logs/solution.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File Appender for Specific Logger -->
+    <appender name="ShadowStateLogger" class="ch.qos.logback.core.FileAppender">
+        <param name="Append" value="false" />
+        <file>logs/shadow-state.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+
+    <!-- Logger for local solutions -->
+    <logger name="de.uzl.its.swat.solver.LocalSolver" level="DEBUG">
+        <appender-ref ref="SolutionLogger" />
+    </logger>
+
+    <!-- Logger for shadow state (instructions + stack). Does not print to console -->
+    <logger name="ShadowStateLogger" level="DEBUG" additivity="false">
+        <appender-ref ref="ShadowStateLogger" />
+    </logger>
+
+    <!-- Root Logger -->
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+
+</configuration>
