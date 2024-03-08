@@ -35,8 +35,7 @@ public class Verifier {
     @Getter @Setter private static HashMap<String, Queue<String>> inputs = new HashMap<>();
 
     public static void retrieveInputs() {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: retrieving inputs");
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: retrieving inputs");
         System.getProperties()
                 .forEach(
                         (key, value) -> {
@@ -48,7 +47,7 @@ public class Verifier {
                                                 new LinkedList<>());
                                 queue.add((String) value);
                                 inputs.put(key.toString().replace("swat.input.", ""), queue);
-                                printBox.addToBox(
+                                printBox.addMsg(
                                         "Input with name: "
                                                 + key.toString().replace("swat.input.", "")
                                                 + " and value: "
@@ -56,15 +55,17 @@ public class Verifier {
                                                 + " registered");
                             }
                         });
-        logger.info(printBox.endBox());
+        logger.info(printBox.toString());
     }
 
     public static void assume(boolean condition) {
         PrintBox printBox = new PrintBox(60);
         logger.info(
-                printBox.fullBox(
-                        "SV-Comp Verifier: assume",
-                        new ArrayList<>(List.of("Assuming condition: " + condition))));
+                new PrintBox(
+                                60,
+                                "SV-Comp Verifier: assume",
+                                new ArrayList<>(List.of("Assuming condition: " + condition)))
+                        .toString());
         if (!condition) {
             Main.terminate();
             Runtime.getRuntime().halt(0);
@@ -72,14 +73,13 @@ public class Verifier {
     }
 
     public static boolean nondetBoolean(long id) {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: nondetDouble");
-        printBox.addToBox("Requested ID: " + id);
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetDouble");
+        printBox.addMsg("Requested ID: " + id);
         if (inputs.containsKey(prefixBoolean + id) && !inputs.get(prefixBoolean + id).isEmpty()) {
-            printBox.addToBox("Predetermined value available!");
+            printBox.addMsg("Predetermined value available!");
             boolean b = Boolean.parseBoolean(inputs.get(prefixBoolean + id).remove());
-            printBox.addToBox("Returning: " + b);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning: " + b);
+            logger.info(printBox.toString());
             return b;
 
         } else {
@@ -91,22 +91,21 @@ public class Verifier {
                     config.isVerifierRandomnessEnabled()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
-            printBox.addToBox(msg);
-            printBox.addToBox("Returning " + rnd);
-            logger.info(printBox.endBox());
+            printBox.addMsg(msg);
+            printBox.addMsg("Returning " + rnd);
+            logger.info(printBox.toString());
             return rnd;
         }
     }
 
     public static byte nondetByte(long id) {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: nondetByte");
-        printBox.addToBox("Requested ID: " + id);
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetByte");
+        printBox.addMsg("Requested ID: " + id);
         if (inputs.containsKey(prefixByte + id) && !inputs.get(prefixByte + id).isEmpty()) {
-            printBox.addToBox("Predetermined value available!");
+            printBox.addMsg("Predetermined value available!");
             byte b = Byte.parseByte(inputs.get(prefixByte + id).remove());
-            printBox.addToBox("Returning: " + b);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning: " + b);
+            logger.info(printBox.toString());
             return b;
         } else {
             byte rnd =
@@ -117,22 +116,21 @@ public class Verifier {
                     config.isVerifierRandomnessEnabled()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
-            printBox.addToBox(msg);
-            printBox.addToBox("Returning " + rnd);
-            logger.info(printBox.endBox());
+            printBox.addMsg(msg);
+            printBox.addMsg("Returning " + rnd);
+            logger.info(printBox.toString());
             return rnd;
         }
     }
 
     public static char nondetChar(long id) {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: nondetChar");
-        printBox.addToBox("Requested ID: " + id);
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetChar");
+        printBox.addMsg("Requested ID: " + id);
         if (inputs.containsKey(prefixChar + id) && !inputs.get(prefixChar + id).isEmpty()) {
-            printBox.addToBox("Predetermined value available!");
+            printBox.addMsg("Predetermined value available!");
             char c = inputs.get(prefixChar + id).remove().charAt(0);
-            printBox.addToBox("Returning: " + c);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning: " + c);
+            logger.info(printBox.toString());
             return c;
         } else {
             char rnd =
@@ -143,22 +141,21 @@ public class Verifier {
                     config.isVerifierRandomnessEnabled()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
-            printBox.addToBox(msg);
-            printBox.addToBox("Returning " + rnd);
-            logger.info(printBox.endBox());
+            printBox.addMsg(msg);
+            printBox.addMsg("Returning " + rnd);
+            logger.info(printBox.toString());
             return rnd;
         }
     }
 
     public static short nondetShort(long id) {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: nondetShort");
-        printBox.addToBox("Requested ID: " + id);
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetShort");
+        printBox.addMsg("Requested ID: " + id);
         if (inputs.containsKey(prefixShort + id) && !inputs.get(prefixShort + id).isEmpty()) {
-            printBox.addToBox("Predetermined value available!");
+            printBox.addMsg("Predetermined value available!");
             short s = Short.parseShort(inputs.get(prefixShort + id).remove());
-            printBox.addToBox("Returning: " + s);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning: " + s);
+            logger.info(printBox.toString());
             return s;
         } else {
             short rnd =
@@ -169,145 +166,128 @@ public class Verifier {
                     config.isVerifierRandomnessEnabled()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
-            printBox.addToBox(msg);
-            printBox.addToBox("Returning " + rnd);
-            logger.info(printBox.endBox());
+            printBox.addMsg(msg);
+            printBox.addMsg("Returning " + rnd);
+            logger.info(printBox.toString());
             return rnd;
         }
     }
 
     public static int nondetInt(long id) {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: nondetInt");
-        printBox.addToBox("Requested ID: " + id);
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetInt");
+        printBox.addMsg("Requested ID: " + id);
         if (inputs.containsKey(prefixInt + id) && !inputs.get(prefixInt + id).isEmpty()) {
-            printBox.addToBox("Predetermined value available!");
+            printBox.addMsg("Predetermined value available!");
             int i = Integer.parseInt(inputs.get(prefixInt + id).remove());
-            printBox.addToBox("Returning: " + i);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning: " + i);
+            logger.info(printBox.toString());
             return i;
         } else {
-            int rnd =
-                    config.isVerifierRandomnessEnabled()
-                            ? (new Random()).nextInt()
-                            : Integer.valueOf(0);
+            int rnd = config.isVerifierRandomnessEnabled() ? (new Random()).nextInt() : 0;
             String msg =
                     config.isVerifierRandomnessEnabled()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
-            printBox.addToBox(msg);
-            printBox.addToBox("Returning " + rnd);
-            logger.info(printBox.endBox());
+            printBox.addMsg(msg);
+            printBox.addMsg("Returning " + rnd);
+            logger.info(printBox.toString());
             return rnd;
         }
     }
 
     public static long nondetLong(long id) {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: nondetLong");
-        printBox.addToBox("Requested ID: " + id);
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetLong");
+        printBox.addMsg("Requested ID: " + id);
         if (inputs.containsKey(prefixLong + id) && !inputs.get(prefixLong + id).isEmpty()) {
-            printBox.addToBox("Predetermined value available!");
+            printBox.addMsg("Predetermined value available!");
             long l = Long.parseLong(inputs.get(prefixLong + id).remove());
-            printBox.addToBox("Returning: " + l);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning: " + l);
+            logger.info(printBox.toString());
             return l;
         } else {
-            long rnd =
-                    config.isVerifierRandomnessEnabled()
-                            ? (new Random()).nextLong()
-                            : Long.valueOf(0L);
+            long rnd = config.isVerifierRandomnessEnabled() ? (new Random()).nextLong() : 0L;
             String msg =
                     config.isVerifierRandomnessEnabled()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
-            printBox.addToBox(msg);
-            printBox.addToBox("Returning " + rnd);
-            logger.info(printBox.endBox());
+            printBox.addMsg(msg);
+            printBox.addMsg("Returning " + rnd);
+            logger.info(printBox.toString());
             return rnd;
         }
     }
 
     public static float nondetFloat(long id) {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: nondetFloat");
-        printBox.addToBox("Requested ID: " + id);
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetFloat");
+        printBox.addMsg("Requested ID: " + id);
         if (inputs.containsKey(prefixFloat + id) && !inputs.get(prefixFloat + id).isEmpty()) {
-            printBox.addToBox("Predetermined value available!");
+            printBox.addMsg("Predetermined value available!");
             int enc = Integer.parseUnsignedInt(inputs.get(prefixFloat + id).remove());
             float f = Float.intBitsToFloat(enc);
-            printBox.addToBox("Returning: " + f);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning: " + f);
+            logger.info(printBox.toString());
             return f;
         } else {
-            float rnd =
-                    config.isVerifierRandomnessEnabled()
-                            ? (new Random()).nextFloat()
-                            : Float.valueOf(0f);
+            float rnd = config.isVerifierRandomnessEnabled() ? (new Random()).nextFloat() : 0f;
             String msg =
                     config.isVerifierRandomnessEnabled()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
-            printBox.addToBox(msg);
-            printBox.addToBox("Returning " + rnd);
-            logger.info(printBox.endBox());
+            printBox.addMsg(msg);
+            printBox.addMsg("Returning " + rnd);
+            logger.info(printBox.toString());
             return rnd;
         }
     }
 
     public static double nondetDouble(long id) {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: nondetDouble");
-        printBox.addToBox("Requested ID: " + id);
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetDouble");
+        printBox.addMsg("Requested ID: " + id);
         if (inputs.containsKey(prefixDouble + id) && !inputs.get(prefixDouble + id).isEmpty()) {
-            printBox.addToBox("Predetermined value available!");
+            printBox.addMsg("Predetermined value available!");
             long enc = Long.parseUnsignedLong(inputs.get(prefixDouble + id).remove());
             double d = Double.longBitsToDouble(enc);
-            printBox.addToBox("Returning: " + d);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning: " + d);
+            logger.info(printBox.toString());
             return d;
         } else {
-            double rnd =
-                    config.isVerifierRandomnessEnabled()
-                            ? (new Random()).nextDouble()
-                            : Double.valueOf(0d);
+            double rnd = config.isVerifierRandomnessEnabled() ? (new Random()).nextDouble() : 0d;
             String msg =
                     config.isVerifierRandomnessEnabled()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
-            printBox.addToBox(msg);
-            printBox.addToBox("Returning " + rnd);
-            logger.info(printBox.endBox());
+            printBox.addMsg(msg);
+            printBox.addMsg("Returning " + rnd);
+            logger.info(printBox.toString());
             return rnd;
         }
     }
 
     public static String nondetString(long id) {
-        PrintBox printBox = new PrintBox(60);
-        printBox.startBox("SV-Comp Verifier: nondetString");
-        printBox.addToBox("Requested ID: " + id);
+        PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetString");
+        printBox.addMsg("Requested ID: " + id);
         if (inputs.containsKey(prefixString + id) && !inputs.get(prefixString + id).isEmpty()) {
-            printBox.addToBox("Predetermined value available!");
+            printBox.addMsg("Predetermined value available!");
             var val = inputs.get(prefixString + id).peek();
-            printBox.addToBox("Returning: " + val);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning: " + val);
+            logger.info(printBox.toString());
             return val;
         } else {
-            printBox.addToBox("No predetermined value available");
+            printBox.addMsg("No predetermined value available");
             String rnd = "";
             if (config.isVerifierRandomnessEnabled()) {
-                printBox.addToBox("Randomness enabled, using random value");
+                printBox.addMsg("Randomness enabled, using random value");
                 Random random = new Random();
                 int size = random.nextInt(100);
                 byte[] bytes = new byte[size];
                 random.nextBytes(bytes);
                 rnd = new String(bytes);
             } else {
-                printBox.addToBox("Randomness disabled, using fixed value");
-                rnd = new String("fixed");
+                printBox.addMsg("Randomness disabled, using fixed value");
+                rnd = "fixed";
             }
-            printBox.addToBox("Returning " + rnd);
-            logger.info(printBox.endBox());
+            printBox.addMsg("Returning " + rnd);
+            logger.info(printBox.toString());
             return rnd;
         }
     }

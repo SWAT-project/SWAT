@@ -53,7 +53,7 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
             switch (config.getTransformerType()) {
                 case SV_COMP:
                     if (name.equals("main")) {
-                        SymbolicWrapperTransformer.getPrintBox().addToBox("Method: " + name, false);
+                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                         mv =
                                 new SymbolicWrapperMethodAdapter(
                                         new SurroundingTryCatchMethodAdapter(mv, name, desc),
@@ -64,7 +64,7 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                     break;
 
                 case SPRING_ENDPOINT:
-                    SymbolicWrapperTransformer.getPrintBox().addToBox("Method: " + name, false);
+                    SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                     mv =
                             new SymbolicWrapperMethodAdapter(
                                     new SurroundingTryCatchMethodAdapter(mv, name, desc),
@@ -74,7 +74,7 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                     break;
                 case WEB_SERVLET:
                     if (name.equals("doPost")) {
-                        SymbolicWrapperTransformer.getPrintBox().addToBox("Method: " + name, false);
+                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                         mv =
                                 new SymbolicWrapperMethodAdapter(
                                         new SurroundingTryCatchMethodAdapter(mv, name, desc),
@@ -87,7 +87,7 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                 case PARAMETER:
                 default:
                     if (Pattern.matches(config.getSymbolicFunctionPattern(), name)) {
-                        SymbolicWrapperTransformer.getPrintBox().addToBox("Method: " + name, false);
+                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                         mv =
                                 new SymbolicWrapperMethodAdapter(
                                         new SurroundingTryCatchMethodAdapter(mv, name, desc),

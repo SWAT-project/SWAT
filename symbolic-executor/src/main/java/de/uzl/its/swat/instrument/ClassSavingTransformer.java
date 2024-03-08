@@ -29,9 +29,9 @@ public class ClassSavingTransformer implements ClassFileTransformer {
         instDir = config.getInstDir();
         printBox = new PrintBox(60);
         Transformer.getPrintBox()
-                .addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+                .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
         Transformer.getPrintBox()
-                .addToBox("    => Saving to: {cwd}/" + config.getLoggingPath() + instDir);
+                .addMsg("    => Saving to: {cwd}/" + config.getLoggingPath() + instDir);
     }
 
     @Override
@@ -55,9 +55,11 @@ public class ClassSavingTransformer implements ClassFileTransformer {
 
             byte[] transformedClass = cw.toByteArray();
             logger.info(
-                    printBox.fullBox(
-                            "Transformer: Saving",
-                            new ArrayList<>(List.of(new String[] {"Class: " + cname}))));
+                    new PrintBox(
+                                    60,
+                                    "Transformer: Saving",
+                                    new ArrayList<>(List.of(new String[] {"Class: " + cname})))
+                            .toString());
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SAVING);
             saveClass(transformedClass, cname);
 

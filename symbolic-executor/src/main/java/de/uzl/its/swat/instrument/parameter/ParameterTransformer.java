@@ -25,9 +25,9 @@ public class ParameterTransformer implements ClassFileTransformer {
     @Getter private static PrintBox printBox;
 
     public ParameterTransformer() {
-        printBox = new PrintBox(60);
+        printBox = new PrintBox(60, "Transformer: " + "Parameter");
         Transformer.getPrintBox()
-                .addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+                .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
     }
     /**
      * The implementation of this method may transform the supplied class file and return a new
@@ -56,8 +56,7 @@ public class ParameterTransformer implements ClassFileTransformer {
         if (classBeingRedefined != null || !cname.equals(config.getMakeSymbolicClassPath())) {
             return cbuf;
         }
-        printBox.startBox("Transformer: " + "Parameter");
-        printBox.addToBox("Class: " + cname, false);
+        printBox.addMsg("Class: " + cname);
         try {
 
             ClassReader cr = new ClassReader(cbuf);
@@ -68,7 +67,7 @@ public class ParameterTransformer implements ClassFileTransformer {
 
             cr.accept(cv, 0);
             Transformer.addInstrumentedClass(cname, InternalTransformerType.PARAMETER);
-            logger.info(printBox.endBox());
+            if (printBox.isContentPresent()) logger.info(printBox.toString());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -76,7 +75,7 @@ public class ParameterTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.PARAMETER);
-        logger.info(printBox.endBox());
+        if (printBox.isContentPresent()) logger.info(printBox.toString());
         return cbuf;
     }
 }

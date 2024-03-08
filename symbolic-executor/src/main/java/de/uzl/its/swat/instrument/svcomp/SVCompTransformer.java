@@ -21,12 +21,14 @@ import org.slf4j.LoggerFactory;
 public class SVCompTransformer implements ClassFileTransformer {
 
     @Getter private static PrintBox printBox;
+
+    @Getter
     private static final org.slf4j.Logger logger = LoggerFactory.getLogger(SVCompTransformer.class);
 
     public SVCompTransformer() {
-        printBox = new PrintBox(60);
+        printBox = new PrintBox(60, "Transformer: " + "SV-Comp");
         Transformer.getPrintBox()
-                .addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+                .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
     }
 
     /**
@@ -55,8 +57,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             byte[] cbuf) {
 
         if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) return cbuf;
-        printBox.startBox("Transformer: " + "SV-Comp");
-        printBox.addToBox("Class: " + cname, false);
+        printBox.addMsg("Class: " + cname);
         try {
             ClassReader cr = new ClassReader(cbuf);
             ClassNode cn = new ClassNode(Opcodes.ASM9);
@@ -66,7 +67,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             ClassVisitor cv = new SVCompClassAdapter(cname, cw);
             cr.accept(cv, ClassReader.EXPAND_FRAMES);
 
-            logger.info(printBox.endBox());
+            if (printBox.isContentPresent()) logger.info(printBox.toString());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -74,7 +75,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SV_COMP);
-        logger.info(printBox.endBox());
+        if (printBox.isContentPresent()) logger.info(printBox.toString());
 
         return cbuf;
     }

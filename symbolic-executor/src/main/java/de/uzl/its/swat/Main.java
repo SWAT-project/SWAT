@@ -28,21 +28,28 @@ public class Main {
             Verifier.retrieveInputs(); // ToDo only conditionally and at a petter place
         }
 
-        printBox = new PrintBox(60);
-        printBox.startBox("Execution of target application started!");
-        printBox.addToBox("Once a symbolic method is executed, the corresponding");
-        printBox.addToBox("thread will provide further logging");
-        printBox.addToBox("");
-        printBox.addToBox("The following classes are currently instrumented using ");
-        printBox.addToBox("the following Transformers:");
+        printBox =
+                new PrintBox(
+                        60,
+                        "Execution of target application started!",
+                        new ArrayList<>(
+                                List.of(
+                                        new String[] {
+                                            "Once a symbolic method is executed, the corresponding",
+                                            "thread will provide further logging",
+                                            "",
+                                            "The following classes are currently instrumented using"
+                                                    + " ",
+                                            "the following Transformers:"
+                                        })));
 
         var instrumentedClasses = Transformer.getInstrumentedClasses();
         for (var entry : instrumentedClasses.entrySet()) {
-            printBox.addToBox(entry.getKey());
+            printBox.addMsg(entry.getKey());
             for (var transformer : entry.getValue()) {
-                printBox.addToBox("    => " + transformer.toString());
+                printBox.addMsg("    => " + transformer.toString());
             }
-            logger.info(printBox.endBox());
+            logger.info(printBox.toString());
         }
     }
 
@@ -81,24 +88,26 @@ public class Main {
         ThreadHandler.setEndpointName(currentThread().getId(), endpoint);
 
         logger.info(
-                printBox.fullBox(
-                        "Symbolic execution started (Thread: "
-                                + Thread.currentThread().getId()
-                                + ")",
-                        new ArrayList<>(
-                                List.of(
-                                        new String[] {
-                                            "Execution started (Thread: "
-                                                    + Thread.currentThread().getId()
-                                                    + ")",
-                                            "Threads (tracked / active): ("
-                                                    + ThreadHandler.getThreadCount()
-                                                    + " / "
-                                                    + Thread.activeCount()
-                                                    + ")",
-                                            "Method: " + endpoint,
-                                            "ID: " + endpointID
-                                        }))));
+                new PrintBox(
+                                60,
+                                "Symbolic execution started (Thread: "
+                                        + Thread.currentThread().getId()
+                                        + ")",
+                                new ArrayList<>(
+                                        List.of(
+                                                new String[] {
+                                                    "Execution started (Thread: "
+                                                            + Thread.currentThread().getId()
+                                                            + ")",
+                                                    "Threads (tracked / active): ("
+                                                            + ThreadHandler.getThreadCount()
+                                                            + " / "
+                                                            + Thread.activeCount()
+                                                            + ")",
+                                                    "Method: " + endpoint,
+                                                    "ID: " + endpointID
+                                                })))
+                        .toString());
     }
 
     /**
@@ -108,17 +117,21 @@ public class Main {
     public static void terminate() {
         ThreadHandler.disableThreadContext(currentThread().getId());
         logger.info(
-                printBox.fullBox(
-                        "Symbolic execution finished (Thread: " + currentThread().getId() + ")",
-                        new ArrayList<>(
-                                List.of(
-                                        new String[] {
-                                            "Threads (tracked / active): ("
-                                                    + ThreadHandler.getThreadCount()
-                                                    + " / "
-                                                    + Thread.activeCount()
-                                                    + ")",
-                                        }))));
+                new PrintBox(
+                                60,
+                                "Symbolic execution finished (Thread: "
+                                        + currentThread().getId()
+                                        + ")",
+                                new ArrayList<>(
+                                        List.of(
+                                                new String[] {
+                                                    "Threads (tracked / active): ("
+                                                            + ThreadHandler.getThreadCount()
+                                                            + " / "
+                                                            + Thread.activeCount()
+                                                            + ")",
+                                                })))
+                        .toString());
 
         switch (config.getSolverRequest()) {
             case LOCAL:

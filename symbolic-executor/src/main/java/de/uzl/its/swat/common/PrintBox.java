@@ -4,41 +4,93 @@ import java.util.ArrayList;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * This class represents a utility for printing messages inside a box structure. The box has a
+ * dynamic size based on the content and can include a heading. Using the .toString() method will
+ * return the box as a string.
+ */
 public class PrintBox {
+
+    // Used to indicate whether a box contains content or just boilerplate. Used to determine if a
+    // box should be printed.
+    @Getter @Setter private boolean contentPresent = false;
+    // The size of the box
     private int boxSize;
+    // The builder for the box
     private final StringBuilder boxBuilder = new StringBuilder();
-    @Setter @Getter private boolean isContent = false;
 
-    private boolean isStarted = false;
+    // The heading of the box
+    @Getter @Setter private String heading;
+    // The content of the box
+    @Getter @Setter private ArrayList<String> msgs;
 
+    /**
+     * Constructs a PrintBox with a specified box size.
+     *
+     * @param boxSize The size of the box.
+     */
     public PrintBox(int boxSize) {
+
         this.boxSize = boxSize;
+        this.heading = "";
+        this.msgs = new ArrayList<>();
     }
 
-    public String fullBox(String heading, ArrayList<String> msgs) {
-        assert !isStarted;
-        startBox(heading);
-        if (msgs != null) {
-            for (String msg : msgs) {
-                addToBox(msg, true);
-            }
-        }
-        return endBox();
+    /**
+     * Constructs a PrintBox with a specified box size and heading.
+     *
+     * @param boxSize The size of the box.
+     * @param heading The heading of the box.
+     */
+    public PrintBox(int boxSize, String heading) {
+
+        this.boxSize = boxSize;
+        this.heading = heading;
+        this.msgs = new ArrayList<>();
     }
 
-    public void startBox(String heading) {
-        assert !this.isStarted;
-        this.isStarted = true;
-        int minLen = heading.length() + 2;
-        // Adjusting the size if the heading is longer than the specified size
-        this.boxSize = Math.max(minLen, this.boxSize);
+    /**
+     * Constructs a PrintBox with a specified box size, heading and some or all content.
+     *
+     * @param boxSize The size of the box.
+     * @param heading The heading of the box.
+     * @param msgs The content of the box.
+     */
+    public PrintBox(int boxSize, String heading, ArrayList<String> msgs) {
 
-        // Creating the top border with the heading
+        this.boxSize = boxSize;
+        this.heading = heading;
+        this.msgs = msgs;
+    }
+
+    /**
+     * Adds a message to the box.
+     *
+     * @param msg The message to add.
+     */
+    public void addMsg(String msg) {
+        this.msgs.add(msg);
+    }
+
+    /**
+     * Assembles the box based on the content and returns it as a string.
+     *
+     * @return The box as a string.
+     */
+    private String assemble() {
+        int minLen =
+                Math.max(
+                                (heading.length() + 2),
+                                msgs.stream().mapToInt(String::length).max().orElse(0))
+                        + 6;
+        this.boxSize = Math.max(minLen, boxSize);
+
+        // Header
         boxBuilder.append("\n+");
-        int paddingBeforeHeading = (this.boxSize - minLen) / 2;
+        int paddingBeforeHeading = (this.boxSize - (heading.length() + 2)) / 2;
         boxBuilder.append("-".repeat(Math.max(0, paddingBeforeHeading)));
         boxBuilder.append(" ").append(heading).append(" ");
-        int paddingAfterHeading = this.boxSize - paddingBeforeHeading - minLen;
+        int paddingAfterHeading = this.boxSize - paddingBeforeHeading - (heading.length() + 2);
         boxBuilder.append("-".repeat(Math.max(0, paddingAfterHeading)));
         boxBuilder.append("+\n");
 
@@ -46,36 +98,33 @@ public class PrintBox {
         boxBuilder.append("|");
         boxBuilder.append(" ".repeat(Math.max(0, this.boxSize)));
         boxBuilder.append("|\n");
-    }
 
-    public void addToBox(String message) {
-        this.addToBox(message, true);
-    }
-
-    public void addToBox(String message, boolean isContent) {
-        assert this.isStarted;
-        boxBuilder.append("| ");
-        int padding = boxSize - message.length() - 2; // 2 for the side borders
-        boxBuilder.append(message);
-        boxBuilder.append(" ".repeat(Math.max(0, padding)));
-        boxBuilder.append(" |\n");
-        this.isContent = this.isContent && isContent;
-    }
-
-    public String endBox() {
-        assert this.isStarted;
-        // Adding an empty line after the first line
+        // Messages
+        for (String msg : msgs) {
+            boxBuilder.append("| ");
+            int padding = this.boxSize - msg.length() - 2; // 2 for the side borders
+            boxBuilder.append(msg);
+            boxBuilder.append(" ".repeat(Math.max(0, padding)));
+            boxBuilder.append(" |\n");
+        }
+        // Footer
         boxBuilder.append("|");
-        boxBuilder.append(" ".repeat(Math.max(0, boxSize)));
+        boxBuilder.append(" ".repeat(Math.max(0, this.boxSize)));
         boxBuilder.append("|\n");
         boxBuilder.append("+");
-        boxBuilder.append("-".repeat(Math.max(0, boxSize)));
+        boxBuilder.append("-".repeat(Math.max(0, this.boxSize)));
         boxBuilder.append("+\n");
-        String box = boxBuilder.toString();
-        boxBuilder.setLength(0);
-        this.boxSize = 0;
-        this.isContent = false;
-        this.isStarted = false;
-        return box;
+
+        return boxBuilder.toString();
+    }
+
+    /**
+     * Returns the box as a string.
+     *
+     * @return The box as a string.
+     */
+    @Override
+    public String toString() {
+        return assemble();
     }
 }

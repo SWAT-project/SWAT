@@ -1,5 +1,5 @@
 /**
- * This package contains common classes used by the symbolic execution and the symbolic execution
- * tree. This includes classes for logging and error handling.
+ * This package contains common utlility classes used throughout the project. Namely, the
+ * ErrorHandler used for unified Error handling and the PrintBox used for formatting output.
  */
 package de.uzl.its.swat.common;

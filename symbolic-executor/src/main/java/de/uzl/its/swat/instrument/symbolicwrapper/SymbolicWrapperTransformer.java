@@ -28,9 +28,9 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             LoggerFactory.getLogger(SymbolicWrapperTransformer.class);
 
     public SymbolicWrapperTransformer() {
-        printBox = new PrintBox(60);
+        printBox = new PrintBox(60, "Transformer: " + this.getClass().getSimpleName());
         Transformer.getPrintBox()
-                .addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+                .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
     }
     /**
      * The implementation of this method may transform the supplied class file and return a new
@@ -74,8 +74,7 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             }
         }
 
-        printBox.startBox("Transformer: SymbolicWrapper");
-        printBox.addToBox("Class: " + cname, false);
+        printBox.addMsg("Class: " + cname);
         try {
             ClassReader cr = new ClassReader(cbuf);
             ClassWriter cw =
@@ -84,7 +83,7 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             ClassVisitor cv = new SymbolicWrapperClassAdapter(cw, cname);
             cr.accept(cv, 0);
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SYMBOLIC_WRAPPER);
-            logger.info(printBox.endBox());
+            if (printBox.isContentPresent()) logger.info(printBox.toString());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -92,7 +91,7 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SYMBOLIC_WRAPPER);
-        logger.info(printBox.endBox());
+        if (printBox.isContentPresent()) logger.info(printBox.toString());
 
         return cbuf;
     }

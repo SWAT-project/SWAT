@@ -3,8 +3,10 @@ package de.uzl.its.swat.solver;
 import static java.lang.Thread.currentThread;
 
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.symbolic.trace.*;
 import de.uzl.its.swat.thread.ThreadHandler;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -71,14 +73,14 @@ public class LocalSolver {
                     prover.addConstraint(constraint);
 
                     boolean isUnsat = prover.isUnsat();
-
-                    logger.info("--------------------------------------------------------------");
-                    logger.info("------------------------- Solution ---------------------------");
-                    logger.info("--------------------------------------------------------------");
-                    logger.info(
+                    PrintBox printBox = new PrintBox(60, "Solution (LocalSolver)");
+                    printBox.addMsg(
                             "[Endpoint] " + ThreadHandler.getEndpointName(currentThread().getId()));
-                    symbolicTraceHandler.dumpInputs(logger);
-                    logger.info(
+                    ArrayList<String> inputs = symbolicTraceHandler.dumpInputs();
+                    for (String input : inputs) {
+                        printBox.addMsg("[Input] " + input);
+                    }
+                    printBox.addMsg(
                             "[Constraint] "
                                     + fmgr.dumpFormula(constraint)
                                             .toString()
@@ -86,11 +88,11 @@ public class LocalSolver {
                     if (!isUnsat) {
                         Model model = prover.getModel();
                         String sol = String.valueOf(model.asList());
-                        logger.info("[Model] " + sol);
+                        printBox.addMsg("[Model] " + sol);
                     } else {
-                        logger.info("[Model] UNSAT");
+                        printBox.addMsg("[Model] UNSAT");
                     }
-                    logger.info("--------------------------------------------------------------");
+                    logger.info(printBox.toString());
                 } catch (Throwable t) {
                     new ErrorHandler().handleException("Error while solving constraints", t);
                 }

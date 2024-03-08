@@ -153,7 +153,8 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
 
         ArrayList<String> parameters = splitParameters(desc);
         for (String param : parameters) {
-            printBox.addToBox("    => Parameter #" + paramIdx + ": " + param);
+            printBox.addMsg("    => Parameter #" + paramIdx + ": " + param);
+            printBox.setContentPresent(true);
             DataType type = DataType.getDataType(param);
             switch (type) {
                 case INTEGER_TYPE:

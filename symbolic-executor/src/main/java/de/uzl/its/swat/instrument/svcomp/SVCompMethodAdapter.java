@@ -54,9 +54,10 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
 
             String retType = descriptor.split("\\)")[1];
             long nextId = Verifier.getNextId();
+            SVCompTransformer.getPrintBox().setContentPresent(true);
             SVCompTransformer.getPrintBox()
-                    .addToBox("    => Found " + name + " in line " + lineNumber, true);
-            SVCompTransformer.getPrintBox().addToBox("      => Assigning ID: " + nextId);
+                    .addMsg("    => Found " + name + " in line " + lineNumber);
+            SVCompTransformer.getPrintBox().addMsg("      => Assigning ID: " + nextId);
             mv.visitLdcInsn(nextId);
             mv.visitMethodInsn(opcode, newOwner, name, newDescriptor, isInterface);
             if (retType.equals("D") || retType.equals("J")) {
@@ -74,7 +75,7 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
                     "(" + descriptor.substring(2) + "ILjava/lang/String;Ljava/lang/String;)V",
                     false);
             mv.visitLdcInsn(nextId);
-            SVCompTransformer.getPrintBox().addToBox("      => Adding Witness recording");
+            SVCompTransformer.getPrintBox().addMsg("      => Adding Witness recording");
             /*
             if (descriptor.equals("()D") || descriptor.equals("()J")) {
                 visitInsn(Opcodes.DUP2);
@@ -89,7 +90,7 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
                     "MakeSymbolic",
                     "(" + retType + "J" + ")" + retType,
                     false);
-            SVCompTransformer.getPrintBox().addToBox("      => Adding symbolic tracking");
+            SVCompTransformer.getPrintBox().addMsg("      => Adding symbolic tracking");
         } else if (name.equals("assume")) {
             String newOwner = "de/uzl/its/swat/instrument/svcomp/Verifier";
             mv.visitMethodInsn(opcode, newOwner, name, descriptor, isInterface);

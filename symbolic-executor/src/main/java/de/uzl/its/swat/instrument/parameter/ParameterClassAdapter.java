@@ -53,7 +53,7 @@ public class ParameterClassAdapter extends ClassVisitor {
 
         // Check if the name matches the pattern
         if (!Pattern.matches(config.getSymbolicFunctionPattern(), name)) return mv;
-        ParameterTransformer.getPrintBox().addToBox("Method: " + name, false);
+        ParameterTransformer.getPrintBox().addMsg("Method: " + name);
 
         return new ParameterMethodAdapter(mv, access, name, desc, signature);
     }

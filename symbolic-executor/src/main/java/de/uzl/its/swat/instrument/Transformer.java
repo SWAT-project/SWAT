@@ -81,27 +81,27 @@ public abstract class Transformer implements ClassFileTransformer {
     @SuppressWarnings("unused")
     public static void premain(String agentArgs, Instrumentation inst) {
         ThreadHandler.init();
-        printBox = new PrintBox(60);
         try {
             instrumentation = inst;
             if (config.getTransformerType().equals(TransformerType.NONE)) {
                 logger.info(
-                        printBox.fullBox(
-                                "Instrumentation Agent started!",
-                                new ArrayList<>(
-                                        List.of(
-                                                "No instrumentation selected!",
-                                                "Please select a Transformer type ",
-                                                "in the config file ",
-                                                "and restart the program."))));
+                        new PrintBox(
+                                        60,
+                                        "Instrumentation Agent started!",
+                                        new ArrayList<>(
+                                                List.of(
+                                                        "No instrumentation selected!",
+                                                        "Please select a Transformer type ",
+                                                        "in the config file ",
+                                                        "and restart the program.")))
+                                .toString());
 
                 return;
             }
-            printBox.startBox("Instrumentation Agent started!");
-            printBox.addToBox(
-                    "Selected Instrumentation Type: " + config.getTransformerType(), true);
-            printBox.addToBox("Working Directory: " + System.getProperty("user.dir"), true);
-            printBox.addToBox("", true);
+            printBox = new PrintBox(60, "Instrumentation Agent started!");
+            printBox.addMsg("Selected Instrumentation Type: " + config.getTransformerType());
+            printBox.addMsg("Working Directory: " + System.getProperty("user.dir"));
+            printBox.addMsg("");
 
             switch (config.getTransformerType()) {
                 case SPRING_ENDPOINT, URI, WEB_SERVLET -> {
@@ -121,7 +121,7 @@ public abstract class Transformer implements ClassFileTransformer {
             if (config.isWriteInstrumentedClasses()) {
                 inst.addTransformer(new ClassSavingTransformer());
             }
-            logger.info(printBox.endBox());
+            logger.info(printBox.toString());
         } catch (Exception e) {
             ErrorHandler errorHandler = new ErrorHandler();
             errorHandler.handleException("Error during Transformer initialization!", e);

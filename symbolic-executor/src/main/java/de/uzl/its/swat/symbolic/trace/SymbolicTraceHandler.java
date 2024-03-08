@@ -92,14 +92,17 @@ public class SymbolicTraceHandler {
     }
 
     /**
-     * Dumps all inputs to the logger. Used for debugging purposes and by the LocalSolver.
+     * Returns all imputs as an array list of strings. Used for debugging purposes and by the
+     * LocalSolver.
      *
-     * @param logger The logger to dump the inputs to.
+     * @return The inputs as an array list of strings.
      */
-    public void dumpInputs(Logger logger) {
+    public ArrayList<String> dumpInputs() {
+        ArrayList<String> inputs = new ArrayList<>();
         for (InputElement el : symbolicTrace.getInputs()) {
-            logger.info(el.toString());
+            inputs.add(el.toString());
         }
+        return inputs;
     }
 
     /**

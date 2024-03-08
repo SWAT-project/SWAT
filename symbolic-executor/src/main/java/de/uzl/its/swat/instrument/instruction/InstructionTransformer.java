@@ -28,9 +28,9 @@ public class InstructionTransformer implements ClassFileTransformer {
     Config config = Config.instance();
 
     public InstructionTransformer() {
-        printBox = new PrintBox(60);
+        printBox = new PrintBox(60, "Transformer: " + "Instruction");
         Transformer.getPrintBox()
-                .addToBox("Initializing Transformer: " + this.getClass().getSimpleName(), false);
+                .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
         instDir = config.getInstDir();
     }
 
@@ -60,9 +60,8 @@ public class InstructionTransformer implements ClassFileTransformer {
             byte[] cbuf) {
 
         if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) return cbuf;
-        logger.info("Instrumenting: " + cname);
-        printBox.startBox("Transformer: " + "Instruction");
-        printBox.addToBox("Class: " + cname, false);
+        printBox.addMsg("Class: " + cname);
+        printBox.setContentPresent(true);
         try {
             ClassReader cr = new ClassReader(cbuf);
             ClassWriter cw =
@@ -78,7 +77,7 @@ public class InstructionTransformer implements ClassFileTransformer {
             }
 
             Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
-            logger.info(printBox.endBox());
+            if (printBox.isContentPresent()) logger.info(printBox.toString());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -86,7 +85,7 @@ public class InstructionTransformer implements ClassFileTransformer {
                     .handleException("[INSTRUCTION TRANSFORMER] Error while instrumenting", e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
-        logger.info(printBox.endBox());
+        if (printBox.isContentPresent()) logger.info(printBox.toString());
         return cbuf;
     }
 }

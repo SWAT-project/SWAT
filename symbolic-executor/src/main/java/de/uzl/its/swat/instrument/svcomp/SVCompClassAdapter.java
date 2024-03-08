@@ -47,7 +47,7 @@ public class SVCompClassAdapter extends ClassVisitor {
 
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
         if (!cname.equals("org/sosy_lab/sv_benchmarks/Verifier")) {
-            SVCompTransformer.getPrintBox().addToBox("Method: " + name, false);
+            SVCompTransformer.getPrintBox().addMsg("Method: " + name);
             return new SVCompMethodAdapter(access, mv, cname, name, desc);
         }
         return mv;

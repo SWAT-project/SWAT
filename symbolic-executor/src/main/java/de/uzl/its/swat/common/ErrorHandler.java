@@ -37,21 +37,16 @@ public class ErrorHandler {
     public void handleException(String msg, Throwable t) {
         if (config.exitOnError()) {
             // Consider a more specific custom exception or handling strategy
-            throw new CustomRuntimeException("Critical error occurred", t);
+            throw new SWATRuntimeException("Critical error occurred", t);
         } else {
             logger.error(msg + " " + t);
         }
     }
 }
 
-/** ILogger interface for logging errors. This allows using different logging implementations. */
-interface ILogger {
-    void logError(String message, Throwable t);
-}
-
-/** CustomRuntimeException to encapsulate exceptions that lead to application termination. */
-class CustomRuntimeException extends RuntimeException {
-    public CustomRuntimeException(String message, Throwable cause) {
+/** SWATRuntimeException to encapsulate exceptions that lead to application termination. */
+class SWATRuntimeException extends RuntimeException {
+    public SWATRuntimeException(String message, Throwable cause) {
         super(message, cause);
     }
 }
