@@ -6,7 +6,6 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.commons.LocalVariablesSorter;
-import org.slf4j.Logger;
 
 /** A visitor to visit a Java method */
 public class SVCompMethodAdapter extends LocalVariablesSorter {
@@ -55,7 +54,8 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
 
             String retType = descriptor.split("\\)")[1];
             long nextId = Verifier.getNextId();
-            SVCompTransformer.getPrintBox().addToBox("    => Found " + name + " in line " + lineNumber, true);
+            SVCompTransformer.getPrintBox()
+                    .addToBox("    => Found " + name + " in line " + lineNumber, true);
             SVCompTransformer.getPrintBox().addToBox("      => Assigning ID: " + nextId);
             mv.visitLdcInsn(nextId);
             mv.visitMethodInsn(opcode, newOwner, name, newDescriptor, isInterface);

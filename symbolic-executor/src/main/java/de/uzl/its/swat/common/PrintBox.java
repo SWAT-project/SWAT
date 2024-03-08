@@ -1,20 +1,15 @@
 package de.uzl.its.swat.common;
 
+import java.util.ArrayList;
 import lombok.Getter;
 import lombok.Setter;
-import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
 
 public class PrintBox {
     private int boxSize;
     private final StringBuilder boxBuilder = new StringBuilder();
-    @Setter
-    @Getter
-    private boolean isContent = false;
+    @Setter @Getter private boolean isContent = false;
 
     private boolean isStarted = false;
-
 
     public PrintBox(int boxSize) {
         this.boxSize = boxSize;
@@ -53,10 +48,10 @@ public class PrintBox {
         boxBuilder.append("|\n");
     }
 
-
     public void addToBox(String message) {
         this.addToBox(message, true);
     }
+
     public void addToBox(String message, boolean isContent) {
         assert this.isStarted;
         boxBuilder.append("| ");

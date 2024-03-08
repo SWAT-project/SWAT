@@ -15,7 +15,6 @@ import java.util.HashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.LogRecord;
 import java.util.logging.SimpleFormatter;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.sosy_lab.common.ShutdownManager;

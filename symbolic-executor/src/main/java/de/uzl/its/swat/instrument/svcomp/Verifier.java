@@ -6,7 +6,6 @@ import de.uzl.its.swat.config.Config;
 import java.util.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class Verifier {
@@ -62,9 +61,10 @@ public class Verifier {
 
     public static void assume(boolean condition) {
         PrintBox printBox = new PrintBox(60);
-        logger.info(printBox.fullBox(
-                "SV-Comp Verifier: assume",
-                new ArrayList<>(List.of("Assuming condition: " + condition))));
+        logger.info(
+                printBox.fullBox(
+                        "SV-Comp Verifier: assume",
+                        new ArrayList<>(List.of("Assuming condition: " + condition))));
         if (!condition) {
             Main.terminate();
             Runtime.getRuntime().halt(0);

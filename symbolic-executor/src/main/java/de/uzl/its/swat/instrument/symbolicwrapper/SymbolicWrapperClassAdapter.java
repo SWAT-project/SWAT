@@ -24,7 +24,6 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
     public SymbolicWrapperClassAdapter(ClassVisitor cv, String cname) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
-
     }
 
     /**

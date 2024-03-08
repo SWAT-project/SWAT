@@ -1,7 +1,6 @@
 package de.uzl.its.swat.common;
 
 import de.uzl.its.swat.config.Config;
-import de.uzl.its.swat.request.Request;
 import org.slf4j.LoggerFactory;
 
 /**

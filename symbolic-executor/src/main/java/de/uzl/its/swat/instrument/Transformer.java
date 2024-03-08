@@ -16,8 +16,6 @@ import java.util.List;
 import lombok.Getter;
 import org.slf4j.LoggerFactory;
 
-import java.lang.Class;
-
 /** This class runs all the different transformers. */
 public abstract class Transformer implements ClassFileTransformer {
 
@@ -28,8 +26,7 @@ public abstract class Transformer implements ClassFileTransformer {
     private static Instrumentation instrumentation;
     private static final Config config = Config.instance();
 
-    @Getter
-    private static PrintBox printBox;
+    @Getter private static PrintBox printBox;
     private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Transformer.class);
 
     public static void retransform(String cname) {
@@ -88,19 +85,21 @@ public abstract class Transformer implements ClassFileTransformer {
         try {
             instrumentation = inst;
             if (config.getTransformerType().equals(TransformerType.NONE)) {
-                logger.info(printBox.fullBox(
-                        "Instrumentation Agent started!",
-                        new ArrayList<>(
-                                List.of(
-                                        "No instrumentation selected!",
-                                        "Please select a Transformer type ",
-                                        "in the config file ",
-                                        "and restart the program."))));
+                logger.info(
+                        printBox.fullBox(
+                                "Instrumentation Agent started!",
+                                new ArrayList<>(
+                                        List.of(
+                                                "No instrumentation selected!",
+                                                "Please select a Transformer type ",
+                                                "in the config file ",
+                                                "and restart the program."))));
 
                 return;
             }
-            printBox.startBox( "Instrumentation Agent started!");
-            printBox.addToBox("Selected Instrumentation Type: " + config.getTransformerType(), true);
+            printBox.startBox("Instrumentation Agent started!");
+            printBox.addToBox(
+                    "Selected Instrumentation Type: " + config.getTransformerType(), true);
             printBox.addToBox("Working Directory: " + System.getProperty("user.dir"), true);
             printBox.addToBox("", true);
 

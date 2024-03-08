@@ -1,6 +1,5 @@
 package de.uzl.its.swat.instrument.instruction;
 
-import de.uzl.its.swat.Main;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
@@ -9,12 +8,10 @@ import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
-
 import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -24,16 +21,16 @@ import org.slf4j.LoggerFactory;
 public class InstructionTransformer implements ClassFileTransformer {
     private final String instDir;
 
-    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(InstructionTransformer.class);
+    private static final org.slf4j.Logger logger =
+            LoggerFactory.getLogger(InstructionTransformer.class);
 
-
-    @Getter
-    private static PrintBox printBox;
+    @Getter private static PrintBox printBox;
     Config config = Config.instance();
 
     public InstructionTransformer() {
         printBox = new PrintBox(60);
-        Transformer.getPrintBox().addToBox("Initializing Transformer: " + this.getClass().getSimpleName(), false);
+        Transformer.getPrintBox()
+                .addToBox("Initializing Transformer: " + this.getClass().getSimpleName(), false);
         instDir = config.getInstDir();
     }
 

@@ -1,20 +1,17 @@
 package de.uzl.its.swat.instrument.svcomp;
 
-import de.uzl.its.swat.Main;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.Transformer;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
-
 import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -23,13 +20,13 @@ import org.slf4j.LoggerFactory;
  */
 public class SVCompTransformer implements ClassFileTransformer {
 
-    @Getter
-    private static PrintBox printBox;
+    @Getter private static PrintBox printBox;
     private static final org.slf4j.Logger logger = LoggerFactory.getLogger(SVCompTransformer.class);
 
     public SVCompTransformer() {
         printBox = new PrintBox(60);
-        Transformer.getPrintBox().addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+        Transformer.getPrintBox()
+                .addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
     }
 
     /**
@@ -58,7 +55,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             byte[] cbuf) {
 
         if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) return cbuf;
-        printBox.startBox( "Transformer: " + "SV-Comp");
+        printBox.startBox("Transformer: " + "SV-Comp");
         printBox.addToBox("Class: " + cname, false);
         try {
             ClassReader cr = new ClassReader(cbuf);

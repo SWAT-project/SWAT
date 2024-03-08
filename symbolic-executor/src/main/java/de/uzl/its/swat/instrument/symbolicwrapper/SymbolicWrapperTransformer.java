@@ -9,13 +9,10 @@ import de.uzl.its.swat.instrument.Transformer;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.security.ProtectionDomain;
-
-import de.uzl.its.swat.instrument.svcomp.SVCompTransformer;
 import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -26,13 +23,14 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
 
     Config config = Config.instance();
 
-    @Getter
-    private static PrintBox printBox;
-    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(SymbolicWrapperTransformer.class);
+    @Getter private static PrintBox printBox;
+    private static final org.slf4j.Logger logger =
+            LoggerFactory.getLogger(SymbolicWrapperTransformer.class);
 
     public SymbolicWrapperTransformer() {
         printBox = new PrintBox(60);
-        Transformer.getPrintBox().addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+        Transformer.getPrintBox()
+                .addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
     }
     /**
      * The implementation of this method may transform the supplied class file and return a new

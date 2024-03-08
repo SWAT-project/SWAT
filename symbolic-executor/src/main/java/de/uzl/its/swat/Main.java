@@ -29,7 +29,7 @@ public class Main {
         }
 
         printBox = new PrintBox(60);
-        printBox.startBox( "Execution of target application started!");
+        printBox.startBox("Execution of target application started!");
         printBox.addToBox("Once a symbolic method is executed, the corresponding");
         printBox.addToBox("thread will provide further logging");
         printBox.addToBox("");
@@ -80,22 +80,25 @@ public class Main {
         ThreadHandler.setEndpointID(currentThread().getId(), endpointID);
         ThreadHandler.setEndpointName(currentThread().getId(), endpoint);
 
-        logger.info(printBox.fullBox(
-                "Symbolic execution started (Thread: " + Thread.currentThread().getId() + ")",
-                new ArrayList<>(
-                        List.of(
-                                new String[] {
-                                    "Execution started (Thread: "
-                                            + Thread.currentThread().getId()
-                                            + ")",
-                                    "Threads (tracked / active): ("
-                                            + ThreadHandler.getThreadCount()
-                                            + " / "
-                                            + Thread.activeCount()
-                                            + ")",
-                                    "Method: " + endpoint,
-                                    "ID: " + endpointID
-                                }))));
+        logger.info(
+                printBox.fullBox(
+                        "Symbolic execution started (Thread: "
+                                + Thread.currentThread().getId()
+                                + ")",
+                        new ArrayList<>(
+                                List.of(
+                                        new String[] {
+                                            "Execution started (Thread: "
+                                                    + Thread.currentThread().getId()
+                                                    + ")",
+                                            "Threads (tracked / active): ("
+                                                    + ThreadHandler.getThreadCount()
+                                                    + " / "
+                                                    + Thread.activeCount()
+                                                    + ")",
+                                            "Method: " + endpoint,
+                                            "ID: " + endpointID
+                                        }))));
     }
 
     /**
@@ -104,15 +107,18 @@ public class Main {
      */
     public static void terminate() {
         ThreadHandler.disableThreadContext(currentThread().getId());
-        logger.info(printBox.fullBox("Symbolic execution finished (Thread: " + currentThread().getId() + ")",new ArrayList<>(
-                List.of(
-                        new String[] {
-            "Threads (tracked / active): ("
-                    + ThreadHandler.getThreadCount()
-                    + " / "
-                    + Thread.activeCount()
-                    + ")",
-        }))));
+        logger.info(
+                printBox.fullBox(
+                        "Symbolic execution finished (Thread: " + currentThread().getId() + ")",
+                        new ArrayList<>(
+                                List.of(
+                                        new String[] {
+                                            "Threads (tracked / active): ("
+                                                    + ThreadHandler.getThreadCount()
+                                                    + " / "
+                                                    + Thread.activeCount()
+                                                    + ")",
+                                        }))));
 
         switch (config.getSolverRequest()) {
             case LOCAL:

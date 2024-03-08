@@ -19,7 +19,6 @@ public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
     public SymbolicWrapperMethodAdapter(MethodVisitor mv, String cname, String name, String desc) {
         super(mv, name, desc);
         this.cname = cname;
-
     }
 
     @Override
@@ -71,7 +70,8 @@ public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
     /** Adds the initializer call */
     private void addInitializer() {
         String endpointID = cname + "/" + this.getName() + this.getDesc();
-        SymbolicWrapperTransformer.getPrintBox().addToBox("    => Adding initializer: Main.init(endpointID)");
+        SymbolicWrapperTransformer.getPrintBox()
+                .addToBox("    => Adding initializer: Main.init(endpointID)");
         visitLdcInsn(endpointID);
         visitMethodInsn(
                 Opcodes.INVOKESTATIC,
@@ -85,7 +85,8 @@ public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
     private void addSolver() {
         // Add a call to solve and reset the symbolic engine
 
-        SymbolicWrapperTransformer.getPrintBox().addToBox("    => Adding termination: Main.terminate()");
+        SymbolicWrapperTransformer.getPrintBox()
+                .addToBox("    => Adding termination: Main.terminate()");
 
         visitMethodInsn(Opcodes.INVOKESTATIC, "de/uzl/its/swat/Main", "terminate", "()V", false);
     }

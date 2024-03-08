@@ -14,7 +14,6 @@ public class SVCompClassAdapter extends ClassVisitor {
 
     private final String cname;
 
-
     /**
      * Constructor that calls the super from the default ClassVisitor
      *

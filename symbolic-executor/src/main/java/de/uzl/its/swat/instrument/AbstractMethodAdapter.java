@@ -1,6 +1,5 @@
 package de.uzl.its.swat.instrument;
 
-import de.uzl.its.swat.Main;
 import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import java.util.ArrayList;
@@ -10,14 +9,14 @@ import lombok.Getter;
 import lombok.Setter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Setter
 @Getter
 public abstract class AbstractMethodAdapter extends MethodVisitor {
 
-    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(AbstractMethodAdapter.class);
+    private static final org.slf4j.Logger logger =
+            LoggerFactory.getLogger(AbstractMethodAdapter.class);
 
     private static final String METHOD_DESC_REGEX = "\\((.*?)\\)";
     private static final char ARRAY = '[';
@@ -77,11 +76,11 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         }
         if (desc.charAt(i) == OBJECT) {
             int end = desc.indexOf(";", i);
-            param.append(desc.substring(i, end + 1));
+            param.append(desc, i, end + 1);
             return end + 1;
         } else if (desc.charAt(i) == METHOD) {
             int end = desc.indexOf(")", i);
-            param.append(desc.substring(i, end + 1));
+            param.append(desc, i, end + 1);
             return end + 1;
         } else {
             param.append(desc.charAt(i));

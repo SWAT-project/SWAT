@@ -7,9 +7,6 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
-
-import de.uzl.its.swat.instrument.svcomp.SVCompTransformer;
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class Request {
