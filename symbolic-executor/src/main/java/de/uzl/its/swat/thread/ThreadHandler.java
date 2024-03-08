@@ -2,6 +2,7 @@ package de.uzl.its.swat.thread;
 
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.request.ConstraintRequest;
+import de.uzl.its.swat.solver.LocalSolver;
 import de.uzl.its.swat.symbolic.ObjectInfo;
 import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor;
 import de.uzl.its.swat.symbolic.instruction.Instruction;
@@ -14,6 +15,9 @@ import java.util.HashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.LogRecord;
 import java.util.logging.SimpleFormatter;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sosy_lab.common.ShutdownManager;
 import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
@@ -29,6 +33,8 @@ class LogFormatter extends SimpleFormatter {
 }
 
 public final class ThreadHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(LocalSolver.class);
     private static final DummyInstructionProcessor DUMMY_INSTRUCTION_PROCESSOR =
             new DummyInstructionProcessor();
     private static final SymbolicInstructionProcessor SYMBOLIC_INSTRUCTION_PROCESSOR =
@@ -57,7 +63,7 @@ public final class ThreadHandler {
 
     public static void addThreadContext(long id) {
         if (!threadContextHashMap.containsKey(id)) {
-            System.out.println("Adding context for thread: " + id);
+            logger.info("Adding context for thread: " + id);
             threadContextHashMap.put(id, new ThreadContext(id));
         } else {
             throw new RuntimeException(

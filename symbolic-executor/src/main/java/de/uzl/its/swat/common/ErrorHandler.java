@@ -1,21 +1,21 @@
 package de.uzl.its.swat.common;
 
 import de.uzl.its.swat.config.Config;
-import org.slf4j.Logger;
+import de.uzl.its.swat.request.Request;
+import org.slf4j.LoggerFactory;
 
 /**
  * ErrorHandler is responsible for handling exceptions throughout the application. It decides
  * whether to log the error or terminate the execution based on the application configuration.
  */
 public class ErrorHandler {
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(ErrorHandler.class);
 
     private final Config config;
-    private final Logger logger;
 
     /** Constructs an ErrorHandler with a specified Config and ILogger implementation. */
     public ErrorHandler() {
         this.config = Config.instance();
-        this.logger = new SystemLogger().getLogger();
     }
 
     /**

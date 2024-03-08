@@ -1,12 +1,10 @@
 package de.uzl.its.swat.instrument.symbolicwrapper;
 
-import de.uzl.its.swat.common.SystemLogger;
 import de.uzl.its.swat.config.Config;
 import java.util.regex.Pattern;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
-import org.slf4j.Logger;
 
 /**
  * A visitor to visit a Java class. The methods of this class must be called in the following order:
@@ -18,8 +16,6 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
 
     private String cname;
     private final Config config = Config.instance();
-    private final Logger logger;
-    private final SystemLogger systemLogger;
     /**
      * Constructor that calls the super from the default ClassVisitor
      *
@@ -29,8 +25,6 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
 
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
     }
 
     /**
@@ -60,9 +54,9 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
             switch (config.getTransformerType()) {
                 case SV_COMP:
                     if (name.equals("main")) {
-                        systemLogger.addToBox("Method: " + name, false);
+                        SymbolicWrapperTransformer.getPrintBox().addToBox("Method: " + name, false);
                         mv =
-                                new SymbolicMethodAdapter(
+                                new SymbolicWrapperMethodAdapter(
                                         new SurroundingTryCatchMethodAdapter(mv, name, desc),
                                         cname,
                                         name,
@@ -71,9 +65,9 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                     break;
 
                 case SPRING_ENDPOINT:
-                    systemLogger.addToBox("Method: " + name, false);
+                    SymbolicWrapperTransformer.getPrintBox().addToBox("Method: " + name, false);
                     mv =
-                            new SymbolicMethodAdapter(
+                            new SymbolicWrapperMethodAdapter(
                                     new SurroundingTryCatchMethodAdapter(mv, name, desc),
                                     cname,
                                     name,
@@ -81,9 +75,9 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                     break;
                 case WEB_SERVLET:
                     if (name.equals("doPost")) {
-                        systemLogger.addToBox("Method: " + name, false);
+                        SymbolicWrapperTransformer.getPrintBox().addToBox("Method: " + name, false);
                         mv =
-                                new SymbolicMethodAdapter(
+                                new SymbolicWrapperMethodAdapter(
                                         new SurroundingTryCatchMethodAdapter(mv, name, desc),
                                         cname,
                                         name,
@@ -94,9 +88,9 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                 case PARAMETER:
                 default:
                     if (Pattern.matches(config.getSymbolicFunctionPattern(), name)) {
-                        systemLogger.addToBox("Method: " + name, false);
+                        SymbolicWrapperTransformer.getPrintBox().addToBox("Method: " + name, false);
                         mv =
-                                new SymbolicMethodAdapter(
+                                new SymbolicWrapperMethodAdapter(
                                         new SurroundingTryCatchMethodAdapter(mv, name, desc),
                                         cname,
                                         name,

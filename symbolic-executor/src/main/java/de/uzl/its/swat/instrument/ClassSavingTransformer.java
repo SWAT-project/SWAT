@@ -1,7 +1,7 @@
 package de.uzl.its.swat.instrument;
 
 import de.uzl.its.swat.common.ErrorHandler;
-import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -9,25 +9,30 @@ import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.List;
+
+import de.uzl.its.swat.instrument.parameter.ParameterTransformer;
+import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ClassSavingTransformer implements ClassFileTransformer {
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(ClassSavingTransformer.class);
+
+    @Getter
+    private static PrintBox printBox;
 
     private final String instDir;
-    Logger logger;
-    SystemLogger systemLogger;
     Config config = Config.instance();
 
     public ClassSavingTransformer() {
         instDir = config.getInstDir();
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
-        systemLogger.addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
-        systemLogger.addToBox("    => Saving to: {cwd}/" + config.getLoggingPath() + instDir);
+        printBox = new PrintBox(60);
+        Transformer.getPrintBox().addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+        Transformer.getPrintBox().addToBox("    => Saving to: {cwd}/" + config.getLoggingPath() + instDir);
     }
 
     @Override
@@ -50,10 +55,9 @@ public class ClassSavingTransformer implements ClassFileTransformer {
             cr.accept(cv, 0);
 
             byte[] transformedClass = cw.toByteArray();
-            systemLogger.fullBox(
-                    60,
+            logger.info(printBox.fullBox(
                     "Transformer: Saving",
-                    new ArrayList<>(List.of(new String[] {"Class: " + cname})));
+                    new ArrayList<>(List.of(new String[] {"Class: " + cname}))));
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SAVING);
             saveClass(transformedClass, cname);
 

@@ -1,6 +1,7 @@
 package de.uzl.its.swat.instrument;
 
-import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.Main;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
@@ -10,10 +11,13 @@ import lombok.Setter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Setter
 @Getter
 public abstract class AbstractMethodAdapter extends MethodVisitor {
+
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(AbstractMethodAdapter.class);
 
     private static final String METHOD_DESC_REGEX = "\\((.*?)\\)";
     private static final char ARRAY = '[';
@@ -21,8 +25,6 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
     private static final char METHOD = '(';
     private final String desc;
     private final String name;
-    private final Logger logger;
-    private final SystemLogger systemLogger;
     private final Config config = Config.instance();
     /**
      * Constructor that calls the super from the default MethodVisitor
@@ -35,8 +37,6 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         super(Opcodes.ASM9, mv);
         this.desc = desc;
         this.name = name;
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
     }
 
     /**
@@ -148,13 +148,13 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         symbolicParameter(paramIdx, Opcodes.ALOAD, Opcodes.ASTORE, "Ljava/lang/Long;");
     }
 
-    public void handleMethodParameters(int access) {
+    public void handleMethodParameters(int access, PrintBox printBox) {
         boolean isStatic = (access & Opcodes.ACC_STATIC) != 0;
         int paramIdx = isStatic ? 0 : 1;
 
         ArrayList<String> parameters = splitParameters(desc);
         for (String param : parameters) {
-            systemLogger.addToBox("    => Parameter #" + paramIdx + ": " + param);
+            printBox.addToBox("    => Parameter #" + paramIdx + ": " + param);
             DataType type = DataType.getDataType(param);
             switch (type) {
                 case INTEGER_TYPE:

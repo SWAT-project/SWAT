@@ -5,7 +5,14 @@
             <pattern>%-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-
+    <!-- Generic File Appender -->
+    <appender name="LOGFILE" class="ch.qos.logback.core.FileAppender">
+        <param name="Append" value="false" />
+        <file>logs/symbolic-executor.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
     <!-- File Appender for Specific Logger -->
     <appender name="SolutionLogger" class="ch.qos.logback.core.FileAppender">
         <param name="Append" value="false" />
@@ -38,6 +45,7 @@
     <!-- Root Logger -->
     <root level="INFO">
         <appender-ref ref="STDOUT" />
+        <appender-ref ref="LOGFILE" />
     </root>
 
 </configuration>

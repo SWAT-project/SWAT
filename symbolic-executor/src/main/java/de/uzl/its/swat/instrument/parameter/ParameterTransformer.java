@@ -1,31 +1,35 @@
 package de.uzl.its.swat.instrument.parameter;
 
+import de.uzl.its.swat.Main;
 import de.uzl.its.swat.common.ErrorHandler;
-import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+
+import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An agent provides an implementation of this interface in order to transform class files. The
  * transformation occurs before the class is defined by the JVM.
  */
 public class ParameterTransformer implements ClassFileTransformer {
-    Logger logger;
-    SystemLogger systemLogger;
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(ParameterTransformer.class);
     Config config = Config.instance();
+    @Getter
+    private static PrintBox printBox;
 
     public ParameterTransformer() {
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
-        systemLogger.addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+        printBox = new PrintBox(60);
+        Transformer.getPrintBox().addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
     }
     /**
      * The implementation of this method may transform the supplied class file and return a new
@@ -54,8 +58,8 @@ public class ParameterTransformer implements ClassFileTransformer {
         if (classBeingRedefined != null || !cname.equals(config.getMakeSymbolicClassPath())) {
             return cbuf;
         }
-        systemLogger.startBox(60, "Transformer: " + "Parameter");
-        systemLogger.addToBox("Class: " + cname, false);
+        printBox.startBox("Transformer: " + "Parameter");
+        printBox.addToBox("Class: " + cname, false);
         try {
 
             ClassReader cr = new ClassReader(cbuf);
@@ -66,7 +70,7 @@ public class ParameterTransformer implements ClassFileTransformer {
 
             cr.accept(cv, 0);
             Transformer.addInstrumentedClass(cname, InternalTransformerType.PARAMETER);
-            logger.info(systemLogger.endBox());
+            logger.info(printBox.endBox());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -74,7 +78,7 @@ public class ParameterTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.PARAMETER);
-        logger.info(systemLogger.endBox());
+        logger.info(printBox.endBox());
         return cbuf;
     }
 }

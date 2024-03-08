@@ -1,17 +1,21 @@
 package de.uzl.its.swat.instrument.svcomp;
 
+import de.uzl.its.swat.Main;
 import de.uzl.its.swat.common.ErrorHandler;
-import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.Transformer;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+
+import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An agent provides an implementation of this interface in order to transform class files. The
@@ -19,13 +23,13 @@ import org.slf4j.Logger;
  */
 public class SVCompTransformer implements ClassFileTransformer {
 
-    private final Logger logger;
-    private final SystemLogger systemLogger;
+    @Getter
+    private static PrintBox printBox;
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(SVCompTransformer.class);
 
     public SVCompTransformer() {
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
-        systemLogger.addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+        printBox = new PrintBox(60);
+        Transformer.getPrintBox().addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
     }
 
     /**
@@ -54,8 +58,8 @@ public class SVCompTransformer implements ClassFileTransformer {
             byte[] cbuf) {
 
         if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) return cbuf;
-        systemLogger.startBox(60, "Transformer: " + "SV-Comp");
-        systemLogger.addToBox("Class: " + cname, false);
+        printBox.startBox( "Transformer: " + "SV-Comp");
+        printBox.addToBox("Class: " + cname, false);
         try {
             ClassReader cr = new ClassReader(cbuf);
             ClassNode cn = new ClassNode(Opcodes.ASM9);
@@ -65,7 +69,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             ClassVisitor cv = new SVCompClassAdapter(cname, cw);
             cr.accept(cv, ClassReader.EXPAND_FRAMES);
 
-            logger.info(systemLogger.endBox());
+            logger.info(printBox.endBox());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -73,7 +77,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SV_COMP);
-        logger.info(systemLogger.endBox());
+        logger.info(printBox.endBox());
 
         return cbuf;
     }

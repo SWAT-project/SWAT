@@ -1,7 +1,7 @@
 package de.uzl.its.swat.instrument;
 
 import de.uzl.its.swat.common.ErrorHandler;
-import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.instruction.InstructionTransformer;
 import de.uzl.its.swat.instrument.parameter.ParameterTransformer;
@@ -16,6 +16,8 @@ import java.util.List;
 import lombok.Getter;
 import org.slf4j.LoggerFactory;
 
+import java.lang.Class;
+
 /** This class runs all the different transformers. */
 public abstract class Transformer implements ClassFileTransformer {
 
@@ -26,7 +28,8 @@ public abstract class Transformer implements ClassFileTransformer {
     private static Instrumentation instrumentation;
     private static final Config config = Config.instance();
 
-    private static SystemLogger systemLogger;
+    @Getter
+    private static PrintBox printBox;
     private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Transformer.class);
 
     public static void retransform(String cname) {
@@ -80,29 +83,26 @@ public abstract class Transformer implements ClassFileTransformer {
 
     @SuppressWarnings("unused")
     public static void premain(String agentArgs, Instrumentation inst) {
-        System.out.println("Agent started!");
         ThreadHandler.init();
-        systemLogger = new SystemLogger();
-
+        printBox = new PrintBox(60);
         try {
             instrumentation = inst;
             if (config.getTransformerType().equals(TransformerType.NONE)) {
-                systemLogger.fullBox(
-                        60,
+                logger.info(printBox.fullBox(
                         "Instrumentation Agent started!",
                         new ArrayList<>(
                                 List.of(
                                         "No instrumentation selected!",
                                         "Please select a Transformer type ",
                                         "in the config file ",
-                                        "and restart the program.")));
+                                        "and restart the program."))));
 
                 return;
             }
-            systemLogger.startBox(60, "Instrumentation Agent started!");
-            systemLogger.addToBox("Selected Instrumentation Type: " + config.getTransformerType());
-            systemLogger.addToBox("Working Directory: " + System.getProperty("user.dir"));
-            systemLogger.addToBox("");
+            printBox.startBox( "Instrumentation Agent started!");
+            printBox.addToBox("Selected Instrumentation Type: " + config.getTransformerType(), true);
+            printBox.addToBox("Working Directory: " + System.getProperty("user.dir"), true);
+            printBox.addToBox("", true);
 
             switch (config.getTransformerType()) {
                 case SPRING_ENDPOINT, URI, WEB_SERVLET -> {
@@ -122,7 +122,7 @@ public abstract class Transformer implements ClassFileTransformer {
             if (config.isWriteInstrumentedClasses()) {
                 inst.addTransformer(new ClassSavingTransformer());
             }
-            logger.info(systemLogger.endBox());
+            logger.info(printBox.endBox());
         } catch (Exception e) {
             ErrorHandler errorHandler = new ErrorHandler();
             errorHandler.handleException("Error during Transformer initialization!", e);

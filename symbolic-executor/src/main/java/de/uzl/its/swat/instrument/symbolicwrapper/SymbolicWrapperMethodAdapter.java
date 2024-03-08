@@ -1,19 +1,13 @@
 package de.uzl.its.swat.instrument.symbolicwrapper;
 
-import de.uzl.its.swat.common.SystemLogger;
-import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.AbstractMethodAdapter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
-import org.slf4j.Logger;
 
-public class SymbolicMethodAdapter extends AbstractMethodAdapter {
+public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
     private boolean headerPossiblyInserted = false;
 
     private String cname;
-    private final Config config = Config.instance();
-    private final Logger logger;
-    private final SystemLogger systemLogger;
 
     /**
      * Constructor that calls the super from the default MethodVisitor
@@ -22,12 +16,10 @@ public class SymbolicMethodAdapter extends AbstractMethodAdapter {
      * @param name The method name
      * @param desc A string description of the parameters of the method
      */
-    public SymbolicMethodAdapter(MethodVisitor mv, String cname, String name, String desc) {
+    public SymbolicWrapperMethodAdapter(MethodVisitor mv, String cname, String name, String desc) {
         super(mv, name, desc);
         this.cname = cname;
 
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
     }
 
     @Override
@@ -79,7 +71,7 @@ public class SymbolicMethodAdapter extends AbstractMethodAdapter {
     /** Adds the initializer call */
     private void addInitializer() {
         String endpointID = cname + "/" + this.getName() + this.getDesc();
-        systemLogger.addToBox("    => Adding initializer: Main.init(endpointID)");
+        SymbolicWrapperTransformer.getPrintBox().addToBox("    => Adding initializer: Main.init(endpointID)");
         visitLdcInsn(endpointID);
         visitMethodInsn(
                 Opcodes.INVOKESTATIC,
@@ -93,7 +85,7 @@ public class SymbolicMethodAdapter extends AbstractMethodAdapter {
     private void addSolver() {
         // Add a call to solve and reset the symbolic engine
 
-        systemLogger.addToBox("    => Adding termination: Main.terminate()");
+        SymbolicWrapperTransformer.getPrintBox().addToBox("    => Adding termination: Main.terminate()");
 
         visitMethodInsn(Opcodes.INVOKESTATIC, "de/uzl/its/swat/Main", "terminate", "()V", false);
     }

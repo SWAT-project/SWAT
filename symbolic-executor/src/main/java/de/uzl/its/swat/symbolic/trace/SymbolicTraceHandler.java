@@ -41,6 +41,7 @@ public class SymbolicTraceHandler {
                 result ? constraint : fmgr.getBooleanFormulaManager().not(constraint);
 
         current = new BranchElement(result, pathConstraint, iid);
+        logger.debug("Registered branch constraint: " + current);
         symbolicTrace.addTraceElement(current);
     }
 

@@ -1,17 +1,21 @@
 package de.uzl.its.swat.instrument.instruction;
 
+import de.uzl.its.swat.Main;
 import de.uzl.its.swat.common.ErrorHandler;
-import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+
+import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An agent provides an implementation of this interface in order to transform class files. The
@@ -19,15 +23,17 @@ import org.slf4j.Logger;
  */
 public class InstructionTransformer implements ClassFileTransformer {
     private final String instDir;
-    Logger logger;
-    SystemLogger systemLogger;
+
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(InstructionTransformer.class);
+
+
+    @Getter
+    private static PrintBox printBox;
     Config config = Config.instance();
 
     public InstructionTransformer() {
-
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
-        systemLogger.addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+        printBox = new PrintBox(60);
+        Transformer.getPrintBox().addToBox("Initializing Transformer: " + this.getClass().getSimpleName(), false);
         instDir = config.getInstDir();
     }
 
@@ -57,9 +63,9 @@ public class InstructionTransformer implements ClassFileTransformer {
             byte[] cbuf) {
 
         if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) return cbuf;
-
-        systemLogger.startBox(60, "Transformer: " + "Instruction");
-        systemLogger.addToBox("Class: " + cname);
+        logger.info("Instrumenting: " + cname);
+        printBox.startBox("Transformer: " + "Instruction");
+        printBox.addToBox("Class: " + cname, false);
         try {
             ClassReader cr = new ClassReader(cbuf);
             ClassWriter cw =
@@ -69,12 +75,13 @@ public class InstructionTransformer implements ClassFileTransformer {
             try {
                 cr.accept(cv, ClassReader.SKIP_FRAMES);
             } catch (Exception e) {
+                logger.info("Error: " + e);
                 new ErrorHandler()
                         .handleException("[INSTRUCTION TRANSFORMER] Error while instrumenting", e);
             }
 
             Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
-            logger.info(systemLogger.endBox());
+            logger.info(printBox.endBox());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -82,7 +89,7 @@ public class InstructionTransformer implements ClassFileTransformer {
                     .handleException("[INSTRUCTION TRANSFORMER] Error while instrumenting", e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
-        logger.info(systemLogger.endBox());
+        logger.info(printBox.endBox());
         return cbuf;
     }
 }

@@ -2,7 +2,7 @@ package de.uzl.its.swat;
 
 import static java.lang.Thread.currentThread;
 
-import de.uzl.its.swat.common.SystemLogger;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.Transformer;
 import de.uzl.its.swat.instrument.TransformerType;
@@ -20,27 +20,29 @@ import org.slf4j.LoggerFactory;
  */
 public class Main {
     private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Main.class);
-    private static final SystemLogger systemLogger;
+    private static final PrintBox printBox;
     private static final Config config = Config.instance();
 
     static {
-        systemLogger = new SystemLogger();
-        systemLogger.startBox(60, "Execution of target application started!");
-        systemLogger.addToBox("Once a symbolic method is executed, the corresponding");
-        systemLogger.addToBox("thread will provide further logging");
-        systemLogger.addToBox("");
-        systemLogger.addToBox("The following classes are currently instrumented using ");
-        systemLogger.addToBox("the following Transformers:");
         if (config.getTransformerType().equals(TransformerType.SV_COMP)) {
             Verifier.retrieveInputs(); // ToDo only conditionally and at a petter place
         }
+
+        printBox = new PrintBox(60);
+        printBox.startBox( "Execution of target application started!");
+        printBox.addToBox("Once a symbolic method is executed, the corresponding");
+        printBox.addToBox("thread will provide further logging");
+        printBox.addToBox("");
+        printBox.addToBox("The following classes are currently instrumented using ");
+        printBox.addToBox("the following Transformers:");
+
         var instrumentedClasses = Transformer.getInstrumentedClasses();
         for (var entry : instrumentedClasses.entrySet()) {
-            systemLogger.addToBox(entry.getKey());
+            printBox.addToBox(entry.getKey());
             for (var transformer : entry.getValue()) {
-                systemLogger.addToBox("    => " + transformer.toString());
+                printBox.addToBox("    => " + transformer.toString());
             }
-            logger.info(systemLogger.endBox());
+            logger.info(printBox.endBox());
         }
     }
 
@@ -78,8 +80,7 @@ public class Main {
         ThreadHandler.setEndpointID(currentThread().getId(), endpointID);
         ThreadHandler.setEndpointName(currentThread().getId(), endpoint);
 
-        systemLogger.fullBox(
-                60,
+        logger.info(printBox.fullBox(
                 "Symbolic execution started (Thread: " + Thread.currentThread().getId() + ")",
                 new ArrayList<>(
                         List.of(
@@ -94,7 +95,7 @@ public class Main {
                                             + ")",
                                     "Method: " + endpoint,
                                     "ID: " + endpointID
-                                })));
+                                }))));
     }
 
     /**
@@ -103,16 +104,15 @@ public class Main {
      */
     public static void terminate() {
         ThreadHandler.disableThreadContext(currentThread().getId());
-
-        String[] lines = {
-            "Symbolic execution finished (Thread: " + currentThread().getId() + ")",
+        logger.info(printBox.fullBox("Symbolic execution finished (Thread: " + currentThread().getId() + ")",new ArrayList<>(
+                List.of(
+                        new String[] {
             "Threads (tracked / active): ("
                     + ThreadHandler.getThreadCount()
                     + " / "
                     + Thread.activeCount()
                     + ")",
-        };
-        // ToDo release: Add output saying symbex finsished?
+        }))));
 
         switch (config.getSolverRequest()) {
             case LOCAL:

@@ -26,6 +26,7 @@ public class LocalSolver {
      * constraint. Then, it tries to find a solution for each constraint and logs it.
      */
     public static void solve() {
+        logger.debug("Beginning to solve constraints.");
         SymbolicTraceHandler symbolicTraceHandler =
                 ThreadHandler.getSymbolicVisitor(currentThread().getId()).getSymbolicStateHandler();
         FormulaManager fmgr =
@@ -36,6 +37,7 @@ public class LocalSolver {
         // symbolicTraceHandler.dumpConstraints(logger.getLogger());
 
         HashMap<Integer, BooleanFormula> constraints = symbolicTraceHandler.getBranchConstraints();
+        logger.debug("Found " + constraints.size() + " constraints.");
         HashSet<String> solutions = new HashSet<>();
 
         // Iterates over all constraints and tries to find a solution for each
