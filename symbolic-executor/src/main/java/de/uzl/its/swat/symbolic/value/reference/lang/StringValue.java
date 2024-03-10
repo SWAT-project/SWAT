@@ -1140,9 +1140,9 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         String formulaString = null != formula ? this.formula.toString() : "";
         String concreteString = null != concrete ? concrete : "";
 
-        if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
+        if (formulaString.length() > Config.instance().getLoggingFormulaLength()) {
             formulaString =
-                    formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+                    formulaString.substring(0, Config.instance().getLoggingFormulaLength()) + "...";
         }
 
         return "Ljava/lang/String; @"

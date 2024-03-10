@@ -62,7 +62,8 @@ public class ThreadContext {
             this.invocationStream =
                     new PrintStream(
                             new FileOutputStream(
-                                    config.getLoggingPath() + "/invocation-" + id + ".log", true));
+                                    config.getLoggingDirectory() + "/invocation-" + id + ".log",
+                                    true));
         } catch (FileNotFoundException e) {
             this.invocationStream = System.out;
         }

@@ -239,9 +239,9 @@ public class ArrayArrayValue<TE extends Formula>
         // concat values in array list with custom char into string
         String size = Arrays.stream(dims).map(IntValue::toString).reduce("", (a, b) -> a + b + "x");
         String formulaString = this.formula.toString();
-        if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
+        if (formulaString.length() > Config.instance().getLoggingFormulaLength()) {
             formulaString =
-                    formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+                    formulaString.substring(0, Config.instance().getLoggingFormulaLength()) + "...";
         }
         return desc + " @" + address + " (" + size + ", " + formulaString + ")";
     }

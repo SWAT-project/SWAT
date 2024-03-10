@@ -23,6 +23,11 @@ public class TABLESWITCH extends Instruction {
      *
      * @param iid instruction id.
      * @param mid method id.
+     * @param min min value.
+     * @param max max value.
+     * @param dflt the default jump label.
+     * @param labels the conditional jump labels.
+     * @param values the conditions/ keys.
      */
     public TABLESWITCH(int iid, int mid, int min, int max, int dflt, int[] labels, int[] values) {
         super(iid, mid);

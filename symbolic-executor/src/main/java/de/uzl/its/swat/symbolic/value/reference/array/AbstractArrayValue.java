@@ -172,9 +172,9 @@ public abstract class AbstractArrayValue<
 
     public String genericToString(String type) {
         String formulaString = this.formula.toString();
-        if (formulaString.length() > Config.instance().getFormulaPrintLength()) {
+        if (formulaString.length() > Config.instance().getLoggingFormulaLength()) {
             formulaString =
-                    formulaString.substring(0, Config.instance().getFormulaPrintLength()) + "...";
+                    formulaString.substring(0, Config.instance().getLoggingFormulaLength()) + "...";
         }
         return type
                 + " @"

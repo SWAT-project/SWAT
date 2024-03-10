@@ -193,7 +193,7 @@ public final class ThreadHandler {
     }
 
     public static void logInvocation(long id, LogRecord logRecord) {
-        if (!config.isInvocationLogging()) return;
+        if (!config.isLoggingInvocations()) return;
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
             context.getInvocationStream().print(logFormatter.format(logRecord));

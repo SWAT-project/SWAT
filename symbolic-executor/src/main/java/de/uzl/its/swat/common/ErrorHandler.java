@@ -39,7 +39,7 @@ public class ErrorHandler {
             // Consider a more specific custom exception or handling strategy
             throw new SWATRuntimeException("Critical error occurred", t);
         } else {
-            logger.error(msg + " " + t);
+            logger.error("[ERROR] " + msg + " " + t);
         }
     }
 }

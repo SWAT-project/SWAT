@@ -14,24 +14,24 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ClassSavingTransformer implements ClassFileTransformer {
-    private static final org.slf4j.Logger logger =
-            LoggerFactory.getLogger(ClassSavingTransformer.class);
+    private static final Logger logger = LoggerFactory.getLogger(ClassSavingTransformer.class);
 
     @Getter private static PrintBox printBox;
 
-    private final String instDir;
+    // The relative path where instrumented classes are written to
+    private final String DIR;
     Config config = Config.instance();
 
     public ClassSavingTransformer() {
-        instDir = config.getInstDir();
+        DIR = config.getLoggingDirectory() + "/" + "instrumented" + "/";
         printBox = new PrintBox(60);
         Transformer.getPrintBox()
                 .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
-        Transformer.getPrintBox()
-                .addMsg("    => Saving to: {cwd}/" + config.getLoggingPath() + instDir);
+        Transformer.getPrintBox().addMsg("    => Saving to: {cwd}/" + DIR);
     }
 
     @Override
@@ -73,8 +73,7 @@ public class ClassSavingTransformer implements ClassFileTransformer {
     }
 
     public void saveClass(byte[] transformedClass, String cname) throws Exception {
-        String fullPath =
-                config.getLoggingPath() + "/" + instDir + "/" + cname.replace('.', '/') + ".class";
+        String fullPath = DIR + cname.replace('.', '/') + ".class";
 
         try {
             File file = new File(fullPath);
@@ -87,7 +86,7 @@ public class ClassSavingTransformer implements ClassFileTransformer {
                 out.write(transformedClass);
             }
         } catch (Exception e) {
-            throw e;
+            new ErrorHandler().handleException(e);
         }
     }
 }

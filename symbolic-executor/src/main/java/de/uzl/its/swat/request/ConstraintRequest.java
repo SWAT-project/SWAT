@@ -20,9 +20,9 @@ public class ConstraintRequest extends Request {
      */
     public static void sendConstraints(String traceDTO, int endpointID, int traceID) {
 
-        String host = config.getCoordinatorHost();
-        int port = Integer.parseInt(config.getCoordinatorPort());
-        String path = config.getSolverPath();
+        String host = config.getExplorerHost();
+        int port = config.getExplorerPort();
+        String path = config.getExplorerTraceURI();
         try {
             send(host, port, path, endpointID, traceID, traceDTO);
         } catch (Exception e) {

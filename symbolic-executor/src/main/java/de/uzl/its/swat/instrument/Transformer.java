@@ -118,7 +118,7 @@ public abstract class Transformer implements ClassFileTransformer {
             // Post transformation
             inst.addTransformer(new SymbolicWrapperTransformer());
 
-            if (config.isWriteInstrumentedClasses()) {
+            if (config.isLoggingClasses()) {
                 inst.addTransformer(new ClassSavingTransformer());
             }
             logger.info(printBox.toString());
@@ -142,13 +142,13 @@ public abstract class Transformer implements ClassFileTransformer {
                 && config.getTransformerType().equals(TransformerType.SV_COMP)) return true;
 
         boolean shouldInst = true;
-        if (config.getInstrumentPackages() != null) {
+        if (config.getInstrumentationIncludePackages() != null) {
             shouldInst = false;
-            for (String p : config.getInstrumentPackages()) {
+            for (String p : config.getInstrumentationIncludePackages()) {
                 shouldInst = shouldInst || cname.startsWith(p);
             }
-        } else if (config.getExcludePackages() != null) {
-            for (String p : config.getExcludePackages()) {
+        } else if (config.getInstrumentationExcludePackages() != null) {
+            for (String p : config.getInstrumentationExcludePackages()) {
                 shouldInst = shouldInst && !cname.startsWith(p);
             }
         }

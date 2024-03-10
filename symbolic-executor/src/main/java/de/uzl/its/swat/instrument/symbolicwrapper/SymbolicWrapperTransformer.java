@@ -57,10 +57,11 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             ProtectionDomain d,
             byte[] cbuf)
             throws IllegalClassFormatException {
-
+        logger.error("HERE");
         if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) {
             return cbuf;
         }
+        logger.error("HERE1");
 
         switch (config.getTransformerType()) {
             case SPRING_ENDPOINT,
@@ -69,10 +70,12 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
 
             default -> {
                 if (!cname.equals(config.getSymbolicStartPath())) {
+                    logger.error("HERE2");
                     return cbuf;
                 }
             }
         }
+        logger.error("HERE3");
 
         printBox.addMsg("Class: " + cname);
         try {

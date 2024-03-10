@@ -213,7 +213,7 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
             visitMethodInsn(
                     Opcodes.INVOKEVIRTUAL,
                     param.substring(1),
-                    config.getCustomFunctionName(),
+                    config.getInstrumentationPrefix(),
                     "()V",
                     false);
         } else if (param.equals("Ljava/lang/Long")) {

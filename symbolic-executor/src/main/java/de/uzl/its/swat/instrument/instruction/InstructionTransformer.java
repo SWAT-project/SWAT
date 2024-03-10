@@ -2,7 +2,6 @@ package de.uzl.its.swat.instrument.instruction;
 
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
-import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
@@ -19,19 +18,15 @@ import org.slf4j.LoggerFactory;
  * transformation occurs before the class is defined by the JVM.
  */
 public class InstructionTransformer implements ClassFileTransformer {
-    private final String instDir;
-
     private static final org.slf4j.Logger logger =
             LoggerFactory.getLogger(InstructionTransformer.class);
 
     @Getter private static PrintBox printBox;
-    Config config = Config.instance();
 
     public InstructionTransformer() {
         printBox = new PrintBox(60, "Transformer: " + "Instruction");
         Transformer.getPrintBox()
                 .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
-        instDir = config.getInstDir();
     }
 
     /**
