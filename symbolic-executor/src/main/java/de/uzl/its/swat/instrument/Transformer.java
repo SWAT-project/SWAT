@@ -83,7 +83,7 @@ public abstract class Transformer implements ClassFileTransformer {
         ThreadHandler.init();
         try {
             instrumentation = inst;
-            if (config.getTransformerType().equals(TransformerType.NONE)) {
+            if (config.getInstrumentationTransformer().equals(TransformerType.NONE)) {
                 logger.info(
                         new PrintBox(
                                         60,
@@ -99,11 +99,12 @@ public abstract class Transformer implements ClassFileTransformer {
                 return;
             }
             printBox = new PrintBox(60, "Instrumentation Agent started!");
-            printBox.addMsg("Selected Instrumentation Type: " + config.getTransformerType());
+            printBox.addMsg(
+                    "Selected Instrumentation Type: " + config.getInstrumentationTransformer());
             printBox.addMsg("Working Directory: " + System.getProperty("user.dir"));
             printBox.addMsg("");
 
-            switch (config.getTransformerType()) {
+            switch (config.getInstrumentationTransformer()) {
                 case SPRING_ENDPOINT, URI, WEB_SERVLET -> {
                     // Removed for SV-Comp submission
                 }
@@ -139,7 +140,8 @@ public abstract class Transformer implements ClassFileTransformer {
     public static boolean shouldInstrument(String cname) {
         // Special case for SV-Comp
         if (cname.equals("de/uzl/its/swat/instrument/svcomp/Verifier")
-                && config.getTransformerType().equals(TransformerType.SV_COMP)) return true;
+                && config.getInstrumentationTransformer().equals(TransformerType.SV_COMP))
+            return true;
 
         boolean shouldInst = true;
         if (config.getInstrumentationIncludePackages() != null) {

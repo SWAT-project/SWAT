@@ -24,7 +24,7 @@ public class Main {
     private static final Config config = Config.instance();
 
     static {
-        if (config.getTransformerType().equals(TransformerType.SV_COMP)) {
+        if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
             Verifier.retrieveInputs(); // ToDo only conditionally and at a petter place
         }
 
@@ -78,7 +78,7 @@ public class Main {
      */
     public static void init(String endpoint) {
         int endpointID;
-        if (config.getTransformerType().equals(TransformerType.SV_COMP)) {
+        if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
             endpointID = 0;
         } else {
             endpointID = endpoint.hashCode();
@@ -133,7 +133,7 @@ public class Main {
                                                 })))
                         .toString());
 
-        switch (config.getSolverRequest()) {
+        switch (config.getSolverMode()) {
             case LOCAL:
                 LocalSolver.solve();
                 break;

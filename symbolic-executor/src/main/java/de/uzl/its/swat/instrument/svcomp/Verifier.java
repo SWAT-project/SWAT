@@ -84,11 +84,11 @@ public class Verifier {
 
         } else {
             boolean rnd =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? (new Random()).nextBoolean()
                             : Boolean.valueOf(false);
             String msg =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
             printBox.addMsg(msg);
@@ -109,11 +109,11 @@ public class Verifier {
             return b;
         } else {
             byte rnd =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? (byte) (new Random()).nextInt()
                             : Byte.valueOf((byte) 0);
             String msg =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
             printBox.addMsg(msg);
@@ -134,11 +134,11 @@ public class Verifier {
             return c;
         } else {
             char rnd =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? (char) (new Random()).nextInt()
                             : Character.valueOf((char) 0);
             String msg =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
             printBox.addMsg(msg);
@@ -159,11 +159,11 @@ public class Verifier {
             return s;
         } else {
             short rnd =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? (short) (new Random()).nextInt()
                             : Short.valueOf((short) 0);
             String msg =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
             printBox.addMsg(msg);
@@ -183,9 +183,9 @@ public class Verifier {
             logger.info(printBox.toString());
             return i;
         } else {
-            int rnd = config.isVerifierRandomnessEnabled() ? (new Random()).nextInt() : 0;
+            int rnd = config.isSvcompRandomInputs() ? (new Random()).nextInt() : 0;
             String msg =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
             printBox.addMsg(msg);
@@ -205,9 +205,9 @@ public class Verifier {
             logger.info(printBox.toString());
             return l;
         } else {
-            long rnd = config.isVerifierRandomnessEnabled() ? (new Random()).nextLong() : 0L;
+            long rnd = config.isSvcompRandomInputs() ? (new Random()).nextLong() : 0L;
             String msg =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
             printBox.addMsg(msg);
@@ -228,9 +228,9 @@ public class Verifier {
             logger.info(printBox.toString());
             return f;
         } else {
-            float rnd = config.isVerifierRandomnessEnabled() ? (new Random()).nextFloat() : 0f;
+            float rnd = config.isSvcompRandomInputs() ? (new Random()).nextFloat() : 0f;
             String msg =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
             printBox.addMsg(msg);
@@ -251,9 +251,9 @@ public class Verifier {
             logger.info(printBox.toString());
             return d;
         } else {
-            double rnd = config.isVerifierRandomnessEnabled() ? (new Random()).nextDouble() : 0d;
+            double rnd = config.isSvcompRandomInputs() ? (new Random()).nextDouble() : 0d;
             String msg =
-                    config.isVerifierRandomnessEnabled()
+                    config.isSvcompRandomInputs()
                             ? "Randomness enabled, using random value"
                             : "Randomness disabled, using fixed value";
             printBox.addMsg(msg);
@@ -275,7 +275,7 @@ public class Verifier {
         } else {
             printBox.addMsg("No predetermined value available");
             String rnd = "";
-            if (config.isVerifierRandomnessEnabled()) {
+            if (config.isSvcompRandomInputs()) {
                 printBox.addMsg("Randomness enabled, using random value");
                 Random random = new Random();
                 int size = random.nextInt(100);

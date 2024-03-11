@@ -50,7 +50,7 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
 
         if (mv != null) {
-            switch (config.getTransformerType()) {
+            switch (config.getInstrumentationTransformer()) {
                 case SV_COMP:
                     if (name.equals("main")) {
                         SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);

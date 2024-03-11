@@ -2,7 +2,6 @@ package de.uzl.its.swat.thread;
 
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.request.ConstraintRequest;
-import de.uzl.its.swat.solver.LocalSolver;
 import de.uzl.its.swat.symbolic.ObjectInfo;
 import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor;
 import de.uzl.its.swat.symbolic.instruction.Instruction;
@@ -33,7 +32,7 @@ class LogFormatter extends SimpleFormatter {
 
 public final class ThreadHandler {
 
-    private static final Logger logger = LoggerFactory.getLogger(LocalSolver.class);
+    private static final Logger logger = LoggerFactory.getLogger(ThreadHandler.class);
     private static final DummyInstructionProcessor DUMMY_INSTRUCTION_PROCESSOR =
             new DummyInstructionProcessor();
     private static final SymbolicInstructionProcessor SYMBOLIC_INSTRUCTION_PROCESSOR =

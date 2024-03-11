@@ -5,7 +5,7 @@
     <selectedOptions>
       <option name="environmentVariables" visible="false" />
     </selectedOptions>
-    <option name="VM_PARAMETERS" value="-Xmx32g -Dswat.cfg=targets/instruction-tests/I2X/swat.cfg -javaagent:symbolic-executor/lib/symbolic-executor.jar -Djava.library.path=libs/java-library-path" />
+    <option name="VM_PARAMETERS" value="-Xmx32g -Dconfig.path=targets/instruction-tests/I2X/swat.cfg -javaagent:symbolic-executor/lib/symbolic-executor.jar -Djava.library.path=libs/java-library-path -Dlogging.level=DEBUG" />
     <method v="2">
       <option name="Gradle.BeforeRunTask" enabled="true" tasks="build -x test" externalProjectPath="$PROJECT_DIR$/symbolic-executor" vmOptions="" scriptParameters="" />
       <option name="Make" enabled="true" />

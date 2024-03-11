@@ -1,6 +1,7 @@
 package de.uzl.its.swat.config;
 
 import de.uzl.its.swat.instrument.TransformerType;
+import de.uzl.its.swat.solver.SolverMode;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Arrays;
@@ -122,6 +123,14 @@ public class Config {
                 "org/slf4j",
             };
 
+    // ------------------------------------
+    // Solver options
+    // ------------------------------------
+    /** Determines solver mode should be used. */
+    @Getter private SolverMode solverMode;
+
+    private static final SolverMode DEFAULT_SOLVER_MODE = SolverMode.LOCAL;
+
     /**
      * Flag to enable or disable instruction IDs. No default value, as it is derived from the
      * loggingDebug option.
@@ -144,13 +153,10 @@ public class Config {
     @Getter private boolean exitOnError;
 
     /** Type of transformer to be used. */
-    @Getter private TransformerType transformerType;
+    @Getter private TransformerType instrumentationTransformer;
 
     /** Determines if Verifier randomness is enabled. */
-    @Getter private boolean verifierRandomnessEnabled;
-
-    /** Implementation of the solver request. */
-    @Getter private SolverRequestImpl solverRequest;
+    @Getter private boolean svcompRandomInputs;
 
     /**
      * Constructor for the configuration class. Loads the properties from the configuration file.
@@ -169,7 +175,7 @@ public class Config {
      */
     private void loadProperties() {
         try (FileInputStream input =
-                new FileInputStream(System.getProperty("swat.cfg", DEFAULT_CONFIG_FILE))) {
+                new FileInputStream(System.getProperty("config.path", DEFAULT_CONFIG_FILE))) {
             properties.load(input);
         } catch (IOException ex) {
             logger.warn("Could not find a configuration file, using default values!");
@@ -216,10 +222,10 @@ public class Config {
         String[] val;
         if (properties.containsKey(key)) {
             val = properties.getProperty(key).split(separator);
-            logger.debug("[Loaded]  " + key + ":" + val);
+            logger.debug("[Loaded]  " + key + ":" + Arrays.toString(val));
         } else {
             val = defaultValue;
-            logger.debug("[Default] " + key + ":" + val);
+            logger.debug("[Default] " + key + ":" + Arrays.toString(val));
         }
         return val;
     }
@@ -264,16 +270,24 @@ public class Config {
 
         instrumentationInstructionIds = readBoolean("instrumentation.instructionIds", loggingDebug);
 
-        // ------------------------------------
-        // Misc options
-        // ------------------------------------
-        solverRequest =
-                SolverRequestImpl.valueOf(
-                        readString("solverRequest", SolverRequestImpl.HTTP.name()));
+        instrumentationTransformer =
+                TransformerType.valueOf(
+                        readString("instrumentation.transformer", TransformerType.NONE.name()));
 
-        transformerType =
-                TransformerType.valueOf(readString("transformer", TransformerType.NONE.name()));
-        verifierRandomnessEnabled = readBoolean("verifierRandomnessEnabled", false);
+        // ------------------------------------
+        // General options
+        // ------------------------------------
+        exitOnError = readBoolean("exitOnError", true);
+
+        // ------------------------------------
+        // Solver options
+        // ------------------------------------
+        solverMode = SolverMode.valueOf(readString("solver.mode", DEFAULT_SOLVER_MODE.toString()));
+        // ------------------------------------
+        // SV-Comp options
+        // ------------------------------------
+        svcompRandomInputs = readBoolean("svcomp.randomInputs", false);
+
         // Get values for make symbolic
         String symbolicValueFunction = readString("symbolicValueFunction", "");
         String[] symbolicValueParts = symbolicValueFunction.split(":", 2);
@@ -285,8 +299,6 @@ public class Config {
         symbolicStartPath = symbolicStartParts[0];
         symbolicStartFunctionPattern =
                 processPattern(symbolicStartParts.length > 1 ? symbolicStartParts[1] : "");
-
-        exitOnError = readBoolean("exitOnError", true);
     }
 
     private String processPattern(String pattern) {
@@ -305,11 +317,5 @@ public class Config {
 
     public static Config instance() {
         return LazyHolder.INSTANCE;
-    }
-
-    /** Enum representing the implementations of solver requests. */
-    public enum SolverRequestImpl {
-        LOCAL,
-        HTTP
     }
 }

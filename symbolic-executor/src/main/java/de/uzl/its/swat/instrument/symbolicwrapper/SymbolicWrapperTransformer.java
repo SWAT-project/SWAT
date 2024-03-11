@@ -57,25 +57,21 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             ProtectionDomain d,
             byte[] cbuf)
             throws IllegalClassFormatException {
-        logger.error("HERE");
         if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) {
             return cbuf;
         }
-        logger.error("HERE1");
 
-        switch (config.getTransformerType()) {
+        switch (config.getInstrumentationTransformer()) {
             case SPRING_ENDPOINT,
                     WEB_SERVLET,
                     SV_COMP -> {} // ToDo: will that do nothing or execute the next case?
 
             default -> {
                 if (!cname.equals(config.getSymbolicStartPath())) {
-                    logger.error("HERE2");
                     return cbuf;
                 }
             }
         }
-        logger.error("HERE3");
 
         printBox.addMsg("Class: " + cname);
         try {
