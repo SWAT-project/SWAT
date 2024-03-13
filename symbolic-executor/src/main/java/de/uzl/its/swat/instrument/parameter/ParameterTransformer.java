@@ -8,6 +8,8 @@ import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+import java.util.regex.Pattern;
+
 import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -28,6 +30,8 @@ public class ParameterTransformer implements ClassFileTransformer {
         printBox = new PrintBox(60, "Transformer: " + "Parameter");
         Transformer.getPrintBox()
                 .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
+        Transformer.getPrintBox().addMsg("    => Matching cname: " + config.getInstrumentationParameterSymbolicClassName());
+        Transformer.getPrintBox().addMsg("    => Matching method: " + Pattern.compile(config.getInstrumentationParameterSymbolicMethodName()));
     }
     /**
      * The implementation of this method may transform the supplied class file and return a new
@@ -53,7 +57,7 @@ public class ParameterTransformer implements ClassFileTransformer {
             ProtectionDomain d,
             byte[] cbuf) {
 
-        if (classBeingRedefined != null || !cname.equals(config.getMakeSymbolicClassPath())) {
+        if (classBeingRedefined != null || !cname.equals(config.getInstrumentationParameterSymbolicClassName())) {
             return cbuf;
         }
         printBox.addMsg("Class: " + cname);

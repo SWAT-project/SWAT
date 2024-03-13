@@ -11,7 +11,9 @@ cd logs
 
 java \
 -Xmx32g \
--Dswat.cfg=../targets/instruction-tests/XASTORE/swat.cfg \
+-Dconfig.path=../targets/instruction-tests/XASTORE/swat.cfg \
+-Djava.library.path=../libs/java-library-path \
+-Dlogging.level=DEBUG \
 -javaagent:../symbolic-executor/lib/symbolic-executor.jar \
 -jar ../targets/instruction-tests/XASTORE/build/libs/XASTORE.jar > ../targets/instruction-tests/XASTORE/run.log 2>&1
 

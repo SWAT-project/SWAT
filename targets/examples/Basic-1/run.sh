@@ -11,7 +11,9 @@ cd logs
 
 java \
 -Xmx32g \
--Dswat.cfg=../targets/examples/Basic-1/swat.cfg \
+-Dconfig.path=../targets/examples/Basic-1/swat.cfg \
+-Djava.library.path=../libs/java-library-path \
+-Dlogging.level=DEBUG \
 -javaagent:../symbolic-executor/lib/symbolic-executor.jar \
 -jar ../targets/examples/Basic-1/build/libs/Basic1.jar > ../targets/examples/Basic-1/run.log 2>&1
 

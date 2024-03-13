@@ -1,5 +1,6 @@
 package de.uzl.its.swat.instrument.symbolicwrapper;
 
+import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.config.Config;
 import java.util.regex.Pattern;
 import org.objectweb.asm.ClassVisitor;
@@ -64,6 +65,7 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                     break;
 
                 case SPRING_ENDPOINT:
+                    /*
                     SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                     mv =
                             new SymbolicWrapperMethodAdapter(
@@ -71,8 +73,11 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                                     cname,
                                     name,
                                     desc);
+                     */
+                    new ErrorHandler().handleException(new RuntimeException("Spring Endpoints are not supported currently."));
                     break;
                 case WEB_SERVLET:
+                    /*
                     if (name.equals("doPost")) {
                         SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                         mv =
@@ -82,11 +87,11 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                                         name,
                                         desc);
                     }
+                     */
+                    new ErrorHandler().handleException(new RuntimeException("Servlet Endpoints are not supported currently."));
                     break;
-                case URI:
                 case PARAMETER:
-                default:
-                    if (Pattern.matches(config.getSymbolicFunctionPattern(), name)) {
+                    if (Pattern.matches(config.getInstrumentationParameterSymbolicMethodName(), name)) {
                         SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                         mv =
                                 new SymbolicWrapperMethodAdapter(
@@ -95,6 +100,9 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                                         name,
                                         desc);
                     }
+                case NONE:
+                    break;
+                default:
                     break;
             }
 

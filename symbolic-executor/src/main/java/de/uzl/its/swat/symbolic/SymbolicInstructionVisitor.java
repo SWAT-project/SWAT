@@ -46,7 +46,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public SymbolicInstructionVisitor(ClassNames classNames) {
         stack = new Stack<>();
 
-        stack.add(currentFrame = new Frame(0));
+        stack.add(currentFrame = new Frame("Initial Frame", "",0));
         this.classNames = classNames;
         objects = new HashMap<>();
         symbolicStateHandler = new SymbolicTraceHandler();
@@ -1822,7 +1822,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         int len = types.length;
         try {
             // This frame should not be used it is a placeholder for the parameters
-            Frame lambdaFrame = new Frame(-1);
+            Frame lambdaFrame = new Frame("LambdaFrame", "", -1);
 
             for (int i = isStatic ? 0 : 1; i < len; i++) {
                 if (types[i] == Type.DOUBLE_TYPE || types[i] == Type.LONG_TYPE) {
@@ -1867,7 +1867,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         } else {
             nReturnWords = 1;
         }
-        Frame newFrame = new Frame(nReturnWords);
+        Frame newFrame = new Frame(owner, name, nReturnWords);
         // expressions?!
         stack.push(newFrame);
         Value<?, ?>[] arguments = new Value[len];

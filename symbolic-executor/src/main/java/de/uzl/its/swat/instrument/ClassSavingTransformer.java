@@ -54,12 +54,14 @@ public class ClassSavingTransformer implements ClassFileTransformer {
             cr.accept(cv, 0);
 
             byte[] transformedClass = cw.toByteArray();
-            logger.info(
+            /*logger.info(
                     new PrintBox(
                                     60,
                                     "Transformer: Saving",
                                     new ArrayList<>(List.of(new String[] {"Class: " + cname})))
                             .toString());
+
+             */
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SAVING);
             saveClass(transformedClass, cname);
 

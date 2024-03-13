@@ -51,14 +51,11 @@ jar {
 
 }
 
-
 tasks.register('copyJar', Copy) {
     from jar
     into 'lib'
     rename (String fileName) -> { fileName = 'symbolic-executor.jar' }
 }
-
-
 
 
 test {
@@ -69,4 +66,7 @@ test {
 distTar.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
 distZip.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
 
+
+
 build.finalizedBy copyJar
+assemble.finalizedBy copyJar

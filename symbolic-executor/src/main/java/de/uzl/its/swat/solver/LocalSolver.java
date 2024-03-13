@@ -78,7 +78,7 @@ public class LocalSolver {
                             "[Endpoint] " + ThreadHandler.getEndpointName(currentThread().getId()));
                     ArrayList<String> inputs = symbolicTraceHandler.dumpInputs();
                     for (String input : inputs) {
-                        printBox.addMsg("[Input] " + input);
+                        printBox.addMsg(input);
                     }
                     printBox.addMsg(
                             "[Constraint] "

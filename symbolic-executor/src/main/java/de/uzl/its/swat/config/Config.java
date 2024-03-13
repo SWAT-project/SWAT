@@ -6,11 +6,16 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Properties;
-import java.util.stream.Collectors;
+
 import lombok.Getter;
 import org.slf4j.LoggerFactory;
 import org.slf4j.event.Level;
 
+/**
+ * The Config class is responsible for reading the configuration file and providing the application
+ * with the configuration options. It is a singleton class, and the instance should be fetched using
+ * the static {@link #instance()} method.
+ */
 public class Config {
     private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Config.class);
 
@@ -123,6 +128,21 @@ public class Config {
                 "org/slf4j",
             };
 
+    /** Fully qualified class name that should be tracked symbolically. Supports basic regex. */
+    @Getter private String instrumentationParameterSymbolicClassName;
+
+    /** Method name that should be tracked symbolically. Supports basic regex. */
+    @Getter private String instrumentationParameterSymbolicMethodName;
+
+    /**
+     * Flag to enable or disable instruction IDs. No default value, as it is derived from the
+     * loggingDebug option.
+     */
+    @Getter private boolean instrumentationInstructionIds;
+
+    /** Type of transformer to be used. */
+    @Getter private TransformerType instrumentationTransformer;
+
     // ------------------------------------
     // Solver options
     // ------------------------------------
@@ -131,32 +151,20 @@ public class Config {
 
     private static final SolverMode DEFAULT_SOLVER_MODE = SolverMode.LOCAL;
 
-    /**
-     * Flag to enable or disable instruction IDs. No default value, as it is derived from the
-     * loggingDebug option.
-     */
-    @Getter private boolean instrumentationInstructionIds;
-
-    /** Class path for making symbolic values. */
-    @Getter private String makeSymbolicClassPath;
-
-    /** Pattern for symbolic function identification. */
-    @Getter private String symbolicFunctionPattern;
-
-    /** Start path for symbolic analysis. */
-    @Getter private String symbolicStartPath;
-
-    /** Pattern for identifying the starting function in symbolic analysis. */
-    @Getter private String symbolicStartFunctionPattern;
-
+    // ------------------------------------
+    // General options
+    // ------------------------------------
     /** Flag to determine if the application should exit on errors. */
     @Getter private boolean exitOnError;
+    private static final boolean DEFAULT_EXIT_ON_ERROR = true;
 
-    /** Type of transformer to be used. */
-    @Getter private TransformerType instrumentationTransformer;
+    // ------------------------------------
+    // SV-comp options
+    // ------------------------------------
 
     /** Determines if Verifier randomness is enabled. */
     @Getter private boolean svcompRandomInputs;
+    private static final boolean DEFAULT_SVCOMP_RANDOM_INPUTS = false;
 
     /**
      * Constructor for the configuration class. Loads the properties from the configuration file.
@@ -182,6 +190,12 @@ public class Config {
         }
     }
 
+    /**
+     * Reads a boolean value from the properties file. If the key is not found, the default value is used
+     * @param key The key to read
+     * @param defaultValue The default value
+     * @return The value read from the properties file or the default value
+     */
     private boolean readBoolean(String key, boolean defaultValue) {
         boolean val;
         if (properties.containsKey(key)) {
@@ -194,6 +208,13 @@ public class Config {
         return val;
     }
 
+
+    /**
+     * Reads an int value from the properties file. If the key is not found, the default value is used
+     * @param key The key to read
+     * @param defaultValue The default value
+     * @return The value read from the properties file or the default value
+     */
     private int readInt(String key, int defaultValue) {
         int val;
         if (properties.containsKey(key)) {
@@ -206,6 +227,13 @@ public class Config {
         return val;
     }
 
+
+    /**
+     * Reads a string from the properties file. If the key is not found, the default value is used
+     * @param key The key to read
+     * @param defaultValue The default value
+     * @return The value read from the properties file or the default value
+     */
     private String readString(String key, String defaultValue) {
         String val;
         if (properties.containsKey(key)) {
@@ -218,10 +246,18 @@ public class Config {
         return val;
     }
 
-    private String[] readList(String key, String separator, String[] defaultValue) {
+
+
+    /**
+     * Reads a colon separated list from the properties file. If the key is not found, the default value is used
+     * @param key The key to read
+     * @param defaultValue The default value
+     * @return The value read from the properties file or the default value
+     */
+    private String[] readList(String key, String[] defaultValue) {
         String[] val;
         if (properties.containsKey(key)) {
-            val = properties.getProperty(key).split(separator);
+            val = properties.getProperty(key).split(":");
             logger.debug("[Loaded]  " + key + ":" + Arrays.toString(val));
         } else {
             val = defaultValue;
@@ -259,13 +295,11 @@ public class Config {
         instrumentationIncludePackages =
                 readList(
                         "instrumentation.includePackages",
-                        ":",
                         DEFAULT_INSTRUMENTATION_INCLUDE_PACKAGES);
 
         instrumentationExcludePackages =
                 readList(
                         "instrumentation.excludePackages",
-                        ":",
                         DEFAULT_INSTRUMENTATION_EXCLUDE_PACKAGES);
 
         instrumentationInstructionIds = readBoolean("instrumentation.instructionIds", loggingDebug);
@@ -274,10 +308,15 @@ public class Config {
                 TransformerType.valueOf(
                         readString("instrumentation.transformer", TransformerType.NONE.name()));
 
+        String[] instrumentationParameterSymbolicPattern = readString("instrumentation.parameter.symbolicPattern", "").split(":");
+        assert instrumentationParameterSymbolicPattern.length == 2;
+        instrumentationParameterSymbolicClassName = instrumentationParameterSymbolicPattern[0];
+        instrumentationParameterSymbolicMethodName = instrumentationParameterSymbolicPattern[1];
+
         // ------------------------------------
         // General options
         // ------------------------------------
-        exitOnError = readBoolean("exitOnError", true);
+        exitOnError = readBoolean("exitOnError", DEFAULT_EXIT_ON_ERROR);
 
         // ------------------------------------
         // Solver options
@@ -286,35 +325,22 @@ public class Config {
         // ------------------------------------
         // SV-Comp options
         // ------------------------------------
-        svcompRandomInputs = readBoolean("svcomp.randomInputs", false);
+        svcompRandomInputs = readBoolean("svcomp.randomInputs", DEFAULT_SVCOMP_RANDOM_INPUTS);
 
-        // Get values for make symbolic
-        String symbolicValueFunction = readString("symbolicValueFunction", "");
-        String[] symbolicValueParts = symbolicValueFunction.split(":", 2);
-        makeSymbolicClassPath = symbolicValueParts[0];
-        symbolicFunctionPattern = symbolicValueParts.length > 1 ? symbolicValueParts[1] : "";
-
-        String symbolicStartFunction = readString("symbolicStartFunction", "");
-        String[] symbolicStartParts = symbolicStartFunction.split(":", 2);
-        symbolicStartPath = symbolicStartParts[0];
-        symbolicStartFunctionPattern =
-                processPattern(symbolicStartParts.length > 1 ? symbolicStartParts[1] : "");
     }
 
-    private String processPattern(String pattern) {
-        return Arrays.stream(pattern.split(","))
-                .map(p -> p.replace("*", ".*").replace("?", ".?"))
-                .collect(Collectors.joining("|"));
-    }
-
-    public boolean exitOnError() {
-        return exitOnError;
-    }
-
+    /**
+     * LazyHolder to hold global instance of config object
+     */
     private static class LazyHolder {
+        /** The global config instance */
         static final Config INSTANCE = new Config();
     }
 
+    /**
+     * Instance method. Should be used to obtain config object
+     * @return The config instance.
+     */
     public static Config instance() {
         return LazyHolder.INSTANCE;
     }

@@ -70,52 +70,52 @@ public abstract class Value<T, K> {
 
     public String getConcreteEncoded() {
         throw new RuntimeException(
-                "'getConcreteEncoded' is not implemented yet for this type: " + this);
+                "'getConcreteEncoded' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public ByteValue asByteValue() {
-        throw new RuntimeException("'asByteValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asByteValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public IntValue asIntValue() {
-        throw new RuntimeException("'asIntValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asIntValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public ShortValue asShortValue() {
-        throw new RuntimeException("'asShortValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asShortValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public DoubleValue asDoubleValue() {
-        throw new RuntimeException("'asDoubleValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asDoubleValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public BooleanValue asBooleanValue() {
         throw new RuntimeException(
-                "'asBooleanValue' is not implemented yet for this type: " + this);
+                "'asBooleanValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public CharValue asCharValue() {
-        throw new RuntimeException("'asCharValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asCharValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public ObjectValue asObjectValue() {
-        throw new RuntimeException("'asObjectValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asObjectValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public FloatValue asFloatValue() {
-        throw new RuntimeException("'asFloatValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asFloatValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public LongValue asLongValue() {
-        throw new RuntimeException("'asLongValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asLongValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public StringValue asStringValue() {
-        throw new RuntimeException("'asStringValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asStringValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     public NumericalValue<?, ?> asNumericalValue() {
-        throw new RuntimeException("'asStringValue' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'asStringValue' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 
     /**
@@ -126,6 +126,6 @@ public abstract class Value<T, K> {
      */
     @Override
     public String toString() {
-        throw new RuntimeException("'toString' is not implemented yet for this type: " + this);
+        throw new RuntimeException("'toString' is not implemented yet for this type: " + this.getClass().getSimpleName());
     }
 }

@@ -35,7 +35,7 @@ public class ErrorHandler {
      * @param t the throwable to handle
      */
     public void handleException(String msg, Throwable t) {
-        if (config.exitOnError()) {
+        if (config.isExitOnError()) {
             // Consider a more specific custom exception or handling strategy
             throw new SWATRuntimeException("Critical error occurred", t);
         } else {

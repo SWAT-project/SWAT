@@ -71,7 +71,7 @@ class SVCompHandler:
         cmd = [
             'java',
             f'-Xmx{mem}g',
-            f'-Dswat.cfg={config}',
+            f'-Dconfig.path={config}',
             f'-javaagent:{javaagent}',
             f"-Djava.library.path={Z3_DIR}",
             '-cp',

@@ -31,14 +31,19 @@ public class Frame {
 
     @Getter private Value<?, ?> ret;
 
+    @Getter private final String className;
+    @Getter private final String methodName;
+
     /**
      * Constructor for Frame
      *
      * @param nReturnWords Number of words that are returned on invoke method end
      */
-    public Frame(int nReturnWords) {
+    public Frame(String className, String methodName, int nReturnWords) {
         this.nReturnWords = nReturnWords;
         ret = PlaceHolder.instance;
+        this.className = className;
+        this.methodName = methodName;
     }
 
     /**
@@ -237,11 +242,11 @@ public class Frame {
 
     public void printStack() {
         int i;
-        for (i = 0; i < stack.size(); i++) {
+        for (i = Integer.min(3, stack.size() - 1); i >= 0; i--) {
             stateLogger.info("[" + (stack.size() - i) + "]: " + stack.get(i));
-            if (i == 4) break;
         }
-        if (i < stack.size()) stateLogger.info("... (" + (stack.size() - i) + " more)");
+        int remaining = stack.size() - 4;
+        if (remaining > 0) stateLogger.info("... (" + remaining + " more)");
     }
     /**
      * Override of the default toString method for printing the Current symbolic stack frame and

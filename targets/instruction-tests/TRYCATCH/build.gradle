@@ -17,9 +17,11 @@ tasks.register('runTRYCATCH', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     jvmArgs = [
             '-Xmx32g',
-            "-Dswat.cfg=${rootDir}/targets/instruction-tests/TRYCATCH/swat.cfg",
+            "-Dconfig.path=${rootDir}/targets/instruction-tests/TRYCATCH/swat.cfg",
             "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
-            "-Djava.library.path=${rootDir}/libs/java-library-path"
+            "-Djava.library.path=${rootDir}/libs/java-library-path",
+            "-Dlogging.level=DEBUG"
     ]
+    dependsOn ':symbolic-executor:assemble'
     dependsOn build
 }

@@ -8,9 +8,6 @@ class TraceItem(BaseModel):
     iid: int
     constraint: Optional[str] = None
     branched: bool
-    stackSize: int
-    localsSize: int
-    callSize: int
     type: str
     inst: Optional[str] = None
 
