@@ -42,7 +42,11 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
             try {
                 logger.info(
                         "--------------------------------------------------------------------------------");
-                String desc = visitor.getCurrentFrame().getClassName() + ((visitor.getCurrentFrame().getMethodName().isEmpty()) ? "" : ":" + visitor.getCurrentFrame().getMethodName());
+                String desc =
+                        visitor.getCurrentFrame().getClassName()
+                                + ((visitor.getCurrentFrame().getMethodName().isEmpty())
+                                        ? ""
+                                        : ":" + visitor.getCurrentFrame().getMethodName());
                 logger.info("Stack (" + desc + ")");
                 visitor.getCurrentFrame().printStack();
                 logger.info(

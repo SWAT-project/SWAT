@@ -74,7 +74,10 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                                     name,
                                     desc);
                      */
-                    new ErrorHandler().handleException(new RuntimeException("Spring Endpoints are not supported currently."));
+                    new ErrorHandler()
+                            .handleException(
+                                    new RuntimeException(
+                                            "Spring Endpoints are not supported currently."));
                     break;
                 case WEB_SERVLET:
                     /*
@@ -88,10 +91,14 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                                         desc);
                     }
                      */
-                    new ErrorHandler().handleException(new RuntimeException("Servlet Endpoints are not supported currently."));
+                    new ErrorHandler()
+                            .handleException(
+                                    new RuntimeException(
+                                            "Servlet Endpoints are not supported currently."));
                     break;
                 case PARAMETER:
-                    if (Pattern.matches(config.getInstrumentationParameterSymbolicMethodName(), name)) {
+                    if (Pattern.matches(
+                            config.getInstrumentationParameterSymbolicMethodName(), name)) {
                         SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                         mv =
                                 new SymbolicWrapperMethodAdapter(

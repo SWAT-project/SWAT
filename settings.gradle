@@ -12,9 +12,12 @@ include 'targets:instruction-tests:IXXX'
 include 'targets:instruction-tests:TRYCATCH'
 include 'targets:instruction-tests:XASTORE'
 
+include 'targets:tests:static-initializer'
+
 include 'targets:examples:Basic-1'
 
 include 'targets:applications:gson'
+
 
 
 dependencyResolutionManagement {

@@ -107,8 +107,10 @@ public abstract class Transformer implements ClassFileTransformer {
             switch (config.getInstrumentationTransformer()) {
                 case SPRING_ENDPOINT, WEB_SERVLET -> {
                     new ErrorHandler()
-                            .handleException(new RuntimeException(
-                                    "Spring and WebServlet Instrumentation is not supported yet!"));
+                            .handleException(
+                                    new RuntimeException(
+                                            "Spring and WebServlet Instrumentation is not supported"
+                                                    + " yet!"));
                 }
                 case PARAMETER -> inst.addTransformer(new ParameterTransformer());
 

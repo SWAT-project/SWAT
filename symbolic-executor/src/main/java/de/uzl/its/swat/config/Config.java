@@ -6,7 +6,6 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Properties;
-
 import lombok.Getter;
 import org.slf4j.LoggerFactory;
 import org.slf4j.event.Level;
@@ -156,6 +155,7 @@ public class Config {
     // ------------------------------------
     /** Flag to determine if the application should exit on errors. */
     @Getter private boolean exitOnError;
+
     private static final boolean DEFAULT_EXIT_ON_ERROR = true;
 
     // ------------------------------------
@@ -164,6 +164,7 @@ public class Config {
 
     /** Determines if Verifier randomness is enabled. */
     @Getter private boolean svcompRandomInputs;
+
     private static final boolean DEFAULT_SVCOMP_RANDOM_INPUTS = false;
 
     /**
@@ -191,7 +192,9 @@ public class Config {
     }
 
     /**
-     * Reads a boolean value from the properties file. If the key is not found, the default value is used
+     * Reads a boolean value from the properties file. If the key is not found, the default value is
+     * used
+     *
      * @param key The key to read
      * @param defaultValue The default value
      * @return The value read from the properties file or the default value
@@ -208,9 +211,10 @@ public class Config {
         return val;
     }
 
-
     /**
-     * Reads an int value from the properties file. If the key is not found, the default value is used
+     * Reads an int value from the properties file. If the key is not found, the default value is
+     * used
+     *
      * @param key The key to read
      * @param defaultValue The default value
      * @return The value read from the properties file or the default value
@@ -227,9 +231,9 @@ public class Config {
         return val;
     }
 
-
     /**
      * Reads a string from the properties file. If the key is not found, the default value is used
+     *
      * @param key The key to read
      * @param defaultValue The default value
      * @return The value read from the properties file or the default value
@@ -246,10 +250,10 @@ public class Config {
         return val;
     }
 
-
-
     /**
-     * Reads a colon separated list from the properties file. If the key is not found, the default value is used
+     * Reads a colon separated list from the properties file. If the key is not found, the default
+     * value is used
+     *
      * @param key The key to read
      * @param defaultValue The default value
      * @return The value read from the properties file or the default value
@@ -308,7 +312,8 @@ public class Config {
                 TransformerType.valueOf(
                         readString("instrumentation.transformer", TransformerType.NONE.name()));
 
-        String[] instrumentationParameterSymbolicPattern = readString("instrumentation.parameter.symbolicPattern", "").split(":");
+        String[] instrumentationParameterSymbolicPattern =
+                readString("instrumentation.parameter.symbolicPattern", "").split(":");
         assert instrumentationParameterSymbolicPattern.length == 2;
         instrumentationParameterSymbolicClassName = instrumentationParameterSymbolicPattern[0];
         instrumentationParameterSymbolicMethodName = instrumentationParameterSymbolicPattern[1];
@@ -326,12 +331,9 @@ public class Config {
         // SV-Comp options
         // ------------------------------------
         svcompRandomInputs = readBoolean("svcomp.randomInputs", DEFAULT_SVCOMP_RANDOM_INPUTS);
-
     }
 
-    /**
-     * LazyHolder to hold global instance of config object
-     */
+    /** LazyHolder to hold global instance of config object */
     private static class LazyHolder {
         /** The global config instance */
         static final Config INSTANCE = new Config();
@@ -339,6 +341,7 @@ public class Config {
 
     /**
      * Instance method. Should be used to obtain config object
+     *
      * @return The config instance.
      */
     public static Config instance() {

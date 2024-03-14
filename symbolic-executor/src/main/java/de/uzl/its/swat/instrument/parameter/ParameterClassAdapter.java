@@ -52,7 +52,8 @@ public class ParameterClassAdapter extends ClassVisitor {
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
 
         // Check if the name matches the pattern
-        if (!Pattern.matches(config.getInstrumentationParameterSymbolicMethodName(), name)) return mv;
+        if (!Pattern.matches(config.getInstrumentationParameterSymbolicMethodName(), name))
+            return mv;
         ParameterTransformer.getPrintBox().addMsg("Method: " + name);
 
         return new ParameterMethodAdapter(mv, access, name, desc, signature);

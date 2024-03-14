@@ -1,0 +1,26 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.tests.Main'
+    }
+}
+tasks.register('runStatic-initializer', Exec) {
+    // Set the working directory if it's different from the root
+    workingDir "${rootDir}"
+
+    // Set the command line to execute the Python script
+    commandLine 'python3', "${rootDir}/symbolic-explorer/SymbolicExplorer.py", "--mode", "active", "--target", "${rootDir}/targets/tests/static-initializer/build/libs/static-initializer.jar", "--symbolicvars", "Ljava/lang/String", "--config", "${rootDir}/targets/tests/static-initializer/swat.cfg", "--agent", "${rootDir}/symbolic-executor/lib/symbolic-executor.jar", "--z3dir", "${rootDir}/libs/java-library-path"
+
+    // Set environment variables
+    environment "PYTHONUNBUFFERED", "1"
+
+    // Use this if you need to depend on another task, like building your Java project first
+    dependsOn build
+}

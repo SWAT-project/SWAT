@@ -7,8 +7,6 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
-import java.util.ArrayList;
-import java.util.List;
 import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -55,13 +53,13 @@ public class ClassSavingTransformer implements ClassFileTransformer {
 
             byte[] transformedClass = cw.toByteArray();
             /*logger.info(
-                    new PrintBox(
-                                    60,
-                                    "Transformer: Saving",
-                                    new ArrayList<>(List.of(new String[] {"Class: " + cname})))
-                            .toString());
+                   new PrintBox(
+                                   60,
+                                   "Transformer: Saving",
+                                   new ArrayList<>(List.of(new String[] {"Class: " + cname})))
+                           .toString());
 
-             */
+            */
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SAVING);
             saveClass(transformedClass, cname);
 

@@ -53,6 +53,8 @@ class Database:
 
     def get_violations(self, endpoint_id: int):
         lock.acquire()
+        if endpoint_id not in self.violations:
+            return []
         violations = copy.deepcopy(self.violations[endpoint_id])
         lock.release()
         return violations

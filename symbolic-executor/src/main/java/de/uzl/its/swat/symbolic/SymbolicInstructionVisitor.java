@@ -46,7 +46,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public SymbolicInstructionVisitor(ClassNames classNames) {
         stack = new Stack<>();
 
-        stack.add(currentFrame = new Frame("Initial Frame", "",0));
+        stack.add(currentFrame = new Frame("Initial Frame", "", 0));
         this.classNames = classNames;
         objects = new HashMap<>();
         symbolicStateHandler = new SymbolicTraceHandler();

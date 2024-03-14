@@ -62,18 +62,22 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
         }
 
         switch (config.getInstrumentationTransformer()) {
-            case SPRING_ENDPOINT ->
-                new ErrorHandler().handleException(new RuntimeException(
-                        "Spring Endpoint Instrumentation is not supported for symbolic execution"));
-            case WEB_SERVLET ->
-                    new ErrorHandler().handleException(new RuntimeException(
-                            "Servlet Endpoint Instrumentation is not supported for symbolic execution"));
+            case SPRING_ENDPOINT -> new ErrorHandler()
+                    .handleException(
+                            new RuntimeException(
+                                    "Spring Endpoint Instrumentation is not supported for symbolic"
+                                            + " execution"));
+            case WEB_SERVLET -> new ErrorHandler()
+                    .handleException(
+                            new RuntimeException(
+                                    "Servlet Endpoint Instrumentation is not supported for symbolic"
+                                            + " execution"));
             case SV_COMP, NONE -> {}
             case PARAMETER -> {
-                if (!cname.equals(config.getInstrumentationParameterSymbolicClassName())) return cbuf;
+                if (!cname.equals(config.getInstrumentationParameterSymbolicClassName()))
+                    return cbuf;
             }
         }
-
 
         printBox.addMsg("Class: " + cname);
         try {
@@ -88,7 +92,7 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             return cw.toByteArray();
 
         } catch (Exception e) {
-                    new ErrorHandler().handleException("Error while instrumenting class: " + cname, e);
+            new ErrorHandler().handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SYMBOLIC_WRAPPER);
         if (printBox.isContentPresent()) logger.info(printBox.toString());

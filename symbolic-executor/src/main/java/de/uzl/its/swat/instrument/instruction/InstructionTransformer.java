@@ -72,7 +72,7 @@ public class InstructionTransformer implements ClassFileTransformer {
             }
 
             Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
-            //if (printBox.isContentPresent()) logger.info(printBox.toString());
+            // if (printBox.isContentPresent()) logger.info(printBox.toString());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -80,7 +80,7 @@ public class InstructionTransformer implements ClassFileTransformer {
                     .handleException("[INSTRUCTION TRANSFORMER] Error while instrumenting", e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
-        //if (printBox.isContentPresent()) logger.info(printBox.toString());
+        // if (printBox.isContentPresent()) logger.info(printBox.toString());
         return cbuf;
     }
 }
