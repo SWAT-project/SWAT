@@ -312,11 +312,19 @@ public class Config {
                 TransformerType.valueOf(
                         readString("instrumentation.transformer", TransformerType.NONE.name()));
 
+        String instrumentationParameterSymbolicPatternString =
+                readString("instrumentation.parameter.symbolicPattern", "");
         String[] instrumentationParameterSymbolicPattern =
-                readString("instrumentation.parameter.symbolicPattern", "").split(":");
-        assert instrumentationParameterSymbolicPattern.length == 2;
-        instrumentationParameterSymbolicClassName = instrumentationParameterSymbolicPattern[0];
-        instrumentationParameterSymbolicMethodName = instrumentationParameterSymbolicPattern[1];
+                instrumentationParameterSymbolicPatternString.split(":");
+        if (instrumentationParameterSymbolicPattern.length != 2) {
+            if (!instrumentationParameterSymbolicPatternString.isEmpty())
+                logger.warn(
+                        "Invalid instrumentation.parameter.symbolicPattern: "
+                                + instrumentationParameterSymbolicPatternString);
+        } else {
+            instrumentationParameterSymbolicClassName = instrumentationParameterSymbolicPattern[0];
+            instrumentationParameterSymbolicMethodName = instrumentationParameterSymbolicPattern[1];
+        }
 
         // ------------------------------------
         // General options

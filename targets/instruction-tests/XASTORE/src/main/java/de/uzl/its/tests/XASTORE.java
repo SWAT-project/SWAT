@@ -34,8 +34,9 @@ public class XASTORE {
     public static void main(String[] args) {
         XASTORE test = new XASTORE();
         int[] testCases = {1, 0, -1, Integer.MAX_VALUE, Integer.MIN_VALUE};
-        for (int testCase : testCases) {for (int testCase1 : testCases) {
-                try{
+        for (int testCase : testCases) {
+            for (int testCase1 : testCases) {
+                try {
                     test.IASTORE(testCase, testCase1);
                 } catch (IndexOutOfBoundsException e) {
                     System.out.println("IndexOutOfBoundsException");
