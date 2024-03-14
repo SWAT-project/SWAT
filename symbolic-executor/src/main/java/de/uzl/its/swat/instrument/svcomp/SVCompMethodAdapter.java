@@ -2,8 +2,6 @@ package de.uzl.its.swat.instrument.svcomp;
 
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.Transformer;
-import de.uzl.its.swat.logger.SystemLogger;
-import java.util.logging.Logger;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -16,9 +14,6 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
     private final String cname;
     private final String name;
     private final String desc;
-
-    private final Logger logger;
-    private final SystemLogger systemLogger;
 
     int lineNumber = 0;
     /**
@@ -35,9 +30,6 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
         this.desc = desc;
         this.cname = cname;
         this.name = name;
-
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
     }
 
     @Override
@@ -62,8 +54,10 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
 
             String retType = descriptor.split("\\)")[1];
             long nextId = Verifier.getNextId();
-            systemLogger.addToBox("    => Found " + name + " in line " + lineNumber);
-            systemLogger.addToBox("      => Assigning ID: " + nextId);
+            SVCompTransformer.getPrintBox().setContentPresent(true);
+            SVCompTransformer.getPrintBox()
+                    .addMsg("    => Found " + name + " in line " + lineNumber);
+            SVCompTransformer.getPrintBox().addMsg("      => Assigning ID: " + nextId);
             mv.visitLdcInsn(nextId);
             mv.visitMethodInsn(opcode, newOwner, name, newDescriptor, isInterface);
             if (retType.equals("D") || retType.equals("J")) {
@@ -81,7 +75,7 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
                     "(" + descriptor.substring(2) + "ILjava/lang/String;Ljava/lang/String;)V",
                     false);
             mv.visitLdcInsn(nextId);
-            systemLogger.addToBox("      => Adding Witness recording");
+            SVCompTransformer.getPrintBox().addMsg("      => Adding Witness recording");
             /*
             if (descriptor.equals("()D") || descriptor.equals("()J")) {
                 visitInsn(Opcodes.DUP2);
@@ -96,7 +90,7 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
                     "MakeSymbolic",
                     "(" + retType + "J" + ")" + retType,
                     false);
-            systemLogger.addToBox("      => Adding symbolic tracking");
+            SVCompTransformer.getPrintBox().addMsg("      => Adding symbolic tracking");
         } else if (name.equals("assume")) {
             String newOwner = "de/uzl/its/swat/instrument/svcomp/Verifier";
             mv.visitMethodInsn(opcode, newOwner, name, descriptor, isInterface);

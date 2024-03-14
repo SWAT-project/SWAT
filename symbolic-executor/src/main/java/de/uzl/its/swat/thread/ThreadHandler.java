@@ -1,19 +1,21 @@
 package de.uzl.its.swat.thread;
 
 import de.uzl.its.swat.config.Config;
-import de.uzl.its.swat.constraint.ConstraintRequest;
-import de.uzl.its.swat.executionData.SymbolicStateHandler;
-import de.uzl.its.swat.interpreters.SymbolicInterpreter;
-import de.uzl.its.swat.logger.DirectConcolicExecution;
-import de.uzl.its.swat.logger.DummyLogger;
-import de.uzl.its.swat.logger.Logger;
-import de.uzl.its.swat.logger.ObjectInfo;
-import de.uzl.its.swat.logger.inst.Instruction;
-import de.uzl.its.symbolic.value.Value;
+import de.uzl.its.swat.request.ConstraintRequest;
+import de.uzl.its.swat.symbolic.ObjectInfo;
+import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor;
+import de.uzl.its.swat.symbolic.instruction.Instruction;
+import de.uzl.its.swat.symbolic.processor.DummyInstructionProcessor;
+import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
+import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
+import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+import de.uzl.its.swat.symbolic.value.Value;
 import java.util.HashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.LogRecord;
 import java.util.logging.SimpleFormatter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sosy_lab.common.ShutdownManager;
 import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
@@ -29,8 +31,12 @@ class LogFormatter extends SimpleFormatter {
 }
 
 public final class ThreadHandler {
-    private static final DummyLogger dummyLogger = new DummyLogger();
-    private static final DirectConcolicExecution concolicLogger = new DirectConcolicExecution();
+
+    private static final Logger logger = LoggerFactory.getLogger(ThreadHandler.class);
+    private static final DummyInstructionProcessor DUMMY_INSTRUCTION_PROCESSOR =
+            new DummyInstructionProcessor();
+    private static final SymbolicInstructionProcessor SYMBOLIC_INSTRUCTION_PROCESSOR =
+            new SymbolicInstructionProcessor();
 
     private static final HashMap<Long, ThreadContext> threadContextHashMap = new HashMap<>();
 
@@ -55,7 +61,7 @@ public final class ThreadHandler {
 
     public static void addThreadContext(long id) {
         if (!threadContextHashMap.containsKey(id)) {
-            System.out.println("Adding context for thread: " + id);
+            logger.info("Adding context for thread: " + id);
             threadContextHashMap.put(id, new ThreadContext(id));
         } else {
             throw new RuntimeException(
@@ -81,10 +87,10 @@ public final class ThreadHandler {
         if (context != null) {
             int endpointID = getEndpointID(id);
             int traceID = ThreadLocalRandom.current().nextInt();
-            SymbolicStateHandler symbolicStateHandler =
-                    getConcolicInterpreter(id).getSymbolicStateHandler();
+            SymbolicTraceHandler symbolicStateHandler =
+                    getSymbolicVisitor(id).getSymbolicStateHandler();
             ConstraintRequest.sendConstraints(
-                    symbolicStateHandler.getExecutionData(), endpointID, traceID);
+                    symbolicStateHandler.getTraceDTO(), endpointID, traceID);
 
         } else {
             throw new RuntimeException("The thread " + id + " has no context");
@@ -114,12 +120,14 @@ public final class ThreadHandler {
         }
     }
 
-    public static Logger getLogger(long id) {
+    public static InstructionProcessor getProcessor(long id) {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
-            return context.isDisabled() ? dummyLogger : concolicLogger;
+            return context.isDisabled()
+                    ? DUMMY_INSTRUCTION_PROCESSOR
+                    : SYMBOLIC_INSTRUCTION_PROCESSOR;
         } else {
-            return dummyLogger;
+            return DUMMY_INSTRUCTION_PROCESSOR;
         }
     }
 
@@ -184,7 +192,7 @@ public final class ThreadHandler {
     }
 
     public static void logInvocation(long id, LogRecord logRecord) {
-        if (!config.isInvocationLogging()) return;
+        if (!config.isLoggingInvocations()) return;
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
             context.getInvocationStream().print(logFormatter.format(logRecord));
@@ -193,10 +201,10 @@ public final class ThreadHandler {
         }
     }
 
-    public static SymbolicInterpreter getConcolicInterpreter(long id) {
+    public static SymbolicInstructionVisitor getSymbolicVisitor(long id) {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
-            return context.getSymbolicInterpreter();
+            return context.getSymbolicInstructionVisitor();
         } else {
             throw new RuntimeException("No thread context found for thread " + id);
         }

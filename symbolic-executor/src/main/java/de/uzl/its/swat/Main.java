@@ -2,46 +2,54 @@ package de.uzl.its.swat;
 
 import static java.lang.Thread.currentThread;
 
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.Transformer;
 import de.uzl.its.swat.instrument.TransformerType;
 import de.uzl.its.swat.instrument.svcomp.Verifier;
-import de.uzl.its.swat.logger.DJVM;
-import de.uzl.its.swat.logger.SystemLogger;
 import de.uzl.its.swat.solver.LocalSolver;
+import de.uzl.its.swat.symbolic.SymbolicInstructionDispatcher;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Main runtime environment for parsing inputs and writing state files. Holds functions that are
  * added during instrumentation.
  */
 public class Main {
-    private static final Logger logger;
-    private static final SystemLogger systemLogger;
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Main.class);
+    private static final PrintBox printBox;
     private static final Config config = Config.instance();
 
     static {
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
-        systemLogger.startBox(60, "Execution of target application started!");
-        systemLogger.addToBox("Once a symbolic method is executed, the corresponding");
-        systemLogger.addToBox("thread will provide further logging");
-        systemLogger.addToBox("");
-        systemLogger.addToBox("The following classes are currently instrumented using ");
-        systemLogger.addToBox("the following Transformers:");
-        if (config.getTransformerType().equals(TransformerType.SV_COMP)) {
+        if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
             Verifier.retrieveInputs(); // ToDo only conditionally and at a petter place
         }
+
+        printBox =
+                new PrintBox(
+                        60,
+                        "Execution of target application started!",
+                        new ArrayList<>(
+                                List.of(
+                                        new String[] {
+                                            "Once a symbolic method is executed, the corresponding",
+                                            "thread will provide further logging",
+                                            "",
+                                            "The following classes are currently instrumented using"
+                                                    + " ",
+                                            "the following Transformers:"
+                                        })));
+
         var instrumentedClasses = Transformer.getInstrumentedClasses();
         for (var entry : instrumentedClasses.entrySet()) {
-            systemLogger.addToBox(entry.getKey());
+            printBox.addMsg(entry.getKey());
             for (var transformer : entry.getValue()) {
-                systemLogger.addToBox("    => " + transformer.toString());
+                printBox.addMsg("    => " + transformer.toString());
             }
-            systemLogger.endBox();
+            logger.info(printBox.toString());
         }
     }
 
@@ -70,7 +78,7 @@ public class Main {
      */
     public static void init(String endpoint) {
         int endpointID;
-        if (config.getTransformerType().equals(TransformerType.SV_COMP)) {
+        if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
             endpointID = 0;
         } else {
             endpointID = endpoint.hashCode();
@@ -79,23 +87,27 @@ public class Main {
         ThreadHandler.setEndpointID(currentThread().getId(), endpointID);
         ThreadHandler.setEndpointName(currentThread().getId(), endpoint);
 
-        systemLogger.fullBox(
-                60,
-                "Symbolic execution started (Thread: " + Thread.currentThread().getId() + ")",
-                new ArrayList<>(
-                        List.of(
-                                new String[] {
-                                    "Execution started (Thread: "
-                                            + Thread.currentThread().getId()
-                                            + ")",
-                                    "Threads (tracked / active): ("
-                                            + ThreadHandler.getThreadCount()
-                                            + " / "
-                                            + Thread.activeCount()
-                                            + ")",
-                                    "Method: " + endpoint,
-                                    "ID: " + endpointID
-                                })));
+        logger.info(
+                new PrintBox(
+                                60,
+                                "Symbolic execution started (Thread: "
+                                        + Thread.currentThread().getId()
+                                        + ")",
+                                new ArrayList<>(
+                                        List.of(
+                                                new String[] {
+                                                    "Execution started (Thread: "
+                                                            + Thread.currentThread().getId()
+                                                            + ")",
+                                                    "Threads (tracked / active): ("
+                                                            + ThreadHandler.getThreadCount()
+                                                            + " / "
+                                                            + Thread.activeCount()
+                                                            + ")",
+                                                    "Method: " + endpoint,
+                                                    "ID: " + endpointID
+                                                })))
+                        .toString());
     }
 
     /**
@@ -104,18 +116,24 @@ public class Main {
      */
     public static void terminate() {
         ThreadHandler.disableThreadContext(currentThread().getId());
+        logger.info(
+                new PrintBox(
+                                60,
+                                "Symbolic execution finished (Thread: "
+                                        + currentThread().getId()
+                                        + ")",
+                                new ArrayList<>(
+                                        List.of(
+                                                new String[] {
+                                                    "Threads (tracked / active): ("
+                                                            + ThreadHandler.getThreadCount()
+                                                            + " / "
+                                                            + Thread.activeCount()
+                                                            + ")",
+                                                })))
+                        .toString());
 
-        String[] lines = {
-            "Symbolic execution finished (Thread: " + currentThread().getId() + ")",
-            "Threads (tracked / active): ("
-                    + ThreadHandler.getThreadCount()
-                    + " / "
-                    + Thread.activeCount()
-                    + ")",
-        };
-        // ToDo release: Add output saying symbex finsished?
-
-        switch (config.getSolverRequest()) {
+        switch (config.getSolverMode()) {
             case LOCAL:
                 LocalSolver.solve();
                 break;
@@ -126,7 +144,7 @@ public class Main {
                 throw new RuntimeException("Unknown solver request");
         }
 
-        DJVM.flush(); // TODO WTF does that do? calls log(null)
+        SymbolicInstructionDispatcher.flush(); // TODO WTF does that do? calls log(null)
         ThreadHandler.removeSolverContext(currentThread().getId());
         ThreadHandler.removeThreadContext(currentThread().getId());
     }
@@ -141,8 +159,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static int MakeSymbolic(int intValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value: " + intValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value: " + intValue);
         return intValue;
     }
 
@@ -156,8 +173,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static long MakeSymbolic(long longValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value: " + longValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value: " + longValue);
         return longValue;
     }
 
@@ -170,8 +186,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static char MakeSymbolic(char charValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value: " + charValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value: " + charValue);
         return charValue;
     }
 
@@ -184,8 +199,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static byte MakeSymbolic(byte byteValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value: " + byteValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value: " + byteValue);
         return byteValue;
     }
 
@@ -198,8 +212,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static short MakeSymbolic(short shortValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value: " + shortValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value: " + shortValue);
         return shortValue;
     }
 
@@ -212,8 +225,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static boolean MakeSymbolic(boolean boolValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + boolValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + boolValue);
         return boolValue;
     }
 
@@ -226,8 +238,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static String MakeSymbolic(String stringValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value: " + stringValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value: " + stringValue);
         return stringValue;
     }
 
@@ -240,8 +251,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static float MakeSymbolic(float floatValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value: " + floatValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value: " + floatValue);
         return floatValue;
     }
 
@@ -254,8 +264,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static double MakeSymbolic(double doubleValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + doubleValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + doubleValue);
         return doubleValue;
     }
 
@@ -268,8 +277,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static Long MakeSymbolic(Long longValue) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + longValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + longValue);
         return longValue;
     }
 
@@ -283,7 +291,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static int MakeSymbolic(int intValue, String namePrefix) {
-        systemLogger.info(
+        logger.info(
                 "[DSE] Initializing symbolic tracking for the following value "
                         + intValue
                         + " with identifier "
@@ -301,7 +309,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static long MakeSymbolic(long longValue, String namePrefix) {
-        systemLogger.info(
+        logger.info(
                 "[DSE] Initializing symbolic tracking for the following value "
                         + longValue
                         + " with identifier "
@@ -319,8 +327,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static char MakeSymbolic(char charValue, String namePrefix) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + charValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + charValue);
         return charValue;
     }
 
@@ -334,8 +341,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static byte MakeSymbolic(byte byteValue, String namePrefix) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + byteValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + byteValue);
         return byteValue;
     }
 
@@ -349,8 +355,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static short MakeSymbolic(short shortValue, String namePrefix) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + shortValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + shortValue);
         return shortValue;
     }
 
@@ -364,8 +369,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static boolean MakeSymbolic(boolean boolValue, String namePrefix) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + boolValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + boolValue);
         return boolValue;
     }
 
@@ -379,8 +383,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static String MakeSymbolic(String stringValue, String namePrefix) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + stringValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + stringValue);
         return stringValue;
     }
 
@@ -394,8 +397,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static float MakeSymbolic(float floatValue, String namePrefix) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + floatValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + floatValue);
         return floatValue;
     }
 
@@ -409,8 +411,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static double MakeSymbolic(double doubleValue, String namePrefix) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + doubleValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + doubleValue);
         return doubleValue;
     }
 
@@ -424,8 +425,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static Long MakeSymbolic(Long longValue, String namePrefix) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + longValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + longValue);
         return longValue;
     }
 
@@ -438,8 +438,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static int MakeSymbolic(int intValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + intValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + intValue);
         return intValue;
     }
 
@@ -452,8 +451,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static long MakeSymbolic(long longValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + longValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + longValue);
         return longValue;
     }
 
@@ -466,8 +464,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static char MakeSymbolic(char charValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + charValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + charValue);
         return charValue;
     }
 
@@ -480,8 +477,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static byte MakeSymbolic(byte byteValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + byteValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + byteValue);
         return byteValue;
     }
 
@@ -494,8 +490,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static short MakeSymbolic(short shortValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + shortValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + shortValue);
         return shortValue;
     }
 
@@ -508,8 +503,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static boolean MakeSymbolic(boolean boolValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + boolValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + boolValue);
         return boolValue;
     }
 
@@ -522,8 +516,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static String MakeSymbolic(String stringValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + stringValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + stringValue);
         return stringValue;
     }
 
@@ -536,8 +529,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static float MakeSymbolic(float floatValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + floatValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + floatValue);
         return floatValue;
     }
 
@@ -550,8 +542,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static double MakeSymbolic(double doubleValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + doubleValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + doubleValue);
         return doubleValue;
     }
 
@@ -564,8 +555,7 @@ public class Main {
      */
     @SuppressWarnings("unused")
     public static Long MakeSymbolic(Long longValue, long idx) {
-        systemLogger.info(
-                "[DSE] Initializing symbolic tracking for the following value " + longValue);
+        logger.info("[DSE] Initializing symbolic tracking for the following value " + longValue);
         return longValue;
     }
 

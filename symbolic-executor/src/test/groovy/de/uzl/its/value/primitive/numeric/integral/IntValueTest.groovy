@@ -1,8 +1,8 @@
 package de.uzl.its.value.primitive.numeric.integral
 
-import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.DoubleValue
-import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.FloatValue
-import de.uzl.its.symbolic.value.primitive.numeric.integral.IntValue
+import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue
+import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue
 import org.sosy_lab.common.ShutdownManager
 import org.sosy_lab.common.configuration.Configuration
 import org.sosy_lab.common.log.BasicLogManager

@@ -11,7 +11,9 @@ cd logs
 
 java \
 -Xmx32g \
--Dswat.cfg=../targets/instruction-tests/IFXX/swat.cfg \
+-Dconfig.path=../targets/instruction-tests/IFXX/swat.cfg \
+-Djava.library.path=../libs/java-library-path \
+-Dlogging.level=DEBUG \
 -javaagent:../symbolic-executor/lib/symbolic-executor.jar \
 -jar ../targets/instruction-tests/IFXX/build/libs/IFXX.jar > ../targets/instruction-tests/IFXX/run.log 2>&1
 

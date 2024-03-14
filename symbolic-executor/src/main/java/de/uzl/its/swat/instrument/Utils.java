@@ -22,7 +22,8 @@ public class Utils implements Opcodes {
 
     public static void addSpecialInsn(MethodVisitor mv, int val) {
         addBipushInsn(mv, val);
-        mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "SPECIAL", "(I)V", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "SPECIAL", "(I)V", false);
     }
 
     /**
@@ -52,7 +53,7 @@ public class Utils implements Opcodes {
                 addBipushInsn(mv, identifier);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         methodNamePrefix + "double",
                         "(DI)V",
                         false);
@@ -62,7 +63,7 @@ public class Utils implements Opcodes {
                 addBipushInsn(mv, identifier);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         methodNamePrefix + "long",
                         "(JI)V",
                         false);
@@ -72,7 +73,7 @@ public class Utils implements Opcodes {
                 addBipushInsn(mv, identifier);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         methodNamePrefix + "Object",
                         "(Ljava/lang/Object;I)V",
                         false);
@@ -82,7 +83,7 @@ public class Utils implements Opcodes {
                 addBipushInsn(mv, identifier);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         methodNamePrefix + "boolean",
                         "(ZI)V",
                         false);
@@ -92,7 +93,7 @@ public class Utils implements Opcodes {
                 addBipushInsn(mv, identifier);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         methodNamePrefix + "byte",
                         "(BI)V",
                         false);
@@ -102,7 +103,7 @@ public class Utils implements Opcodes {
                 addBipushInsn(mv, identifier);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         methodNamePrefix + "char",
                         "(CI)V",
                         false);
@@ -112,7 +113,7 @@ public class Utils implements Opcodes {
                 addBipushInsn(mv, identifier);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         methodNamePrefix + "float",
                         "(FI)V",
                         false);
@@ -122,7 +123,7 @@ public class Utils implements Opcodes {
                 addBipushInsn(mv, identifier);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         methodNamePrefix + "int",
                         "(II)V",
                         false);
@@ -132,14 +133,14 @@ public class Utils implements Opcodes {
                 addBipushInsn(mv, identifier);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         methodNamePrefix + "short",
                         "(SI)V",
                         false);
             }
             case Type.VOID -> mv.visitMethodInsn(
                     INVOKESTATIC,
-                    config.getAnalysisClass(),
+                    config.getInstrumentationDispatcher(),
                     methodNamePrefix + "void",
                     "()V",
                     false);

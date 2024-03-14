@@ -69,6 +69,12 @@ public class I2X {
         return s == 0 ? 1 : 0;
     }
 
+    public boolean test(float f) {
+        double d = 0.1;
+        System.out.println(Double.doubleToRawLongBits(d));
+        return f != d;
+    }
+
     /**
      * Main function
      *
@@ -76,6 +82,8 @@ public class I2X {
      */
     public static void main(String[] args) {
         I2X test = new I2X();
+        test.test(0);
+        /*
         int[] testCases = {1, 0, 1, -1, Integer.MAX_VALUE, Integer.MIN_VALUE};
         for (int testCase : testCases) {
             test.I2B(testCase);
@@ -85,5 +93,7 @@ public class I2X {
             test.I2L(testCase);
             test.I2S(testCase);
         }
+
+         */
     }
 }

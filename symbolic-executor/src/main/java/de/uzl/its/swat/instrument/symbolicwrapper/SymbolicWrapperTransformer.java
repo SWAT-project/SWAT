@@ -1,18 +1,19 @@
 package de.uzl.its.swat.instrument.symbolicwrapper;
 
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
-import de.uzl.its.swat.logger.SystemLogger;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.security.ProtectionDomain;
-import java.util.logging.Logger;
+import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
+import org.slf4j.LoggerFactory;
 
 /**
  * An agent provides an implementation of this interface in order to transform class files. The
@@ -20,14 +21,16 @@ import org.objectweb.asm.ClassWriter;
  */
 public class SymbolicWrapperTransformer implements ClassFileTransformer {
 
-    Logger logger;
-    SystemLogger systemLogger;
     Config config = Config.instance();
 
+    @Getter private static PrintBox printBox;
+    private static final org.slf4j.Logger logger =
+            LoggerFactory.getLogger(SymbolicWrapperTransformer.class);
+
     public SymbolicWrapperTransformer() {
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
-        systemLogger.addToBox("Initializing Transformer: " + this.getClass().getSimpleName());
+        printBox = new PrintBox(60, "Transformer: " + this.getClass().getSimpleName());
+        Transformer.getPrintBox()
+                .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
     }
     /**
      * The implementation of this method may transform the supplied class file and return a new
@@ -54,25 +57,29 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             ProtectionDomain d,
             byte[] cbuf)
             throws IllegalClassFormatException {
-
         if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) {
             return cbuf;
         }
 
-        switch (config.getTransformerType()) {
-            case SPRING_ENDPOINT,
-                    WEB_SERVLET,
-                    SV_COMP -> {} // ToDo: will that do nothing or execute the next case?
-
-            default -> {
-                if (!cname.equals(config.getSymbolicStartPath())) {
+        switch (config.getInstrumentationTransformer()) {
+            case SPRING_ENDPOINT -> new ErrorHandler()
+                    .handleException(
+                            new RuntimeException(
+                                    "Spring Endpoint Instrumentation is not supported for symbolic"
+                                            + " execution"));
+            case WEB_SERVLET -> new ErrorHandler()
+                    .handleException(
+                            new RuntimeException(
+                                    "Servlet Endpoint Instrumentation is not supported for symbolic"
+                                            + " execution"));
+            case SV_COMP, NONE -> {}
+            case PARAMETER -> {
+                if (!cname.equals(config.getInstrumentationParameterSymbolicClassName()))
                     return cbuf;
-                }
             }
         }
 
-        systemLogger.startBox(60, "Transformer: SymbolicWrapper");
-        systemLogger.addToBox("Class: " + cname, false);
+        printBox.addMsg("Class: " + cname);
         try {
             ClassReader cr = new ClassReader(cbuf);
             ClassWriter cw =
@@ -81,15 +88,14 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             ClassVisitor cv = new SymbolicWrapperClassAdapter(cw, cname);
             cr.accept(cv, 0);
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SYMBOLIC_WRAPPER);
-            systemLogger.endBox();
+            if (printBox.isContentPresent()) logger.info(printBox.toString());
             return cw.toByteArray();
 
         } catch (Exception e) {
-            ErrorHandler errorHandler = new ErrorHandler();
-            errorHandler.handleException("Error while instrumenting class: " + cname, e);
+            new ErrorHandler().handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SYMBOLIC_WRAPPER);
-        systemLogger.endBox();
+        if (printBox.isContentPresent()) logger.info(printBox.toString());
 
         return cbuf;
     }

@@ -8,5 +8,6 @@
 targets/**/bin/
 targets/**/build/
 /logs/
+**/logs/
 /build/
 /libs/java-library-path/*

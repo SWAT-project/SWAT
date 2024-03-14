@@ -16,7 +16,7 @@ tasks.register('runBasic1', Exec) {
     workingDir "${rootDir}"
 
     // Set the command line to execute the Python script
-    commandLine 'python3', "${rootDir}/symbolic-explorer/SymbolicExplorer.py", "--mode", "active", "--target", "${rootDir}/targets/examples/Basic-1/build/libs/Basic-1.jar", "--symbolicvars", "Ljava/lang/String", "I", "--config", "${rootDir}/targets/examples/Basic-1/swat.cfg", "--agent", "${rootDir}/symbolic-executor/lib/symbolic-executor.jar", "--z3dir", "${rootDir}/libs/java-library-path"
+    commandLine 'python3', "${rootDir}/symbolic-explorer/SymbolicExplorer.py", "--mode", "active", "--target", "${rootDir}/targets/examples/Basic-1/build/libs/Basic-1.jar", "--symbolicvars", "Ljava/lang/String", "F", "--config", "${rootDir}/targets/examples/Basic-1/swat.cfg", "--agent", "${rootDir}/symbolic-executor/lib/symbolic-executor.jar", "--z3dir", "${rootDir}/libs/java-library-path"
 
     // Set environment variables
     environment "PYTHONUNBUFFERED", "1"

@@ -1,8 +1,7 @@
 package de.uzl.its.swat.instrument.symbolicwrapper;
 
+import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.config.Config;
-import de.uzl.its.swat.logger.SystemLogger;
-import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
@@ -18,8 +17,6 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
 
     private String cname;
     private final Config config = Config.instance();
-    private final Logger logger;
-    private final SystemLogger systemLogger;
     /**
      * Constructor that calls the super from the default ClassVisitor
      *
@@ -28,9 +25,6 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
     public SymbolicWrapperClassAdapter(ClassVisitor cv, String cname) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
-
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
     }
 
     /**
@@ -57,12 +51,12 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
 
         if (mv != null) {
-            switch (config.getTransformerType()) {
+            switch (config.getInstrumentationTransformer()) {
                 case SV_COMP:
                     if (name.equals("main")) {
-                        systemLogger.addToBox("Method: " + name, false);
+                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                         mv =
-                                new SymbolicMethodAdapter(
+                                new SymbolicWrapperMethodAdapter(
                                         new SurroundingTryCatchMethodAdapter(mv, name, desc),
                                         cname,
                                         name,
@@ -71,37 +65,51 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                     break;
 
                 case SPRING_ENDPOINT:
-                    systemLogger.addToBox("Method: " + name, false);
+                    /*
+                    SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                     mv =
-                            new SymbolicMethodAdapter(
+                            new SymbolicWrapperMethodAdapter(
                                     new SurroundingTryCatchMethodAdapter(mv, name, desc),
                                     cname,
                                     name,
                                     desc);
+                     */
+                    new ErrorHandler()
+                            .handleException(
+                                    new RuntimeException(
+                                            "Spring Endpoints are not supported currently."));
                     break;
                 case WEB_SERVLET:
+                    /*
                     if (name.equals("doPost")) {
-                        systemLogger.addToBox("Method: " + name, false);
+                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                         mv =
-                                new SymbolicMethodAdapter(
+                                new SymbolicWrapperMethodAdapter(
                                         new SurroundingTryCatchMethodAdapter(mv, name, desc),
                                         cname,
                                         name,
                                         desc);
                     }
+                     */
+                    new ErrorHandler()
+                            .handleException(
+                                    new RuntimeException(
+                                            "Servlet Endpoints are not supported currently."));
                     break;
-                case URI:
                 case PARAMETER:
-                default:
-                    if (Pattern.matches(config.getSymbolicFunctionPattern(), name)) {
-                        systemLogger.addToBox("Method: " + name, false);
+                    if (Pattern.matches(
+                            config.getInstrumentationParameterSymbolicMethodName(), name)) {
+                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
                         mv =
-                                new SymbolicMethodAdapter(
+                                new SymbolicWrapperMethodAdapter(
                                         new SurroundingTryCatchMethodAdapter(mv, name, desc),
                                         cname,
                                         name,
                                         desc);
                     }
+                case NONE:
+                    break;
+                default:
                     break;
             }
 

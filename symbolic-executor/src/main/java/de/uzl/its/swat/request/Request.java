@@ -1,6 +1,5 @@
 package de.uzl.its.swat.request;
 
-import de.uzl.its.swat.logger.SystemLogger;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -8,11 +7,10 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Logger;
+import org.slf4j.LoggerFactory;
 
 public abstract class Request {
-    private static final SystemLogger systemLogger = new SystemLogger();
-    private static final Logger logger = systemLogger.getLogger();
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Request.class);
 
     public static void send(
             String host,

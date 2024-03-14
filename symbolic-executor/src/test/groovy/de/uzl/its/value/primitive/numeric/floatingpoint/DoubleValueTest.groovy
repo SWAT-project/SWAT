@@ -1,6 +1,6 @@
 package de.uzl.its.value.primitive.numeric.floatingpoint
 
-import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.DoubleValue
+import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue
 import org.sosy_lab.common.ShutdownManager
 import org.sosy_lab.common.configuration.Configuration
 import org.sosy_lab.common.log.BasicLogManager
@@ -13,7 +13,7 @@ import org.sosy_lab.java_smt.api.ProverEnvironment
 import org.sosy_lab.java_smt.api.SolverContext
 import spock.lang.Shared
 import spock.lang.Specification
-import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.FloatValue
+import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue
 
 class DoubleValueTest extends Specification {
 

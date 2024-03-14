@@ -1,7 +1,7 @@
 package de.uzl.its.swat.instrument.instruction;
 
 import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
-import de.uzl.its.swat.logger.ClassNames;
+import de.uzl.its.swat.symbolic.ClassNames;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;

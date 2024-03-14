@@ -11,9 +11,11 @@ cd logs
 
 java \
 -Xmx32g \
--Dswat.cfg=../targets/instruction-tests/I2X/swat.cfg \
+-Djava.library.path=../libs/java-library-path \
+-Dlogging.level=DEBUG \
+-Dconfig.path=../targets/instruction-tests/TRYCATCH/swat.cfg \
 -javaagent:../symbolic-executor/lib/symbolic-executor.jar \
--jar ../targets/instruction-tests/I2X/build/libs/I2X.jar > ../targets/instruction-tests/I2X/run.log 2>&1
+-jar ../targets/instruction-tests/TRYCATCH/build/libs/TRYCATCH.jar > ../targets/instruction-tests/TRYCATCH/run.log 2>&1
 
 pushd -0 && dirs -c
 

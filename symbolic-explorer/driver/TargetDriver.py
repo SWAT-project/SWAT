@@ -55,9 +55,10 @@ class TargetDriver:
         cmd = [
             'java',
             f'-Xmx{mem}g',
-            f'-Dswat.cfg={args.config}',
+            f'-Dconfig.path={args.config}',
             f'-javaagent:{args.agent}',
             f"-Djava.library.path={args.z3dir}",
+            '-Dlogging.level=DEBUG',
             '-ea',
             '-jar',
             args.target

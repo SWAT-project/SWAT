@@ -1,12 +1,12 @@
 package de.uzl.its.swat.instrument;
 
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.instruction.InstructionTransformer;
 import de.uzl.its.swat.instrument.parameter.ParameterTransformer;
 import de.uzl.its.swat.instrument.svcomp.SVCompTransformer;
 import de.uzl.its.swat.instrument.symbolicwrapper.SymbolicWrapperTransformer;
-import de.uzl.its.swat.logger.SystemLogger;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import lombok.Getter;
+import org.slf4j.LoggerFactory;
 
 /** This class runs all the different transformers. */
 public abstract class Transformer implements ClassFileTransformer {
@@ -25,7 +26,8 @@ public abstract class Transformer implements ClassFileTransformer {
     private static Instrumentation instrumentation;
     private static final Config config = Config.instance();
 
-    private static SystemLogger systemLogger;
+    @Getter private static PrintBox printBox;
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Transformer.class);
 
     public static void retransform(String cname) {
         cname = cname.substring(1);
@@ -79,31 +81,36 @@ public abstract class Transformer implements ClassFileTransformer {
     @SuppressWarnings("unused")
     public static void premain(String agentArgs, Instrumentation inst) {
         ThreadHandler.init();
-        systemLogger = new SystemLogger();
-
         try {
             instrumentation = inst;
-            if (config.getTransformerType().equals(TransformerType.NONE)) {
-                systemLogger.fullBox(
-                        60,
-                        "Instrumentation Agent started!",
-                        new ArrayList<>(
-                                List.of(
-                                        "No instrumentation selected!",
-                                        "Please select a Transformer type ",
-                                        "in the config file ",
-                                        "and restart the program.")));
+            if (config.getInstrumentationTransformer().equals(TransformerType.NONE)) {
+                logger.info(
+                        new PrintBox(
+                                        60,
+                                        "Instrumentation Agent started!",
+                                        new ArrayList<>(
+                                                List.of(
+                                                        "No instrumentation selected!",
+                                                        "Please select a Transformer type ",
+                                                        "in the config file ",
+                                                        "and restart the program.")))
+                                .toString());
 
                 return;
             }
-            systemLogger.startBox(60, "Instrumentation Agent started!");
-            systemLogger.addToBox("Selected Instrumentation Type: " + config.getTransformerType());
-            systemLogger.addToBox("Working Directory: " + System.getProperty("user.dir"));
-            systemLogger.addToBox("");
+            printBox = new PrintBox(60, "Instrumentation Agent started!");
+            printBox.addMsg(
+                    "Selected Instrumentation Type: " + config.getInstrumentationTransformer());
+            printBox.addMsg("Working Directory: " + System.getProperty("user.dir"));
+            printBox.addMsg("");
 
-            switch (config.getTransformerType()) {
-                case SPRING_ENDPOINT, URI, WEB_SERVLET -> {
-                    // Removed for SV-Comp submission
+            switch (config.getInstrumentationTransformer()) {
+                case SPRING_ENDPOINT, WEB_SERVLET -> {
+                    new ErrorHandler()
+                            .handleException(
+                                    new RuntimeException(
+                                            "Spring and WebServlet Instrumentation is not supported"
+                                                    + " yet!"));
                 }
                 case PARAMETER -> inst.addTransformer(new ParameterTransformer());
 
@@ -116,10 +123,10 @@ public abstract class Transformer implements ClassFileTransformer {
             // Post transformation
             inst.addTransformer(new SymbolicWrapperTransformer());
 
-            if (config.isWriteInstrumentedClasses()) {
+            if (config.isLoggingClasses()) {
                 inst.addTransformer(new ClassSavingTransformer());
             }
-            systemLogger.endBox();
+            logger.info(printBox.toString());
         } catch (Exception e) {
             ErrorHandler errorHandler = new ErrorHandler();
             errorHandler.handleException("Error during Transformer initialization!", e);
@@ -137,17 +144,17 @@ public abstract class Transformer implements ClassFileTransformer {
     public static boolean shouldInstrument(String cname) {
         // Special case for SV-Comp
         if (cname.equals("de/uzl/its/swat/instrument/svcomp/Verifier")
-                && config.getTransformerType().equals(TransformerType.SV_COMP)) return true;
+                && config.getInstrumentationTransformer().equals(TransformerType.SV_COMP))
+            return true;
 
         boolean shouldInst = true;
-        if (config.getInstrumentPackages() != null) {
+        if (config.getInstrumentationIncludePackages() != null) {
             shouldInst = false;
-            for (String p : config.getInstrumentPackages()) {
+            for (String p : config.getInstrumentationIncludePackages()) {
                 shouldInst = shouldInst || cname.startsWith(p);
             }
-        }
-        if (config.getExcludePackages() != null) {
-            for (String p : config.getExcludePackages()) {
+        } else if (config.getInstrumentationExcludePackages() != null) {
+            for (String p : config.getInstrumentationExcludePackages()) {
                 shouldInst = shouldInst && !cname.startsWith(p);
             }
         }

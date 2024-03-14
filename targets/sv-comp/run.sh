@@ -12,7 +12,7 @@ pwd
 ls ../targets/sv-comp/jdart-regression/addition01/
 java \
 -Xmx32g \
--Dswat.cfg=../targets/sv-comp/swat.cfg \
+-Dconfig.path=../targets/sv-comp/swat.cfg \
 -javaagent:../symbolic-executor/lib/symbolic-executor.jar \
 -jar ../targets/sv-comp/jdart-regression/addition01/build/Main.class > ../targets/sv-comp/jdart-regression/addition01/run.log 2>&1
 

@@ -1,0 +1,61 @@
+<configuration>
+
+    <property name="LOGGING_PATH" value="${logging.path:-logs}" />
+    <property name="LOGGING_LEVEL" value="${logging.level:-INFO}" />
+
+
+
+    <!-- Console Appender -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+
+
+    <!-- Generic File Appender -->
+    <appender name="LOGFILE" class="ch.qos.logback.core.FileAppender">
+        <Append>false</Append>
+        <file>${LOGGING_PATH}/symbolic-executor.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File Appender for Specific Logger -->
+    <appender name="SolutionLogger" class="ch.qos.logback.core.FileAppender">
+        <Append>false</Append>
+        <file>${LOGGING_PATH}/solution.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File Appender for Specific Logger -->
+    <appender name="ShadowStateLogger" class="ch.qos.logback.core.FileAppender">
+        <Append>false</Append>
+        <file>${LOGGING_PATH}/shadow-state.log</file>
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
+
+
+    <!-- Logger for local solutions -->
+    <logger name="de.uzl.its.swat.solver.LocalSolver" level="LOGGING_LEVEL">
+        <appender-ref ref="SolutionLogger" />
+    </logger>
+
+    <!-- Logger for shadow state (instructions + stack). Does not print to console -->
+    <logger name="ShadowStateLogger" level="LOGGING_LEVEL" additivity="false">
+        <appender-ref ref="ShadowStateLogger" />
+    </logger>
+
+    <!-- Root Logger -->
+    <root level="LOGGING_LEVEL">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="LOGFILE" />
+    </root>
+
+</configuration>

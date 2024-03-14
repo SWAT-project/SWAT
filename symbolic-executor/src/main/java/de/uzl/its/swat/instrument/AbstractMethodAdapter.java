@@ -1,29 +1,29 @@
 package de.uzl.its.swat.instrument;
 
+import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
-import de.uzl.its.swat.logger.SystemLogger;
 import java.util.ArrayList;
-import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.slf4j.LoggerFactory;
 
 @Setter
 @Getter
 public abstract class AbstractMethodAdapter extends MethodVisitor {
 
-    private static final Logger LOGGER = Logger.getLogger(AbstractMethodAdapter.class.getName());
+    private static final org.slf4j.Logger logger =
+            LoggerFactory.getLogger(AbstractMethodAdapter.class);
+
     private static final String METHOD_DESC_REGEX = "\\((.*?)\\)";
     private static final char ARRAY = '[';
     private static final char OBJECT = 'L';
     private static final char METHOD = '(';
     private final String desc;
     private final String name;
-    private final Logger logger;
-    private final SystemLogger systemLogger;
     private final Config config = Config.instance();
     /**
      * Constructor that calls the super from the default MethodVisitor
@@ -36,8 +36,6 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         super(Opcodes.ASM9, mv);
         this.desc = desc;
         this.name = name;
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
     }
 
     /**
@@ -78,11 +76,11 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         }
         if (desc.charAt(i) == OBJECT) {
             int end = desc.indexOf(";", i);
-            param.append(desc.substring(i, end + 1));
+            param.append(desc, i, end + 1);
             return end + 1;
         } else if (desc.charAt(i) == METHOD) {
             int end = desc.indexOf(")", i);
-            param.append(desc.substring(i, end + 1));
+            param.append(desc, i, end + 1);
             return end + 1;
         } else {
             param.append(desc.charAt(i));
@@ -149,13 +147,14 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         symbolicParameter(paramIdx, Opcodes.ALOAD, Opcodes.ASTORE, "Ljava/lang/Long;");
     }
 
-    public void handleMethodParameters(int access) {
+    public void handleMethodParameters(int access, PrintBox printBox) {
         boolean isStatic = (access & Opcodes.ACC_STATIC) != 0;
         int paramIdx = isStatic ? 0 : 1;
 
         ArrayList<String> parameters = splitParameters(desc);
         for (String param : parameters) {
-            systemLogger.addToBox("    => Parameter #" + paramIdx + ": " + param);
+            printBox.addMsg("    => Parameter #" + paramIdx + ": " + param);
+            printBox.setContentPresent(true);
             DataType type = DataType.getDataType(param);
             switch (type) {
                 case INTEGER_TYPE:
@@ -199,7 +198,7 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
                     paramIdx++;
                     break;
                 default:
-                    LOGGER.warning(
+                    logger.warn(
                             String.format(
                                     "Unknown DataType in Parameter #%d -> %s", paramIdx, param));
                     paramIdx++;
@@ -214,14 +213,13 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
             visitMethodInsn(
                     Opcodes.INVOKEVIRTUAL,
                     param.substring(1),
-                    config.getCustomFunctionName(),
+                    config.getInstrumentationPrefix(),
                     "()V",
                     false);
         } else if (param.equals("Ljava/lang/Long")) {
             symbolicLongObject(paramIdx);
         } else {
-            LOGGER.warning(
-                    String.format("Unknown DataType in Parameter #%d -> %s", paramIdx, param));
+            logger.warn(String.format("Unknown DataType in Parameter #%d -> %s", paramIdx, param));
         }
     }
 }

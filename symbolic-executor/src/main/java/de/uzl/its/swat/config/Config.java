@@ -1,213 +1,358 @@
 package de.uzl.its.swat.config;
 
 import de.uzl.its.swat.instrument.TransformerType;
+import de.uzl.its.swat.solver.SolverMode;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Properties;
-import java.util.stream.Collectors;
 import lombok.Getter;
+import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
+/**
+ * The Config class is responsible for reading the configuration file and providing the application
+ * with the configuration options. It is a singleton class, and the instance should be fetched using
+ * the static {@link #instance()} method.
+ */
 public class Config {
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Config.class);
+
+    private static final Properties properties = new Properties();
+
     private static final String DEFAULT_CONFIG_FILE = "../swat.cfg";
-    private static final String TRUE = "true";
 
-    /** Implementation of the solver request. */
-    @Getter private SolverRequestImpl solverRequest;
+    // ------------------------------------
+    // Explorer Connection options
+    // ------------------------------------
 
-    /** Host name of the coordinator service. */
-    @Getter private String coordinatorHost;
+    /** Host name of the symbolic explorer. */
+    @Getter private String explorerHost;
 
-    /** Port number of the coordinator service. */
-    @Getter private String coordinatorPort;
+    private static final String DEFAULT_EXPLORER_HOST = "localhost";
 
-    /** File path for the solver. */
-    @Getter private String solverPath;
+    /** Port number of the symbolic explorer. */
+    @Getter private int explorerPort;
 
-    /** File path for storing coverage data. */
-    @Getter private String coveragePath;
+    private static final int DEFAULT_EXPLORER_PORT = 8078;
 
-    /** File path for storing total coverage data. */
-    @Getter private String coverageTotalPath;
+    /** URI where the symbolic explorer receives trace information. */
+    @Getter private String explorerTraceURI;
 
-    /** File path for logging. */
-    @Getter private String loggingPath;
+    private static final String DEFAULT_EXPLORER_TRACE_URI = "constraints/submit";
 
-    /** Flag to use symbolic data endpoint. */
-    @Getter private boolean useSymbolicDataEndpoint;
+    // ------------------------------------
+    // Logging options
+    // ------------------------------------
 
-    /** Type of transformer to be used. */
-    @Getter private TransformerType transformerType;
+    /** Directory to store logs and instrumented .class files. */
+    @Getter private String loggingDirectory;
 
-    /** Determines if Verifier randomness is enabled. */
-    @Getter private boolean verifierRandomnessEnabled;
+    private static final String DEFAULT_LOGGING_DIRECTORY = "logs/";
 
-    /** Flag for verbose logging. */
-    @Getter private boolean verbose;
+    /** Sets the logging level. Default: "Level.INFO" */
+    @Getter private Level loggingLevel;
 
-    /** Class name for analysis implementation. */
-    @Getter private String analysisClass;
+    private static final Level DEFAULT_LOGGING_LEVEL = Level.INFO;
 
     /** Flag to determine if instrumented classes should be written out. */
-    @Getter private boolean writeInstrumentedClasses;
+    @Getter private boolean loggingClasses;
 
-    /** Directory to store instrumented classes. */
-    @Getter private String instDir;
-
-    /** Class path for making symbolic values. */
-    @Getter private String makeSymbolicClassPath;
-
-    /** Pattern for symbolic function identification. */
-    @Getter private String symbolicFunctionPattern;
-
-    /** Start path for symbolic analysis. */
-    @Getter private String symbolicStartPath;
-
-    /** Pattern for identifying the starting function in symbolic analysis. */
-    @Getter private String symbolicStartFunctionPattern;
-
-    /** Custom function name for analysis. */
-    @Getter private String customFunctionName;
-
-    /** Packages to be instrumented. */
-    @Getter private String[] instrumentPackages;
-
-    /** Packages to be excluded from instrumentation. */
-    @Getter private String[] excludePackages;
-
-    /** Flag to enable or disable instruction IDs. */
-    @Getter private boolean instructionIds;
+    private static final boolean DEFAULT_LOGGING_CLASSES = false;
 
     /** Flag for enabling debug mode. */
-    @Getter private boolean debug;
+    @Getter private boolean loggingDebug;
 
-    /** Flag for enabling logging. */
-    @Getter private boolean logging;
+    private static final boolean DEFAULT_LOGGING_DEBUG = false;
 
     /** Flag for enabling invocation logging. */
-    @Getter private boolean invocationLogging;
+    @Getter private boolean loggingInvocations;
 
+    private static final boolean DEFAULT_LOGGING_INVOCATIONS = true;
+
+    /** Length to print symbolic formula. */
+    @Getter private int loggingFormulaLength;
+
+    private static final int DEFAULT_LOGGING_FORMULA_LENGTH = 100;
+
+    // ------------------------------------
+    // Instrumentation options
+    // ------------------------------------
+
+    /**
+     * Fully qualified name of the class that receives instruction information from the concrete
+     * execution.
+     */
+    @Getter private String instrumentationDispatcher;
+
+    private static final String DEFAULT_INSTRUMENTATION_DISPATCHER =
+            "de.uzl.its.swat.symbolic.SymbolicInstructionDispatcher";
+
+    /** Custom function name for analysis. */
+    @Getter private String instrumentationPrefix;
+
+    private static final String DEFAULT_INSTRUMENTATION_PREFIX = "SWAT";
+
+    /** Packages to be instrumented. */
+    @Getter private String[] instrumentationIncludePackages;
+
+    private static final String[] DEFAULT_INSTRUMENTATION_INCLUDE_PACKAGES = new String[] {};
+
+    /** Packages to be excluded from instrumentation. */
+    @Getter private String[] instrumentationExcludePackages;
+
+    private static final String[] DEFAULT_INSTRUMENTATION_EXCLUDE_PACKAGES =
+            new String[] {
+                "org/springframework/boot/loader",
+                "de/uzl/its/swat/",
+                "de/uzl/its/symbolic",
+                "de/uzl/its/swat/symbolic/trace/dto",
+                "com/intellij/",
+                "com/fasterxml/",
+                "sun/",
+                "jdk/",
+                "org/h2/",
+                "org/sosy_lab",
+                "java/",
+                "javax/",
+                "com/sun/",
+                "org/apache/",
+                "com/microsoft",
+                "com/google",
+                "org/w3c",
+                "org/jcp",
+                "org/objectweb/asm",
+                "apple/security",
+                "org/apache",
+                "org/slf4j",
+            };
+
+    /** Fully qualified class name that should be tracked symbolically. Supports basic regex. */
+    @Getter private String instrumentationParameterSymbolicClassName;
+
+    /** Method name that should be tracked symbolically. Supports basic regex. */
+    @Getter private String instrumentationParameterSymbolicMethodName;
+
+    /**
+     * Flag to enable or disable instruction IDs. No default value, as it is derived from the
+     * loggingDebug option.
+     */
+    @Getter private boolean instrumentationInstructionIds;
+
+    /** Type of transformer to be used. */
+    @Getter private TransformerType instrumentationTransformer;
+
+    // ------------------------------------
+    // Solver options
+    // ------------------------------------
+    /** Determines solver mode should be used. */
+    @Getter private SolverMode solverMode;
+
+    private static final SolverMode DEFAULT_SOLVER_MODE = SolverMode.LOCAL;
+
+    // ------------------------------------
+    // General options
+    // ------------------------------------
     /** Flag to determine if the application should exit on errors. */
     @Getter private boolean exitOnError;
 
+    private static final boolean DEFAULT_EXIT_ON_ERROR = true;
+
+    // ------------------------------------
+    // SV-comp options
+    // ------------------------------------
+
+    /** Determines if Verifier randomness is enabled. */
+    @Getter private boolean svcompRandomInputs;
+
+    private static final boolean DEFAULT_SVCOMP_RANDOM_INPUTS = false;
+
+    /**
+     * Constructor for the configuration class. Loads the properties from the configuration file.
+     * Should not be called directly, the configuration instance should be fetched using the static
+     * {@link #instance()} method.
+     */
     private Config() {
+        logger.debug("Initializing configuration.");
         loadProperties();
+        readProperties();
     }
 
+    /**
+     * Loads the properties from the configuration file. If no file is found, default values are
+     * used.
+     */
     private void loadProperties() {
-        Properties properties = new Properties();
         try (FileInputStream input =
-                new FileInputStream(System.getProperty("swat.cfg", DEFAULT_CONFIG_FILE))) {
+                new FileInputStream(System.getProperty("config.path", DEFAULT_CONFIG_FILE))) {
             properties.load(input);
         } catch (IOException ex) {
-            // throw new RuntimeException("Could not find a configuration file!", ex);
-            System.err.println("Could not find a configuration file, using default values!");
+            logger.warn("Could not find a configuration file, using default values!");
         }
-        solverRequest =
-                SolverRequestImpl.valueOf(
-                        properties.getProperty("solverRequest", SolverRequestImpl.HTTP.name()));
-        coordinatorHost = properties.getProperty("coordinatorHost", "localhost");
-        coordinatorPort = properties.getProperty("coordinatorPort", "8078");
-        solverPath = properties.getProperty("solverPath", "constraints/submit");
-        coveragePath = properties.getProperty("coveragePath", "coverage/submit");
-        coverageTotalPath = properties.getProperty("coverageTotalPath", "coverage/total/submit");
-        loggingPath = properties.getProperty("loggingPath", "logs/");
-        useSymbolicDataEndpoint =
-                properties
-                        .getProperty("transformer.useSymbolicDataEndpoint", "false")
-                        .equals("true");
-        transformerType =
+    }
+
+    /**
+     * Reads a boolean value from the properties file. If the key is not found, the default value is
+     * used
+     *
+     * @param key The key to read
+     * @param defaultValue The default value
+     * @return The value read from the properties file or the default value
+     */
+    private boolean readBoolean(String key, boolean defaultValue) {
+        boolean val;
+        if (properties.containsKey(key)) {
+            val = Boolean.parseBoolean(properties.getProperty(key));
+            logger.debug("[Loaded]  " + key + ":" + val);
+        } else {
+            val = defaultValue;
+            logger.debug("[Default] " + key + ":" + val);
+        }
+        return val;
+    }
+
+    /**
+     * Reads an int value from the properties file. If the key is not found, the default value is
+     * used
+     *
+     * @param key The key to read
+     * @param defaultValue The default value
+     * @return The value read from the properties file or the default value
+     */
+    private int readInt(String key, int defaultValue) {
+        int val;
+        if (properties.containsKey(key)) {
+            val = Integer.parseInt(properties.getProperty(key));
+            logger.debug("[Loaded]  " + key + ":" + val);
+        } else {
+            val = defaultValue;
+            logger.debug("[Default] " + key + ":" + val);
+        }
+        return val;
+    }
+
+    /**
+     * Reads a string from the properties file. If the key is not found, the default value is used
+     *
+     * @param key The key to read
+     * @param defaultValue The default value
+     * @return The value read from the properties file or the default value
+     */
+    private String readString(String key, String defaultValue) {
+        String val;
+        if (properties.containsKey(key)) {
+            val = properties.getProperty(key);
+            logger.debug("[Loaded]  " + key + ":" + val);
+        } else {
+            val = defaultValue;
+            logger.debug("[Default] " + key + ":" + val);
+        }
+        return val;
+    }
+
+    /**
+     * Reads a colon separated list from the properties file. If the key is not found, the default
+     * value is used
+     *
+     * @param key The key to read
+     * @param defaultValue The default value
+     * @return The value read from the properties file or the default value
+     */
+    private String[] readList(String key, String[] defaultValue) {
+        String[] val;
+        if (properties.containsKey(key)) {
+            val = properties.getProperty(key).split(":");
+            logger.debug("[Loaded]  " + key + ":" + Arrays.toString(val));
+        } else {
+            val = defaultValue;
+            logger.debug("[Default] " + key + ":" + Arrays.toString(val));
+        }
+        return val;
+    }
+
+    /** Reads the properties from the configuration file. */
+    private void readProperties() {
+        // ------------------------------------
+        // Explorer Connection options
+        // ------------------------------------
+        explorerHost = readString("explorer.host", DEFAULT_EXPLORER_HOST);
+        explorerPort = readInt("explorer.port", DEFAULT_EXPLORER_PORT);
+        explorerTraceURI = readString("explorer.traceURI", DEFAULT_EXPLORER_TRACE_URI);
+        // ------------------------------------
+        // Logging options
+        // ------------------------------------
+        loggingDirectory = readString("logging.directory", DEFAULT_LOGGING_DIRECTORY);
+        loggingLevel = Level.valueOf(readString("logging.level", DEFAULT_LOGGING_LEVEL.toString()));
+        loggingClasses = readBoolean("logging.classes", DEFAULT_LOGGING_CLASSES);
+        loggingDebug = readBoolean("logging.debug", DEFAULT_LOGGING_DEBUG);
+        loggingInvocations = readBoolean("logging.invocations", DEFAULT_LOGGING_INVOCATIONS);
+        loggingFormulaLength = readInt("logging.formulaLength", DEFAULT_LOGGING_FORMULA_LENGTH);
+
+        // ------------------------------------
+        // Instrumentation options
+        // ------------------------------------
+        instrumentationDispatcher =
+                readString("instrumentation.dispatcher", DEFAULT_INSTRUMENTATION_DISPATCHER)
+                        .replace('.', '/');
+        instrumentationPrefix =
+                readString("instrumentation.prefix", DEFAULT_INSTRUMENTATION_PREFIX);
+        instrumentationIncludePackages =
+                readList(
+                        "instrumentation.includePackages",
+                        DEFAULT_INSTRUMENTATION_INCLUDE_PACKAGES);
+
+        instrumentationExcludePackages =
+                readList(
+                        "instrumentation.excludePackages",
+                        DEFAULT_INSTRUMENTATION_EXCLUDE_PACKAGES);
+
+        instrumentationInstructionIds = readBoolean("instrumentation.instructionIds", loggingDebug);
+
+        instrumentationTransformer =
                 TransformerType.valueOf(
-                        properties.getProperty("transformer", TransformerType.NONE.name()));
-        verifierRandomnessEnabled =
-                properties.getProperty("verifierRandomnessEnabled", "false").equals("true");
-        verbose = getBooleanProperty(properties, "verbose");
-        analysisClass =
-                getClassProperty(properties, "analysisClass", "de.uzl.its.swat.logger.DJVM");
-        // Get values for make symbolic
-        String symbolicValueFunction = properties.getProperty("symbolicValueFunction", "");
-        String[] symbolicValueParts = symbolicValueFunction.split(":", 2);
-        makeSymbolicClassPath = symbolicValueParts[0];
-        symbolicFunctionPattern = symbolicValueParts.length > 1 ? symbolicValueParts[1] : "";
+                        readString("instrumentation.transformer", TransformerType.NONE.name()));
 
-        String symbolicStartFunction = properties.getProperty("symbolicStartFunction", "");
-        String[] symbolicStartParts = symbolicStartFunction.split(":", 2);
-        symbolicStartPath = symbolicStartParts[0];
-        symbolicStartFunctionPattern =
-                processPattern(symbolicStartParts.length > 1 ? symbolicStartParts[1] : "");
+        String instrumentationParameterSymbolicPatternString =
+                readString("instrumentation.parameter.symbolicPattern", "");
+        String[] instrumentationParameterSymbolicPattern =
+                instrumentationParameterSymbolicPatternString.split(":");
+        if (instrumentationParameterSymbolicPattern.length != 2) {
+            if (!instrumentationParameterSymbolicPatternString.isEmpty())
+                logger.warn(
+                        "Invalid instrumentation.parameter.symbolicPattern: "
+                                + instrumentationParameterSymbolicPatternString);
+        } else {
+            instrumentationParameterSymbolicClassName = instrumentationParameterSymbolicPattern[0];
+            instrumentationParameterSymbolicMethodName = instrumentationParameterSymbolicPattern[1];
+        }
 
-        instDir = properties.getProperty("instDir", "instrumented");
-        writeInstrumentedClasses =
-                properties.getProperty("writeInstrumentedClasses", "false").equals("true");
-        customFunctionName =
-                properties.getProperty(
-                        "customFunctionName", "swatCustomFunctionName_dqjikh32412ds");
-        instrumentPackages =
-                properties.getProperty("instrumentPackages", null) == null
-                        ? null
-                        : properties.getProperty("instrumentPackages", null).split(":");
+        // ------------------------------------
+        // General options
+        // ------------------------------------
+        exitOnError = readBoolean("exitOnError", DEFAULT_EXIT_ON_ERROR);
 
-        excludePackages =
-                properties.getOrDefault("excludePackages", null) == null
-                        ? new String[] {
-                            "org/springframework/boot/loader",
-                            "de/uzl/its/swat/",
-                            "de/uzl/its/symbolic",
-                            "de/uzl/its/dto",
-                            "com/intellij/",
-                            "com/fasterxml/",
-                            "sun/",
-                            "jdk/",
-                            "org/h2/",
-                            "org/sosy_lab",
-                            "java/",
-                            "javax/",
-                            "com/sun/",
-                            "org/apache/",
-                            "com/microsoft",
-                            "com/google",
-                            "org/w3c",
-                            "org/jcp",
-                            "org/objectweb/asm",
-                            "apple/security",
-                        }
-                        : properties.getProperty("instrumentPackages", null).split(":");
-        debug = properties.getProperty("debug", "false").equals("true");
-        exitOnError = properties.getProperty("exitOnError", "true").equals("true");
-        instructionIds =
-                properties.getProperty("instructionIds", String.valueOf(debug)).equals("true");
-        logging = properties.getProperty("logging", "true").equals("true");
-        invocationLogging = properties.getProperty("invocationLogging", "true").equals("true");
+        // ------------------------------------
+        // Solver options
+        // ------------------------------------
+        solverMode = SolverMode.valueOf(readString("solver.mode", DEFAULT_SOLVER_MODE.toString()));
+        // ------------------------------------
+        // SV-Comp options
+        // ------------------------------------
+        svcompRandomInputs = readBoolean("svcomp.randomInputs", DEFAULT_SVCOMP_RANDOM_INPUTS);
     }
 
-    private String processPattern(String pattern) {
-        return Arrays.stream(pattern.split(","))
-                .map(p -> p.replace("*", ".*").replace("?", ".?"))
-                .collect(Collectors.joining("|"));
-    }
-
-    public boolean exitOnError() {
-        return exitOnError;
-    }
-
-    private boolean getBooleanProperty(Properties properties, String key) {
-        return TRUE.equals(properties.getProperty(key, "false"));
-    }
-
-    private String getClassProperty(Properties properties, String key, String defaultValue) {
-        return properties.getProperty(key, defaultValue).replace('.', '/');
-    }
-
+    /** LazyHolder to hold global instance of config object */
     private static class LazyHolder {
+        /** The global config instance */
         static final Config INSTANCE = new Config();
     }
 
+    /**
+     * Instance method. Should be used to obtain config object
+     *
+     * @return The config instance.
+     */
     public static Config instance() {
         return LazyHolder.INSTANCE;
-    }
-    /** Enum representing the implementations of solver requests. */
-    public enum SolverRequestImpl {
-        LOCAL,
-        HTTP
     }
 }

@@ -1,12 +1,12 @@
 package de.uzl.its.value.reference
 
 
-import de.uzl.its.symbolic.value.Value
-import de.uzl.its.symbolic.value.primitive.numeric.floatingpoint.DoubleValue
-import de.uzl.its.symbolic.value.primitive.numeric.integral.CharValue
-import de.uzl.its.symbolic.value.primitive.numeric.integral.IntValue
-import de.uzl.its.symbolic.value.reference.StringBuilderValue
-import de.uzl.its.symbolic.value.reference.lang.StringValue
+import de.uzl.its.swat.symbolic.value.Value
+import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.CharValue
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue
+import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
 import org.objectweb.asm.Type
 import org.sosy_lab.common.ShutdownManager
 import org.sosy_lab.common.configuration.Configuration

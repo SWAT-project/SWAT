@@ -1,7 +1,5 @@
 package de.uzl.its.swat.instrument.svcomp;
 
-import de.uzl.its.swat.logger.SystemLogger;
-import java.util.logging.Logger;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -16,9 +14,6 @@ public class SVCompClassAdapter extends ClassVisitor {
 
     private final String cname;
 
-    private final Logger logger;
-    private final SystemLogger systemLogger;
-
     /**
      * Constructor that calls the super from the default ClassVisitor
      *
@@ -27,9 +22,6 @@ public class SVCompClassAdapter extends ClassVisitor {
     public SVCompClassAdapter(String cname, ClassVisitor cv) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
-
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
     }
 
     /**
@@ -55,7 +47,7 @@ public class SVCompClassAdapter extends ClassVisitor {
 
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
         if (!cname.equals("org/sosy_lab/sv_benchmarks/Verifier")) {
-            systemLogger.addToBox("Method: " + name, false);
+            SVCompTransformer.getPrintBox().addMsg("Method: " + name);
             return new SVCompMethodAdapter(access, mv, cname, name, desc);
         }
         return mv;

@@ -1,8 +1,6 @@
 package de.uzl.its.swat.instrument.parameter;
 
 import de.uzl.its.swat.config.Config;
-import de.uzl.its.swat.logger.SystemLogger;
-import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
@@ -17,8 +15,6 @@ import org.objectweb.asm.Opcodes;
 public class ParameterClassAdapter extends ClassVisitor {
 
     private final String cname;
-    private final Logger logger;
-    private final SystemLogger systemLogger;
     private final Config config = Config.instance();
 
     /**
@@ -30,9 +26,6 @@ public class ParameterClassAdapter extends ClassVisitor {
     public ParameterClassAdapter(ClassVisitor cv, String className) {
         super(Opcodes.ASM9, cv);
         this.cname = className;
-
-        systemLogger = new SystemLogger();
-        logger = systemLogger.getLogger();
     }
 
     /**
@@ -59,8 +52,9 @@ public class ParameterClassAdapter extends ClassVisitor {
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
 
         // Check if the name matches the pattern
-        if (!Pattern.matches(config.getSymbolicFunctionPattern(), name)) return mv;
-        systemLogger.addToBox("Method: " + name, false);
+        if (!Pattern.matches(config.getInstrumentationParameterSymbolicMethodName(), name))
+            return mv;
+        ParameterTransformer.getPrintBox().addMsg("Method: " + name);
 
         return new ParameterMethodAdapter(mv, access, name, desc, signature);
     }

@@ -4,8 +4,8 @@ import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
 import de.uzl.its.swat.instrument.TryCatchBlock;
 import de.uzl.its.swat.instrument.Utils;
-import de.uzl.its.swat.logger.ClassNames;
-import de.uzl.its.swat.logger.ObjectInfo;
+import de.uzl.its.swat.symbolic.ClassNames;
+import de.uzl.its.swat.symbolic.ObjectInfo;
 import java.util.Arrays;
 import java.util.LinkedList;
 import org.objectweb.asm.Handle;
@@ -77,7 +77,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     private void addInsn(MethodVisitor mv, String insn, boolean exception, int opcode) {
         String desc = "()V";
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             desc = "(II)V";
             addBipushInsn(mv, instrumentationState.incAndGetId());
             addBipushInsn(mv, instrumentationState.getMid());
@@ -85,20 +85,20 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
             desc = "(I)V";
             addBipushInsn(mv, instrumentationState.incAndGetId());
         }
-        mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), insn, desc, false);
+        mv.visitMethodInsn(INVOKESTATIC, config.getInstrumentationDispatcher(), insn, desc, false);
         mv.visitInsn(opcode);
     }
 
     /** Add var insn and its instrumentation code. */
     private void addVarInsn(MethodVisitor mv, int var, String insn, int opcode) {
         String desc = "(I)V";
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             desc = "(III)V";
             addBipushInsn(mv, instrumentationState.incAndGetId());
             addBipushInsn(mv, instrumentationState.getMid());
         }
         addBipushInsn(mv, var);
-        mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), insn, desc, false);
+        mv.visitMethodInsn(INVOKESTATIC, config.getInstrumentationDispatcher(), insn, desc, false);
 
         mv.visitVarInsn(opcode, var);
     }
@@ -106,12 +106,12 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     private void addTypeInsn(MethodVisitor mv, String type, int opcode, String name) {
         String desc = "(ILjava/lang/String;)V";
         addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             desc = "(IILjava/lang/String;)V";
             addBipushInsn(mv, instrumentationState.getMid());
         }
         mv.visitLdcInsn(type);
-        mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), name, desc, false);
+        mv.visitMethodInsn(INVOKESTATIC, config.getInstrumentationDispatcher(), name, desc, false);
         mv.visitTypeInsn(opcode, type);
     }
 
@@ -690,7 +690,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     public void visitIntInsn(int opcode, int operand) {
 
         String desc = "(I)V";
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             desc = "(III)V";
             addBipushInsn(mv, instrumentationState.incAndGetId());
             addBipushInsn(mv, instrumentationState.getMid());
@@ -701,16 +701,22 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         switch (opcode) {
             case BIPUSH:
                 addBipushInsn(mv, operand);
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "BIPUSH", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "BIPUSH", desc, false);
                 break;
             case SIPUSH:
                 addBipushInsn(mv, operand);
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "SIPUSH", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "SIPUSH", desc, false);
                 break;
             case NEWARRAY:
                 addBipushInsn(mv, operand);
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "NEWARRAY", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "NEWARRAY",
+                        desc,
+                        false);
                 mv.visitIntInsn(opcode, operand);
                 addSpecialInsn(mv, 0); // for non-exceptional path
                 return;
@@ -735,14 +741,15 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
             case NEW:
                 String desc = "(ILjava/lang/String;I)V";
                 addBipushInsn(mv, instrumentationState.incAndGetId());
-                if (config.isInstructionIds()) {
+                if (config.isInstrumentationInstructionIds()) {
                     desc = "(IILjava/lang/String;I)V";
                     addBipushInsn(mv, instrumentationState.getMid());
                 }
                 mv.visitLdcInsn(type);
                 int cIdx = classNames.get(type);
                 addBipushInsn(mv, cIdx);
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "NEW", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "NEW", desc, false);
                 mv.visitTypeInsn(opcode, type);
                 addSpecialInsn(mv, 0); // for non-exceptional path
 
@@ -780,7 +787,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     public void visitFieldInsn(int opcode, String owner, String name, String desc) {
         String d = "(IIILjava/lang/String;)V";
         addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             d = "(IIIILjava/lang/String;)V";
             addBipushInsn(mv, instrumentationState.getMid());
         }
@@ -793,7 +800,8 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addBipushInsn(mv, fIdx);
                 mv.visitLdcInsn(desc);
 
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "GETSTATIC", d, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "GETSTATIC", d, false);
 
                 mv.visitFieldInsn(opcode, owner, name, desc);
                 addSpecialInsn(mv, 0); // for non-exceptional path
@@ -804,7 +812,8 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addBipushInsn(mv, fIdx);
                 mv.visitLdcInsn(desc);
 
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "PUTSTATIC", d, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "PUTSTATIC", d, false);
                 mv.visitFieldInsn(opcode, owner, name, desc);
                 addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
@@ -813,7 +822,8 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addBipushInsn(mv, fIdx);
                 mv.visitLdcInsn(desc);
 
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "GETFIELD", d, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "GETFIELD", d, false);
                 mv.visitFieldInsn(opcode, owner, name, desc);
                 addSpecialInsn(mv, 0); // for non-exceptional path
                 addValueReadInsn(mv, owner + ":" + name + ":" + desc, "GETVALUE_");
@@ -823,7 +833,8 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addBipushInsn(mv, fIdx);
                 mv.visitLdcInsn(desc);
 
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "PUTFIELD", d, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "PUTFIELD", d, false);
                 mv.visitFieldInsn(opcode, owner, name, desc);
                 addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
@@ -853,7 +864,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
             int opcode, String owner, String name, String desc, boolean itf) {
         String d = "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
         addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             d = "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
             addBipushInsn(mv, instrumentationState.getMid());
         }
@@ -861,7 +872,11 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         mv.visitLdcInsn(name);
         mv.visitLdcInsn(desc);
         mv.visitMethodInsn(
-                INVOKESTATIC, config.getAnalysisClass(), getMethodNameByOpcode(opcode), d, false);
+                INVOKESTATIC,
+                config.getInstrumentationDispatcher(),
+                getMethodNameByOpcode(opcode),
+                d,
+                false);
         // Wrap the method call in a try-catch block
         Label begin = new Label();
         Label handler = new Label();
@@ -875,12 +890,20 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
         mv.visitLabel(handler);
         mv.visitMethodInsn(
-                INVOKESTATIC, config.getAnalysisClass(), "INVOKEMETHOD_EXCEPTION", "()V", false);
+                INVOKESTATIC,
+                config.getInstrumentationDispatcher(),
+                "INVOKEMETHOD_EXCEPTION",
+                "()V",
+                false);
         mv.visitInsn(ATHROW);
 
         mv.visitLabel(end);
         mv.visitMethodInsn(
-                INVOKESTATIC, config.getAnalysisClass(), "INVOKEMETHOD_END", "()V", false);
+                INVOKESTATIC,
+                config.getInstrumentationDispatcher(),
+                "INVOKEMETHOD_END",
+                "()V",
+                false);
 
         addValueReadInsn(mv, owner + ":" + name + ":" + desc, "GETVALUE_");
     }
@@ -901,7 +924,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         String d = "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
         // increment and pushes the instruction id to the stack using the mv
         addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             d = "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
             // push the current method id to the stack using mv
             addBipushInsn(mv, instrumentationState.getMid());
@@ -917,7 +940,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         // call de.uzl.its.swat.logger.DJVM (default)
         mv.visitMethodInsn(
                 INVOKESTATIC, // opcode
-                config.getAnalysisClass(), // owner
+                config.getInstrumentationDispatcher(), // owner
                 getMethodNameByOpcode(INVOKEDYNAMIC), // name
                 d, // desc
                 false); // is interface?
@@ -935,12 +958,20 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
         mv.visitLabel(handler);
         mv.visitMethodInsn(
-                INVOKESTATIC, config.getAnalysisClass(), "INVOKEMETHOD_EXCEPTION", "()V", false);
+                INVOKESTATIC,
+                config.getInstrumentationDispatcher(),
+                "INVOKEMETHOD_EXCEPTION",
+                "()V",
+                false);
         mv.visitInsn(ATHROW);
 
         mv.visitLabel(end);
         mv.visitMethodInsn(
-                INVOKESTATIC, config.getAnalysisClass(), "INVOKEMETHOD_END", "()V", false);
+                INVOKESTATIC,
+                config.getInstrumentationDispatcher(),
+                "INVOKEMETHOD_END",
+                "()V",
+                false);
 
         addValueReadInsn(mv, bsm.getOwner() + ":" + name + ":" + desc, "GETVALUE_");
     }
@@ -972,7 +1003,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 String d = "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
                 // increment and pushes the instruction id to the stack using the mv
                 addBipushInsn(mv, instrumentationState.incAndGetId());
-                if (config.isInstructionIds()) {
+                if (config.isInstrumentationInstructionIds()) {
                     d = "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
                     // push the current method id to the stack using mv
                     addBipushInsn(mv, instrumentationState.getMid());
@@ -983,7 +1014,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 mv.visitLdcInsn(desc);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        config.getAnalysisClass(),
+                        config.getInstrumentationDispatcher(),
                         getMethodNameByOpcode(opcode),
                         d,
                         false);
@@ -991,7 +1022,11 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 mv.visitMethodInsn(opcode, owner, name, desc, itf);
 
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "INVOKEMETHOD_END", "()V", false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "INVOKEMETHOD_END",
+                        "()V",
+                        false);
                 addValueReadInsn(mv, owner + ":" + name + ":" + desc, "GETVALUE_");
 
                 addSpecialInsn(mv, 421);
@@ -1021,106 +1056,151 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         int iid3;
         String desc = "(II)V";
         addBipushInsn(mv, iid3 = instrumentationState.incAndGetId());
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             desc = "(III)V";
             addBipushInsn(mv, instrumentationState.getMid());
         }
         addBipushInsn(mv, System.identityHashCode(label)); // label.getOffset()
         switch (opcode) {
             case IFEQ:
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "IFEQ", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "IFEQ", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFNE:
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "IFNE", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "IFNE", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFLT:
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "IFLT", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "IFLT", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFGE:
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "IFGE", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "IFGE", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFGT:
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "IFGT", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "IFGT", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFLE:
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "IFLE", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "IFLE", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPEQ:
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "IF_ICMPEQ", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "IF_ICMPEQ",
+                        desc,
+                        false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPNE:
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "IF_ICMPNE", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "IF_ICMPNE",
+                        desc,
+                        false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPLT:
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "IF_ICMPLT", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "IF_ICMPLT",
+                        desc,
+                        false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPGE:
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "IF_ICMPGE", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "IF_ICMPGE",
+                        desc,
+                        false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPGT:
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "IF_ICMPGT", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "IF_ICMPGT",
+                        desc,
+                        false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPLE:
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "IF_ICMPLE", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "IF_ICMPLE",
+                        desc,
+                        false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ACMPEQ:
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "IF_ACMPEQ", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "IF_ACMPEQ",
+                        desc,
+                        false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ACMPNE:
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "IF_ACMPNE", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "IF_ACMPNE",
+                        desc,
+                        false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case GOTO:
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "GOTO", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "GOTO", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 break;
             case JSR:
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "JSR", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "JSR", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 break;
             case IFNULL:
-                mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "IFNULL", desc, false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "IFNULL", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFNONNULL:
                 mv.visitMethodInsn(
-                        INVOKESTATIC, config.getAnalysisClass(), "IFNONNULL", desc, false);
+                        INVOKESTATIC,
+                        config.getInstrumentationDispatcher(),
+                        "IFNONNULL",
+                        desc,
+                        false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
@@ -1134,30 +1214,50 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
         String desc = "(I";
         addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             desc = "(II";
             addBipushInsn(mv, instrumentationState.getMid());
         }
         mv.visitLdcInsn(cst);
         if (cst instanceof Integer) {
-            mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "LDC", desc + "I)V", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    config.getInstrumentationDispatcher(),
+                    "LDC",
+                    desc + "I)V",
+                    false);
         } else if (cst instanceof Long) {
-            mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "LDC", desc + "J)V", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    config.getInstrumentationDispatcher(),
+                    "LDC",
+                    desc + "J)V",
+                    false);
         } else if (cst instanceof Float) {
-            mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "LDC", desc + "F)V", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    config.getInstrumentationDispatcher(),
+                    "LDC",
+                    desc + "F)V",
+                    false);
         } else if (cst instanceof Double) {
-            mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "LDC", desc + "D)V", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    config.getInstrumentationDispatcher(),
+                    "LDC",
+                    desc + "D)V",
+                    false);
         } else if (cst instanceof String) {
             mv.visitMethodInsn(
                     INVOKESTATIC,
-                    config.getAnalysisClass(),
+                    config.getInstrumentationDispatcher(),
                     "LDC",
                     desc + "Ljava/lang/String;)V",
                     false);
         } else {
             mv.visitMethodInsn(
                     INVOKESTATIC,
-                    config.getAnalysisClass(),
+                    config.getInstrumentationDispatcher(),
                     "LDC",
                     desc + "Ljava/lang/Object;)V",
                     false);
@@ -1170,14 +1270,15 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     public void visitIincInsn(int var, int increment) {
 
         String desc = "(II)V";
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             desc = "(IIII)V";
             addBipushInsn(mv, instrumentationState.incAndGetId());
             addBipushInsn(mv, instrumentationState.getMid());
         }
         addBipushInsn(mv, var);
         addBipushInsn(mv, increment);
-        mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "IINC", desc, false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "IINC", desc, false);
         mv.visitIincInsn(var, increment);
     }
 
@@ -1187,7 +1288,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
         String desc = "(IIII[I[I)V"; // Add an extra array for case values
         addBipushInsn(mv, iid3 = instrumentationState.incAndGetId());
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             desc = "(IIIII[I[I)V"; // Adjust descriptor for the added array
             addBipushInsn(mv, instrumentationState.getMid());
         }
@@ -1214,7 +1315,8 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
             mv.visitInsn(IASTORE);
         }
 
-        mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "TABLESWITCH", desc, false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "TABLESWITCH", desc, false);
         mv.visitTableSwitchInsn(min, max, dflt, labels);
     }
 
@@ -1224,7 +1326,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
         String desc = "(II[I[I)V";
         addBipushInsn(mv, iid3 = instrumentationState.incAndGetId());
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             desc = "(III[I[I)V";
             addBipushInsn(mv, instrumentationState.getMid());
         }
@@ -1252,7 +1354,8 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
             mv.visitInsn(IASTORE);
         }
 
-        mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "LOOKUPSWITCH", desc, false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "LOOKUPSWITCH", desc, false);
         mv.visitLookupSwitchInsn(dflt, keys, labels);
     }
 
@@ -1260,13 +1363,14 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     public void visitMultiANewArrayInsn(String desc, int dims) {
         String d = "(ILjava/lang/String;I)V";
         addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstructionIds()) {
+        if (config.isInstrumentationInstructionIds()) {
             d = "(IILjava/lang/String;I)V";
             addBipushInsn(mv, instrumentationState.getMid());
         }
         mv.visitLdcInsn(desc);
         addBipushInsn(mv, dims);
-        mv.visitMethodInsn(INVOKESTATIC, config.getAnalysisClass(), "MULTIANEWARRAY", d, false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "MULTIANEWARRAY", d, false);
         mv.visitMultiANewArrayInsn(desc, dims);
         addSpecialInsn(mv, 0); // for non-exceptional path
     }
