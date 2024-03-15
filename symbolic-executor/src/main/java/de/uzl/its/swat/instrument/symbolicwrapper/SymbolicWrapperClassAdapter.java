@@ -3,6 +3,8 @@ package de.uzl.its.swat.instrument.symbolicwrapper;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.config.Config;
 import java.util.regex.Pattern;
+
+import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -52,67 +54,48 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
 
         if (mv != null) {
             switch (config.getInstrumentationTransformer()) {
-                case SV_COMP:
-                    if (name.equals("main")) {
-                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
-                        mv =
-                                new SymbolicWrapperMethodAdapter(
-                                        new SurroundingTryCatchMethodAdapter(mv, name, desc),
-                                        cname,
-                                        name,
-                                        desc);
+                case SV_COMP -> {
+                    if (!name.equals("main")) {
+                        return mv;
                     }
-                    break;
+                }
+                case SPRING_ENDPOINT -> {
+                    if (!SpringEndpointTransformer.getInstrumentedClasses().contains(cname)) {
+                        return mv;
+                    }
+                }
 
-                case SPRING_ENDPOINT:
+                case WEB_SERVLET -> {
                     /*
-                    SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
-                    mv =
-                            new SymbolicWrapperMethodAdapter(
-                                    new SurroundingTryCatchMethodAdapter(mv, name, desc),
-                                    cname,
-                                    name,
-                                    desc);
-                     */
-                    new ErrorHandler()
-                            .handleException(
-                                    new RuntimeException(
-                                            "Spring Endpoints are not supported currently."));
-                    break;
-                case WEB_SERVLET:
-                    /*
-                    if (name.equals("doPost")) {
-                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
-                        mv =
-                                new SymbolicWrapperMethodAdapter(
-                                        new SurroundingTryCatchMethodAdapter(mv, name, desc),
-                                        cname,
-                                        name,
-                                        desc);
+                    if (!name.equals("doPost")) {
+                        return mv;
                     }
                      */
                     new ErrorHandler()
                             .handleException(
                                     new RuntimeException(
                                             "Servlet Endpoints are not supported currently."));
-                    break;
-                case PARAMETER:
-                    if (Pattern.matches(
+                }
+                case PARAMETER -> {
+                    if (!Pattern.matches(
                             config.getInstrumentationParameterSymbolicMethodName(), name)) {
-                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
-                        mv =
-                                new SymbolicWrapperMethodAdapter(
-                                        new SurroundingTryCatchMethodAdapter(mv, name, desc),
-                                        cname,
-                                        name,
-                                        desc);
+                        return mv;
+
                     }
-                case NONE:
-                    break;
-                default:
-                    break;
+                }
+                case NONE -> {
+                    return mv;
+                }
             }
 
+            SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
+
+            mv =
+                    new SymbolicWrapperMethodAdapter(
+                            new SurroundingTryCatchMethodAdapter(mv, cname, name, desc),
+                            cname,
+                            name,
+                            desc);
             return mv;
         }
 

@@ -16,17 +16,21 @@ public class SurroundingTryCatchMethodAdapter extends AbstractMethodAdapter {
     private boolean addEndOfTryCatch = false;
     Config config = Config.instance();
 
+    private final boolean shouldInstrument;
+
     /**
      * Constructor that calls the super from the default MethodVisitor
      *
      * @param mv Parent MethodVisitor
      * @param name The method name
      */
-    public SurroundingTryCatchMethodAdapter(MethodVisitor mv, String name, String desc) {
+    public SurroundingTryCatchMethodAdapter(MethodVisitor mv, String cname, String name, String desc) {
         super(mv, name, desc);
 
         // Label used for try catch
         this.surroundingTryCatch = new Label[] {new Label(), new Label(), new Label()};
+        this.shouldInstrument = shouldInstrument(cname, name);
+
     }
 
     /**
@@ -38,7 +42,7 @@ public class SurroundingTryCatchMethodAdapter extends AbstractMethodAdapter {
     @Override
     public void visitMaxs(int maxStack, int maxLocals) {
 
-        if (!addEndOfTryCatch) {
+        if (!addEndOfTryCatch || !shouldInstrument) {
             super.visitMaxs(maxStack, maxLocals);
             return;
         }
@@ -57,7 +61,9 @@ public class SurroundingTryCatchMethodAdapter extends AbstractMethodAdapter {
 
     @Override
     public void visitCode() {
-        addBeginOfSurrounding();
+        if(shouldInstrument){
+            addBeginOfSurrounding();
+        }
     }
 
     private void addBeginOfSurrounding() {

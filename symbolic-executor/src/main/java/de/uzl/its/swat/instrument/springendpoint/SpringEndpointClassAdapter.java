@@ -1,7 +1,6 @@
-package de.uzl.its.swat.instrument.parameter;
+package de.uzl.its.swat.instrument.springendpoint;
 
-import de.uzl.its.swat.config.Config;
-import java.util.regex.Pattern;
+import de.uzl.its.swat.instrument.parameter.ParameterTransformer;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -12,23 +11,25 @@ import org.objectweb.asm.Opcodes;
  * visitTypeAnnotation | visitAttribute )* ( visitNestMember | [ * visitPermittedSubclass ] |
  * visitInnerClass | visitRecordComponent | visitField | visitMethod )* visitEnd.
  */
-public class ParameterClassAdapter extends ClassVisitor {
-    private final Config config = Config.instance();
+public class SpringEndpointClassAdapter extends ClassVisitor {
+
+    private final String cname;
 
     /**
      * Constructor that calls the super from the default ClassVisitor
      *
      * @param cv Parent ClassVisitor
      */
-    public ParameterClassAdapter(ClassVisitor cv) {
+    public SpringEndpointClassAdapter(ClassVisitor cv, String cname) {
         super(Opcodes.ASM9, cv);
+        this.cname = cname;
     }
 
     /**
      * Visits a method of the class. This method must return a new MethodVisitor instance (or null)
      * each time it is called, i.e., it should not return a previously returned visitor. Addition:
-     * Add a custom method visitor that instruments the parameters of the method to make them
-     * symbolic
+     * Add a custom method visitor that instruments the parameters of all endpoint methods to make
+     * them symbolic.
      *
      * @param access the method's access flags (see Opcodes). This parameter also indicates if the
      *     method is synthetic and/or deprecated.
@@ -46,12 +47,8 @@ public class ParameterClassAdapter extends ClassVisitor {
             int access, String name, String desc, String signature, String[] exceptions) {
 
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
-
-        // Check if the name matches the pattern
-        if (!Pattern.matches(config.getInstrumentationParameterSymbolicMethodName(), name))
-            return mv;
         ParameterTransformer.getPrintBox().addMsg("Method: " + name);
 
-        return new ParameterMethodAdapter(mv, access, name, desc, signature);
+        return new EndpointMappingMethodAdapter(mv, access, this.cname, name, desc);
     }
 }

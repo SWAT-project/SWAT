@@ -5,6 +5,8 @@ import de.uzl.its.swat.config.Config;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
 import lombok.Getter;
 import lombok.Setter;
 import org.objectweb.asm.MethodVisitor;
@@ -36,6 +38,16 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         super(Opcodes.ASM9, mv);
         this.desc = desc;
         this.name = name;
+    }
+
+    protected boolean shouldInstrument(String cname, String name) {
+        switch (config.getInstrumentationTransformer()){
+            case NONE, WEB_SERVLET -> {return false;}
+            case SV_COMP -> { return name.equals("main"); }
+            case PARAMETER -> {return Pattern.matches(config.getInstrumentationParameterSymbolicMethodName(),name);}
+            case SPRING_ENDPOINT -> {return SpringEndpointTransformer.getInstrumentedEndpoints().contains(cname + ":" + name);}
+        }
+        return false;
     }
 
     /**

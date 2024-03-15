@@ -1,13 +1,20 @@
 package de.uzl.its.swat.instrument.symbolicwrapper;
 
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.AbstractMethodAdapter;
+import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
+import java.util.regex.Pattern;
+
 public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
-    private boolean headerPossiblyInserted = false;
+    private boolean headerInserted = false;
 
     private String cname;
+    private static final Config config = Config.instance();
+
+    private final boolean shouldInstrument;
 
     /**
      * Constructor that calls the super from the default MethodVisitor
@@ -19,13 +26,16 @@ public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
     public SymbolicWrapperMethodAdapter(MethodVisitor mv, String cname, String name, String desc) {
         super(mv, name, desc);
         this.cname = cname;
+        shouldInstrument = this.shouldInstrument(cname, name);
     }
+
+
 
     @Override
     public void visitCode() {
-        if (!headerPossiblyInserted) {
-            insertHeaderIfNeeded();
-            headerPossiblyInserted = true;
+        if (!headerInserted && shouldInstrument) {
+            addInitializer();
+            headerInserted = true;
         }
     }
 
@@ -46,26 +56,22 @@ public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
      */
     @Override
     public void visitInsn(int opcode) {
-        switch (opcode) {
-            case Opcodes.IRETURN,
-                    Opcodes.FRETURN,
-                    Opcodes.ARETURN,
-                    Opcodes.LRETURN,
-                    Opcodes.DRETURN,
-                    Opcodes.RETURN -> addSolver();
-            default -> {}
+        if(shouldInstrument) {
+            switch (opcode) {
+                case Opcodes.IRETURN,
+                        Opcodes.FRETURN,
+                        Opcodes.ARETURN,
+                        Opcodes.LRETURN,
+                        Opcodes.DRETURN,
+                        Opcodes.RETURN -> addSolver();
+                default -> {
+                }
+            }
         }
 
         super.visitInsn(opcode);
     }
 
-    /**
-     * Starts the visit of the method's code, if any (i.e. non abstract method). Adds the beginning
-     * call for the concolic engine to the method
-     */
-    public void insertHeaderIfNeeded() {
-        addInitializer();
-    }
 
     /** Adds the initializer call */
     private void addInitializer() {

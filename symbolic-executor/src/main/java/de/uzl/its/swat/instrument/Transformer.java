@@ -5,6 +5,7 @@ import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.instruction.InstructionTransformer;
 import de.uzl.its.swat.instrument.parameter.ParameterTransformer;
+import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
 import de.uzl.its.swat.instrument.svcomp.SVCompTransformer;
 import de.uzl.its.swat.instrument.symbolicwrapper.SymbolicWrapperTransformer;
 import de.uzl.its.swat.thread.ThreadHandler;
@@ -105,15 +106,15 @@ public abstract class Transformer implements ClassFileTransformer {
             printBox.addMsg("");
 
             switch (config.getInstrumentationTransformer()) {
-                case SPRING_ENDPOINT, WEB_SERVLET -> {
+                case WEB_SERVLET -> {
                     new ErrorHandler()
                             .handleException(
                                     new RuntimeException(
-                                            "Spring and WebServlet Instrumentation is not supported"
+                                            "WebServlet instrumentation is not supported"
                                                     + " yet!"));
                 }
+                case SPRING_ENDPOINT -> inst.addTransformer(new SpringEndpointTransformer());
                 case PARAMETER -> inst.addTransformer(new ParameterTransformer());
-
                 case SV_COMP -> inst.addTransformer(new SVCompTransformer());
             }
 
