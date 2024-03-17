@@ -60,7 +60,7 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                     }
                 }
                 case SPRING_ENDPOINT -> {
-                    if (!SpringEndpointTransformer.getInstrumentedClasses().contains(cname)) {
+                    if(!SpringEndpointTransformer.getInstrumentedEndpoints().contains(cname + ":" + name)) {
                         return mv;
                     }
                 }
@@ -98,7 +98,7 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                             desc);
             return mv;
         }
-
         return null;
+
     }
 }

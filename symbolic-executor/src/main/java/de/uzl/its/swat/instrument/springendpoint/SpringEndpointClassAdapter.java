@@ -47,7 +47,7 @@ public class SpringEndpointClassAdapter extends ClassVisitor {
             int access, String name, String desc, String signature, String[] exceptions) {
 
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
-        ParameterTransformer.getPrintBox().addMsg("Method: " + name);
+        SpringEndpointTransformer.getPrintBox().addMsg("Method: " + name);
 
         return new EndpointMappingMethodAdapter(mv, access, this.cname, name, desc);
     }

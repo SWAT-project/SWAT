@@ -9,6 +9,8 @@ import de.uzl.its.swat.instrument.Transformer;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.security.ProtectionDomain;
+
+import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
 import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -62,11 +64,9 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
         }
 
         switch (config.getInstrumentationTransformer()) {
-            case SPRING_ENDPOINT -> new ErrorHandler()
-                    .handleException(
-                            new RuntimeException(
-                                    "Spring Endpoint Instrumentation is not supported for symbolic"
-                                            + " execution"));
+            case SPRING_ENDPOINT -> {
+                if(!SpringEndpointTransformer.getInstrumentedClasses().contains(cname)) return cbuf;
+            }
             case WEB_SERVLET -> new ErrorHandler()
                     .handleException(
                             new RuntimeException(

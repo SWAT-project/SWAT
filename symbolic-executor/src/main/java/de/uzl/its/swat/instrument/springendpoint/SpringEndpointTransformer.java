@@ -107,6 +107,6 @@ public class SpringEndpointTransformer implements ClassFileTransformer {
         instrumentedEndpoints.add(name);
     }
     public static void addInstrumentedClass(String cname) {
-        instrumentedEndpoints.add(cname);
+        instrumentedClasses.add(cname);
     }
 }

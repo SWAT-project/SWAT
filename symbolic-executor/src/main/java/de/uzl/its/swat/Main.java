@@ -20,10 +20,10 @@ import org.slf4j.LoggerFactory;
  */
 public class Main {
     private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Main.class);
-    private static final PrintBox printBox;
     private static final Config config = Config.instance();
 
     static {
+        PrintBox printBox;
         if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
             Verifier.retrieveInputs(); // ToDo only conditionally and at a petter place
         }
@@ -38,7 +38,7 @@ public class Main {
                                             "Once a symbolic method is executed, the corresponding",
                                             "thread will provide further logging",
                                             "",
-                                            "The following classes are currently instrumented using"
+                                            "The following classes are currently instrum    ented using"
                                                     + " ",
                                             "the following Transformers:"
                                         })));
@@ -49,8 +49,9 @@ public class Main {
             for (var transformer : entry.getValue()) {
                 printBox.addMsg("    => " + transformer.toString());
             }
-            logger.info(printBox.toString());
         }
+        logger.info(printBox.toString());
+
     }
 
     /**

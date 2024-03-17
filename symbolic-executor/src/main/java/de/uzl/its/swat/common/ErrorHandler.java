@@ -37,16 +37,9 @@ public class ErrorHandler {
     public void handleException(String msg, Throwable t) {
         if (config.isExitOnError()) {
             // Consider a more specific custom exception or handling strategy
-            throw new SWATRuntimeException("Critical error occurred", t);
+            throw new RuntimeException("Critical error occurred", t);
         } else {
             logger.error("[ERROR] " + msg + " " + t);
         }
-    }
-}
-
-/** SWATRuntimeException to encapsulate exceptions that lead to application termination. */
-class SWATRuntimeException extends RuntimeException {
-    public SWATRuntimeException(String message, Throwable cause) {
-        super(message, cause);
     }
 }
