@@ -3,7 +3,6 @@ import logging
 import re
 
 from data.BinaryExecutionTree.Node import Node
-
 from data.Database import Database
 from strategy.DFS import dfs
 from solver.SolverHandler import SATResult, Z3Handler
@@ -13,11 +12,11 @@ class StrategyService:
     
     @staticmethod
     def select_branch(**kwargs):
-        endpoint_id = kwargs.get('endpoint_id', None)
-        db = Database.instance()
-        tree = db.get_tree(endpoint_id)
+        endpoint_id = kwargs.get('endpoint_id', -1)
+        data_store = Database.instance()
+        tree = data_store.get_tree(endpoint_id)
         visited = set()
-        possible_branches = dfs(visited, tree, tree.root, db.get_solutions(), db.get_unsat_branches())
+        possible_branches = dfs(visited, tree, tree.root, data_store.get_solutions(), data_store.get_unsat_branches())
         
         return possible_branches
         

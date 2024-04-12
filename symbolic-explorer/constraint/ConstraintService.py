@@ -4,6 +4,8 @@ from parse.TraceParser import Parser
 from log import logger
 
 class ConstraintService:
+
+
     """
     A service class for handling constraints-related operations.
     
@@ -33,6 +35,7 @@ class ConstraintService:
 
         trace = Parser.parse_trace(trace, trace_id=trace_id)
         inputs = Parser.parse_inputs(inputs)
+        data_store = Database.instance()
         # Adding the trace and inputs to the database for the specified endpoint.
-        Database.instance().add_trace(endpoint_id, trace_id, trace, inputs)
+        data_store.add_trace(endpoint_id, trace_id, trace, inputs)
         logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')

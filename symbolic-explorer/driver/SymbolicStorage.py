@@ -23,6 +23,8 @@ class SymbolicStorage:
         self.vars = {}
         self.input_type = None
 
+    def parse_var_definition(self, var_def:str) -> [str]:
+        return var_def.split(',')
     def register_vars(self, sym_vars: [str]) -> None:
         for idx, var in enumerate(sym_vars):
             v = SymbolicVar(dtype=DataTypes(var), idx=idx)

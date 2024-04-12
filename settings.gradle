@@ -17,7 +17,6 @@ include 'targets:tests:static-initializer'
 include 'targets:examples:Basic-1'
 
 include 'targets:applications:gson'
-include 'targets:applications:spring-1'
 
 
 

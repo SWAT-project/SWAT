@@ -1,9 +1,12 @@
 import os
 import signal
 import subprocess
+import time
 from contextlib import contextmanager
 from enum import Enum
 
+from config.config_loader import load_config_from_file
+from config.config_manager import ConfigKeys, ConfigManager
 from data.Database import Database
 from driver.SymbolicStorage import SymbolicStorage
 # import logging
@@ -45,24 +48,27 @@ class State:
 
 
 class TargetDriver:
-    def __init__(self):
+    def __init__(self, config_manager):
         self.state = State()
+
+        self.config_manager = config_manager
         self.sym_storage = SymbolicStorage()
         self.endpoint_id = None
 
-    def build_command(self, args, mem: int = 32) -> [str]:
+    def build_command(self, target_path: str, mem: int = 32) -> [str]:
         """Builds the Java command list with given parameters."""
         cmd = [
             'java',
             f'-Xmx{mem}g',
-            f'-Dconfig.path={args.config}',
-            f'-javaagent:{args.agent}',
-            f"-Djava.library.path={args.z3dir}",
+            f'-Dconfig.path={self.config_manager.path}',
+            f'-javaagent:{self.config_manager.get(ConfigKeys.BASE_DIR) + self.config_manager.get(ConfigKeys.AGENT)}',
+            f"-Djava.library.path={self.config_manager.get(ConfigKeys.BASE_DIR) + self.config_manager.get(ConfigKeys.LIBRARY_PATH)}",
             '-Dlogging.level=DEBUG',
             '-ea',
             '-jar',
-            args.target
+            target_path
         ]
+        logger.info(f'[EXPLORER] Command: {cmd}')
         return cmd
 
     def add_values(self, cmd: [str]) -> [str]:
@@ -77,7 +83,7 @@ class TargetDriver:
             cmd.append(f'{val}')
         return cmd
 
-    def run_command_with_timeout(self, cmd: [str], timeout: int = 60) -> (ExecutionStatus, dict):
+    def run_command_with_timeout(self, cmd: [str], timeout: int = 10) -> (ExecutionStatus, dict):
         """Executes the given command and returns the status and message."""
 
         logger.info(f'[EXPLORER] Java Output Begin')
@@ -85,9 +91,24 @@ class TargetDriver:
             stdout = []
             with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
                                   universal_newlines=True) as proc:
-                for line in proc.stdout:
-                    logger.info(f'[EXECUTOR] --> {line.strip()}')
-                    stdout.append(line)
+                try:
+                    proc.wait(timeout=timeout)
+
+                    for line in proc.stdout:
+                        logger.info(f'[EXECUTOR] --> {line.strip()}')
+                        stdout.append(line)
+                except subprocess.TimeoutExpired:
+                    print(f"Process exceeded timeout of {timeout} seconds")
+                    proc.terminate()
+
+                    for line in proc.stdout:
+                        logger.info(f'[EXECUTOR] --> {line.strip()}')
+                        stdout.append(line)
+                    # Wait a bit for the process to terminate
+                    time.sleep(2)
+                    proc.kill()
+                    # Read any output that was generated before termination
+                    print("Process terminated due to timeout")
             logger.info(f'[EXPLORER] Java Output End')
             for l in stdout:
                 if '*** java.lang.instrument ASSERTION FAILED ***' in l:
@@ -107,8 +128,8 @@ class TargetDriver:
 
     def record_violation(self):
         """Records the violation in the database."""
-        db = Database.instance()
-        db.add_violation(endpoint_id=self.endpoint_id, sym_vars=list(self.sym_storage.vars.values()))
+        data_store = Database.instance()
+        data_store.add_violation(endpoint_id=self.endpoint_id, sym_vars=list(self.sym_storage.vars.values()))
 
     def determine_next_step(self, status: ExecutionStatus, stdout: [str]) -> Action:
         """Determines the next step based on the execution status."""
@@ -166,43 +187,58 @@ class TargetDriver:
         self.sym_storage.store_solution(sol)
         return Action.SYMBOLICNEXT
 
-    def run(self, args):
-        verdict = self.exec(args)
+    def run(self, target_path: str):
+        verdict = self.exec(target_path)
         logger.info(f'[EXPLORER] Verdict: {verdict}')
-        self.kill_current_process()
+        #self.kill_current_process()
 
-    def exec(self, args):
+    def exec(self, target_path: str):
+
+        data_store = Database.instance()
 
         """Runs the symbolic execution on the given testcase."""
         logger.info(f'[EXPLORER] Beginning testcase analysis')
+        sym_vars = self.sym_storage.parse_var_definition(self.config_manager.get(ConfigKeys.SYMBOLIC_VARS))
         # Register symbolic variables
-        self.sym_storage.register_vars(args.symbolicvars)
+        self.sym_storage.register_vars(sym_vars)
         self.sym_storage.init_values()
         # Build the command to execute target
-        base_cmd = self.build_command(args)
+        base_cmd = self.build_command(target_path)
         # Main execution loop
         while True:
-            # Add the symbolic values
-            cmd = self.add_values(base_cmd)
-            # Run the command
-            status, output = self.run_command_with_timeout(cmd)
-            # Determine the next step
-            next_step = self.determine_next_step(status, output)
-            # Select the (only!) endpoint
-            assert len(Database.instance().get_endpoint_ids()) == 1
-            self.endpoint_id = Database.instance().get_endpoint_ids()[0]
-            if next_step == Action.REPORTVERDICT:
-                break
+            try:
+                # Add the symbolic values
+                cmd = self.add_values(base_cmd)
+                # Run the command
+                status, output = self.run_command_with_timeout(cmd)
+                # Determine the next step
+                next_step = self.determine_next_step(status, output)
+                # Select the (only!) endpoint
+                num_endpoints = len(data_store.get_endpoint_ids())
+                if num_endpoints > 1:
+                    raise Exception(f'Found more than one endpoint: {num_endpoints}')
+                elif num_endpoints == 0:
+                    raise Exception(f'No endpoints found')
 
-            if next_step == Action.SYMBOLICNEXT:
-                logger.info(f'[EXPLORER] Next step: SYMBOLIC EXPLORATION')
 
-                next_step = self.retrieve_solution()
+                self.endpoint_id = data_store.get_endpoint_ids()[0]
                 if next_step == Action.REPORTVERDICT:
                     break
 
+                if next_step == Action.SYMBOLICNEXT:
+                    logger.info(f'[EXPLORER] Next step: SYMBOLIC EXPLORATION')
+
+                    next_step = self.retrieve_solution()
+                    if next_step == Action.REPORTVERDICT:
+                        break
+            except Exception as e:
+                logger.critical(f'[EXPLORER] Exception: {e}')
+                time.sleep(10)
+                break
+            break
+
         logger.info(f'[EXPLORER] Symbolic execution terminated')
-        violations = Database.instance().get_violations(self.endpoint_id)
+        violations = data_store.get_violations(self.endpoint_id)
         logger.info(f'[EXPLORER] Found {len(violations)} violations')
         if len(violations) > 0:
             for v in violations:

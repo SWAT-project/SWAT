@@ -8,14 +8,12 @@ from contextlib import contextmanager
 
 from solver.SolverHandler import SATResult
 
-from data.Database import Database
 
 from strategy.StrategyService import StrategyService
 
 from enum import Enum
 from svcomp.SymbolicStorage import SymbolicStorage
-import logging 
-from log import verdict_logger
+import logging
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
     
 logger = logging.getLogger(__name__)
@@ -148,7 +146,6 @@ class SVCompHandler:
         
     def run_testcase(self, base_dir: str, classpath: [str], agentpath: str, configpath: str, z3path) -> Verdict:
         """Runs the testcase using the constructed Java command."""
-        db = Database.instance()
 
         next_step = Action.RANDOMNEXT
         idx = 0
@@ -221,7 +218,6 @@ class SVCompHandler:
         return False
         
     def run(self, basedir, classpath: [str], agentpath: str, configpath:str, z3dir:str):
-        Database.instance().add_endpoint(0)
         logger.info(f'[SVCOMP] Beginning testcase analysis]')
         verdict = self.run_testcase(basedir, classpath, agentpath, configpath, z3dir)
         
@@ -231,7 +227,7 @@ class SVCompHandler:
         if verdict == Verdict.NO_SYMBOLIC_VARS:
             verdict = Verdict.SAFE
 
-        verdict_logger.info(f'[VERDICT] {verdict.value}')
+        logger.info(f'[VERDICT] {verdict.value}')
 
         
         self.kill_current_process()

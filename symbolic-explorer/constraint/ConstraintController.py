@@ -2,8 +2,9 @@ from flask_restful import Resource
 from flask import request
 import threading
 from constraint.ConstraintService import ConstraintService
-from parse.TraceParser import parse_trace, parse_inputs
-from log import request_logger as logger
+from parse.TraceParser import Parser
+from log import logger
+
 
 class ConstraintController(Resource):
     """
@@ -19,19 +20,20 @@ class ConstraintController(Resource):
         """
         Handles a POST request to add constraints related to an endpoint.
 
-        Extracts 'endpointID' and 'traceID' from the query parameters and 
-        the constraints data (trace and inputs) from the request body. 
-        It then creates a new thread to process and add these constraints 
+        Extracts 'endpointID' and 'traceID' from the query parameters and
+        the constraints data (trace and inputs) from the request body.
+        It then creates a new thread to process and add these constraints
         asynchronously.
 
         Parameters:
         None, but reads from the request object.
 
         Returns:
-        A tuple containing a message indicating that the request is accepted 
+        A tuple containing a message indicating that the request is accepted
         and a status code of 202 (Accepted).
         """
 
+        logger.info(f'Trace received')
         # Retrieve endpoint ID and trace ID from query parameters
         endpoint_id = request.args.get('endpointID')
         trace_id = request.args.get('traceID')
@@ -40,9 +42,9 @@ class ConstraintController(Resource):
         content = request.json
 
         # Parse the trace and inputs from the constraints data
-        trace = parse_trace(content['trace'], trace_id=trace_id)
-        inputs = parse_inputs(content['inputs'])
-       
+        trace = Parser.parse_trace(content['trace'], trace_id=trace_id)
+        inputs = Parser.parse_inputs(content['inputs'])
+
         # Start a new thread to add constraints
         thread = threading.Thread(target=ConstraintService.add_constraints, kwargs={
             'endpoint_id': endpoint_id,
