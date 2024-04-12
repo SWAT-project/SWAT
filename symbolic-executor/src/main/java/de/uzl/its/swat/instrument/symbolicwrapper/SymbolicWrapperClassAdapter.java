@@ -3,7 +3,6 @@ package de.uzl.its.swat.instrument.symbolicwrapper;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.config.Config;
 import java.util.regex.Pattern;
-
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -69,7 +68,6 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                     if (!Pattern.matches(
                             config.getInstrumentationParameterSymbolicMethodName(), name)) {
                         return mv;
-
                     }
                 }
                 case NONE -> {
@@ -88,6 +86,5 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
             return mv;
         }
         return null;
-
     }
 }

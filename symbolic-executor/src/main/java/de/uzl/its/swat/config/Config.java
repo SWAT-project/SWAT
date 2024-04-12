@@ -187,9 +187,10 @@ public class Config {
                 new FileInputStream(System.getProperty("config.path", DEFAULT_CONFIG_FILE))) {
             properties.load(input);
         } catch (IOException ex) {
-            logger.warn("Could not find a configuration file (" +
-                    System.getProperty("config.path", DEFAULT_CONFIG_FILE) +
-                    "), using default values!");
+            logger.warn(
+                    "Could not find a configuration file ("
+                            + System.getProperty("config.path", DEFAULT_CONFIG_FILE)
+                            + "), using default values!");
         }
     }
 

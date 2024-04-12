@@ -51,7 +51,6 @@ public class Main {
             }
         }
         logger.info(printBox.toString());
-
     }
 
     /**

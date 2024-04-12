@@ -5,8 +5,6 @@ import de.uzl.its.swat.instrument.AbstractMethodAdapter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-import java.util.regex.Pattern;
-
 public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
     private boolean headerInserted = false;
 
@@ -27,8 +25,6 @@ public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
         this.cname = cname;
         shouldInstrument = this.shouldInstrument(cname, name);
     }
-
-
 
     @Override
     public void visitCode() {
@@ -55,7 +51,7 @@ public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
      */
     @Override
     public void visitInsn(int opcode) {
-        if(shouldInstrument) {
+        if (shouldInstrument) {
             switch (opcode) {
                 case Opcodes.IRETURN,
                         Opcodes.FRETURN,
@@ -63,14 +59,12 @@ public class SymbolicWrapperMethodAdapter extends AbstractMethodAdapter {
                         Opcodes.LRETURN,
                         Opcodes.DRETURN,
                         Opcodes.RETURN -> addSolver();
-                default -> {
-                }
+                default -> {}
             }
         }
 
         super.visitInsn(opcode);
     }
-
 
     /** Adds the initializer call */
     private void addInitializer() {

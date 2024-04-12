@@ -24,13 +24,13 @@ public class SurroundingTryCatchMethodAdapter extends AbstractMethodAdapter {
      * @param mv Parent MethodVisitor
      * @param name The method name
      */
-    public SurroundingTryCatchMethodAdapter(MethodVisitor mv, String cname, String name, String desc) {
+    public SurroundingTryCatchMethodAdapter(
+            MethodVisitor mv, String cname, String name, String desc) {
         super(mv, name, desc);
 
         // Label used for try catch
         this.surroundingTryCatch = new Label[] {new Label(), new Label(), new Label()};
         this.shouldInstrument = shouldInstrument(cname, name);
-
     }
 
     /**
@@ -61,7 +61,7 @@ public class SurroundingTryCatchMethodAdapter extends AbstractMethodAdapter {
 
     @Override
     public void visitCode() {
-        if(shouldInstrument){
+        if (shouldInstrument) {
             addBeginOfSurrounding();
         }
     }

@@ -2579,7 +2579,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitNEW(NEW inst) {
         try {
             ObjectInfo oi = classNames.get(inst.cIdx);
-            currentStackFrame.push(ValueFactory.createObjectValue(oi.getNFields(), oi.getClassName()));
+            currentStackFrame.push(
+                    ValueFactory.createObjectValue(oi.getNFields(), oi.getClassName()));
 
             // For static initializer
             symbolicStateHandler.addSpecialElement(determineIid(inst.iid), "NEW");
@@ -2599,21 +2600,28 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             switch (inst.atype) {
                 case 4 -> // T_BOOLEAN
-                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.booleanValue, size, -1));
+                currentStackFrame.push(
+                        ValueFactory.createArrayValue(ValueType.booleanValue, size, -1));
                 case 5 -> // T_CHAR
-                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.charValue, size, -1));
+                currentStackFrame.push(
+                        ValueFactory.createArrayValue(ValueType.charValue, size, -1));
                 case 6 -> // T_FLOAT
-                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.floatValue, size, -1));
+                currentStackFrame.push(
+                        ValueFactory.createArrayValue(ValueType.floatValue, size, -1));
                 case 7 -> // T_DOUBLE
-                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.doubleValue, size, -1));
+                currentStackFrame.push(
+                        ValueFactory.createArrayValue(ValueType.doubleValue, size, -1));
                 case 8 -> // T_BYTE
-                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.byteValue, size, -1));
+                currentStackFrame.push(
+                        ValueFactory.createArrayValue(ValueType.byteValue, size, -1));
                 case 9 -> // T_SHORT
-                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.shortValue, size, -1));
+                currentStackFrame.push(
+                        ValueFactory.createArrayValue(ValueType.shortValue, size, -1));
                 case 10 -> // T_INT
                 currentStackFrame.push(ValueFactory.createArrayValue(ValueType.intValue, size, -1));
                 case 11 -> // T_LONG
-                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.longValue, size, -1));
+                currentStackFrame.push(
+                        ValueFactory.createArrayValue(ValueType.longValue, size, -1));
                 default -> throw new RuntimeException(
                         "Unknown primitive type: " + inst.atype + "!");
             }
@@ -2801,7 +2809,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
         stack.pop();
         currentStackFrame = stack.peek();
-        //currentStackFrame.clear();
+        // currentStackFrame.clear();
         currentStackFrame.push(PlaceHolder.instance); // placeholder for the exception object
     }
 

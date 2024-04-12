@@ -5,7 +5,6 @@ import de.uzl.its.swat.config.Config;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 import lombok.Getter;
 import lombok.Setter;
 import org.objectweb.asm.MethodVisitor;
@@ -40,10 +39,17 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
     }
 
     protected boolean shouldInstrument(String cname, String name) {
-        switch (config.getInstrumentationTransformer()){
-            case NONE, WEB_SERVLET, SPRING_ENDPOINT -> {return false;}
-            case SV_COMP -> { return name.equals("main"); }
-            case PARAMETER -> {return Pattern.matches(config.getInstrumentationParameterSymbolicMethodName(),name);}
+        switch (config.getInstrumentationTransformer()) {
+            case NONE, WEB_SERVLET, SPRING_ENDPOINT -> {
+                return false;
+            }
+            case SV_COMP -> {
+                return name.equals("main");
+            }
+            case PARAMETER -> {
+                return Pattern.matches(
+                        config.getInstrumentationParameterSymbolicMethodName(), name);
+            }
         }
         return false;
     }
