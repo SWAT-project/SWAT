@@ -2,7 +2,6 @@ package de.uzl.its.swat.instrument.symbolicwrapper;
 
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.AbstractMethodAdapter;
-import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 

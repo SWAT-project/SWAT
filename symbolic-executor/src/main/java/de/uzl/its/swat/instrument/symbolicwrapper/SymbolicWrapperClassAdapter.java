@@ -4,7 +4,6 @@ import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.config.Config;
 import java.util.regex.Pattern;
 
-import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -59,22 +58,12 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
                         return mv;
                     }
                 }
-                case SPRING_ENDPOINT -> {
-                    if(!SpringEndpointTransformer.getInstrumentedEndpoints().contains(cname + ":" + name)) {
-                        return mv;
-                    }
-                }
 
-                case WEB_SERVLET -> {
-                    /*
-                    if (!name.equals("doPost")) {
-                        return mv;
-                    }
-                     */
+                case WEB_SERVLET, SPRING_ENDPOINT -> {
                     new ErrorHandler()
                             .handleException(
                                     new RuntimeException(
-                                            "Servlet Endpoints are not supported currently."));
+                                            "Web Endpoints are not supported currently."));
                 }
                 case PARAMETER -> {
                     if (!Pattern.matches(

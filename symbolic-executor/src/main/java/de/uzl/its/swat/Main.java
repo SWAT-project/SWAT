@@ -38,7 +38,7 @@ public class Main {
                                             "Once a symbolic method is executed, the corresponding",
                                             "thread will provide further logging",
                                             "",
-                                            "The following classes are currently instrum    ented using"
+                                            "The following classes are currently instrumented using"
                                                     + " ",
                                             "the following Transformers:"
                                         })));

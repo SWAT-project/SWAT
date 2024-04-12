@@ -66,7 +66,12 @@ test {
 distTar.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
 distZip.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
 
+tasks.named('compileJava') {
+    dependsOn rootProject.tasks.named('copyNativeLibs')
 
+}
+tasks.named('jar') {
+    dependsOn rootProject.tasks.named('copyNativeLibs')
+    finalizedBy tasks.named('copyJar')
 
-build.finalizedBy copyJar
-assemble.finalizedBy copyJar
+}

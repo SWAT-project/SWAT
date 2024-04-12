@@ -37,7 +37,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     private final Map<Integer, Value<?, ?>> objects;
     @Getter private final SymbolicTraceHandler symbolicStateHandler;
     Map<Integer, Frame> lambdaFrameStore = new HashMap<>();
-    @Getter private Frame currentFrame;
+    @Getter private Frame currentStackFrame;
     private Instruction next;
 
     private static final org.slf4j.Logger logger =
@@ -46,7 +46,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public SymbolicInstructionVisitor(ClassNames classNames) {
         stack = new Stack<>();
 
-        stack.add(currentFrame = new Frame("Initial Frame", "", 0));
+        stack.add(currentStackFrame = new Frame("Initial Stack Frame", "", 0));
         this.classNames = classNames;
         objects = new HashMap<>();
         symbolicStateHandler = new SymbolicTraceHandler();
@@ -56,8 +56,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
         symbolicStateHandler.addSpecialElement(determineIid(inst.iid), inst.getClass().getName());
         if ((!(next instanceof SPECIAL) || ((SPECIAL) next).i != 0)) {
             if (!(inst instanceof NEW && next instanceof SPECIAL && ((SPECIAL) next).i == 2)) {
-                currentFrame.clear();
-                currentFrame.push(PlaceHolder.instance);
+                currentStackFrame.clear();
+                currentStackFrame.push(PlaceHolder.instance);
                 // TODO proper handling | issue #14
                 // the problem is that if a ,cinit. so a static call is here its init
                 // instrumentation is
@@ -67,8 +67,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     private void enforceException(Instruction unused) {
-        currentFrame.clear();
-        currentFrame.push(PlaceHolder.instance);
+        currentStackFrame.clear();
+        currentStackFrame.push(PlaceHolder.instance);
     }
 
     /**
@@ -113,23 +113,23 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitAALOAD(AALOAD inst) {
         try {
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof ObjectArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
-                    currentFrame.push(arr.getElement(idx));
+                    currentStackFrame.push(arr.getElement(idx));
                 } else {
                     enforceException(inst);
                 }
             } else if (ref instanceof ArrayArrayValue<?> arr) {
-                currentFrame.push(arr.getElement(idx));
+                currentStackFrame.push(arr.getElement(idx));
 
             } else if (ref instanceof StringArrayValue arr) {
-                currentFrame.push(arr.getElement(idx));
+                currentStackFrame.push(arr.getElement(idx));
 
             } else {
-                currentFrame.push(
+                currentStackFrame.push(
                         ref.getName() != null
                                 ? PlaceHolder.symbolicInstance
                                 : PlaceHolder.instance);
@@ -147,9 +147,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitAASTORE(AASTORE inst) {
         try {
-            ObjectValue val = currentFrame.pop().asObjectValue();
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            ObjectValue val = currentStackFrame.pop().asObjectValue();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof ObjectArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
@@ -186,7 +186,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The ACONST_NULL instruction
      */
     public void visitACONST_NULL(ACONST_NULL inst) {
-        currentFrame.push(ValueFactory.createNULLValue());
+        currentStackFrame.push(ValueFactory.createNULLValue());
     }
 
     /**
@@ -195,7 +195,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst One on the ALOAD (ALOAD, ALOAD_0 - ALOAD_3) instructions
      */
     public void visitALOAD(ALOAD inst) {
-        currentFrame.push(currentFrame.getLocal(inst.var));
+        currentStackFrame.push(currentStackFrame.getLocal(inst.var));
     }
 
     /**
@@ -205,11 +205,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitANEWARRAY(ANEWARRAY inst) {
         try {
-            IntValue size = currentFrame.pop().asIntValue();
+            IntValue size = currentStackFrame.pop().asIntValue();
             BooleanFormula constraint = size.checkPositive();
             boolean result = size.concrete >= 0;
             symbolicStateHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
-            currentFrame.push(ValueFactory.createObjectArrayValue(inst.type, size));
+            currentStackFrame.push(ValueFactory.createObjectArrayValue(inst.type, size));
         } catch (Exception e) {
             throwError(inst, e);
         }
@@ -224,7 +224,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitARETURN(ARETURN inst) {
         symbolicStateHandler.addSpecialElement(determineIid(inst.iid), "ARETURN");
-        currentFrame.setRet(currentFrame.pop());
+        currentStackFrame.setRet(currentStackFrame.pop());
         // checkAndSetException(inst);
     }
 
@@ -236,16 +236,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The ARRAYLENGTH instruction
      */
     public void visitARRAYLENGTH(ARRAYLENGTH inst) {
-        Value<?, ?> v = currentFrame.pop();
+        Value<?, ?> v = currentStackFrame.pop();
         if (v instanceof AbstractArrayValue<?, ?, ?, ?, ?> arr) {
-            currentFrame.push(arr.size);
+            currentStackFrame.push(arr.size);
         } else if (v instanceof ObjectArrayValue arr) {
-            currentFrame.push(arr.getSize());
+            currentStackFrame.push(arr.getSize());
         } else if (v instanceof ObjectValue<?, ?> ref) {
             if (ref.getFields() != null) {
-                currentFrame.push(ref.getnFields());
+                currentStackFrame.push(ref.getnFields());
             } else {
-                currentFrame.push(PlaceHolder.instance);
+                currentStackFrame.push(PlaceHolder.instance);
             }
 
         } else {
@@ -263,7 +263,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *     locals index
      */
     public void visitASTORE(ASTORE inst) {
-        currentFrame.setLocal(inst.var, currentFrame.pop());
+        currentStackFrame.setLocal(inst.var, currentStackFrame.pop());
     }
 
     /**
@@ -275,9 +275,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The ATHROW instruction
      */
     public void visitATHROW(ATHROW inst) {
-        Value<?, ?> top = currentFrame.peek();
-        currentFrame.clear();
-        currentFrame.push(top);
+        Value<?, ?> top = currentStackFrame.peek();
+        currentStackFrame.clear();
+        currentStackFrame.push(top);
         checkAndSetException(inst);
     }
 
@@ -288,18 +288,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitBALOAD(BALOAD inst) {
         try {
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentFrame.pop();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (arr instanceof BooleanArrayValue barr) {
                 boolean result = checkArrayBounds(barr, idx, inst.iid);
                 if (result) {
-                    currentFrame.push(barr.getElement(idx));
+                    currentStackFrame.push(barr.getElement(idx));
                 } else {
                     enforceException(inst);
                 }
             } else {
                 logger.warn("[BALOAD]: Unknown array type");
-                currentFrame.push(
+                currentStackFrame.push(
                         arr.getName() != null
                                 ? PlaceHolder.symbolicInstance
                                 : PlaceHolder.instance);
@@ -317,9 +317,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitBASTORE(BASTORE inst) {
         try {
-            Value<?, ?> val = currentFrame.pop();
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            Value<?, ?> val = currentStackFrame.pop();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof BooleanArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
@@ -349,7 +349,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitBIPUSH(BIPUSH inst) {
         // ToDo (Nils): Some unforseen concequences because the byte is handled as an int?
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, inst.value));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, inst.value));
     }
 
     /**
@@ -359,18 +359,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitCALOAD(CALOAD inst) {
         try {
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentFrame.pop();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (arr instanceof CharArrayValue carr) {
                 boolean result = checkArrayBounds(carr, idx, inst.iid);
                 if (result) {
-                    currentFrame.push(carr.getElement(idx));
+                    currentStackFrame.push(carr.getElement(idx));
                 } else {
                     enforceException(inst);
                 }
             } else {
                 logger.warn("[CALOAD]: Unknown array type");
-                currentFrame.push(
+                currentStackFrame.push(
                         arr.getName() != null
                                 ? PlaceHolder.symbolicInstance
                                 : PlaceHolder.instance);
@@ -388,9 +388,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitCASTORE(CASTORE inst) {
         try {
-            CharValue val = currentFrame.pop().asCharValue();
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            CharValue val = currentStackFrame.pop().asCharValue();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof CharArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
@@ -422,8 +422,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The D2F instruction
      */
     public void visitD2F(D2F inst) {
-        DoubleValue d1 = (DoubleValue) currentFrame.pop2();
-        currentFrame.push(d1.D2F());
+        DoubleValue d1 = (DoubleValue) currentStackFrame.pop2();
+        currentStackFrame.push(d1.D2F());
     }
 
     /**
@@ -432,8 +432,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The D2I instruction
      */
     public void visitD2I(D2I inst) {
-        DoubleValue d1 = (DoubleValue) currentFrame.pop2();
-        currentFrame.push(d1.D2I());
+        DoubleValue d1 = (DoubleValue) currentStackFrame.pop2();
+        currentStackFrame.push(d1.D2I());
     }
 
     /**
@@ -442,8 +442,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The D2L instruction
      */
     public void visitD2L(D2L inst) {
-        DoubleValue d1 = (DoubleValue) currentFrame.pop2();
-        currentFrame.push2(d1.D2L());
+        DoubleValue d1 = (DoubleValue) currentStackFrame.pop2();
+        currentStackFrame.push2(d1.D2L());
     }
 
     /**
@@ -452,9 +452,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DADD instruction
      */
     public void visitDADD(DADD inst) {
-        DoubleValue d2 = (DoubleValue) currentFrame.pop2();
-        DoubleValue d1 = (DoubleValue) currentFrame.pop2();
-        currentFrame.push2(d1.DADD(d2));
+        DoubleValue d2 = (DoubleValue) currentStackFrame.pop2();
+        DoubleValue d1 = (DoubleValue) currentStackFrame.pop2();
+        currentStackFrame.push2(d1.DADD(d2));
     }
 
     /**
@@ -464,18 +464,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitDALOAD(DALOAD inst) {
         try {
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentFrame.pop();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (arr instanceof DoubleArrayValue darr) {
                 boolean result = checkArrayBounds(darr, idx, inst.iid);
                 if (result) {
-                    currentFrame.push2(darr.getElement(idx));
+                    currentStackFrame.push2(darr.getElement(idx));
                 } else {
                     enforceException(inst);
                 }
             } else {
                 logger.warn("[DALOAD]: Unknown array type");
-                currentFrame.push(
+                currentStackFrame.push(
                         arr.getName() != null
                                 ? PlaceHolder.symbolicInstance
                                 : PlaceHolder.instance);
@@ -493,9 +493,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitDASTORE(DASTORE inst) {
         try {
-            DoubleValue val = currentFrame.pop2().asDoubleValue();
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            DoubleValue val = currentStackFrame.pop2().asDoubleValue();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof DoubleArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
@@ -517,9 +517,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DCMPG instruction
      */
     public void visitDCMPG(DCMPG inst) {
-        DoubleValue d2 = currentFrame.pop2().asDoubleValue();
-        DoubleValue d1 = currentFrame.pop2().asDoubleValue();
-        currentFrame.push(d1.DCMPG(d2));
+        DoubleValue d2 = currentStackFrame.pop2().asDoubleValue();
+        DoubleValue d1 = currentStackFrame.pop2().asDoubleValue();
+        currentStackFrame.push(d1.DCMPG(d2));
     }
 
     /**
@@ -528,9 +528,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DCMPL instruction
      */
     public void visitDCMPL(DCMPL inst) {
-        DoubleValue d2 = currentFrame.pop2().asDoubleValue();
-        DoubleValue d1 = currentFrame.pop2().asDoubleValue();
-        currentFrame.push(d1.DCMPL(d2));
+        DoubleValue d2 = currentStackFrame.pop2().asDoubleValue();
+        DoubleValue d1 = currentStackFrame.pop2().asDoubleValue();
+        currentStackFrame.push(d1.DCMPL(d2));
     }
 
     /**
@@ -539,7 +539,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DCONST_0 instruction
      */
     public void visitDCONST_0(DCONST_0 inst) {
-        currentFrame.push2(ValueFactory.createNumericalValue(ValueType.doubleValue, 0.0));
+        currentStackFrame.push2(ValueFactory.createNumericalValue(ValueType.doubleValue, 0.0));
     }
 
     /**
@@ -548,7 +548,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DCONST_1 instruction
      */
     public void visitDCONST_1(DCONST_1 inst) {
-        currentFrame.push2(ValueFactory.createNumericalValue(ValueType.doubleValue, 1.0));
+        currentStackFrame.push2(ValueFactory.createNumericalValue(ValueType.doubleValue, 1.0));
     }
 
     /**
@@ -558,9 +558,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitDDIV(DDIV inst) {
         // ToDo (Nils):  What if one of the values is zero?
-        DoubleValue d2 = (DoubleValue) currentFrame.pop2();
-        DoubleValue d1 = (DoubleValue) currentFrame.pop2();
-        currentFrame.push2(d1.DDIV(d2));
+        DoubleValue d2 = (DoubleValue) currentStackFrame.pop2();
+        DoubleValue d1 = (DoubleValue) currentStackFrame.pop2();
+        currentStackFrame.push2(d1.DDIV(d2));
     }
 
     /**
@@ -569,7 +569,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst One of the DLOAD instructions (DLOAD, DLOAD_0 - DLOAD_3)
      */
     public void visitDLOAD(DLOAD inst) {
-        currentFrame.push2(currentFrame.getLocal2(inst.var));
+        currentStackFrame.push2(currentStackFrame.getLocal2(inst.var));
     }
 
     /**
@@ -578,9 +578,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DMUL instruction
      */
     public void visitDMUL(DMUL inst) {
-        DoubleValue d2 = (DoubleValue) currentFrame.pop2();
-        DoubleValue d1 = (DoubleValue) currentFrame.pop2();
-        currentFrame.push2(d1.DMUL(d2));
+        DoubleValue d2 = (DoubleValue) currentStackFrame.pop2();
+        DoubleValue d1 = (DoubleValue) currentStackFrame.pop2();
+        currentStackFrame.push2(d1.DMUL(d2));
     }
 
     /**
@@ -589,14 +589,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DNEG instruction
      */
     public void visitDNEG(DNEG inst) {
-        DoubleValue d1 = (DoubleValue) currentFrame.pop2();
-        currentFrame.push2(d1.DNEG());
+        DoubleValue d1 = (DoubleValue) currentStackFrame.pop2();
+        currentStackFrame.push2(d1.DNEG());
     }
 
     public void visitDREM(DREM inst) {
-        DoubleValue d2 = (DoubleValue) currentFrame.pop2();
-        DoubleValue d1 = (DoubleValue) currentFrame.pop2();
-        currentFrame.push2(d1.DREM(d2));
+        DoubleValue d2 = (DoubleValue) currentStackFrame.pop2();
+        DoubleValue d1 = (DoubleValue) currentStackFrame.pop2();
+        currentStackFrame.push2(d1.DREM(d2));
     }
 
     /**
@@ -607,7 +607,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitDRETURN(DRETURN inst) {
         symbolicStateHandler.addSpecialElement(determineIid(inst.iid), "DRETURN");
-        currentFrame.setRet(currentFrame.pop2());
+        currentStackFrame.setRet(currentStackFrame.pop2());
         // checkAndSetException(inst);
     }
 
@@ -617,7 +617,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst One of the DSTORE instructions (DSTORE, DSTORE_0 - DSTORE_3)
      */
     public void visitDSTORE(DSTORE inst) {
-        currentFrame.setLocal2(inst.var, currentFrame.pop2());
+        currentStackFrame.setLocal2(inst.var, currentStackFrame.pop2());
     }
 
     /**
@@ -626,9 +626,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DSUB instruction
      */
     public void visitDSUB(DSUB inst) {
-        DoubleValue d2 = (DoubleValue) currentFrame.pop2();
-        DoubleValue d1 = (DoubleValue) currentFrame.pop2();
-        currentFrame.push2(d1.DSUB(d2));
+        DoubleValue d2 = (DoubleValue) currentStackFrame.pop2();
+        DoubleValue d1 = (DoubleValue) currentStackFrame.pop2();
+        currentStackFrame.push2(d1.DSUB(d2));
     }
 
     /**
@@ -638,7 +638,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DUP instruction
      */
     public void visitDUP(DUP inst) {
-        currentFrame.push(currentFrame.peek());
+        currentStackFrame.push(currentStackFrame.peek());
     }
 
     /**
@@ -648,8 +648,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DUP2 instruction
      */
     public void visitDUP2(DUP2 inst) {
-        currentFrame.push(currentFrame.peek2());
-        currentFrame.push(currentFrame.peek2());
+        currentStackFrame.push(currentStackFrame.peek2());
+        currentStackFrame.push(currentStackFrame.peek2());
     }
 
     /**
@@ -659,14 +659,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DUP2_X1 instruction
      */
     public void visitDUP2_X1(DUP2_X1 inst) {
-        Value<?, ?> word1 = currentFrame.pop();
-        Value<?, ?> word2 = currentFrame.pop();
-        Value<?, ?> word3 = currentFrame.pop();
-        currentFrame.push(word2);
-        currentFrame.push(word1);
-        currentFrame.push(word3);
-        currentFrame.push(word2);
-        currentFrame.push(word1);
+        Value<?, ?> word1 = currentStackFrame.pop();
+        Value<?, ?> word2 = currentStackFrame.pop();
+        Value<?, ?> word3 = currentStackFrame.pop();
+        currentStackFrame.push(word2);
+        currentStackFrame.push(word1);
+        currentStackFrame.push(word3);
+        currentStackFrame.push(word2);
+        currentStackFrame.push(word1);
     }
 
     /**
@@ -676,16 +676,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DUP2_X2 instruction
      */
     public void visitDUP2_X2(DUP2_X2 inst) {
-        Value<?, ?> word1 = currentFrame.pop();
-        Value<?, ?> word2 = currentFrame.pop();
-        Value<?, ?> word3 = currentFrame.pop();
-        Value<?, ?> word4 = currentFrame.pop();
-        currentFrame.push(word2);
-        currentFrame.push(word1);
-        currentFrame.push(word4);
-        currentFrame.push(word3);
-        currentFrame.push(word2);
-        currentFrame.push(word1);
+        Value<?, ?> word1 = currentStackFrame.pop();
+        Value<?, ?> word2 = currentStackFrame.pop();
+        Value<?, ?> word3 = currentStackFrame.pop();
+        Value<?, ?> word4 = currentStackFrame.pop();
+        currentStackFrame.push(word2);
+        currentStackFrame.push(word1);
+        currentStackFrame.push(word4);
+        currentStackFrame.push(word3);
+        currentStackFrame.push(word2);
+        currentStackFrame.push(word1);
     }
 
     /**
@@ -694,11 +694,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DUP2_X1 instruction
      */
     public void visitDUP_X1(DUP_X1 inst) {
-        Value<?, ?> top = currentFrame.pop();
-        Value<?, ?> top2 = currentFrame.pop();
-        currentFrame.push(top);
-        currentFrame.push(top2);
-        currentFrame.push(top);
+        Value<?, ?> top = currentStackFrame.pop();
+        Value<?, ?> top2 = currentStackFrame.pop();
+        currentStackFrame.push(top);
+        currentStackFrame.push(top2);
+        currentStackFrame.push(top);
     }
 
     /**
@@ -708,13 +708,13 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The DUP2_X1 instruction
      */
     public void visitDUP_X2(DUP_X2 inst) {
-        Value<?, ?> word1 = currentFrame.pop();
-        Value<?, ?> word2 = currentFrame.pop();
-        Value<?, ?> word3 = currentFrame.pop();
-        currentFrame.push(word1);
-        currentFrame.push(word3);
-        currentFrame.push(word2);
-        currentFrame.push(word1);
+        Value<?, ?> word1 = currentStackFrame.pop();
+        Value<?, ?> word2 = currentStackFrame.pop();
+        Value<?, ?> word3 = currentStackFrame.pop();
+        currentStackFrame.push(word1);
+        currentStackFrame.push(word3);
+        currentStackFrame.push(word2);
+        currentStackFrame.push(word1);
     }
 
     /**
@@ -723,8 +723,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The F2D instruction
      */
     public void visitF2D(F2D inst) {
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push2(f1.F2D());
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push2(f1.F2D());
     }
 
     /**
@@ -733,14 +733,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The F2I instruction
      */
     public void visitF2I(F2I inst) {
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push(f1.F2I());
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push(f1.F2I());
     }
 
     public void visitF2L(F2L inst) {
 
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push2(f1.F2L());
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push2(f1.F2L());
     }
 
     /**
@@ -749,9 +749,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FADD instruction
      */
     public void visitFADD(FADD inst) {
-        FloatValue f2 = currentFrame.pop().asFloatValue();
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push(f1.FADD(f2));
+        FloatValue f2 = currentStackFrame.pop().asFloatValue();
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push(f1.FADD(f2));
     }
 
     /**
@@ -761,18 +761,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitFALOAD(FALOAD inst) {
         try {
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentFrame.pop();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (arr instanceof FloatArrayValue farr) {
                 boolean result = checkArrayBounds(farr, idx, inst.iid);
                 if (result) {
-                    currentFrame.push(farr.getElement(idx));
+                    currentStackFrame.push(farr.getElement(idx));
                 } else {
                     enforceException(inst);
                 }
             } else {
                 logger.warn("[FALOAD]: Unknown array type");
-                currentFrame.push(
+                currentStackFrame.push(
                         arr.getName() != null
                                 ? PlaceHolder.symbolicInstance
                                 : PlaceHolder.instance);
@@ -790,9 +790,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitFASTORE(FASTORE inst) {
         try {
-            FloatValue val = currentFrame.pop().asFloatValue();
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            FloatValue val = currentStackFrame.pop().asFloatValue();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof FloatArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
@@ -814,9 +814,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FCMPG instruction
      */
     public void visitFCMPG(FCMPG inst) {
-        FloatValue f2 = currentFrame.pop().asFloatValue();
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push(f1.FCMPG(f2));
+        FloatValue f2 = currentStackFrame.pop().asFloatValue();
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push(f1.FCMPG(f2));
     }
 
     /**
@@ -825,9 +825,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FCMPL instruction
      */
     public void visitFCMPL(FCMPL inst) {
-        FloatValue f2 = currentFrame.pop().asFloatValue();
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push(f1.FCMPL(f2));
+        FloatValue f2 = currentStackFrame.pop().asFloatValue();
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push(f1.FCMPL(f2));
     }
 
     /**
@@ -836,7 +836,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FCONST_0 instruction
      */
     public void visitFCONST_0(FCONST_0 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.floatValue, 0.0f));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.floatValue, 0.0f));
     }
 
     /**
@@ -845,7 +845,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FCONST_1 instruction
      */
     public void visitFCONST_1(FCONST_1 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.floatValue, 1.0f));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.floatValue, 1.0f));
     }
 
     /**
@@ -854,7 +854,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FCONST_2 instruction
      */
     public void visitFCONST_2(FCONST_2 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.floatValue, 2.0f));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.floatValue, 2.0f));
     }
 
     /**
@@ -863,9 +863,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FDIV instruction
      */
     public void visitFDIV(FDIV inst) {
-        FloatValue f2 = currentFrame.pop().asFloatValue();
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push(f1.FDIV(f2));
+        FloatValue f2 = currentStackFrame.pop().asFloatValue();
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push(f1.FDIV(f2));
     }
 
     /**
@@ -874,7 +874,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst One of the FLOAD instructions (FLOAD, FLOAD_0 - FLOAD_3)
      */
     public void visitFLOAD(FLOAD inst) {
-        currentFrame.push(currentFrame.getLocal(inst.var));
+        currentStackFrame.push(currentStackFrame.getLocal(inst.var));
     }
 
     /**
@@ -883,9 +883,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FMUL instruction
      */
     public void visitFMUL(FMUL inst) {
-        FloatValue f2 = currentFrame.pop().asFloatValue();
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push(f1.FMUL(f2));
+        FloatValue f2 = currentStackFrame.pop().asFloatValue();
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push(f1.FMUL(f2));
     }
 
     /**
@@ -894,8 +894,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FNEG instruction
      */
     public void visitFNEG(FNEG inst) {
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push(f1.FNEG());
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push(f1.FNEG());
     }
 
     /**
@@ -905,9 +905,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FREM instruction
      */
     public void visitFREM(FREM inst) {
-        FloatValue f2 = currentFrame.pop().asFloatValue();
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push(f1.FREM(f2));
+        FloatValue f2 = currentStackFrame.pop().asFloatValue();
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push(f1.FREM(f2));
     }
 
     /**
@@ -918,7 +918,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitFRETURN(FRETURN inst) {
         symbolicStateHandler.addSpecialElement(determineIid(inst.iid), "FRETURN");
-        currentFrame.setRet(currentFrame.pop());
+        currentStackFrame.setRet(currentStackFrame.pop());
         // checkAndSetException(inst);
     }
 
@@ -929,7 +929,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst One of the FSTORE instructions (FSTORE, FSTORE_0 - FSTORE_3)
      */
     public void visitFSTORE(FSTORE inst) {
-        currentFrame.setLocal(inst.var, currentFrame.pop());
+        currentStackFrame.setLocal(inst.var, currentStackFrame.pop());
     }
 
     /**
@@ -938,9 +938,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The FSUB instruction.
      */
     public void visitFSUB(FSUB inst) {
-        FloatValue f2 = currentFrame.pop().asFloatValue();
-        FloatValue f1 = currentFrame.pop().asFloatValue();
-        currentFrame.push(f1.FSUB(f2));
+        FloatValue f2 = currentStackFrame.pop().asFloatValue();
+        FloatValue f1 = currentStackFrame.pop().asFloatValue();
+        currentStackFrame.push(f1.FSUB(f2));
     }
 
     /**
@@ -952,7 +952,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         try {
             ObjectInfo oi = classNames.get(inst.cIdx);
             FieldInfo fi = oi.get(inst.fIdx, false);
-            ObjectValue<?, ?> ref = currentFrame.pop().asObjectValue();
+            ObjectValue<?, ?> ref = currentStackFrame.pop().asObjectValue();
             Value val;
             if (ref.getAddress() == 0) {
                 logger.warn("GETFIELD on NULL object");
@@ -961,9 +961,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 val = ref.getField(fi.getFieldId());
             }
             if (inst.desc.startsWith("D") || inst.desc.startsWith("J")) {
-                currentFrame.push2(val);
+                currentStackFrame.push2(val);
             } else {
-                currentFrame.push(val);
+                currentStackFrame.push(val);
             }
         } catch (Exception e) {
             throwError(inst, e);
@@ -1003,9 +1003,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 }
             }
             if (inst.desc.startsWith("D") || inst.desc.startsWith("J")) {
-                currentFrame.push2(v);
+                currentStackFrame.push2(v);
             } else {
-                currentFrame.push(v);
+                currentStackFrame.push(v);
             }
             // For static initializer
             symbolicStateHandler.addSpecialElement(determineIid(inst.iid), "GETSTATIC");
@@ -1017,7 +1017,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     public void visitGETVALUE_Object(GETVALUE_Object<?> inst) {
-        Value<?, ?> peek = currentFrame.peek();
+        Value<?, ?> peek = currentStackFrame.peek();
         Value<?, ?> tmp;
         boolean isSymbolic = false;
         if (peek == PlaceHolder.symbolicInstance) {
@@ -1030,16 +1030,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
         if (peek instanceof LambdaPlaceHolder) {
             // remove the placeholder lambda value
-            LambdaPlaceHolder lambdaPlaceHolder = (LambdaPlaceHolder) currentFrame.pop();
+            LambdaPlaceHolder lambdaPlaceHolder = (LambdaPlaceHolder) currentStackFrame.pop();
             int key = lambdaPlaceHolder.getKey();
             int parentAddress = lambdaPlaceHolder.getParentAddress();
             // create a new object value (the return value from invoke dynamic)
-            currentFrame.push(ValueFactory.getLambdaObjectValue(inst.v, parentAddress, key));
+            currentStackFrame.push(ValueFactory.getLambdaObjectValue(inst.v, parentAddress, key));
         } else if (peek == PlaceHolder.instance
                 || (peek.asObjectValue().getAddress() != ADDRESS_UNKNOWN
                         && peek.asObjectValue().getAddress() != inst.v)) {
             // remove the placeholder value
-            currentFrame.pop();
+            currentStackFrame.pop();
             // try to get object
             tmp = objects.get(inst.v);
             // check if the object was created earlier and then reuse it
@@ -1047,30 +1047,30 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 if (isSymbolic) {
                     String name = tmp.MAKE_SYMBOLIC();
                 }
-                currentFrame.push(tmp);
+                currentStackFrame.push(tmp);
             } else if (inst.v == 0) {
                 if (isSymbolic) {
                     throw new RuntimeException("Cannot make NULL symbolic!");
                 }
-                currentFrame.push(ValueFactory.createNULLValue());
+                currentStackFrame.push(ValueFactory.createNULLValue());
             } else {
                 tmp = ValueFactory.createObjectValue(inst.val, inst.v);
                 if (isSymbolic) {
                     String name = tmp.MAKE_SYMBOLIC();
                 }
-                currentFrame.push(tmp);
+                currentStackFrame.push(tmp);
                 objects.put(inst.v, tmp); // save the object for future use
             }
         } else if ((peek.asObjectValue()).getAddress() == ADDRESS_UNKNOWN) {
             // set the address of the object
             if (inst.v == 0) {
-                currentFrame.pop();
-                currentFrame.push(ValueFactory.createNULLValue());
+                currentStackFrame.pop();
+                currentStackFrame.push(ValueFactory.createNULLValue());
             } else if (inst.val != null) {
                 if (inst.val instanceof String s && peek.formula == null) {
                     // TODO This needs to be cleaned up!
-                    currentFrame.pop();
-                    currentFrame.push(ValueFactory.createStringValue(s, inst.v));
+                    currentStackFrame.pop();
+                    currentStackFrame.push(ValueFactory.createStringValue(s, inst.v));
                 } else {
                     (peek.asObjectValue()).setAddress(inst.v);
                     objects.put(inst.v, peek);
@@ -1172,8 +1172,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The I2B instruction
      */
     public void visitI2B(I2B inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.I2B());
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.I2B());
     }
 
     /**
@@ -1185,8 +1185,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The I2C instruction
      */
     public void visitI2C(I2C inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.I2C());
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.I2C());
     }
 
     /**
@@ -1195,8 +1195,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The I2D instruction
      */
     public void visitI2D(I2D inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push2(i1.I2D());
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push2(i1.I2D());
     }
 
     /**
@@ -1205,8 +1205,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The I2F instruction
      */
     public void visitI2F(I2F inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.I2F());
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.I2F());
     }
 
     /**
@@ -1215,8 +1215,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The I2L instruction
      */
     public void visitI2L(I2L inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push2(i1.I2L());
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push2(i1.I2L());
     }
 
     /**
@@ -1225,8 +1225,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The I2S instruction
      */
     public void visitI2S(I2S inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.I2S());
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.I2S());
     }
 
     /**
@@ -1235,9 +1235,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IADD instruction
      */
     public void visitIADD(IADD inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.IADD(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.IADD(i2));
     }
 
     /**
@@ -1247,18 +1247,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitIALOAD(IALOAD inst) {
         try {
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof IntArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
-                    currentFrame.push(arr.getElement(idx));
+                    currentStackFrame.push(arr.getElement(idx));
                 } else {
                     enforceException(inst);
                 }
             } else {
                 logger.warn("[IALOAD]: Unknown array type");
-                currentFrame.push(
+                currentStackFrame.push(
                         ref.getName() != null
                                 ? PlaceHolder.symbolicInstance
                                 : PlaceHolder.instance);
@@ -1276,9 +1276,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IAND instruction
      */
     public void visitIAND(IAND inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.IAND(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.IAND(i2));
     }
 
     /**
@@ -1288,9 +1288,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitIASTORE(IASTORE inst) {
         try {
-            IntValue val = currentFrame.pop().asIntValue();
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            IntValue val = currentStackFrame.pop().asIntValue();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof IntArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
@@ -1312,7 +1312,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst Current instruction
      */
     public void visitICONST_0(ICONST_0 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 0));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 0));
     }
 
     /**
@@ -1321,7 +1321,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst Current instruction
      */
     public void visitICONST_1(ICONST_1 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 1));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 1));
     }
 
     /**
@@ -1330,7 +1330,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst Current instruction
      */
     public void visitICONST_2(ICONST_2 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 2));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 2));
     }
 
     /**
@@ -1339,7 +1339,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst Current instruction
      */
     public void visitICONST_3(ICONST_3 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 3));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 3));
     }
 
     /**
@@ -1348,7 +1348,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst Current instruction
      */
     public void visitICONST_4(ICONST_4 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 4));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 4));
     }
 
     /**
@@ -1357,7 +1357,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst Current instruction
      */
     public void visitICONST_5(ICONST_5 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 5));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, 5));
     }
 
     /**
@@ -1366,7 +1366,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst Current ICONST_M1 instruction
      */
     public void visitICONST_M1(ICONST_M1 inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, -1));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, -1));
     }
 
     /**
@@ -1376,14 +1376,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitIDIV(IDIV inst) {
         try {
-            IntValue i2 = currentFrame.pop().asIntValue();
-            IntValue i1 = currentFrame.pop().asIntValue();
+            IntValue i2 = currentStackFrame.pop().asIntValue();
+            IntValue i1 = currentStackFrame.pop().asIntValue();
             BooleanFormula constraint = i2.checkZero();
             // Check for exception
             boolean result = i2.concrete != 0;
             symbolicStateHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
             if (result) {
-                currentFrame.push(i1.IDIV(i2));
+                currentStackFrame.push(i1.IDIV(i2));
             } else {
                 enforceException(inst);
             }
@@ -1398,7 +1398,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IFEQ instruction
      */
     public void visitIFEQ(IFEQ inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         // IntValue i1 = currentFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IFEQ();
         boolean isBranchTaken = isBranchTaken();
@@ -1417,7 +1417,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IFGE instruction
      */
     public void visitIFGE(IFGE inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IFGE();
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1435,7 +1435,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IFGT instruction
      */
     public void visitIFGT(IFGT inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IFGT();
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1453,7 +1453,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IFLE instruction
      */
     public void visitIFLE(IFLE inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IFLE();
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1471,7 +1471,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IFLT instruction
      */
     public void visitIFLT(IFLT inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IFLT();
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1489,7 +1489,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IFNE instruction
      */
     public void visitIFNE(IFNE inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IFNE();
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1507,7 +1507,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IFNONNULL instruction.
      */
     public void visitIFNONNULL(IFNONNULL inst) {
-        ObjectValue o1 = currentFrame.pop().asObjectValue();
+        ObjectValue o1 = currentStackFrame.pop().asObjectValue();
         BooleanFormula constraint = o1.IFNONNULL();
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1525,7 +1525,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IFNULL instruction.
      */
     public void visitIFNULL(IFNULL inst) {
-        ObjectValue o1 = currentFrame.pop().asObjectValue();
+        ObjectValue o1 = currentStackFrame.pop().asObjectValue();
         BooleanFormula constraint = o1.IFNULL();
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1544,8 +1544,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IF_ACMPEQ instruction.
      */
     public void visitIF_ACMPEQ(IF_ACMPEQ inst) {
-        Value v2 = currentFrame.pop();
-        Value v1 = currentFrame.pop();
+        Value v2 = currentStackFrame.pop();
+        Value v1 = currentStackFrame.pop();
         BooleanFormula constraint;
         if (v1 instanceof StringValue s1 && v2 instanceof StringValue s2) {
             constraint = s1.IF_ACMPEQ(s2);
@@ -1572,8 +1572,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IF_ACMPNE instruction.
      */
     public void visitIF_ACMPNE(IF_ACMPNE inst) {
-        Value v2 = currentFrame.pop();
-        Value v1 = currentFrame.pop();
+        Value v2 = currentStackFrame.pop();
+        Value v1 = currentStackFrame.pop();
         BooleanFormula constraint;
         if (v1 instanceof StringValue s1 && v2 instanceof StringValue s2) {
             constraint = s1.IF_ACMPNE(s2);
@@ -1599,8 +1599,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IF_ICMPEQ instruction
      */
     public void visitIF_ICMPEQ(IF_ICMPEQ inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IF_ICMPEQ(i2);
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1626,8 +1626,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IF_ICMPGE instruction
      */
     public void visitIF_ICMPGE(IF_ICMPGE inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IF_ICMPGE(i2);
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1645,8 +1645,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IF_ICMPGT instruction
      */
     public void visitIF_ICMPGT(IF_ICMPGT inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IF_ICMPGT(i2);
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1664,8 +1664,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IF_ICMPLE instruction
      */
     public void visitIF_ICMPLE(IF_ICMPLE inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IF_ICMPLE(i2);
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1683,8 +1683,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IF_ICMPLT instruction
      */
     public void visitIF_ICMPLT(IF_ICMPLT inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IF_ICMPLT(i2);
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1702,8 +1702,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IF_ICMPNE instruction
      */
     public void visitIF_ICMPNE(IF_ICMPNE inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         BooleanFormula constraint = i1.IF_ICMPNE(i2);
         boolean isBranchTaken = isBranchTaken();
         int iid = determineIid(inst.iid);
@@ -1723,8 +1723,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitIINC(IINC inst) {
         // ToDo (Nils): What happens if this is the first time the local is referenced? The next
         // line should return a Placeholder then
-        IntValue i1 = currentFrame.getLocal(inst.var).asIntValue();
-        currentFrame.setLocal(inst.var, i1.IINC(inst.increment));
+        IntValue i1 = currentStackFrame.getLocal(inst.var).asIntValue();
+        currentStackFrame.setLocal(inst.var, i1.IINC(inst.increment));
     }
 
     /**
@@ -1737,7 +1737,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitILOAD(ILOAD inst) {
         // ToDO (Nils): Why are ILOAD_0 etc not present? Where did they catch them and used this
         // case?
-        currentFrame.push(currentFrame.getLocal(inst.var));
+        currentStackFrame.push(currentStackFrame.getLocal(inst.var));
     }
 
     /**
@@ -1746,9 +1746,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IMUL instruction
      */
     public void visitIMUL(IMUL inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.IMUL(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.IMUL(i2));
     }
 
     /**
@@ -1757,8 +1757,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The INEG instruction
      */
     public void visitINEG(INEG inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.INEG());
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.INEG());
     }
 
     /**
@@ -1771,8 +1771,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINSTANCEOF(INSTANCEOF inst) {
         try {
-            currentFrame.pop();
-            currentFrame.push(
+            currentStackFrame.pop();
+            currentStackFrame.push(
                     ValueFactory.createNumericalValue(
                             ValueType.booleanValue, true)); // could be wrong boolean value
         } catch (Exception e) {
@@ -1873,9 +1873,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
         Value<?, ?>[] arguments = new Value[len];
         for (int i = len - 1; i >= 0; i--) {
             if (types[i] == Type.DOUBLE_TYPE || types[i] == Type.LONG_TYPE) {
-                arguments[i] = currentFrame.pop2();
+                arguments[i] = currentStackFrame.pop2();
             } else {
-                Value<?, ?> arg = currentFrame.pop();
+                Value<?, ?> arg = currentStackFrame.pop();
                 if (arg instanceof LambdaObjectValue) {
                     // We need to expand the frame and add all arguments from the lambda frame to
                     // the locals
@@ -1898,7 +1898,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
         ObjectValue instance = null;
         if (isInstance) {
-            instance = currentFrame.pop().asObjectValue();
+            instance = currentStackFrame.pop().asObjectValue();
         }
 
         if (inst instanceof INVOKEDYNAMIC) {
@@ -1989,20 +1989,20 @@ public class SymbolicInstructionVisitor implements IVisitor {
             }
         }
 
-        currentFrame = newFrame;
+        currentStackFrame = newFrame;
 
         if ((next instanceof INVOKEMETHOD_END
                         || next instanceof INVOKEMETHOD_EXCEPTION
                         || next == null)
                 && !(inst instanceof INVOKEDYNAMIC)) {
             if (isInstance) {
-                currentFrame.setRet(instance.invokeMethod(name, types, arguments));
+                currentStackFrame.setRet(instance.invokeMethod(name, types, arguments));
             } else {
-                currentFrame.setRet(
+                currentStackFrame.setRet(
                         StaticInvocation.invokeMethod(
                                 owner, name, types, arguments, symbolicStateHandler));
             }
-            if (currentFrame.getRet().equals(PlaceHolder.instance)
+            if (currentStackFrame.getRet().equals(PlaceHolder.instance)
                     && !(retType == Type.VOID_TYPE)) {
 
                 ArrayList<String> blocklist =
@@ -2088,9 +2088,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IOR instruction
      */
     public void visitIOR(IOR inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.IOR(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.IOR(i2));
     }
 
     /**
@@ -2100,14 +2100,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitIREM(IREM inst) {
         try {
-            IntValue i2 = currentFrame.pop().asIntValue();
-            IntValue i1 = currentFrame.pop().asIntValue();
+            IntValue i2 = currentStackFrame.pop().asIntValue();
+            IntValue i1 = currentStackFrame.pop().asIntValue();
             BooleanFormula constraint = i2.checkZero();
             // Check for exception
             boolean result = i2.concrete != 0;
             symbolicStateHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
             if (result) {
-                currentFrame.push(i1.IREM(i2));
+                currentStackFrame.push(i1.IREM(i2));
             } else {
                 enforceException(inst);
             }
@@ -2124,7 +2124,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitIRETURN(IRETURN inst) {
         symbolicStateHandler.addSpecialElement(determineIid(inst.iid), "IRETURN");
-        currentFrame.setRet(currentFrame.pop());
+        currentStackFrame.setRet(currentStackFrame.pop());
         // checkAndSetException(inst);
     }
 
@@ -2134,9 +2134,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The ISHL instruction
      */
     public void visitISHL(ISHL inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.ISHL(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.ISHL(i2));
     }
 
     /**
@@ -2146,9 +2146,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The ISHR instruction
      */
     public void visitISHR(ISHR inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.ISHR(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.ISHR(i2));
     }
 
     /**
@@ -2157,7 +2157,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The ISTORE instruction
      */
     public void visitISTORE(ISTORE inst) {
-        currentFrame.setLocal(inst.var, currentFrame.pop());
+        currentStackFrame.setLocal(inst.var, currentStackFrame.pop());
     }
 
     /**
@@ -2166,9 +2166,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The ISUB instruction
      */
     public void visitISUB(ISUB inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.ISUB(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.ISUB(i2));
     }
 
     /**
@@ -2177,9 +2177,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IUSHR instruction
      */
     public void visitIUSHR(IUSHR inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.IUSHR(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.IUSHR(i2));
     }
 
     /**
@@ -2189,9 +2189,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The IXOR instruction
      */
     public void visitIXOR(IXOR inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        IntValue i1 = currentFrame.pop().asIntValue();
-        currentFrame.push(i1.IXOR(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
+        currentStackFrame.push(i1.IXOR(i2));
     }
 
     /**
@@ -2205,18 +2205,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitJSR(JSR inst) {}
 
     public void visitL2D(L2D inst) {
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.L2D());
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.L2D());
     }
 
     public void visitL2F(L2F inst) {
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push(i1.L2F());
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push(i1.L2F());
     }
 
     public void visitL2I(L2I inst) {
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push(i1.L2I());
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push(i1.L2I());
     }
 
     /**
@@ -2225,9 +2225,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LADD instruction
      */
     public void visitLADD(LADD inst) {
-        LongValue i2 = currentFrame.pop2().asLongValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LADD(i2));
+        LongValue i2 = currentStackFrame.pop2().asLongValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LADD(i2));
     }
 
     /**
@@ -2237,18 +2237,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitLALOAD(LALOAD inst) {
         try {
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentFrame.pop();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (arr instanceof LongArrayValue larr) {
                 boolean result = checkArrayBounds(larr, idx, inst.iid);
                 if (result) {
-                    currentFrame.push2(larr.getElement(idx));
+                    currentStackFrame.push2(larr.getElement(idx));
                 } else {
                     enforceException(inst);
                 }
             } else {
                 logger.warn("[LALOAD]: Unknown array type");
-                currentFrame.push(
+                currentStackFrame.push(
                         arr.getName() != null
                                 ? PlaceHolder.symbolicInstance
                                 : PlaceHolder.instance);
@@ -2266,9 +2266,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LAND instruction
      */
     public void visitLAND(LAND inst) {
-        LongValue i2 = currentFrame.pop2().asLongValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LAND(i2));
+        LongValue i2 = currentStackFrame.pop2().asLongValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LAND(i2));
     }
 
     /**
@@ -2278,9 +2278,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitLASTORE(LASTORE inst) {
         try {
-            LongValue val = currentFrame.pop2().asLongValue();
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            LongValue val = currentStackFrame.pop2().asLongValue();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof LongArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
@@ -2302,9 +2302,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LCMP instruction
      */
     public void visitLCMP(LCMP inst) {
-        LongValue i2 = currentFrame.pop2().asLongValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push(i1.LCMP(i2));
+        LongValue i2 = currentStackFrame.pop2().asLongValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push(i1.LCMP(i2));
     }
 
     /**
@@ -2313,7 +2313,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LCONST_0 instruction
      */
     public void visitLCONST_0(LCONST_0 inst) {
-        currentFrame.push2(ValueFactory.createNumericalValue(ValueType.longValue, 0L));
+        currentStackFrame.push2(ValueFactory.createNumericalValue(ValueType.longValue, 0L));
     }
 
     /**
@@ -2322,7 +2322,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LCONST_1 instruction
      */
     public void visitLCONST_1(LCONST_1 inst) {
-        currentFrame.push2(ValueFactory.createNumericalValue(ValueType.longValue, 1L));
+        currentStackFrame.push2(ValueFactory.createNumericalValue(ValueType.longValue, 1L));
     }
 
     /**
@@ -2331,7 +2331,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The (artificial) LDC_String instruction
      */
     public void visitLDC_String(LDC_String inst) {
-        currentFrame.push(ValueFactory.createStringValue(inst.c, inst.address));
+        currentStackFrame.push(ValueFactory.createStringValue(inst.c, inst.address));
         checkAndSetException(inst);
     }
 
@@ -2343,11 +2343,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitLDC_Object(LDC_Object inst) {
         Value<?, ?> tmp = objects.get(inst.c);
         if (tmp != null) {
-            currentFrame.push(tmp);
+            currentStackFrame.push(tmp);
         } else if (inst.c == 0) {
-            currentFrame.push(ValueFactory.createNULLValue());
+            currentStackFrame.push(ValueFactory.createNULLValue());
         } else {
-            currentFrame.push(tmp = ValueFactory.createObjectValue(null, inst.c));
+            currentStackFrame.push(tmp = ValueFactory.createObjectValue(null, inst.c));
             objects.put(inst.c, tmp);
         }
         checkAndSetException(inst);
@@ -2359,7 +2359,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The (artificial) LDC_double instruction
      */
     public void visitLDC_double(LDC_double inst) {
-        currentFrame.push2(ValueFactory.createNumericalValue(ValueType.doubleValue, inst.c));
+        currentStackFrame.push2(ValueFactory.createNumericalValue(ValueType.doubleValue, inst.c));
         checkAndSetException(inst);
     }
 
@@ -2369,7 +2369,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The (artificial) LDC_float instruction
      */
     public void visitLDC_float(LDC_float inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.floatValue, inst.c));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.floatValue, inst.c));
         checkAndSetException(inst);
     }
 
@@ -2379,7 +2379,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The (artificial) LDC_int instruction
      */
     public void visitLDC_int(LDC_int inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, inst.c));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, inst.c));
         checkAndSetException(inst);
     }
 
@@ -2389,7 +2389,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The (artificial) LDC_long instruction
      */
     public void visitLDC_long(LDC_long inst) {
-        currentFrame.push2(ValueFactory.createNumericalValue(ValueType.longValue, inst.c));
+        currentStackFrame.push2(ValueFactory.createNumericalValue(ValueType.longValue, inst.c));
         checkAndSetException(inst);
     }
 
@@ -2400,14 +2400,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitLDIV(LDIV inst) {
         try {
-            LongValue l2 = currentFrame.pop2().asLongValue();
-            LongValue l1 = currentFrame.pop2().asLongValue();
+            LongValue l2 = currentStackFrame.pop2().asLongValue();
+            LongValue l1 = currentStackFrame.pop2().asLongValue();
             BooleanFormula constraint = l2.checkZero();
             // Check for exception
             boolean result = l2.concrete != 0;
             symbolicStateHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
             if (result) {
-                currentFrame.push2(l1.LDIV(l2));
+                currentStackFrame.push2(l1.LDIV(l2));
             } else {
                 enforceException(inst);
             }
@@ -2423,7 +2423,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst One of the LLOAD isntructions (LLOAD, LLOAD_0 - LLOAD_3)
      */
     public void visitLLOAD(LLOAD inst) {
-        currentFrame.push2(currentFrame.getLocal2(inst.var));
+        currentStackFrame.push2(currentStackFrame.getLocal2(inst.var));
     }
 
     /**
@@ -2432,9 +2432,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LMUL instruction
      */
     public void visitLMUL(LMUL inst) {
-        LongValue i2 = currentFrame.pop2().asLongValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LMUL(i2));
+        LongValue i2 = currentStackFrame.pop2().asLongValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LMUL(i2));
     }
 
     /**
@@ -2443,8 +2443,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LNEG isntruction
      */
     public void visitLNEG(LNEG inst) {
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LNEG());
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LNEG());
     }
 
     /**
@@ -2453,9 +2453,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LOR instruction
      */
     public void visitLOR(LOR inst) {
-        LongValue i2 = currentFrame.pop2().asLongValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LOR(i2));
+        LongValue i2 = currentStackFrame.pop2().asLongValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LOR(i2));
     }
 
     /**
@@ -2465,14 +2465,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitLREM(LREM inst) {
         try {
-            LongValue i2 = currentFrame.pop2().asLongValue();
-            LongValue i1 = currentFrame.pop2().asLongValue();
+            LongValue i2 = currentStackFrame.pop2().asLongValue();
+            LongValue i1 = currentStackFrame.pop2().asLongValue();
             BooleanFormula constraint = i2.checkZero();
             // Check for exception
             boolean result = i2.concrete != 0;
             symbolicStateHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
             if (result) {
-                currentFrame.push2(i1.LREM(i2));
+                currentStackFrame.push2(i1.LREM(i2));
             } else {
                 enforceException(inst);
             }
@@ -2489,7 +2489,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitLRETURN(LRETURN inst) {
         symbolicStateHandler.addSpecialElement(determineIid(inst.iid), "lRETURN");
-        currentFrame.setRet(currentFrame.pop2());
+        currentStackFrame.setRet(currentStackFrame.pop2());
         // checkAndSetException(inst);
     }
 
@@ -2499,9 +2499,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LSHL instruction
      */
     public void visitLSHL(LSHL inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LSHL(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LSHL(i2));
     }
 
     /**
@@ -2510,9 +2510,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LSHR instruction
      */
     public void visitLSHR(LSHR inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LSHR(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LSHR(i2));
     }
 
     /**
@@ -2521,7 +2521,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst One of the LSTORE instructions (LSTORE, LSTORE_0 - LSTORE_3)
      */
     public void visitLSTORE(LSTORE inst) {
-        currentFrame.setLocal2(inst.var, currentFrame.pop2());
+        currentStackFrame.setLocal2(inst.var, currentStackFrame.pop2());
     }
 
     /**
@@ -2530,9 +2530,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LSUB instruction
      */
     public void visitLSUB(LSUB inst) {
-        LongValue i2 = currentFrame.pop2().asLongValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LSUB(i2));
+        LongValue i2 = currentStackFrame.pop2().asLongValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LSUB(i2));
     }
 
     /**
@@ -2542,9 +2542,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LUSHR instruction
      */
     public void visitLUSHR(LUSHR inst) {
-        IntValue i2 = currentFrame.pop().asIntValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LUSHR(i2));
+        IntValue i2 = currentStackFrame.pop().asIntValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LUSHR(i2));
     }
 
     /**
@@ -2553,9 +2553,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The LXOR instruction
      */
     public void visitLXOR(LXOR inst) {
-        LongValue i2 = currentFrame.pop2().asLongValue();
-        LongValue i1 = currentFrame.pop2().asLongValue();
-        currentFrame.push2(i1.LXOR(i2));
+        LongValue i2 = currentStackFrame.pop2().asLongValue();
+        LongValue i1 = currentStackFrame.pop2().asLongValue();
+        currentStackFrame.push2(i1.LXOR(i2));
     }
 
     /**
@@ -2579,7 +2579,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitNEW(NEW inst) {
         try {
             ObjectInfo oi = classNames.get(inst.cIdx);
-            currentFrame.push(ValueFactory.createObjectValue(oi.getNFields(), oi.getClassName()));
+            currentStackFrame.push(ValueFactory.createObjectValue(oi.getNFields(), oi.getClassName()));
 
             // For static initializer
             symbolicStateHandler.addSpecialElement(determineIid(inst.iid), "NEW");
@@ -2592,28 +2592,28 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitNEWARRAY(NEWARRAY inst) {
         // ToDo (Nils): Why is the try catch here?
         try {
-            IntValue size = currentFrame.pop().asIntValue();
+            IntValue size = currentStackFrame.pop().asIntValue();
             BooleanFormula constraint = size.checkPositive();
             boolean result = size.concrete >= 0;
             symbolicStateHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
 
             switch (inst.atype) {
                 case 4 -> // T_BOOLEAN
-                currentFrame.push(ValueFactory.createArrayValue(ValueType.booleanValue, size, -1));
+                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.booleanValue, size, -1));
                 case 5 -> // T_CHAR
-                currentFrame.push(ValueFactory.createArrayValue(ValueType.charValue, size, -1));
+                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.charValue, size, -1));
                 case 6 -> // T_FLOAT
-                currentFrame.push(ValueFactory.createArrayValue(ValueType.floatValue, size, -1));
+                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.floatValue, size, -1));
                 case 7 -> // T_DOUBLE
-                currentFrame.push(ValueFactory.createArrayValue(ValueType.doubleValue, size, -1));
+                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.doubleValue, size, -1));
                 case 8 -> // T_BYTE
-                currentFrame.push(ValueFactory.createArrayValue(ValueType.byteValue, size, -1));
+                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.byteValue, size, -1));
                 case 9 -> // T_SHORT
-                currentFrame.push(ValueFactory.createArrayValue(ValueType.shortValue, size, -1));
+                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.shortValue, size, -1));
                 case 10 -> // T_INT
-                currentFrame.push(ValueFactory.createArrayValue(ValueType.intValue, size, -1));
+                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.intValue, size, -1));
                 case 11 -> // T_LONG
-                currentFrame.push(ValueFactory.createArrayValue(ValueType.longValue, size, -1));
+                currentStackFrame.push(ValueFactory.createArrayValue(ValueType.longValue, size, -1));
                 default -> throw new RuntimeException(
                         "Unknown primitive type: " + inst.atype + "!");
             }
@@ -2636,7 +2636,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The POP instruction
      */
     public void visitPOP(POP inst) {
-        currentFrame.pop();
+        currentStackFrame.pop();
     }
 
     /**
@@ -2645,7 +2645,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The POP2 instruction
      */
     public void visitPOP2(POP2 inst) {
-        currentFrame.pop2();
+        currentStackFrame.pop2();
     }
 
     /**
@@ -2662,11 +2662,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
         FieldInfo fi = oi.get(inst.fIdx, false);
         Value<?, ?> value;
         if (inst.desc.startsWith("D") || inst.desc.startsWith("J")) {
-            value = currentFrame.pop2();
+            value = currentStackFrame.pop2();
         } else {
-            value = currentFrame.pop();
+            value = currentStackFrame.pop();
         }
-        ObjectValue ref = currentFrame.pop().asObjectValue();
+        ObjectValue ref = currentStackFrame.pop().asObjectValue();
         try {
             ref.setField(fi.getFieldId(), value);
         } catch (Exception e) {
@@ -2686,9 +2686,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
             FieldInfo fi = oi.get(inst.fIdx, true);
             Value<?, ?> value;
             if (inst.desc.startsWith("D") || inst.desc.startsWith("J")) {
-                value = currentFrame.pop2();
+                value = currentStackFrame.pop2();
             } else {
-                value = currentFrame.pop();
+                value = currentStackFrame.pop();
             }
             ThreadHandler.setStaticField(
                     Thread.currentThread().getId(), oi, inst.cIdx, fi.getFieldId(), value);
@@ -2726,18 +2726,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitSALOAD(SALOAD inst) {
         try {
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentFrame.pop();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> arr = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (arr instanceof ShortArrayValue sarr) {
                 boolean result = checkArrayBounds(sarr, idx, inst.iid);
                 if (result) {
-                    currentFrame.push(sarr.getElement(idx));
+                    currentStackFrame.push(sarr.getElement(idx));
                 } else {
                     enforceException(inst);
                 }
             } else {
                 logger.warn("[SALOAD]: Unknown array type");
-                currentFrame.push(
+                currentStackFrame.push(
                         arr.getName() != null
                                 ? PlaceHolder.symbolicInstance
                                 : PlaceHolder.instance);
@@ -2755,9 +2755,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitSASTORE(SASTORE inst) {
         try {
-            ShortValue val = currentFrame.pop().asShortValue();
-            IntValue idx = currentFrame.pop().asIntValue();
-            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentFrame.pop();
+            ShortValue val = currentStackFrame.pop().asShortValue();
+            IntValue idx = currentStackFrame.pop().asIntValue();
+            ObjectValue<?, ?> ref = (ObjectValue<?, ?>) currentStackFrame.pop();
             if (ref instanceof ShortArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
@@ -2779,7 +2779,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The SIPUSH instruction
      */
     public void visitSIPUSH(SIPUSH inst) {
-        currentFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, inst.value));
+        currentStackFrame.push(ValueFactory.createNumericalValue(ValueType.intValue, inst.value));
     }
 
     /**
@@ -2788,10 +2788,10 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The SWAP instruction
      */
     public void visitSWAP(SWAP inst) {
-        Value<?, ?> v1 = currentFrame.pop();
-        Value<?, ?> v2 = currentFrame.pop();
-        currentFrame.push(v1);
-        currentFrame.push(v2);
+        Value<?, ?> v1 = currentStackFrame.pop();
+        Value<?, ?> v2 = currentStackFrame.pop();
+        currentStackFrame.push(v1);
+        currentStackFrame.push(v2);
     }
 
     public void visitINVOKEMETHOD_EXCEPTION(INVOKEMETHOD_EXCEPTION inst) {
@@ -2800,9 +2800,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
             return;
         }
         stack.pop();
-        currentFrame = stack.peek();
-        currentFrame.clear();
-        currentFrame.push(PlaceHolder.instance); // placeholder for the exception object
+        currentStackFrame = stack.peek();
+        //currentStackFrame.clear();
+        currentStackFrame.push(PlaceHolder.instance); // placeholder for the exception object
     }
 
     /**
@@ -2813,11 +2813,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEMETHOD_END(INVOKEMETHOD_END inst) {
         Frame old = stack.pop();
-        currentFrame = stack.peek();
+        currentStackFrame = stack.peek();
         if (old.nReturnWords == 2) {
-            currentFrame.push2(old.getRet());
+            currentStackFrame.push2(old.getRet());
         } else if (old.nReturnWords == 1) {
-            currentFrame.push(old.getRet());
+            currentStackFrame.push(old.getRet());
         }
     }
 
@@ -2884,7 +2884,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         IntValue[] dims = new IntValue[inst.dims];
         try {
             for (int i = 0; i < dims.length; i++) {
-                IntValue i1 = currentFrame.pop().asIntValue();
+                IntValue i1 = currentStackFrame.pop().asIntValue();
                 BooleanFormula constraint = i1.checkPositive();
                 boolean result = i1.concrete >= 0;
                 symbolicStateHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
@@ -2893,7 +2893,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             SolverContext context = ThreadHandler.getSolverContext(Thread.currentThread().getId());
             ArrayArrayValue arr = ArrayArrayValue.arrayMagic(context, inst.desc, dims);
-            currentFrame.push(arr);
+            currentStackFrame.push(arr);
         } catch (Exception e) {
             throwError(inst, e);
         }
@@ -2909,7 +2909,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitLOOKUPSWITCH(LOOKUPSWITCH inst) {
         int[] keys = inst.keys;
 
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         for (int key : keys) {
             BooleanFormula result =
                     i1.IF_ICMPEQ(
@@ -2929,7 +2929,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The TABLESWITCH instruction.
      */
     public void visitTABLESWITCH(TABLESWITCH inst) {
-        IntValue i1 = currentFrame.pop().asIntValue();
+        IntValue i1 = currentStackFrame.pop().asIntValue();
         for (int i = inst.min; i <= inst.max; i++) {
             BooleanFormula result =
                     i1.IF_ICMPEQ(
@@ -2977,7 +2977,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     private void visitGETVALUE_primitive(GETVALUE_primitive inst, ValueType type) {
         try {
             boolean cat2 = type == ValueType.longValue || type == ValueType.doubleValue;
-            Value<?, ?> peek = cat2 ? currentFrame.peek2() : currentFrame.peek();
+            Value<?, ?> peek = cat2 ? currentStackFrame.peek2() : currentStackFrame.peek();
             boolean isSymbolic = false;
 
             if (peek == PlaceHolder.symbolicInstance) {
@@ -2989,9 +2989,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
             }
             if (peek == PlaceHolder.instance) {
                 if (cat2) {
-                    currentFrame.pop2();
+                    currentStackFrame.pop2();
                 } else {
-                    currentFrame.pop();
+                    currentStackFrame.pop();
                 }
                 Value<?, ?> v = ValueFactory.createNumericalValue(type, inst.v);
                 if (isSymbolic) {
@@ -2999,25 +2999,25 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 }
 
                 if (cat2) {
-                    currentFrame.push2(v);
+                    currentStackFrame.push2(v);
                 } else {
-                    currentFrame.push(v);
+                    currentStackFrame.push(v);
                 }
             } else if (peek.concrete == null) {
                 if (cat2) {
-                    currentFrame.pop2();
-                    currentFrame.push2(ValueFactory.createNumericalValue(type, inst.v));
+                    currentStackFrame.pop2();
+                    currentStackFrame.push2(ValueFactory.createNumericalValue(type, inst.v));
                 } else {
-                    currentFrame.pop();
-                    currentFrame.push(ValueFactory.createNumericalValue(type, inst.v));
+                    currentStackFrame.pop();
+                    currentStackFrame.push(ValueFactory.createNumericalValue(type, inst.v));
                 }
             } else if (!checkEquality(peek.concrete, inst.v)) {
                 if (cat2) {
-                    currentFrame.pop2();
-                    currentFrame.push2(ValueFactory.createNumericalValue(type, inst.v));
+                    currentStackFrame.pop2();
+                    currentStackFrame.push2(ValueFactory.createNumericalValue(type, inst.v));
                 } else {
-                    currentFrame.pop();
-                    currentFrame.push(ValueFactory.createNumericalValue(type, inst.v));
+                    currentStackFrame.pop();
+                    currentStackFrame.push(ValueFactory.createNumericalValue(type, inst.v));
                 }
             }
         } catch (Exception e) {

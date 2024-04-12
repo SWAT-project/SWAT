@@ -232,6 +232,7 @@ public class Frame {
 
     /** Clears the symbolic stack */
     public void clear() {
+        stateLogger.info("Clearing Operand Stack");
         stack.clear();
     }
 
