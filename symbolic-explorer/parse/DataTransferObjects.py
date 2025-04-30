@@ -11,6 +11,7 @@ class TraceItem(BaseModel):
     type: str
     inst: Optional[str] = None
 
+
 class InputItem(BaseModel):
     name: str
     value: str
@@ -18,6 +19,14 @@ class InputItem(BaseModel):
     lowerBound: str
     upperBound: str
 
+
 class ConstraintRequest(BaseModel):
     trace: List[TraceItem]
     inputs: List[InputItem]
+    symbolicContextLoss: bool
+    symbolicPrecisionLoss: bool
+
+
+class CoverageRequest(BaseModel):
+    ids: List[int]
+    total: int

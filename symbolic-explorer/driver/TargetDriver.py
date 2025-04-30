@@ -7,7 +7,9 @@ from enum import Enum
 from data.Database import Database
 from driver.SymbolicStorage import SymbolicStorage
 # import logging
-from log import logger
+
+import log
+logger = log.get_logger()
 from solver.SolverHandler import SATResult
 from strategy.StrategyService import StrategyService
 
@@ -58,7 +60,7 @@ class TargetDriver:
             f'-Dconfig.path={args.config}',
             f'-javaagent:{args.agent}',
             f"-Djava.library.path={args.z3dir}",
-            '-Dlogging.level=DEBUG',
+            '-Dagent.logging.level=DEBUG',
             '-ea',
             '-jar',
             args.target
@@ -176,7 +178,7 @@ class TargetDriver:
         """Runs the symbolic execution on the given testcase."""
         logger.info(f'[EXPLORER] Beginning testcase analysis')
         # Register symbolic variables
-        self.sym_storage.register_vars(args.symbolicvars)
+        self.sym_storage.register_vars(args.symbolicvars[0])
         self.sym_storage.init_values()
         # Build the command to execute target
         base_cmd = self.build_command(args)

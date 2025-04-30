@@ -1,0 +1,50 @@
+buildscript {
+    repositories {
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath 'com.github.johnrengelman:shadow:8.1.1'
+    }
+}
+
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+apply plugin: 'com.github.johnrengelman.shadow'
+apply plugin: 'java'
+
+shadowJar {
+    archiveBaseName.set('WitnessCreator')
+    archiveClassifier.set('')
+    archiveVersion.set('')
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+
+    implementation 'org.antlr:ST4:4.3.4'
+
+    testImplementation platform('org.junit:junit-bom:5.9.1')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'App'
+        )
+    }
+}

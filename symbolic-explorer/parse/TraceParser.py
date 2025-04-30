@@ -33,7 +33,7 @@ class Parser:
         return _trace
 
     @staticmethod
-    def parse_inputs(inputs: List[InputItem]) -> List:
+    def parse_inputs(inputs: List[InputItem]) -> List[Input]:
         _inputs = []
         for input in inputs:
             _inputs.append(Input(name=input.name,

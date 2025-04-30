@@ -48,7 +48,7 @@ class StrategyService:
         return path_constraints
     
     @staticmethod
-    def solve_branch(possible_branch: Node):
+    def solve_branch(possible_branch: Node, endpoint_id=None):
         db = Database.instance()
         
         path_constraints = StrategyService.collect_path_constrains(possible_branch)
@@ -57,7 +57,7 @@ class StrategyService:
         sat, sol = Z3Handler.solve_opt(possible_branch, path_constraints)
         
         if sat == SATResult.SAT:
-            db.add_solution(branch_id=possible_branch.gid, sol=sol, inputs=inputs)
+            db.add_solution(branch_id=possible_branch.gid, sol=sol, inputs=inputs, endpoint_id=endpoint_id)
             
         elif sat == SATResult.UNSAT:
             db.add_unsat_branch(possible_branch.gid)

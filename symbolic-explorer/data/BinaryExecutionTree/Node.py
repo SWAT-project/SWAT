@@ -76,3 +76,12 @@ class Node:
                 self.branched = child
             else:
                 self.skipped = child
+
+    def __str__(self):
+        """
+        Returns a string representation of the node.
+
+        Returns:
+            str: A string representation of the node.
+        """
+        return f'Node({self.id}) -> Branched: {self.branched}, Skipped: {self.skipped}'

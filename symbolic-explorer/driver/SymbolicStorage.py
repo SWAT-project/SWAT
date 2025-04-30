@@ -3,7 +3,9 @@ from data.trace.Input import Input
 from z3 import Solver, is_true, Not
 from enum import Enum
 from typing import Union, Dict, Tuple, Any
-from log import logger
+
+import log
+logger = log.get_logger()
 
 class DataTypes(Enum):
     BOOLEAN = 'Z'

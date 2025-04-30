@@ -1,3 +1,0 @@
-javax/servlet/http/Cookie.getName()Ljava/lang/String;
-javax/servlet/http/Cookie.getValue()Ljava/lang/String;
-java/util/Vector.elements()Ljava/util/Enumeration;

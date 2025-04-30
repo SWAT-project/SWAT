@@ -113,13 +113,16 @@ class Z3Handler:
                                                     and the solution dictionary or None.
         """
         c = Not(Z3Handler.string_to_expr(node.constraint[node.trace_id]))
-
+        #print("Constraint: ")
         optimizer = Optimize()
         optimizer.add(c)
+        #print(c)
 
+        #print("Path constraints: ")
         for path_constraint in path_constraints:
             p = Z3Handler.string_to_expr(path_constraint)
             optimizer.add(p)
+            #print(p)
 
         seen_vars = set()
         for assertion in optimizer.assertions():
@@ -129,11 +132,16 @@ class Z3Handler:
                     if var.sort().name() in ["Int", "Real"]:
                         optimizer.minimize(Abs(var))
 
-        optimizer.set("timeout", 60 * 1000) 
+        optimizer.set("timeout", 60 * 1000)
+        #print(optimizer.to_smt2())
         res = optimizer.check()
 
         if str(res) == SATResult.SAT.value:
             sol = optimizer.model()
+            #print('Problem:')
+            #print(optimizer.__repr__())
+            #print('Model:')
+            #print(sol)
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
             return SATResult.SAT, encoded_sol
         else:

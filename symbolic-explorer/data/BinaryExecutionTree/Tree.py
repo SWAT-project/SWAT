@@ -1,7 +1,13 @@
+from typing import List, Set
 from data.trace.Branch import Branch
 from data.BinaryExecutionTree.Leaf import Leaf
 from data.BinaryExecutionTree.Node import Node
+from data.trace.Input import Input
+
+import log
+logger = log.get_logger()
 #import pygraphviz as pgv
+
 class Tree:
     """
     Represents a binary execution tree used to model decision points in an execution flow.
@@ -23,7 +29,30 @@ class Tree:
         """
         self.root = None
         self.endpoint_id = endpoint_id
+        self.symbolic_context_loss = False
+        self.symbolic_precision_loss = False
+        self.symbolic_vars: Set = set()
 
+
+    def record_inputs(self, inputs: List[Input]):
+        """
+        Records the inputs associated with the tree.
+
+        Args:
+            inputs (list): A list of inputs associated with the tree.
+        """
+        for input in inputs:
+            self.symbolic_vars.add(input.name)
+                                   
+
+    def record_context_loss(self):
+        logger.warning("Context loss recorded!")
+        self.symbolic_context_loss = True
+        
+    def record_precision_loss(self):
+        logger.warning("Precision loss recorded!")
+        self.symbolic_precision_loss = True
+        
     def add(self, trace, inputs):
         """
         Adds a branch to the tree based on the provided trace and inputs.
@@ -68,8 +97,12 @@ class Tree:
 
                 # Recurse into the correct branch based on the trace
                 if new_node.has_branched:
+                    if node.branched is None and node.skipped is not None:
+                        logger.info(f"New branch from node {node.id} (branched)")
                     node.branched = self.add_recursive(node, node.branched, trace, inputs)
                 else:
+                    if node.skipped is None and node.branched is not None:
+                        logger.info(f"New branch from node {node.id} (skipped)")
                     node.skipped = self.add_recursive(node, node.skipped, trace, inputs)
             else:
                 # Create a new Node or Leaf if the current node is a Leaf
@@ -99,11 +132,11 @@ class Tree:
                 self.add_to_dot(node.branched, graph, node)
                 self.add_to_dot(node.skipped, graph, node)
 
-    def plot_tree (self, idx):
-        return None
-        """Plot the tree using Graphviz and save to a file."""
-        #log.info(self.to_string())
-        G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
-        self.add_to_dot(self.root, G)
-        G.layout(prog="dot")
-        G.draw(f"tree_{idx}.png")
+#    def plot_tree(self, idx):
+#        return None
+#        """Plot the tree using Graphviz and save to a file."""
+#        #log.info(self.to_string())
+#        G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
+#        self.add_to_dot(self.root, G)
+#        G.layout(prog="dot")
+#        G.draw(f"tree_{idx}.png")
