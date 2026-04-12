@@ -1,0 +1,169 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':annotations')
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.tests.arrays.SimpleArrayTest'
+    }
+}
+
+// Delete logs before test
+tasks.register('deleteLogs', Delete) {
+    delete file('logs')
+}
+
+// Integration test task that runs with the symbolic explorer
+tasks.register('arrayExplorerIntegrationTest', Exec) {
+    description = 'Runs array symbolization integration test with explorer and validates all paths are explored'
+    group = 'verification'
+
+    dependsOn ':symbolic-executor:assemble'
+    dependsOn build
+    dependsOn deleteLogs
+
+    // Run the test script
+    commandLine 'bash', '-c', "${projectDir}/run.sh"
+
+    // Capture output
+    standardOutput = new ByteArrayOutputStream()
+    errorOutput = new ByteArrayOutputStream()
+
+    // Don't fail the build immediately - we'll handle it in doLast
+    ignoreExitValue = true
+
+    doLast {
+        def output = standardOutput.toString() + errorOutput.toString()
+        def exitCode = executionResult.get().exitValue
+
+        println output
+
+        if (exitCode != 0) {
+            throw new GradleException("Array explorer integration test failed! Check logs at ${projectDir}/logs/")
+        }
+
+        println "\n✓ Array symbolization explorer integration test PASSED"
+    }
+}
+
+// Alternative: Pure Gradle implementation (no external script)
+tasks.register('arrayExplorerTest') {
+    description = 'Runs array symbolization test with explorer validation (pure Gradle)'
+    group = 'verification'
+
+    dependsOn ':symbolic-executor:assemble'
+    dependsOn build
+
+    doLast {
+        // Clean logs
+        delete file('logs')
+        mkdir file('logs')
+
+        println "="*60
+        println "Array Symbolization Explorer Integration Test"
+        println "="*60
+        println ""
+
+        // Start explorer in background with venv
+        def explorerDir = file("${rootDir}/symbolic-explorer")
+        def venvPython = file("${explorerDir}/.venv/bin/python")
+
+        if (!venvPython.exists()) {
+            throw new GradleException("Virtual environment not found at symbolic-explorer/.venv\n" +
+                "Please create it first:\n" +
+                "  cd symbolic-explorer && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt")
+        }
+
+        def explorerLog = file('logs/explorer.log')
+        def explorerProc = new ProcessBuilder()
+            .command(venvPython.absolutePath, 'SymbolicExplorer.py',
+                     '--mode', 'args',
+                     '--symbolicvars', '[I',
+                     '--port', '8078')
+            .directory(explorerDir)
+            .redirectOutput(explorerLog)
+            .redirectErrorStream(true)
+            .start()
+
+        println "[Explorer] Started with PID: ${explorerProc.pid()}"
+
+        // Give explorer time to start
+        Thread.sleep(2000)
+
+        // Run Java target(s) - the explorer will drive multiple executions
+        def javaCmd = [
+            'java', '-Xmx4g',
+            "-Dconfig.path=${projectDir}/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path",
+            '-cp', "${buildDir}/libs/array-symbolization-explorer.jar",
+            'de.uzl.its.tests.arrays.SimpleArrayTest'
+        ]
+
+        def javaLog = file('logs/java-output.log')
+        def javaProc = new ProcessBuilder()
+            .command(javaCmd)
+            .directory(rootDir)
+            .redirectOutput(javaLog)
+            .redirectErrorStream(true)
+            .start()
+
+        println "[Java] Execution started"
+
+        // Wait for completion (with timeout)
+        def timeout = 60000 // 60 seconds
+        def startTime = System.currentTimeMillis()
+
+        while (explorerProc.alive && (System.currentTimeMillis() - startTime) < timeout) {
+            Thread.sleep(1000)
+        }
+
+        if (explorerProc.alive) {
+            println "[Explorer] Timeout reached, terminating..."
+            explorerProc.destroy()
+            Thread.sleep(1000)
+            if (explorerProc.alive) {
+                explorerProc.destroyForcibly()
+            }
+        }
+
+        // Collect all output
+        def allOutput = explorerLog.text
+        fileTree('logs').matching { include '**/*.log' }.each { logFile ->
+            allOutput += "\n" + logFile.text
+        }
+
+        // Validate results
+        def path1Count = (allOutput =~ /Found path 1/).count
+        def path2Count = (allOutput =~ /Found path 2/).count
+        def path3Count = (allOutput =~ /Found path 3/).count
+
+        println ""
+        println "Results:"
+        println "  Path 1 (arr[0]==42 && arr[1]==10): ${path1Count} occurrence(s)"
+        println "  Path 2 (arr[0]>100):                ${path2Count} occurrence(s)"
+        println "  Path 3 (default):                   ${path3Count} occurrence(s)"
+        println ""
+
+        def allPathsFound = path1Count > 0 && path2Count > 0 && path3Count > 0
+
+        if (allPathsFound) {
+            println "✓ TEST PASSED - All paths explored!"
+            println "="*60
+        } else {
+            println "✗ TEST FAILED - Not all paths explored"
+            println "="*60
+            println "\nExplorer log:"
+            println explorerLog.text
+            throw new GradleException("Array explorer test failed: Not all paths explored")
+        }
+    }
+}

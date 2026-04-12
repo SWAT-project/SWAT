@@ -29,7 +29,7 @@ class Node:
         ValueError: If the trace argument is None or empty, indicating that the node cannot be created.
     """
 
-    def __init__(self, parent, trace, inputs):
+    def __init__(self, parent, trace, inputs, ufs):
         """
         Initializes a new instance of the Node class.
 
@@ -37,12 +37,14 @@ class Node:
             parent (Node): The parent node of this node.
             trace (list): A list of trace elements defining the execution path.
             inputs (any): The inputs associated with this node.
+            ufs (any): The UFs associated with this node.
         """
         global GLOBAL_IID
         self.parent = parent
         self.branched = None
         self.skipped = None
         self.inputs = inputs
+        self.ufs = ufs
         self.gid = GLOBAL_IID  # Assign a unique global identifier
         GLOBAL_IID += 1
         self.constraint = {}
@@ -56,9 +58,9 @@ class Node:
 
         # Create a child node based on remaining trace elements
         if len(trace) == 0:
-            child = Leaf(parent=self, inputs=inputs)
+            child = Leaf(parent=self, inputs=inputs, ufs=ufs)
         else:
-            child = Node(parent=self, trace=trace, inputs=inputs)
+            child = Node(parent=self, trace=trace, inputs=inputs, ufs=ufs)
 
         # Assign branch details to the node
         self.id = branch.id
@@ -76,3 +78,12 @@ class Node:
                 self.branched = child
             else:
                 self.skipped = child
+
+    def __str__(self):
+        """
+        Returns a string representation of the node.
+
+        Returns:
+            str: A string representation of the node.
+        """
+        return f'Node({self.id}) -> Branched: {self.branched}, Skipped: {self.skipped}'

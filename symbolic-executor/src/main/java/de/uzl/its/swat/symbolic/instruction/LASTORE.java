@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * LASTORE - Store into long array. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.lastore">Java VM
@@ -11,10 +13,9 @@ public class LASTORE extends Instruction {
      * Creates a new LASTORE instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public LASTORE(int iid, int mid) {
-        super(iid, mid);
+    public LASTORE(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class LASTORE extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitLASTORE(this);
     }
 

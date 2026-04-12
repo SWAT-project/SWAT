@@ -1,0 +1,30 @@
+plugins {
+    id 'java'
+}
+
+
+
+repositories {
+    mavenCentral()
+}
+
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.tests.INVOKESTATIC'
+    }
+}
+
+tasks.register('runINVOKESTATIC', JavaExec) {
+    mainClass = 'de.uzl.its.tests.INVOKESTATIC'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g',
+            "-Dconfig.path=${rootDir}/targets/instruction-tests/INVOKESTATIC/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path",
+            "-Dagent.logging.level=DEBUG"
+    ]
+    dependsOn ':symbolic-executor:assemble'
+    dependsOn build
+}

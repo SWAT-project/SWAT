@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * JSR - Jump subroutine. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.jsr">Java VM
@@ -14,11 +16,10 @@ public class JSR extends Instruction {
      * Creates a new JSR instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param label the jump destination
      */
-    public JSR(int iid, int mid, int label) {
-        super(iid, mid);
+    public JSR(long iid, int label) {
+        super(iid);
         this.label = label;
     }
 
@@ -27,7 +28,7 @@ public class JSR extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitJSR(this);
     }
 

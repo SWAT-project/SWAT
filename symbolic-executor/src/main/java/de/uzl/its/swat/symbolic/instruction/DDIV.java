@@ -1,13 +1,15 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * DDIV - Divide double. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.ddiv">Java VM
  * specification</a>.
  */
 public class DDIV extends Instruction {
-    public DDIV(int iid, int mid) {
-        super(iid, mid);
+    public DDIV(long iid) {
+        super(iid);
     }
 
     /**
@@ -15,7 +17,7 @@ public class DDIV extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitDDIV(this);
     }
 

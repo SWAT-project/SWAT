@@ -1,11 +1,18 @@
 package de.uzl.its.swat.instrument.symbolicwrapper;
 
+import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
+import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.common.Util;
+import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
+import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
 import java.security.ProtectionDomain;
@@ -13,7 +20,7 @@ import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
-import org.slf4j.LoggerFactory;
+import org.objectweb.asm.util.CheckClassAdapter;
 
 /**
  * An agent provides an implementation of this interface in order to transform class files. The
@@ -23,12 +30,16 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
 
     Config config = Config.instance();
 
-    @Getter private static PrintBox printBox;
-    private static final org.slf4j.Logger logger =
-            LoggerFactory.getLogger(SymbolicWrapperTransformer.class);
+
+    private static final ThreadLocal<PrintBox> printBox = ThreadLocal.withInitial(() -> new PrintBox(60, "Transformer" + SymbolicWrapperTransformer.class.getSimpleName()));
+
+    public static PrintBox getPrintBox() {
+        return printBox.get();
+    }
+
+    private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
 
     public SymbolicWrapperTransformer() {
-        printBox = new PrintBox(60, "Transformer: " + this.getClass().getSimpleName());
         Transformer.getPrintBox()
                 .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
     }
@@ -57,45 +68,54 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             ProtectionDomain d,
             byte[] cbuf)
             throws IllegalClassFormatException {
-        if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) {
+        try {
+        if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) {
             return cbuf;
         }
 
         switch (config.getInstrumentationTransformer()) {
-            case SPRING_ENDPOINT -> new ErrorHandler()
-                    .handleException(
-                            new RuntimeException(
-                                    "Spring Endpoint Instrumentation is not supported for symbolic"
-                                            + " execution"));
+            case SPRING_ENDPOINT -> {
+                if (!SpringEndpointTransformer.getInstrumentedClasses().contains(cname)) {
+                    return cbuf;
+                }
+            }
             case WEB_SERVLET -> new ErrorHandler()
                     .handleException(
                             new RuntimeException(
                                     "Servlet Endpoint Instrumentation is not supported for symbolic"
                                             + " execution"));
             case SV_COMP, NONE -> {}
+            case ANNOTATION -> {
+                if (!cname.equals(config.getInstrumentationAnnotationSymbolicClassName()) &&
+                        config.getInstrumentationAnnotationSymbolicClassName() != null)
+                    return cbuf;
+            }
             case PARAMETER -> {
-                if (!cname.equals(config.getInstrumentationParameterSymbolicClassName()))
+                if (!Util.isSymbolicClass(cname))
                     return cbuf;
             }
         }
 
-        printBox.addMsg("Class: " + cname);
-        try {
+        getPrintBox().addMsg("Class: " + cname);
             ClassReader cr = new ClassReader(cbuf);
-            ClassWriter cw =
-                    new SafeClassWriter(
-                            cr, loader, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+            ClassWriter cw = new SafeClassWriter(cr, loader, ClassWriter.COMPUTE_FRAMES);
             ClassVisitor cv = new SymbolicWrapperClassAdapter(cw, cname);
             cr.accept(cv, 0);
+
+            if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {
+                StringWriter stringWriter = new StringWriter();
+                PrintWriter printWriter = new PrintWriter(stringWriter);
+                CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false, printWriter);
+                SWATAssert.enforce(stringWriter.toString().isEmpty(), "Instrumentation error: {}", stringWriter);
+            }
+
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SYMBOLIC_WRAPPER);
-            if (printBox.isContentPresent()) logger.info(printBox.toString());
+            if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
             return cw.toByteArray();
 
-        } catch (Exception e) {
-            new ErrorHandler().handleException("Error while instrumenting class: " + cname, e);
+        } catch (Throwable t) {
+            new ErrorHandler().handleException("Error while instrumenting class: " + cname, t);
         }
-        Transformer.addInstrumentedClass(cname, InternalTransformerType.SYMBOLIC_WRAPPER);
-        if (printBox.isContentPresent()) logger.info(printBox.toString());
 
         return cbuf;
     }

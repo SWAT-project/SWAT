@@ -27,3 +27,6 @@ class Branch:
         self.trace_id = trace_id
         self.has_branched = has_branched
         self.constraint = constraint
+        
+    def __str__(self):
+        return f'[(B) - {self.id} - ({"T" if self.has_branched else "F"})]'

@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * IINC - Increment local variable by constant. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.iinc">Java VM
@@ -16,12 +18,11 @@ public class IINC extends Instruction {
      * Creates a new IINC instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param var the local variable index.
      * @param increment the increment amount.
      */
-    public IINC(int iid, int mid, int var, int increment) {
-        super(iid, mid);
+    public IINC(long iid, int var, int increment) {
+        super(iid);
         this.var = var;
         this.increment = increment;
     }
@@ -31,7 +32,7 @@ public class IINC extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitIINC(this);
     }
 

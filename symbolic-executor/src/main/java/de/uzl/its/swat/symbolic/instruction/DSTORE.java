@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * DSTORE - Store double into local variable. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.dstore">Java VM
@@ -14,11 +16,10 @@ public class DSTORE extends Instruction {
      * Creates a new DSTORE instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param var index of the local variable where the double is stored.
      */
-    public DSTORE(int iid, int mid, int var) {
-        super(iid, mid);
+    public DSTORE(long iid, int var) {
+        super(iid);
         this.var = var;
     }
 
@@ -27,7 +28,7 @@ public class DSTORE extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitDSTORE(this);
     }
 

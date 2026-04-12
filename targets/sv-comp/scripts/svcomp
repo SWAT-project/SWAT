@@ -1,0 +1,15 @@
+#!/bin/bash
+# Wrapper script to run svcomp.py with the venv Python
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PYTHON="$SCRIPT_DIR/.venv/bin/python3"
+
+# Check if venv exists
+if [ ! -f "$VENV_PYTHON" ]; then
+    echo "Error: Virtual environment not found at $SCRIPT_DIR/.venv"
+    echo "Run 'python3 svcomp.py setup install-deps' first"
+    exit 1
+fi
+
+# Run svcomp.py with venv Python
+exec "$VENV_PYTHON" "$SCRIPT_DIR/svcomp.py" "$@"

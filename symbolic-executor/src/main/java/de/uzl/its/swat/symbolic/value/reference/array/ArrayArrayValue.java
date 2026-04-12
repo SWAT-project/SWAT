@@ -1,5 +1,9 @@
 package de.uzl.its.swat.symbolic.value.reference.array;
 
+import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.exceptions.NotSupportedException;
+import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.common.exceptions.TypeException;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.DataType;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -17,6 +21,9 @@ public class ArrayArrayValue<TE extends Formula>
                 IntValue,
                 AbstractArrayValue<?, ?, ?, ?, ?>,
                 ArrayList<AbstractArrayValue>> {
+
+    private static final String symbolicPrefix = AbstractArrayValue.getSymbolicArrayPrefix() + AbstractArrayValue.getSymbolicArrayPrefix();
+
     public IntValue size;
 
     public String desc;
@@ -29,8 +36,8 @@ public class ArrayArrayValue<TE extends Formula>
             FormulaType elementFormulaType,
             String desc,
             IntValue parentRefIdx,
-            ArrayArrayValue parentRef) {
-        super(context, FormulaType.IntegerType, elementFormulaType, dims[0], address);
+            ArrayArrayValue parentRef) throws TypeException {
+        super(context, FormulaType.IntegerType, elementFormulaType, symbolicPrefix, dims[0], address);
         this.size = dims[0];
 
         try {
@@ -40,13 +47,13 @@ public class ArrayArrayValue<TE extends Formula>
         this.dims = dims;
         this.desc = desc;
         Value.symbol = Value.symbol + Value.inc;
-        this.formula = amgr.makeArray("a" + (Value.symbol - Value.inc), formulaType);
+        this.formula = amgr.makeArray("A_" + (Value.symbol - Value.inc), formulaType);
         this.parentRefIdx = parentRefIdx;
         this.parentRef = parentRef;
         initSymbolicArray();
     }
 
-    private static FormulaType getArrayFormulaType(String desc) {
+    private static FormulaType getArrayFormulaType(String desc) throws TypeException {
 
         FormulaType arrType = null;
 
@@ -63,7 +70,7 @@ public class ArrayArrayValue<TE extends Formula>
                             FormulaType.getArrayType(
                                     FormulaType.IntegerType, FormulaType.StringType);
                 } else {
-                    throw new RuntimeException("Unknown object type: " + c);
+                    throw new TypeException(c);
                 }
 
                 // Skip to the character before 'L' as we've processed the whole object type
@@ -75,25 +82,28 @@ public class ArrayArrayValue<TE extends Formula>
                     switch (DataType.getDataType(String.valueOf(c))) {
                         case ARRAY_TYPE -> FormulaType.getArrayType(
                                 FormulaType.IntegerType, arrType);
-                        case INTEGER_TYPE,
-                                SHORT_TYPE,
-                                LONG_TYPE,
-                                CHAR_TYPE,
-                                BYTE_TYPE -> FormulaType.getArrayType(
-                                FormulaType.IntegerType, FormulaType.IntegerType);
+                        // Use bitvector types matching what the concrete array types use
+                        case INTEGER_TYPE -> FormulaType.getArrayType(
+                                FormulaType.IntegerType, FormulaType.getBitvectorTypeWithSize(32));
+                        case LONG_TYPE -> FormulaType.getArrayType(
+                                FormulaType.IntegerType, FormulaType.getBitvectorTypeWithSize(64));
+                        case SHORT_TYPE, CHAR_TYPE -> FormulaType.getArrayType(
+                                FormulaType.IntegerType, FormulaType.getBitvectorTypeWithSize(16));
+                        case BYTE_TYPE -> FormulaType.getArrayType(
+                                FormulaType.IntegerType, FormulaType.getBitvectorTypeWithSize(8));
                         case BOOLEAN_TYPE -> FormulaType.getArrayType(
                                 FormulaType.IntegerType, FormulaType.BooleanType);
                         case DOUBLE_TYPE -> FormulaType.getArrayType(
                                 FormulaType.IntegerType, DoubleValue.precision);
                         case FLOAT_TYPE -> FormulaType.getArrayType(
                                 FormulaType.IntegerType, FloatValue.precision);
-                        default -> throw new RuntimeException("Unknown type: " + c);
+                        default -> throw new TypeException(c);
                     };
         }
         return arrType;
     }
 
-    public static ArrayArrayValue arrayMagic(SolverContext context, String desc, IntValue[] dims) {
+    public static ArrayArrayValue arrayMagic(SolverContext context, String desc, IntValue[] dims) throws TypeException {
         FormulaType arrType = getArrayFormulaType(desc.substring(1));
         ArrayArrayValue arr =
                 new ArrayArrayValue<ArrayFormula<?, ?>>(
@@ -102,7 +112,7 @@ public class ArrayArrayValue<TE extends Formula>
         return arr;
     }
 
-    private void init1DSymbolicArray(String newDesc, IntValue[] newDims) {
+    private void init1DSymbolicArray(String newDesc, IntValue[] newDims) throws TypeException {
         DataType elementType = DataType.getDataType(newDesc.substring(1));
         AbstractArrayValue arr;
 
@@ -131,14 +141,14 @@ public class ArrayArrayValue<TE extends Formula>
                 case STRING_TYPE -> arr =
                         new StringArrayValue(
                                 context, newDims[0], -1, new IntValue(context, i), this);
-                default -> throw new RuntimeException("Unknown type: " + elementType);
+                default -> throw new TypeException(elementType);
             }
             formula = amgr.store(formula, getIndex(i), (TE) arr.formula);
             concrete.add(i, arr);
         }
     }
 
-    private void initSymbolicArray() {
+    private void initSymbolicArray() throws TypeException {
         String newDesc = desc.substring(1);
         IntValue[] newDims = new IntValue[dims.length - 1];
         System.arraycopy(dims, 1, newDims, 0, dims.length - 1);
@@ -163,9 +173,9 @@ public class ArrayArrayValue<TE extends Formula>
     }
 
     @Override
-    TE getDefaultValue() {
-        throw new RuntimeException(
-                "MultiIntArrayValue::initArray: Not supported on multi-dimensional arrays");
+    TE getDefaultValue() throws NotSupportedException {
+        throw new NotSupportedException(
+                "MultiIntArrayValue::getDefaultValue: Not supported on multi-dimensional arrays");
     }
 
     @Override
@@ -206,14 +216,14 @@ public class ArrayArrayValue<TE extends Formula>
     @Override
     public AbstractArrayValue<?, ?, ?, ?, ?> getElement(IntValue idx) {
         AbstractArrayValue arr = concrete.get(idx.concrete);
-        arr.formula = amgr.select(formula, idx.formula);
+        arr.formula = amgr.select(formula, idx.asIntegerFormula());
         arr.parentRefIdx = idx;
         arr.parentRef = this;
         return arr;
     }
 
     public void updateFormula(IntValue idx, TE val) {
-        formula = amgr.store(formula, idx.formula, val);
+        formula = amgr.store(formula, idx.asIntegerFormula(), val);
         if (parentRef != null) {
             parentRef.updateFormula(parentRefIdx, formula);
         }
@@ -222,16 +232,21 @@ public class ArrayArrayValue<TE extends Formula>
     @Override
     public void storeElement(IntValue idx, AbstractArrayValue val) {
         concrete.set(idx.concrete, val);
-        formula = amgr.store(formula, idx.formula, (TE) val.formula);
+        formula = amgr.store(formula, idx.asIntegerFormula(), (TE) val.formula);
         if (parentRef != null) {
             parentRef.updateFormula(parentRefIdx, formula);
         }
     }
 
     @Override
-    protected void initArray(int size) {
-        throw new RuntimeException(
+    protected void initArray(int size) throws NotSupportedException {
+        throw new NotSupportedException(
                 "MultiIntArrayValue::initArray: Not supported on multi-dimensional arrays");
+    }
+
+    @Override
+    protected String getSymbolicPrefix() {
+        return symbolicPrefix;
     }
 
     @Override

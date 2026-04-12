@@ -1,30 +1,28 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 import java.io.Serializable;
 
 /** Base class for all instructions. Should be implemented by each instruction */
 public abstract class Instruction implements Serializable {
-    // Unique instruction id, -1 if unused
-    public int iid;
-    // Unique method id, -1 if unused
-    public int mid;
+    // Unique instruction id
+    public long iid;
 
     /**
      * Abstract accept method for the visitor.
      *
      * @param visitor the visitor
      */
-    public abstract void accept(IVisitor visitor);
+    public abstract void accept(IVisitor visitor) throws SymbolicInstructionException;
 
     /**
      * Creates a new instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public Instruction(int iid, int mid) {
+    public Instruction(long iid) {
         this.iid = iid;
-        this.mid = mid;
     }
 
     /**
@@ -36,11 +34,7 @@ public abstract class Instruction implements Serializable {
     public String genericToString(String prefix) {
         String s = prefix;
         if (iid != -1) {
-            s += " (id: " + iid;
-            if (mid != -1) {
-                s += ", " + mid;
-            }
-            s += ")";
+            s += " (id: " + iid + ")";
         }
         return s;
     }

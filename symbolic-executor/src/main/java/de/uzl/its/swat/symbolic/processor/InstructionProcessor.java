@@ -5,361 +5,377 @@ package de.uzl.its.swat.symbolic.processor;
  * static API from the instrumented code.
  */
 public interface InstructionProcessor {
-    void LDC(int iid, int mid, int c);
+    void LDC(long iid, int c);
 
-    void LDC(int iid, int mid, long c);
+    void LDC(long iid, long c);
 
-    void LDC(int iid, int mid, float c);
+    void LDC(long iid, float c);
 
-    void LDC(int iid, int mid, double c);
+    void LDC(long iid, double c);
 
-    void LDC(int iid, int mid, String c);
+    void LDC(long iid, String c);
 
-    void LDC(int iid, int mid, Object c);
+    void LDC(long iid, Object c);
 
-    void IINC(int iid, int mid, int var, int increment);
+    void IINC(long iid, int var, int increment);
 
-    void MULTIANEWARRAY(int iid, int mid, String desc, int dims);
+    void MULTIANEWARRAY(long iid, String desc, int dims);
 
-    void LOOKUPSWITCH(int iid, int mid, int dflt, int[] keys, int[] labels);
+    void LOOKUPSWITCH(long iid, int dflt, int[] keys, int[] labels);
 
-    void TABLESWITCH(int iid, int mid, int min, int max, int dflt, int[] labels, int[] values);
+    void TABLESWITCH(long iid, int min, int max, int dflt, int[] labels, int[] values);
 
-    void IFEQ(int iid, int mid, int label);
+    void IFEQ(long iid, int label);
 
-    void IFNE(int iid, int mid, int label);
+    void IFNE(long iid, int label);
 
-    void IFLT(int iid, int mid, int label);
+    void IFLT(long iid, int label);
 
-    void IFGE(int iid, int mid, int label);
+    void IFGE(long iid, int label);
 
-    void IFGT(int iid, int mid, int label);
+    void IFGT(long iid, int label);
 
-    void IFLE(int iid, int mid, int label);
+    void IFLE(long iid, int label);
 
-    void IF_ICMPEQ(int iid, int mid, int label);
+    void IF_ICMPEQ(long iid, int label);
 
-    void IF_ICMPNE(int iid, int mid, int label);
+    void IF_ICMPNE(long iid, int label);
 
-    void IF_ICMPLT(int iid, int mid, int label);
+    void IF_ICMPLT(long iid, int label);
 
-    void IF_ICMPGE(int iid, int mid, int label);
+    void IF_ICMPGE(long iid, int label);
 
-    void IF_ICMPGT(int iid, int mid, int label);
+    void IF_ICMPGT(long iid, int label);
 
-    void IF_ICMPLE(int iid, int mid, int label);
+    void IF_ICMPLE(long iid, int label);
 
-    void IF_ACMPEQ(int iid, int mid, int label);
+    void IF_ACMPEQ(long iid, int label);
 
-    void IF_ACMPNE(int iid, int mid, int label);
+    void IF_ACMPNE(long iid, int label);
 
-    void GOTO(int iid, int mid, int label);
+    void GOTO(long iid, int label);
 
-    void JSR(int iid, int mid, int label);
+    void JSR(long iid, int label);
 
-    void IFNULL(int iid, int mid, int label);
+    void IFNULL(long iid, int label);
 
-    void IFNONNULL(int iid, int mid, int label);
+    void IFNONNULL(long iid, int label);
 
-    void INVOKEVIRTUAL(int iid, int mid, String owner, String name, String desc);
+    void INVOKEVIRTUAL(long iid, long invokeId, String owner, String name, String desc);
 
-    void INVOKESPECIAL(int iid, int mid, String owner, String name, String desc);
+    void INVOKESPECIAL(long iid, long invokeId, String owner, String name, String desc);
 
-    void INVOKEDYNAMIC(int iid, int mid, String owner, String name, String desc, String lambdaFun);
+    void INVOKEDYNAMIC(
+            long iid,
+            long invokeId,
+            String owner,
+            String name,
+            String desc,
+            String lambdaFun);
 
-    void INVOKESTATIC(int iid, int mid, String owner, String name, String desc);
+    void INVOKESTATIC(long iid, long invokeId, String owner, String name, String desc);
 
-    void INVOKEINTERFACE(int iid, int mid, String owner, String name, String desc);
+    void INVOKEINTERFACE(long iid, long invokeId, String owner, String name, String desc);
 
-    void GETSTATIC(int iid, int mid, int cIdx, int fIdx, String desc);
+    void GETSTATIC(long iid, int cIdx, String name, String desc);
 
-    void PUTSTATIC(int iid, int mid, int cIdx, int fIdx, String desc);
+    void PUTSTATIC(long iid, int cIdx, String name, String desc);
 
-    void GETFIELD(int iid, int mid, int cIdx, int fIdx, String desc);
+    void GETFIELD(long iid, int cIdx, String name, String desc);
 
-    void PUTFIELD(int iid, int mid, int cIdx, int fIdx, String desc);
+    void PUTFIELD(long iid, int cIdx, String name, String desc);
 
-    void NEW(int iid, int mid, String type, int cIdx);
+    void NEW(long iid, String type, int cIdx);
 
-    void ANEWARRAY(int iid, int mid, String type);
+    void CLINIT(long iid, int cIdx, long invokeId);
 
-    void CHECKCAST(int iid, int mid, String type);
+    void UNPACK_INVOKE_PARAMETER(long iid);
 
-    void INSTANCEOF(int iid, int mid, String type);
+    void SET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, boolean isWideOperand, int modifiers, long iid, long invokeId);
 
-    void BIPUSH(int iid, int mid, int value);
+    void GET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, int modifiers, long iid, long invokeId);
 
-    void SIPUSH(int iid, int mid, int value);
+    void ANEWARRAY(long iid, String type);
 
-    void NEWARRAY(int iid, int mid, int atype);
+    void CHECKCAST(long iid, String type);
 
-    void ILOAD(int iid, int mid, int var);
+    void INSTANCEOF(long iid, String type);
 
-    void LLOAD(int iid, int mid, int var);
+    void BIPUSH(long iid, int value);
 
-    void FLOAD(int iid, int mid, int var);
+    void SIPUSH(long iid, int value);
 
-    void DLOAD(int iid, int mid, int var);
+    void NEWARRAY(long iid, int atype);
 
-    void ALOAD(int iid, int mid, int var);
+    void ILOAD(long iid, int var);
 
-    void ISTORE(int iid, int mid, int var);
+    void LLOAD(long iid, int var);
 
-    void LSTORE(int iid, int mid, int var);
+    void FLOAD(long iid, int var);
 
-    void FSTORE(int iid, int mid, int var);
+    void DLOAD(long iid, int var);
 
-    void DSTORE(int iid, int mid, int var);
+    void ALOAD(long iid, int var);
 
-    void ASTORE(int iid, int mid, int var);
+    void ISTORE(long iid, int var);
 
-    void RET(int iid, int mid, int var);
+    void LSTORE(long iid, int var);
 
-    void NOP(int iid, int mid);
+    void FSTORE(long iid, int var);
 
-    void ACONST_NULL(int iid, int mid);
+    void DSTORE(long iid, int var);
 
-    void ICONST_M1(int iid, int mid);
+    void ASTORE(long iid, int var);
 
-    void ICONST_0(int iid, int mid);
+    void RET(long iid, int var);
 
-    void ICONST_1(int iid, int mid);
+    void NOP(long iid);
 
-    void ICONST_2(int iid, int mid);
+    void ACONST_NULL(long iid);
 
-    void ICONST_3(int iid, int mid);
+    void ICONST_M1(long iid);
 
-    void ICONST_4(int iid, int mid);
+    void ICONST_0(long iid);
 
-    void ICONST_5(int iid, int mid);
+    void ICONST_1(long iid);
 
-    void LCONST_0(int iid, int mid);
+    void ICONST_2(long iid);
 
-    void LCONST_1(int iid, int mid);
+    void ICONST_3(long iid);
 
-    void FCONST_0(int iid, int mid);
+    void ICONST_4(long iid);
 
-    void FCONST_1(int iid, int mid);
+    void ICONST_5(long iid);
 
-    void FCONST_2(int iid, int mid);
+    void LCONST_0(long iid);
 
-    void DCONST_0(int iid, int mid);
+    void LCONST_1(long iid);
 
-    void DCONST_1(int iid, int mid);
+    void FCONST_0(long iid);
 
-    void IALOAD(int iid, int mid);
+    void FCONST_1(long iid);
 
-    void LALOAD(int iid, int mid);
+    void FCONST_2(long iid);
 
-    void FALOAD(int iid, int mid);
+    void DCONST_0(long iid);
 
-    void DALOAD(int iid, int mid);
+    void DCONST_1(long iid);
 
-    void AALOAD(int iid, int mid);
+    void IALOAD(long iid);
 
-    void BALOAD(int iid, int mid);
+    void LALOAD(long iid);
 
-    void CALOAD(int iid, int mid);
+    void FALOAD(long iid);
 
-    void SALOAD(int iid, int mid);
+    void DALOAD(long iid);
 
-    void IASTORE(int iid, int mid);
+    void AALOAD(long iid);
 
-    void LASTORE(int iid, int mid);
+    void BALOAD(long iid);
 
-    void FASTORE(int iid, int mid);
+    void CALOAD(long iid);
 
-    void DASTORE(int iid, int mid);
+    void SALOAD(long iid);
 
-    void AASTORE(int iid, int mid);
+    void IASTORE(long iid);
 
-    void BASTORE(int iid, int mid);
+    void LASTORE(long iid);
 
-    void CASTORE(int iid, int mid);
+    void FASTORE(long iid);
 
-    void SASTORE(int iid, int mid);
+    void DASTORE(long iid);
 
-    void POP(int iid, int mid);
+    void AASTORE(long iid);
 
-    void POP2(int iid, int mid);
+    void BASTORE(long iid);
 
-    void DUP(int iid, int mid);
+    void CASTORE(long iid);
 
-    void DUP_X1(int iid, int mid);
+    void SASTORE(long iid);
 
-    void DUP_X2(int iid, int mid);
+    void POP(long iid);
 
-    void DUP2(int iid, int mid);
+    void POP2(long iid);
 
-    void DUP2_X1(int iid, int mid);
+    void DUP(long iid);
 
-    void DUP2_X2(int iid, int mid);
+    void DUP_X1(long iid);
 
-    void SWAP(int iid, int mid);
+    void DUP_X2(long iid);
 
-    void IADD(int iid, int mid);
+    void DUP2(long iid);
 
-    void LADD(int iid, int mid);
+    void DUP2_X1(long iid);
 
-    void FADD(int iid, int mid);
+    void DUP2_X2(long iid);
 
-    void DADD(int iid, int mid);
+    void SWAP(long iid);
 
-    void ISUB(int iid, int mid);
+    void IADD(long iid);
 
-    void LSUB(int iid, int mid);
+    void LADD(long iid);
 
-    void FSUB(int iid, int mid);
+    void FADD(long iid);
 
-    void DSUB(int iid, int mid);
+    void DADD(long iid);
 
-    void IMUL(int iid, int mid);
+    void ISUB(long iid);
 
-    void LMUL(int iid, int mid);
+    void LSUB(long iid);
 
-    void FMUL(int iid, int mid);
+    void FSUB(long iid);
 
-    void DMUL(int iid, int mid);
+    void DSUB(long iid);
 
-    void IDIV(int iid, int mid);
+    void IMUL(long iid);
 
-    void LDIV(int iid, int mid);
+    void LMUL(long iid);
 
-    void FDIV(int iid, int mid);
+    void FMUL(long iid);
 
-    void DDIV(int iid, int mid);
+    void DMUL(long iid);
 
-    void IREM(int iid, int mid);
+    void IDIV(long iid);
 
-    void LREM(int iid, int mid);
+    void LDIV(long iid);
 
-    void FREM(int iid, int mid);
+    void FDIV(long iid);
 
-    void DREM(int iid, int mid);
+    void DDIV(long iid);
 
-    void INEG(int iid, int mid);
+    void IREM(long iid);
 
-    void LNEG(int iid, int mid);
+    void LREM(long iid);
 
-    void FNEG(int iid, int mid);
+    void FREM(long iid);
 
-    void DNEG(int iid, int mid);
+    void DREM(long iid);
 
-    void ISHL(int iid, int mid);
+    void INEG(long iid);
 
-    void LSHL(int iid, int mid);
+    void LNEG(long iid);
 
-    void ISHR(int iid, int mid);
+    void FNEG(long iid);
 
-    void LSHR(int iid, int mid);
+    void DNEG(long iid);
 
-    void IUSHR(int iid, int mid);
+    void ISHL(long iid);
 
-    void LUSHR(int iid, int mid);
+    void LSHL(long iid);
 
-    void IAND(int iid, int mid);
+    void ISHR(long iid);
 
-    void LAND(int iid, int mid);
+    void LSHR(long iid);
 
-    void IOR(int iid, int mid);
+    void IUSHR(long iid);
 
-    void LOR(int iid, int mid);
+    void LUSHR(long iid);
 
-    void IXOR(int iid, int mid);
+    void IAND(long iid);
 
-    void LXOR(int iid, int mid);
+    void LAND(long iid);
 
-    void I2L(int iid, int mid);
+    void IOR(long iid);
 
-    void I2F(int iid, int mid);
+    void LOR(long iid);
 
-    void I2D(int iid, int mid);
+    void IXOR(long iid);
 
-    void L2I(int iid, int mid);
+    void LXOR(long iid);
 
-    void L2F(int iid, int mid);
+    void I2L(long iid);
 
-    void L2D(int iid, int mid);
+    void I2F(long iid);
 
-    void F2I(int iid, int mid);
+    void I2D(long iid);
 
-    void F2L(int iid, int mid);
+    void L2I(long iid);
 
-    void F2D(int iid, int mid);
+    void L2F(long iid);
 
-    void D2I(int iid, int mid);
+    void L2D(long iid);
 
-    void D2L(int iid, int mid);
+    void F2I(long iid);
 
-    void D2F(int iid, int mid);
+    void F2L(long iid);
 
-    void I2B(int iid, int mid);
+    void F2D(long iid);
 
-    void I2C(int iid, int mid);
+    void D2I(long iid);
 
-    void I2S(int iid, int mid);
+    void D2L(long iid);
 
-    void LCMP(int iid, int mid);
+    void D2F(long iid);
 
-    void FCMPL(int iid, int mid);
+    void I2B(long iid);
 
-    void FCMPG(int iid, int mid);
+    void I2C(long iid);
 
-    void DCMPL(int iid, int mid);
+    void I2S(long iid);
 
-    void DCMPG(int iid, int mid);
+    void LCMP(long iid);
 
-    void IRETURN(int iid, int mid);
+    void FCMPL(long iid);
 
-    void LRETURN(int iid, int mid);
+    void FCMPG(long iid);
 
-    void FRETURN(int iid, int mid);
+    void DCMPL(long iid);
 
-    void DRETURN(int iid, int mid);
+    void DCMPG(long iid);
 
-    void ARETURN(int iid, int mid);
+    void IRETURN(long iid);
 
-    void RETURN(int iid, int mid);
+    void LRETURN(long iid);
 
-    void ARRAYLENGTH(int iid, int mid);
+    void FRETURN(long iid);
 
-    void ATHROW(int iid, int mid);
+    void DRETURN(long iid);
 
-    void MONITORENTER(int iid, int mid);
+    void ARETURN(long iid);
 
-    void MONITOREXIT(int iid, int mid);
+    void RETURN(long iid);
 
-    void GETVALUE_double(double v, int i);
+    void ARRAYLENGTH(long iid);
 
-    void GETVALUE_long(long v, int i);
+    void ATHROW(long iid);
 
-    void GETVALUE_Object(Object v, int i);
+    void MONITORENTER(long iid);
 
-    void GETVALUE_boolean(boolean v, int i);
+    void MONITOREXIT(long iid);
 
-    void GETVALUE_byte(byte v, int i);
+    void GETVALUE_double(long iid, double v, int i);
 
-    void GETVALUE_char(char v, int i);
+    void GETVALUE_long(long iid, long v, int i);
 
-    void GETVALUE_float(float v, int i);
+    void GETVALUE_Object(long iid, Object v, int i);
 
-    void GETVALUE_int(int v, int i);
+    void GETVALUE_boolean(long iid, boolean v, int i);
 
-    void GETVALUE_short(short v, int i);
+    void GETVALUE_byte(long iid, byte v, int i);
 
-    void GETVALUE_void();
+    void GETVALUE_char(long iid, char v, int i);
 
-    void INVOKEMETHOD_EXCEPTION();
+    void GETVALUE_float(long iid, float v, int i);
 
-    void INVOKEMETHOD_END();
+    void GETVALUE_int(long iid, int v, int i);
 
-    void MAKE_SYMBOLIC();
+    void GETVALUE_short(long iid, short v, int i);
 
-    void LOOP_BEGIN(int iid);
+    void GETVALUE_void(long iid);
 
-    void LOOP_END(int iid);
+    void INVOKEMETHOD_EXCEPTION(long iid, long invokeId);
 
-    void SPECIAL(int i);
+    void INVOKECLINIT_END(long iid, long invokeId);
+
+    void INVOKEMETHOD_END(long iid, long invokeId);
+
+    void MAKE_SYMBOLIC(long iid);
+
+    void LOOP_BEGIN(long iid);
+
+    void LOOP_END(long iid);
+
+    void SPECIAL(long iid, int i);
 
     void flush();
 }

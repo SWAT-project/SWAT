@@ -1,14 +1,19 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * GETVALUE_void - Custom method call handled as an instruction to fetch the concrete value that was
  * produced/ loaded by another instruction.
  */
 public class GETVALUE_void extends Instruction {
 
-    /** Creates a new value fetch instruction for voids. */
-    public GETVALUE_void() {
-        super(-1, -1);
+    /** Creates a new value fetch instruction for voids.
+     *
+     *  @param iid The unique instruction ID set during instrumentation.
+     * */
+    public GETVALUE_void(long iid) {
+        super(iid);
     }
 
     /**
@@ -16,7 +21,7 @@ public class GETVALUE_void extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitGETVALUE_void(this);
     }
 

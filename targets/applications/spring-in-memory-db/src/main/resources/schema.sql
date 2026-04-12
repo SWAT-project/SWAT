@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS "COUNTRIES" (id int, name varchar(255));

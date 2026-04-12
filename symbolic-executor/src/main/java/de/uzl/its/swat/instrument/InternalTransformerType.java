@@ -1,15 +1,16 @@
 package de.uzl.its.swat.instrument;
 
 public enum InternalTransformerType {
+    ANNOTATION,
     SPRING_ENDPOINT,
-    URI,
     PARAMETER,
-    WEB_SERVLET,
-    SV_COMP,
     CLASS_VARIABLES,
-    SPRING_DATA,
+    SV_COMP,
     INSTRUCTION,
     SYMBOLIC_WRAPPER,
     SAVING,
-    LOOP_DETECTION
+    SPRING_EXCEPTION,
+    TYPE_MAP,
+    SPRING_DATA,
+    REF_EQUALITY,
 }

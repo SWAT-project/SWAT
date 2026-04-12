@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.trace;
 
+import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.symbolic.value.Value;
 import lombok.Getter;
 
@@ -35,7 +36,7 @@ final class InputElement extends Element {
      */
     @Override
     public String toString() {
-        assert value != null;
+        SWATAssert.enforce(value != null, "Input value is not initialized!");
         return "[Input] [" + name + ": " + value.getConcrete() + "]";
     }
 }

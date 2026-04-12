@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * FCONST_1 - Push float (1.0f). For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.fconst_f">Java VM
@@ -11,10 +13,9 @@ public class FCONST_1 extends Instruction {
      * Creates a new FCONST_1 instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public FCONST_1(int iid, int mid) {
-        super(iid, mid);
+    public FCONST_1(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class FCONST_1 extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitFCONST_1(this);
     }
 

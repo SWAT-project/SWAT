@@ -2,22 +2,27 @@ package de.uzl.its.swat.symbolic.value.reference.array;
 
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ShortValue;
-import org.sosy_lab.java_smt.api.FormulaType;
-import org.sosy_lab.java_smt.api.IntegerFormulaManager;
-import org.sosy_lab.java_smt.api.NumeralFormula;
-import org.sosy_lab.java_smt.api.SolverContext;
+import org.sosy_lab.java_smt.api.*;
 
 /**
+ * Wrapper for Arrays that contain short values.
+ * Uses BitvectorFormula (16-bit) for elements.
+ *
  * @author Nils Loose
  * @version 2022.07.25
  */
 public class ShortArrayValue
         extends AbstractArrayValue<
-                NumeralFormula.IntegerFormula,
-                NumeralFormula.IntegerFormula,
+                NumeralFormula.IntegerFormula,  // Index type (Int)
+                BitvectorFormula,                // Element type (16-bit BV)
                 IntValue,
                 ShortValue,
                 short[]> {
+
+    private static final int BIT_WIDTH = 16;
+
+    private static final String symbolicPrefix = AbstractArrayValue.getSymbolicArrayPrefix() + ShortValue.getSymbolicPrefix();
+
     public IntValue size;
 
     /**
@@ -28,7 +33,7 @@ public class ShortArrayValue
      * @param address The address of the array reference
      */
     public ShortArrayValue(SolverContext context, IntValue size, int address) {
-        super(context, FormulaType.IntegerType, FormulaType.IntegerType, size, address);
+        super(context, FormulaType.IntegerType, FormulaType.getBitvectorTypeWithSize(BIT_WIDTH), symbolicPrefix, size, address);
         concrete = new short[size.concrete];
         initArray(size.concrete);
     }
@@ -48,7 +53,8 @@ public class ShortArrayValue
         super(
                 context,
                 FormulaType.IntegerType,
-                FormulaType.IntegerType,
+                FormulaType.getBitvectorTypeWithSize(BIT_WIDTH),
+                symbolicPrefix,
                 new IntValue(context, concrete.length),
                 address);
         this.concrete = concrete;
@@ -61,8 +67,8 @@ public class ShortArrayValue
      * @return The default value for the type of array.
      */
     @Override
-    NumeralFormula.IntegerFormula getDefaultValue() {
-        return context.getFormulaManager().getIntegerFormulaManager().makeNumber(0);
+    BitvectorFormula getDefaultValue() {
+        return context.getFormulaManager().getBitvectorFormulaManager().makeBitvector(BIT_WIDTH, 0);
     }
 
     /**
@@ -84,7 +90,7 @@ public class ShortArrayValue
      */
     @Override
     public ShortValue getElement(IntValue idx) {
-        return new ShortValue(context, concrete[idx.concrete], amgr.select(formula, idx.formula));
+        return new ShortValue(context, concrete[idx.concrete], amgr.select(formula, idx.asIntegerFormula()));
     }
 
     /**
@@ -94,7 +100,7 @@ public class ShortArrayValue
      * @param val The element formula.
      */
     public void storeElement(IntValue idx, ShortValue val) {
-        formula = amgr.store(formula, idx.formula, val.formula);
+        formula = amgr.store(formula, idx.asIntegerFormula(), val.formula);
         concrete[idx.concrete] = val.concrete;
 
         if (parentRef != null) {
@@ -109,23 +115,35 @@ public class ShortArrayValue
      */
     @Override
     protected void initArray(int size) {
-        // ToDo (Nils): Is this needed or correct?
+        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
         for (int i = 0; i < size; i++) {
-            formula = amgr.store(formula, getIndex(i), getDefaultValue());
+            formula = amgr.store(formula, getIndex(i), bvmgr.makeBitvector(BIT_WIDTH, 0));
             concrete[i] = 0;
         }
     }
 
-    protected void initArray(short[] array) {
-        IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
-        for (int i = 0; i < array.length; i++) {
-            formula = amgr.store(formula, getIndex(i), imgr.makeNumber(concrete[i]));
+    /**
+     * Initializes the array with specific concrete values.
+     *
+     * @param concreteArray The concrete values to initialize the array with.
+     */
+    protected void initArray(short[] concreteArray) {
+        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
+        for (int i = 0; i < concreteArray.length; i++) {
+            formula = amgr.store(formula, getIndex(i), bvmgr.makeBitvector(BIT_WIDTH, concreteArray[i]));
         }
     }
 
     @Override
     public ShortArrayValue asShortArrayValue() {
         return this;
+    }
+
+
+
+    @Override
+    public String getSymbolicPrefix() {
+        return symbolicPrefix;
     }
 
     /**

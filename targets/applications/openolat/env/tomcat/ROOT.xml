@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Context>
+    <Resource auth="Container" driverClassName="com.mysql.cj.jdbc.Driver" type="javax.sql.DataSource"
+              maxIdle="16" maxTotal="100" maxWaitMillis="60000"
+              name="jdbc/OpenOLATDS"
+              password="olat" username="openolat"
+              url="jdbc:mysql://127.0.0.1:3306/olat?useUnicode=true&amp;characterEncoding=UTF-8&amp;cachePrepStmts=true&amp;cacheCallableStmts=true&amp;autoReconnectForPools=true"
+              testOnBorrow="true" testOnReturn="false"
+              validationQuery="SELECT 1" validationQueryTimeout="-1"/>
+</Context>

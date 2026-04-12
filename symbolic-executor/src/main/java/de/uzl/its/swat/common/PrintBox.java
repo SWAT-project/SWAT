@@ -115,7 +115,11 @@ public class PrintBox {
         boxBuilder.append("-".repeat(Math.max(0, this.boxSize)));
         boxBuilder.append("+\n");
 
-        return boxBuilder.toString();
+        String assembledString = boxBuilder.toString();
+        boxBuilder.setLength(0);
+        msgs.clear();
+
+        return assembledString;
     }
 
     /**

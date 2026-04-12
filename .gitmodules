@@ -1,0 +1,24 @@
+[submodule "targets/applications/petclinic-test/petclinic"]
+	path = targets/applications/petclinic-test/petclinic
+	url = https://github.com/spring-projects/spring-petclinic.git
+[submodule "targets/applications/petclinic-rest/spring-petclinic-rest"]
+	path = targets/applications/petclinic-rest/spring-petclinic-rest
+	url = https://github.com/spring-petclinic/spring-petclinic-rest.git
+[submodule "targets/applications/openolat/openolat"]
+	path = targets/applications/openolat/openolat
+	url = https://github.com/OpenOLAT/OpenOLAT.git
+[submodule "targets/applications/genomenexus/genomenexus"]
+	path = targets/applications/genomenexus/genomenexus
+	url = https://github.com/genome-nexus/genome-nexus.git
+[submodule "targets/applications/genomenexus/genomenexus-importer"]
+	path = targets/applications/genomenexus/genomenexus-importer
+	url = https://github.com/genome-nexus/genome-nexus-importer.git
+[submodule "targets/applications/oss-fuzz/gson/gson"]
+	path = targets/applications/oss-fuzz/gson/gson
+	url = https://github.com/google/gson.git
+[submodule "targets/applications/oss-fuzz/java-diff-utils/java-diff-utils"]
+	path = targets/applications/oss-fuzz/java-diff-utils/java-diff-utils
+	url = https://github.com/java-diff-utils/java-diff-utils.git
+[submodule "targets/applications/oss-fuzz/spatial4j/spatial4j"]
+	path = targets/applications/oss-fuzz/spatial4j/spatial4j
+	url = https://github.com/locationtech/spatial4j.git

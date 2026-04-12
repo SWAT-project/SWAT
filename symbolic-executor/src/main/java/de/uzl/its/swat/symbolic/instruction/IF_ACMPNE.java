@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * IF_ACMPNE - Branch if reference comparison succeeds (not equals) For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.if_acmp_cond">Java
@@ -14,11 +16,10 @@ public class IF_ACMPNE extends Instruction {
      * Creates a new IF_ACMPNE instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param label the jump destination
      */
-    public IF_ACMPNE(int iid, int mid, int label) {
-        super(iid, mid);
+    public IF_ACMPNE(long iid, int label) {
+        super(iid);
         this.label = label;
     }
 
@@ -27,7 +28,7 @@ public class IF_ACMPNE extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitIF_ACMPNE(this);
     }
 

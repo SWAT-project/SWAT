@@ -11,6 +11,12 @@ jar {
         attributes 'Main-Class': 'de.uzl.its.tests.Main'
     }
 }
+
+tasks.register('deleteLogs', Delete) {
+    // Delete the 'logs' folder relative to this build.gradle file.
+    delete file('logs')
+}
+
 tasks.register('runStatic-initializer', Exec) {
     // Set the working directory if it's different from the root
     workingDir "${rootDir}"
@@ -23,4 +29,5 @@ tasks.register('runStatic-initializer', Exec) {
 
     // Use this if you need to depend on another task, like building your Java project first
     dependsOn build
+    dependsOn tasks.named('deleteLogs')
 }

@@ -503,4 +503,183 @@ class LongValueTest extends Specification {
 		c1 << testValues
 		res << testValues.collect { (int) it }
 	}
+
+	// ========================================================================
+	// Long Narrowing Conversions Tests
+	// ========================================================================
+
+	def "Long->Byte: basic values"(long c1, byte res) {
+		given:
+		def l1 = new LongValue(context, c1)
+
+		when:
+		def b1 = l1.asByteValue()
+		prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(res)))
+
+		then:
+		!prover.isUnsat()
+		b1.concrete == res
+
+		where:
+		c1      || res
+		0L      || 0
+		127L    || 127
+		-128L   || -128
+		255L    || -1      // Overflow wraps
+		256L    || 0       // Overflow wraps
+		1000L   || -24     // 1000 % 256 = 232, 232 - 256 = -24
+		-1000L  || 24      // -1000 % 256 wraps
+	}
+
+	def "Long->Byte: symbolic UNSAT test"() {
+		given:
+		def l1 = new LongValue(context, 500L)
+		l1.MAKE_SYMBOLIC("l2b_unsat")
+
+		when:
+		def b1 = l1.asByteValue()
+		// Constrain long: 10 <= l <= 20
+		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(10)))
+		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(20)))
+		// But require byte > 100 (impossible!)
+		prover.addConstraint(imgr.greaterThan(b1.formula, imgr.makeNumber(100)))
+
+		then:
+		prover.isUnsat()
+	}
+
+	def "Long->Byte: symbolic SAT test"() {
+		given:
+		def l1 = new LongValue(context, 50L)
+		l1.MAKE_SYMBOLIC("l2b_sat")
+
+		when:
+		def b1 = l1.asByteValue()
+		// Constrain long: 10 <= l <= 100
+		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(10)))
+		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(100)))
+		// Require byte in valid range (10-100, all fit in byte)
+		prover.addConstraint(imgr.greaterOrEquals(b1.formula, imgr.makeNumber(10)))
+		prover.addConstraint(imgr.lessOrEquals(b1.formula, imgr.makeNumber(100)))
+
+		then:
+		!prover.isUnsat()
+	}
+
+	def "Long->Short: basic values"(long c1, short res) {
+		given:
+		def l1 = new LongValue(context, c1)
+
+		when:
+		def s1 = l1.asShortValue()
+		prover.addConstraint(imgr.equal(s1.formula, imgr.makeNumber(res)))
+
+		then:
+		!prover.isUnsat()
+		s1.concrete == res
+
+		where:
+		c1          || res
+		0L          || 0
+		32767L      || 32767
+		-32768L     || -32768
+		65535L      || -1      // Overflow wraps
+		65536L      || 0       // Overflow wraps
+		100000L     || -31072  // Wraps around
+		-100000L    || 31072   // Wraps around
+	}
+
+	def "Long->Short: symbolic UNSAT test"() {
+		given:
+		def l1 = new LongValue(context, 500L)
+		l1.MAKE_SYMBOLIC("l2s_unsat")
+
+		when:
+		def s1 = l1.asShortValue()
+		// Constrain long: 100 <= l <= 200
+		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(100)))
+		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(200)))
+		// But require short > 10000 (impossible!)
+		prover.addConstraint(imgr.greaterThan(s1.formula, imgr.makeNumber(10000)))
+
+		then:
+		prover.isUnsat()
+	}
+
+	def "Long->Short: symbolic SAT test"() {
+		given:
+		def l1 = new LongValue(context, 1000L)
+		l1.MAKE_SYMBOLIC("l2s_sat")
+
+		when:
+		def s1 = l1.asShortValue()
+		// Constrain long: 500 <= l <= 2000
+		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(500)))
+		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(2000)))
+		// Require short in valid range (500-2000)
+		prover.addConstraint(imgr.greaterOrEquals(s1.formula, imgr.makeNumber(500)))
+		prover.addConstraint(imgr.lessOrEquals(s1.formula, imgr.makeNumber(2000)))
+
+		then:
+		!prover.isUnsat()
+	}
+
+	def "Long->Char: basic values"(long c1, char res) {
+		given:
+		def l1 = new LongValue(context, c1)
+
+		when:
+		def ch1 = l1.asCharValue()
+		prover.addConstraint(imgr.equal(ch1.formula, imgr.makeNumber((int)res)))
+
+		then:
+		!prover.isUnsat()
+		ch1.concrete == res
+
+		where:
+		c1          || res
+		0L          || '\u0000'
+		65L         || 'A'
+		90L         || 'Z'
+		1000L       || '\u03E8'
+		65535L      || '\uFFFF'
+		65536L      || '\u0000'  // Overflow wraps (unsigned)
+		-1L         || '\uFFFF'  // Negative wraps to unsigned
+		100000L     || '\u86A0'  // Wraps around unsigned
+	}
+
+	def "Long->Char: symbolic SAT test"() {
+		given:
+		def l1 = new LongValue(context, 65L)
+		l1.MAKE_SYMBOLIC("l2c_sat")
+
+		when:
+		def ch1 = l1.asCharValue()
+		// Constrain long: 65 <= l <= 90 (ASCII 'A' to 'Z')
+		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(65)))
+		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(90)))
+		// Require char in valid range (65-90, 'A'-'Z')
+		prover.addConstraint(imgr.greaterOrEquals(ch1.formula, imgr.makeNumber(65)))
+		prover.addConstraint(imgr.lessOrEquals(ch1.formula, imgr.makeNumber(90)))
+
+		then:
+		!prover.isUnsat()
+	}
+
+	def "Long->Char: symbolic UNSAT test"() {
+		given:
+		def l1 = new LongValue(context, 50L)
+		l1.MAKE_SYMBOLIC("l2c_unsat")
+
+		when:
+		def ch1 = l1.asCharValue()
+		// Constrain long: 0 <= l <= 100
+		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(0)))
+		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(100)))
+		// But require char > 10000 (impossible!)
+		prover.addConstraint(imgr.greaterThan(ch1.formula, imgr.makeNumber(10000)))
+
+		then:
+		prover.isUnsat()
+	}
 }

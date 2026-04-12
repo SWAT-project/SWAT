@@ -13,7 +13,7 @@ java \
 -Xmx32g \
 -Dconfig.path=../targets/instruction-tests/XASTORE/swat.cfg \
 -Djava.library.path=../libs/java-library-path \
--Dlogging.level=DEBUG \
+-Dagent.logging.level=DEBUG \
 -javaagent:../symbolic-executor/lib/symbolic-executor.jar \
 -jar ../targets/instruction-tests/XASTORE/build/libs/XASTORE.jar > ../targets/instruction-tests/XASTORE/run.log 2>&1
 

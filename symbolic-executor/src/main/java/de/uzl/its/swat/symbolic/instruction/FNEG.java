@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * FNEG - Negate float. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.fneg">Java VM
@@ -11,10 +13,9 @@ public class FNEG extends Instruction {
      * Creates a new FNEG instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public FNEG(int iid, int mid) {
-        super(iid, mid);
+    public FNEG(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class FNEG extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitFNEG(this);
     }
 

@@ -1,7 +1,10 @@
 package de.uzl.its.swat.symbolic.value.reference.array;
 
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
+import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import lombok.Getter;
+
 import java.util.HashMap;
 import org.sosy_lab.java_smt.api.*;
 
@@ -15,10 +18,13 @@ public class StringArrayValue
         extends AbstractArrayValue<
                 NumeralFormula.IntegerFormula, StringFormula, IntValue, StringValue, String[]> {
 
+
+    private static final String symbolicPrefix = AbstractArrayValue.getSymbolicArrayPrefix() + StringValue.getSymbolicPrefix();
+
     public HashMap<Integer, Integer> addressMap = new HashMap<Integer, Integer>();
 
     public StringArrayValue(SolverContext context, IntValue size, int address) {
-        super(context, FormulaType.IntegerType, FormulaType.StringType, size, address);
+        super(context, FormulaType.IntegerType, FormulaType.StringType, symbolicPrefix, size, address);
         concrete = new String[size.concrete];
         initArray(size.concrete);
     }
@@ -39,6 +45,7 @@ public class StringArrayValue
                 context,
                 FormulaType.IntegerType,
                 FormulaType.StringType,
+                symbolicPrefix,
                 new IntValue(context, concrete.length),
                 address);
         this.concrete = concrete;
@@ -61,14 +68,14 @@ public class StringArrayValue
         return new StringValue(
                 context,
                 concrete[idx.concrete],
-                amgr.select(formula, idx.formula),
-                addressMap.get(idx.concrete));
+                amgr.select(formula, idx.asIntegerFormula()),
+                addressMap.getOrDefault(idx.concrete, ObjectValue.ADDRESS_UNKNOWN));
     }
 
     public void storeElement(IntValue idx, StringValue val) {
         try {
             concrete[idx.concrete] = val.concrete;
-            formula = amgr.store(formula, idx.formula, val.formula);
+            formula = amgr.store(formula, idx.asIntegerFormula(), val.formula);
             addressMap.put(idx.concrete, val.getAddress());
 
             if (parentRef != null) {
@@ -86,7 +93,7 @@ public class StringArrayValue
         for (int i = 0; i < size; i++) {
             formula = amgr.store(formula, getIndex(i), getDefaultValue());
             concrete[i] = "";
-            addressMap.put(i, 0);
+            addressMap.put(i, ObjectValue.ADDRESS_UNKNOWN);
         }
     }
 
@@ -103,6 +110,13 @@ public class StringArrayValue
                     NumeralFormula.IntegerFormula, StringFormula, IntValue, StringValue, String[]>
             asArrayValue() {
         return this;
+    }
+
+
+
+    @Override
+    public String getSymbolicPrefix() {
+        return symbolicPrefix;
     }
 
     /**

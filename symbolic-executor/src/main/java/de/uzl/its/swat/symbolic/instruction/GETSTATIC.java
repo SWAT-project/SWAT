@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * GETSTATIC - Get static field from class. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.getstatic">Java VM
@@ -10,8 +12,8 @@ public class GETSTATIC extends Instruction {
     // The class index
     public int cIdx;
 
-    // The field index
-    public int fIdx;
+    // The field name
+    public String name;
 
     // The field descriptor
     public String desc;
@@ -20,15 +22,14 @@ public class GETSTATIC extends Instruction {
      * Creates a new GETSTATIC instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param cIdx class index.
-     * @param fIdx field index.
+     * @param name field name.
      * @param desc field descriptor.
      */
-    public GETSTATIC(int iid, int mid, int cIdx, int fIdx, String desc) {
-        super(iid, mid);
+    public GETSTATIC(long iid, int cIdx, String name, String desc) {
+        super(iid);
         this.cIdx = cIdx;
-        this.fIdx = fIdx;
+        this.name = name;
         this.desc = desc;
     }
 
@@ -37,7 +38,7 @@ public class GETSTATIC extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitGETSTATIC(this);
     }
 
@@ -48,6 +49,6 @@ public class GETSTATIC extends Instruction {
      */
     @Override
     public String toString() {
-        return genericToString("GETSTATIC [" + cIdx + ", " + fIdx + "] " + desc);
+        return genericToString("GETSTATIC [" + cIdx + ", " + name + "] " + desc);
     }
 }

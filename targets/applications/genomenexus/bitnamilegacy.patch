@@ -1,0 +1,12 @@
+diff --git a/Dockerfile b/Dockerfile
+index 82658de..10c093c 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,6 +1,6 @@
+ ARG MONGODBVERSION=4.0.12
+ 
+-FROM bitnami/mongodb:${MONGODBVERSION}
++FROM bitnamilegacy/mongodb:${MONGODBVERSION}
+ 
+ # Define build arguments
+ ARG ARG_REF_ENSEMBL_VERSION

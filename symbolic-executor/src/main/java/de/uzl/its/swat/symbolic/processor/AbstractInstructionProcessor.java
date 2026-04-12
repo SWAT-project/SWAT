@@ -1,732 +1,777 @@
 package de.uzl.its.swat.symbolic.processor;
 
+import ch.qos.logback.classic.Logger;
+import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.symbolic.instruction.*;
+
 
 /** Template Method pattern for processing instruction processing. */
 public abstract class AbstractInstructionProcessor implements InstructionProcessor {
+
+    private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
     protected abstract void processInstruction(Instruction insn);
 
-    public void LDC(int iid, int mid, int c) {
-        processInstruction(new LDC_int(iid, mid, c));
+    public void LDC(long iid, int c) {
+        processInstruction(new LDC_int(iid, c));
     }
 
-    public void LDC(int iid, int mid, long c) {
-        processInstruction(new LDC_long(iid, mid, c));
+    public void LDC(long iid, long c) {
+        processInstruction(new LDC_long(iid, c));
     }
 
-    public void LDC(int iid, int mid, float c) {
-        processInstruction(new LDC_float(iid, mid, c));
+    public void LDC(long iid, float c) {
+        processInstruction(new LDC_float(iid, c));
     }
 
-    public void LDC(int iid, int mid, double c) {
-        processInstruction(new LDC_double(iid, mid, c));
+    public void LDC(long iid, double c) {
+        processInstruction(new LDC_double(iid, c));
     }
 
-    public void LDC(int iid, int mid, String c) {
-        processInstruction(new LDC_String(iid, mid, c, System.identityHashCode(c)));
+    public void LDC(long iid, String c) {
+        processInstruction(new LDC_String(iid, c, System.identityHashCode(c)));
     }
 
-    public void LDC(int iid, int mid, Object c) {
-        processInstruction(new LDC_Object(iid, mid, System.identityHashCode(c)));
+    public void LDC(long iid, Object c) {
+        processInstruction(new LDC_Object(iid, System.identityHashCode(c)));
     }
 
-    public void IINC(int iid, int mid, int var, int increment) {
-        processInstruction(new IINC(iid, mid, var, increment));
+    public void IINC(long iid, int var, int increment) {
+        processInstruction(new IINC(iid, var, increment));
     }
 
-    public void MULTIANEWARRAY(int iid, int mid, String desc, int dims) {
-        processInstruction(new MULTIANEWARRAY(iid, mid, desc, dims));
+    public void MULTIANEWARRAY(long iid, String desc, int dims) {
+        processInstruction(new MULTIANEWARRAY(iid, desc, dims));
     }
 
-    public void LOOKUPSWITCH(int iid, int mid, int dflt, int[] keys, int[] labels) {
-        processInstruction(new LOOKUPSWITCH(iid, mid, dflt, keys, labels));
+    public void LOOKUPSWITCH(long iid, int dflt, int[] keys, int[] labels) {
+        processInstruction(new LOOKUPSWITCH(iid, dflt, keys, labels));
     }
 
     public void TABLESWITCH(
-            int iid, int mid, int min, int max, int dflt, int[] labels, int[] values) {
-        processInstruction(new TABLESWITCH(iid, mid, min, max, dflt, labels, values));
+            long iid, int min, int max, int dflt, int[] labels, int[] values) {
+        processInstruction(new TABLESWITCH(iid, min, max, dflt, labels, values));
     }
 
-    public void IFEQ(int iid, int mid, int label) {
-        processInstruction(new IFEQ(iid, mid, label));
+    public void IFEQ(long iid, int label) {
+        processInstruction(new IFEQ(iid, label));
     }
 
-    public void IFNE(int iid, int mid, int label) {
-        processInstruction(new IFNE(iid, mid, label));
+    public void IFNE(long iid, int label) {
+        processInstruction(new IFNE(iid, label));
     }
 
-    public void IFLT(int iid, int mid, int label) {
-        processInstruction(new IFLT(iid, mid, label));
+    public void IFLT(long iid, int label) {
+        processInstruction(new IFLT(iid, label));
     }
 
-    public void IFGE(int iid, int mid, int label) {
-        processInstruction(new IFGE(iid, mid, label));
+    public void IFGE(long iid, int label) {
+        processInstruction(new IFGE(iid, label));
     }
 
-    public void IFGT(int iid, int mid, int label) {
-        processInstruction(new IFGT(iid, mid, label));
+    public void IFGT(long iid, int label) {
+        processInstruction(new IFGT(iid, label));
     }
 
-    public void IFLE(int iid, int mid, int label) {
-        processInstruction(new IFLE(iid, mid, label));
+    public void IFLE(long iid, int label) {
+        processInstruction(new IFLE(iid, label));
     }
 
-    public void IF_ICMPEQ(int iid, int mid, int label) {
-        processInstruction(new IF_ICMPEQ(iid, mid, label));
+    public void IF_ICMPEQ(long iid, int label) {
+        processInstruction(new IF_ICMPEQ(iid, label));
     }
 
-    public void IF_ICMPNE(int iid, int mid, int label) {
-        processInstruction(new IF_ICMPNE(iid, mid, label));
+    public void IF_ICMPNE(long iid, int label) {
+        processInstruction(new IF_ICMPNE(iid, label));
     }
 
-    public void IF_ICMPLT(int iid, int mid, int label) {
-        processInstruction(new IF_ICMPLT(iid, mid, label));
+    public void IF_ICMPLT(long iid, int label) {
+        processInstruction(new IF_ICMPLT(iid, label));
     }
 
-    public void IF_ICMPGE(int iid, int mid, int label) {
-        processInstruction(new IF_ICMPGE(iid, mid, label));
+    public void IF_ICMPGE(long iid, int label) {
+        processInstruction(new IF_ICMPGE(iid, label));
     }
 
-    public void IF_ICMPGT(int iid, int mid, int label) {
-        processInstruction(new IF_ICMPGT(iid, mid, label));
+    public void IF_ICMPGT(long iid, int label) {
+        processInstruction(new IF_ICMPGT(iid, label));
     }
 
-    public void IF_ICMPLE(int iid, int mid, int label) {
-        processInstruction(new IF_ICMPLE(iid, mid, label));
+    public void IF_ICMPLE(long iid, int label) {
+        processInstruction(new IF_ICMPLE(iid, label));
     }
 
-    public void IF_ACMPEQ(int iid, int mid, int label) {
-        processInstruction(new IF_ACMPEQ(iid, mid, label));
+    public void IF_ACMPEQ(long iid, int label) {
+        processInstruction(new IF_ACMPEQ(iid, label));
     }
 
-    public void IF_ACMPNE(int iid, int mid, int label) {
-        processInstruction(new IF_ACMPNE(iid, mid, label));
+    public void IF_ACMPNE(long iid, int label) {
+        processInstruction(new IF_ACMPNE(iid, label));
     }
 
-    public void GOTO(int iid, int mid, int label) {
-        processInstruction(new GOTO(iid, mid, label));
+    public void GOTO(long iid, int label) {
+        processInstruction(new GOTO(iid, label));
     }
 
-    public void JSR(int iid, int mid, int label) {
-        processInstruction(new JSR(iid, mid, label));
+    public void JSR(long iid, int label) {
+        processInstruction(new JSR(iid, label));
     }
 
-    public void IFNULL(int iid, int mid, int label) {
-        processInstruction(new IFNULL(iid, mid, label));
+    public void IFNULL(long iid, int label) {
+        processInstruction(new IFNULL(iid, label));
     }
 
-    public void IFNONNULL(int iid, int mid, int label) {
-        processInstruction(new IFNONNULL(iid, mid, label));
+    public void IFNONNULL(long iid, int label) {
+        processInstruction(new IFNONNULL(iid, label));
     }
 
-    public void INVOKEVIRTUAL(int iid, int mid, String owner, String name, String desc) {
-        processInstruction(new INVOKEVIRTUAL(iid, mid, owner, name, desc));
+    public void INVOKEVIRTUAL(
+            long iid, long invokeId, String owner, String name, String desc) {
+        processInstruction(new INVOKEVIRTUAL(iid, invokeId, owner, name, desc));
     }
 
-    public void INVOKESPECIAL(int iid, int mid, String owner, String name, String desc) {
-        processInstruction(new INVOKESPECIAL(iid, mid, owner, name, desc));
+    public void INVOKESPECIAL(
+            long iid, long invokeId, String owner, String name, String desc) {
+        processInstruction(new INVOKESPECIAL(iid, invokeId, owner, name, desc));
     }
 
     public void INVOKEDYNAMIC(
-            int iid, int mid, String owner, String name, String desc, String lambda) {
-        processInstruction(new INVOKEDYNAMIC(iid, mid, owner, name, desc, lambda));
+            long iid,
+            long invokeId,
+            String owner,
+            String name,
+            String desc,
+            String lambda) {
+        processInstruction(new INVOKEDYNAMIC(iid, invokeId, owner, name, desc, lambda));
     }
 
-    public void INVOKESTATIC(int iid, int mid, String owner, String name, String desc) {
-        processInstruction(new INVOKESTATIC(iid, mid, owner, name, desc));
+    public void INVOKESTATIC(
+            long iid, long invokeId, String owner, String name, String desc) {
+        processInstruction(new INVOKESTATIC(iid, invokeId, owner, name, desc));
     }
 
-    public void INVOKEINTERFACE(int iid, int mid, String owner, String name, String desc) {
-        processInstruction(new INVOKEINTERFACE(iid, mid, owner, name, desc));
+    public void INVOKEINTERFACE(
+            long iid, long invokeId, String owner, String name, String desc) {
+        processInstruction(new INVOKEINTERFACE(iid, invokeId, owner, name, desc));
     }
 
-    public void GETSTATIC(int iid, int mid, int cIdx, int fIdx, String desc) {
-        processInstruction(new GETSTATIC(iid, mid, cIdx, fIdx, desc));
+    public void GETSTATIC(long iid, int cIdx, String name, String desc) {
+        processInstruction(new GETSTATIC(iid, cIdx, name, desc));
     }
 
-    public void PUTSTATIC(int iid, int mid, int cIdx, int fIdx, String desc) {
-        processInstruction(new PUTSTATIC(iid, mid, cIdx, fIdx, desc));
+    public void PUTSTATIC(long iid, int cIdx, String name, String desc) {
+        processInstruction(new PUTSTATIC(iid, cIdx, name, desc));
     }
 
-    public void GETFIELD(int iid, int mid, int cIdx, int fIdx, String desc) {
-        processInstruction(new GETFIELD(iid, mid, cIdx, fIdx, desc));
+    public void GETFIELD(long iid, int cIdx, String name, String desc) {
+        processInstruction(new GETFIELD(iid, cIdx, name, desc));
     }
 
-    public void PUTFIELD(int iid, int mid, int cIdx, int fIdx, String desc) {
-        processInstruction(new PUTFIELD(iid, mid, cIdx, fIdx, desc));
+    public void PUTFIELD(long iid, int cIdx, String name, String desc) {
+        processInstruction(new PUTFIELD(iid, cIdx, name, desc));
     }
 
-    public void NEW(int iid, int mid, String type, int cIdx) {
-        processInstruction(new NEW(iid, mid, type, cIdx));
+    public void NEW(long iid, String type, int cIdx) {
+        processInstruction(new NEW(iid, type, cIdx));
     }
 
-    public void ANEWARRAY(int iid, int mid, String type) {
-        processInstruction(new ANEWARRAY(iid, mid, type));
+    public void CLINIT(long iid, int cIdx, long invokeId) {
+        processInstruction(new CLINIT(iid, cIdx, invokeId));
     }
 
-    public void CHECKCAST(int iid, int mid, String type) {
-        processInstruction(new CHECKCAST(iid, mid, type));
+    public void UNPACK_INVOKE_PARAMETER(long iid) {
+        processInstruction(new UNPACK_INVOKE_PARAMETER(iid));
     }
 
-    public void INSTANCEOF(int iid, int mid, String type) {
-        processInstruction(new INSTANCEOF(iid, mid, type));
+    public void SET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, boolean isWideOperand, int modifiers, long iid, long invokeId) {
+        processInstruction(new SET_FIELD_REFLECTION(owner, name, desc, reflectFieldName, reflectObjectOwner, isWideOperand, modifiers, iid, invokeId));
     }
 
-    public void BIPUSH(int iid, int mid, int value) {
-        processInstruction(new BIPUSH(iid, mid, value));
+    public void GET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, int modifiers, long iid, long invokeId) {
+        processInstruction(new GET_FIELD_REFLECTION(owner, name, desc, reflectFieldName, reflectObjectOwner, modifiers, iid, invokeId));
     }
 
-    public void SIPUSH(int iid, int mid, int value) {
-        processInstruction(new SIPUSH(iid, mid, value));
+    public void ANEWARRAY(long iid, String type) {
+        processInstruction(new ANEWARRAY(iid, type));
     }
 
-    public void NEWARRAY(int iid, int mid, int atype) {
-        processInstruction(new NEWARRAY(iid, mid, atype));
+    public void CHECKCAST(long iid, String type) {
+        processInstruction(new CHECKCAST(iid, type));
     }
 
-    public void ILOAD(int iid, int mid, int var) {
-        processInstruction(new ILOAD(iid, mid, var));
+    public void INSTANCEOF(long iid, String type) {
+        processInstruction(new INSTANCEOF(iid, type));
     }
 
-    public void LLOAD(int iid, int mid, int var) {
-        processInstruction(new LLOAD(iid, mid, var));
+    public void BIPUSH(long iid, int value) {
+        processInstruction(new BIPUSH(iid, value));
     }
 
-    public void FLOAD(int iid, int mid, int var) {
-        processInstruction(new FLOAD(iid, mid, var));
+    public void SIPUSH(long iid, int value) {
+        processInstruction(new SIPUSH(iid, value));
     }
 
-    public void DLOAD(int iid, int mid, int var) {
-        processInstruction(new DLOAD(iid, mid, var));
+    public void NEWARRAY(long iid, int atype) {
+        processInstruction(new NEWARRAY(iid, atype));
     }
 
-    public void ALOAD(int iid, int mid, int var) {
-        processInstruction(new ALOAD(iid, mid, var));
+    public void ILOAD(long iid, int var) {
+        processInstruction(new ILOAD(iid, var));
     }
 
-    public void ISTORE(int iid, int mid, int var) {
-        processInstruction(new ISTORE(iid, mid, var));
+    public void LLOAD(long iid, int var) {
+        processInstruction(new LLOAD(iid, var));
     }
 
-    public void LSTORE(int iid, int mid, int var) {
-        processInstruction(new LSTORE(iid, mid, var));
+    public void FLOAD(long iid, int var) {
+        processInstruction(new FLOAD(iid, var));
     }
 
-    public void FSTORE(int iid, int mid, int var) {
-        processInstruction(new FSTORE(iid, mid, var));
+    public void DLOAD(long iid, int var) {
+        processInstruction(new DLOAD(iid, var));
     }
 
-    public void DSTORE(int iid, int mid, int var) {
-        processInstruction(new DSTORE(iid, mid, var));
+    public void ALOAD(long iid, int var) {
+        processInstruction(new ALOAD(iid, var));
     }
 
-    public void ASTORE(int iid, int mid, int var) {
-        processInstruction(new ASTORE(iid, mid, var));
+    public void ISTORE(long iid, int var) {
+        processInstruction(new ISTORE(iid, var));
     }
 
-    public void RET(int iid, int mid, int var) {
-        processInstruction(new RET(iid, mid, var));
+    public void LSTORE(long iid, int var) {
+        processInstruction(new LSTORE(iid, var));
     }
 
-    public void NOP(int iid, int mid) {
-        processInstruction(new NOP(iid, mid));
+    public void FSTORE(long iid, int var) {
+        processInstruction(new FSTORE(iid, var));
     }
 
-    public void ACONST_NULL(int iid, int mid) {
-        processInstruction(new ACONST_NULL(iid, mid));
+    public void DSTORE(long iid, int var) {
+        processInstruction(new DSTORE(iid, var));
     }
 
-    public void ICONST_M1(int iid, int mid) {
-        processInstruction(new ICONST_M1(iid, mid));
+    public void ASTORE(long iid, int var) {
+        processInstruction(new ASTORE(iid, var));
     }
 
-    public void ICONST_0(int iid, int mid) {
-        processInstruction(new ICONST_0(iid, mid));
+    public void RET(long iid, int var) {
+        processInstruction(new RET(iid, var));
     }
 
-    public void ICONST_1(int iid, int mid) {
-        processInstruction(new ICONST_1(iid, mid));
+    public void NOP(long iid) {
+        processInstruction(new NOP(iid));
     }
 
-    public void ICONST_2(int iid, int mid) {
-        processInstruction(new ICONST_2(iid, mid));
+    public void ACONST_NULL(long iid) {
+        processInstruction(new ACONST_NULL(iid));
     }
 
-    public void ICONST_3(int iid, int mid) {
-        processInstruction(new ICONST_3(iid, mid));
+    public void ICONST_M1(long iid) {
+        processInstruction(new ICONST_M1(iid));
     }
 
-    public void ICONST_4(int iid, int mid) {
-        processInstruction(new ICONST_4(iid, mid));
+    public void ICONST_0(long iid) {
+        processInstruction(new ICONST_0(iid));
     }
 
-    public void ICONST_5(int iid, int mid) {
-        processInstruction(new ICONST_5(iid, mid));
+    public void ICONST_1(long iid) {
+        processInstruction(new ICONST_1(iid));
     }
 
-    public void LCONST_0(int iid, int mid) {
-        processInstruction(new LCONST_0(iid, mid));
+    public void ICONST_2(long iid) {
+        processInstruction(new ICONST_2(iid));
     }
 
-    public void LCONST_1(int iid, int mid) {
-        processInstruction(new LCONST_1(iid, mid));
+    public void ICONST_3(long iid) {
+        processInstruction(new ICONST_3(iid));
     }
 
-    public void FCONST_0(int iid, int mid) {
-        processInstruction(new FCONST_0(iid, mid));
+    public void ICONST_4(long iid) {
+        processInstruction(new ICONST_4(iid));
     }
 
-    public void FCONST_1(int iid, int mid) {
-        processInstruction(new FCONST_1(iid, mid));
+    public void ICONST_5(long iid) {
+        processInstruction(new ICONST_5(iid));
     }
 
-    public void FCONST_2(int iid, int mid) {
-        processInstruction(new FCONST_2(iid, mid));
+    public void LCONST_0(long iid) {
+        processInstruction(new LCONST_0(iid));
     }
 
-    public void DCONST_0(int iid, int mid) {
-        processInstruction(new DCONST_0(iid, mid));
+    public void LCONST_1(long iid) {
+        processInstruction(new LCONST_1(iid));
     }
 
-    public void DCONST_1(int iid, int mid) {
-        processInstruction(new DCONST_1(iid, mid));
+    public void FCONST_0(long iid) {
+        processInstruction(new FCONST_0(iid));
     }
 
-    public void IALOAD(int iid, int mid) {
-        processInstruction(new IALOAD(iid, mid));
+    public void FCONST_1(long iid) {
+        processInstruction(new FCONST_1(iid));
     }
 
-    public void LALOAD(int iid, int mid) {
-        processInstruction(new LALOAD(iid, mid));
+    public void FCONST_2(long iid) {
+        processInstruction(new FCONST_2(iid));
     }
 
-    public void FALOAD(int iid, int mid) {
-        processInstruction(new FALOAD(iid, mid));
+    public void DCONST_0(long iid) {
+        processInstruction(new DCONST_0(iid));
     }
 
-    public void DALOAD(int iid, int mid) {
-        processInstruction(new DALOAD(iid, mid));
+    public void DCONST_1(long iid) {
+        processInstruction(new DCONST_1(iid));
     }
 
-    public void AALOAD(int iid, int mid) {
-        processInstruction(new AALOAD(iid, mid));
+    public void IALOAD(long iid) {
+        processInstruction(new IALOAD(iid));
     }
 
-    public void BALOAD(int iid, int mid) {
-        processInstruction(new BALOAD(iid, mid));
+    public void LALOAD(long iid) {
+        processInstruction(new LALOAD(iid));
     }
 
-    public void CALOAD(int iid, int mid) {
-        processInstruction(new CALOAD(iid, mid));
+    public void FALOAD(long iid) {
+        processInstruction(new FALOAD(iid));
     }
 
-    public void SALOAD(int iid, int mid) {
-        processInstruction(new SALOAD(iid, mid));
+    public void DALOAD(long iid) {
+        processInstruction(new DALOAD(iid));
     }
 
-    public void IASTORE(int iid, int mid) {
-        processInstruction(new IASTORE(iid, mid));
+    public void AALOAD(long iid) {
+        processInstruction(new AALOAD(iid));
     }
 
-    public void LASTORE(int iid, int mid) {
-        processInstruction(new LASTORE(iid, mid));
+    public void BALOAD(long iid) {
+        processInstruction(new BALOAD(iid));
     }
 
-    public void FASTORE(int iid, int mid) {
-        processInstruction(new FASTORE(iid, mid));
+    public void CALOAD(long iid) {
+        processInstruction(new CALOAD(iid));
     }
 
-    public void DASTORE(int iid, int mid) {
-        processInstruction(new DASTORE(iid, mid));
+    public void SALOAD(long iid) {
+        processInstruction(new SALOAD(iid));
     }
 
-    public void AASTORE(int iid, int mid) {
-        processInstruction(new AASTORE(iid, mid));
+    public void IASTORE(long iid) {
+        processInstruction(new IASTORE(iid));
     }
 
-    public void BASTORE(int iid, int mid) {
-        processInstruction(new BASTORE(iid, mid));
+    public void LASTORE(long iid) {
+        processInstruction(new LASTORE(iid));
     }
 
-    public void CASTORE(int iid, int mid) {
-        processInstruction(new CASTORE(iid, mid));
+    public void FASTORE(long iid) {
+        processInstruction(new FASTORE(iid));
     }
 
-    public void SASTORE(int iid, int mid) {
-        processInstruction(new SASTORE(iid, mid));
+    public void DASTORE(long iid) {
+        processInstruction(new DASTORE(iid));
     }
 
-    public void POP(int iid, int mid) {
-        processInstruction(new POP(iid, mid));
+    public void AASTORE(long iid) {
+        processInstruction(new AASTORE(iid));
     }
 
-    public void POP2(int iid, int mid) {
-        processInstruction(new POP2(iid, mid));
+    public void BASTORE(long iid) {
+        processInstruction(new BASTORE(iid));
     }
 
-    public void DUP(int iid, int mid) {
-        processInstruction(new DUP(iid, mid));
+    public void CASTORE(long iid) {
+        processInstruction(new CASTORE(iid));
     }
 
-    public void DUP_X1(int iid, int mid) {
-        processInstruction(new DUP_X1(iid, mid));
+    public void SASTORE(long iid) {
+        processInstruction(new SASTORE(iid));
     }
 
-    public void DUP_X2(int iid, int mid) {
-        processInstruction(new DUP_X2(iid, mid));
+    public void POP(long iid) {
+        processInstruction(new POP(iid));
     }
 
-    public void DUP2(int iid, int mid) {
-        processInstruction(new DUP2(iid, mid));
+    public void POP2(long iid) {
+        processInstruction(new POP2(iid));
     }
 
-    public void DUP2_X1(int iid, int mid) {
-        processInstruction(new DUP2_X1(iid, mid));
+    public void DUP(long iid) {
+        processInstruction(new DUP(iid));
     }
 
-    public void DUP2_X2(int iid, int mid) {
-        processInstruction(new DUP2_X2(iid, mid));
+    public void DUP_X1(long iid) {
+        processInstruction(new DUP_X1(iid));
     }
 
-    public void SWAP(int iid, int mid) {
-        processInstruction(new SWAP(iid, mid));
+    public void DUP_X2(long iid) {
+        processInstruction(new DUP_X2(iid));
     }
 
-    public void IADD(int iid, int mid) {
-        processInstruction(new IADD(iid, mid));
+    public void DUP2(long iid) {
+        processInstruction(new DUP2(iid));
     }
 
-    public void LADD(int iid, int mid) {
-        processInstruction(new LADD(iid, mid));
+    public void DUP2_X1(long iid) {
+        processInstruction(new DUP2_X1(iid));
     }
 
-    public void FADD(int iid, int mid) {
-        processInstruction(new FADD(iid, mid));
+    public void DUP2_X2(long iid) {
+        processInstruction(new DUP2_X2(iid));
     }
 
-    public void DADD(int iid, int mid) {
-        processInstruction(new DADD(iid, mid));
+    public void SWAP(long iid) {
+        processInstruction(new SWAP(iid));
     }
 
-    public void ISUB(int iid, int mid) {
-        processInstruction(new ISUB(iid, mid));
+    public void IADD(long iid) {
+        processInstruction(new IADD(iid));
     }
 
-    public void LSUB(int iid, int mid) {
-        processInstruction(new LSUB(iid, mid));
+    public void LADD(long iid) {
+        processInstruction(new LADD(iid));
     }
 
-    public void FSUB(int iid, int mid) {
-        processInstruction(new FSUB(iid, mid));
+    public void FADD(long iid) {
+        processInstruction(new FADD(iid));
     }
 
-    public void DSUB(int iid, int mid) {
-        processInstruction(new DSUB(iid, mid));
+    public void DADD(long iid) {
+        processInstruction(new DADD(iid));
     }
 
-    public void IMUL(int iid, int mid) {
-        processInstruction(new IMUL(iid, mid));
+    public void ISUB(long iid) {
+        processInstruction(new ISUB(iid));
     }
 
-    public void LMUL(int iid, int mid) {
-        processInstruction(new LMUL(iid, mid));
+    public void LSUB(long iid) {
+        processInstruction(new LSUB(iid));
     }
 
-    public void FMUL(int iid, int mid) {
-        processInstruction(new FMUL(iid, mid));
+    public void FSUB(long iid) {
+        processInstruction(new FSUB(iid));
     }
 
-    public void DMUL(int iid, int mid) {
-        processInstruction(new DMUL(iid, mid));
+    public void DSUB(long iid) {
+        processInstruction(new DSUB(iid));
     }
 
-    public void IDIV(int iid, int mid) {
-        processInstruction(new IDIV(iid, mid));
+    public void IMUL(long iid) {
+        processInstruction(new IMUL(iid));
     }
 
-    public void LDIV(int iid, int mid) {
-        processInstruction(new LDIV(iid, mid));
+    public void LMUL(long iid) {
+        processInstruction(new LMUL(iid));
     }
 
-    public void FDIV(int iid, int mid) {
-        processInstruction(new FDIV(iid, mid));
+    public void FMUL(long iid) {
+        processInstruction(new FMUL(iid));
     }
 
-    public void DDIV(int iid, int mid) {
-        processInstruction(new DDIV(iid, mid));
+    public void DMUL(long iid) {
+        processInstruction(new DMUL(iid));
     }
 
-    public void IREM(int iid, int mid) {
-        processInstruction(new IREM(iid, mid));
+    public void IDIV(long iid) {
+        processInstruction(new IDIV(iid));
     }
 
-    public void LREM(int iid, int mid) {
-        processInstruction(new LREM(iid, mid));
+    public void LDIV(long iid) {
+        processInstruction(new LDIV(iid));
     }
 
-    public void FREM(int iid, int mid) {
-        processInstruction(new FREM(iid, mid));
+    public void FDIV(long iid) {
+        processInstruction(new FDIV(iid));
     }
 
-    public void DREM(int iid, int mid) {
-        processInstruction(new DREM(iid, mid));
+    public void DDIV(long iid) {
+        processInstruction(new DDIV(iid));
     }
 
-    public void INEG(int iid, int mid) {
-        processInstruction(new INEG(iid, mid));
+    public void IREM(long iid) {
+        processInstruction(new IREM(iid));
     }
 
-    public void LNEG(int iid, int mid) {
-        processInstruction(new LNEG(iid, mid));
+    public void LREM(long iid) {
+        processInstruction(new LREM(iid));
     }
 
-    public void FNEG(int iid, int mid) {
-        processInstruction(new FNEG(iid, mid));
+    public void FREM(long iid) {
+        processInstruction(new FREM(iid));
     }
 
-    public void DNEG(int iid, int mid) {
-        processInstruction(new DNEG(iid, mid));
+    public void DREM(long iid) {
+        processInstruction(new DREM(iid));
     }
 
-    public void ISHL(int iid, int mid) {
-        processInstruction(new ISHL(iid, mid));
+    public void INEG(long iid) {
+        processInstruction(new INEG(iid));
     }
 
-    public void LSHL(int iid, int mid) {
-        processInstruction(new LSHL(iid, mid));
+    public void LNEG(long iid) {
+        processInstruction(new LNEG(iid));
     }
 
-    public void ISHR(int iid, int mid) {
-        processInstruction(new ISHR(iid, mid));
+    public void FNEG(long iid) {
+        processInstruction(new FNEG(iid));
     }
 
-    public void LSHR(int iid, int mid) {
-        processInstruction(new LSHR(iid, mid));
+    public void DNEG(long iid) {
+        processInstruction(new DNEG(iid));
     }
 
-    public void IUSHR(int iid, int mid) {
-        processInstruction(new IUSHR(iid, mid));
+    public void ISHL(long iid) {
+        processInstruction(new ISHL(iid));
     }
 
-    public void LUSHR(int iid, int mid) {
-        processInstruction(new LUSHR(iid, mid));
+    public void LSHL(long iid) {
+        processInstruction(new LSHL(iid));
     }
 
-    public void IAND(int iid, int mid) {
-        processInstruction(new IAND(iid, mid));
+    public void ISHR(long iid) {
+        processInstruction(new ISHR(iid));
     }
 
-    public void LAND(int iid, int mid) {
-        processInstruction(new LAND(iid, mid));
+    public void LSHR(long iid) {
+        processInstruction(new LSHR(iid));
     }
 
-    public void IOR(int iid, int mid) {
-        processInstruction(new IOR(iid, mid));
+    public void IUSHR(long iid) {
+        processInstruction(new IUSHR(iid));
     }
 
-    public void LOR(int iid, int mid) {
-        processInstruction(new LOR(iid, mid));
+    public void LUSHR(long iid) {
+        processInstruction(new LUSHR(iid));
     }
 
-    public void IXOR(int iid, int mid) {
-        processInstruction(new IXOR(iid, mid));
+    public void IAND(long iid) {
+        processInstruction(new IAND(iid));
     }
 
-    public void LXOR(int iid, int mid) {
-        processInstruction(new LXOR(iid, mid));
+    public void LAND(long iid) {
+        processInstruction(new LAND(iid));
     }
 
-    public void I2L(int iid, int mid) {
-        processInstruction(new I2L(iid, mid));
+    public void IOR(long iid) {
+        processInstruction(new IOR(iid));
     }
 
-    public void I2F(int iid, int mid) {
-        processInstruction(new I2F(iid, mid));
+    public void LOR(long iid) {
+        processInstruction(new LOR(iid));
     }
 
-    public void I2D(int iid, int mid) {
-        processInstruction(new I2D(iid, mid));
+    public void IXOR(long iid) {
+        processInstruction(new IXOR(iid));
     }
 
-    public void L2I(int iid, int mid) {
-        processInstruction(new L2I(iid, mid));
+    public void LXOR(long iid) {
+        processInstruction(new LXOR(iid));
     }
 
-    public void L2F(int iid, int mid) {
-        processInstruction(new L2F(iid, mid));
+    public void I2L(long iid) {
+        processInstruction(new I2L(iid));
     }
 
-    public void L2D(int iid, int mid) {
-        processInstruction(new L2D(iid, mid));
+    public void I2F(long iid) {
+        processInstruction(new I2F(iid));
     }
 
-    public void F2I(int iid, int mid) {
-        processInstruction(new F2I(iid, mid));
+    public void I2D(long iid) {
+        processInstruction(new I2D(iid));
     }
 
-    public void F2L(int iid, int mid) {
-        processInstruction(new F2L(iid, mid));
+    public void L2I(long iid) {
+        processInstruction(new L2I(iid));
     }
 
-    public void F2D(int iid, int mid) {
-        processInstruction(new F2D(iid, mid));
+    public void L2F(long iid) {
+        processInstruction(new L2F(iid));
     }
 
-    public void D2I(int iid, int mid) {
-        processInstruction(new D2I(iid, mid));
+    public void L2D(long iid) {
+        processInstruction(new L2D(iid));
     }
 
-    public void D2L(int iid, int mid) {
-        processInstruction(new D2L(iid, mid));
+    public void F2I(long iid) {
+        processInstruction(new F2I(iid));
     }
 
-    public void D2F(int iid, int mid) {
-        processInstruction(new D2F(iid, mid));
+    public void F2L(long iid) {
+        processInstruction(new F2L(iid));
     }
 
-    public void I2B(int iid, int mid) {
-        processInstruction(new I2B(iid, mid));
+    public void F2D(long iid) {
+        processInstruction(new F2D(iid));
     }
 
-    public void I2C(int iid, int mid) {
-        processInstruction(new I2C(iid, mid));
+    public void D2I(long iid) {
+        processInstruction(new D2I(iid));
     }
 
-    public void I2S(int iid, int mid) {
-        processInstruction(new I2S(iid, mid));
+    public void D2L(long iid) {
+        processInstruction(new D2L(iid));
     }
 
-    public void LCMP(int iid, int mid) {
-        processInstruction(new LCMP(iid, mid));
+    public void D2F(long iid) {
+        processInstruction(new D2F(iid));
     }
 
-    public void FCMPL(int iid, int mid) {
-        processInstruction(new FCMPL(iid, mid));
+    public void I2B(long iid) {
+        processInstruction(new I2B(iid));
     }
 
-    public void FCMPG(int iid, int mid) {
-        processInstruction(new FCMPG(iid, mid));
+    public void I2C(long iid) {
+        processInstruction(new I2C(iid));
     }
 
-    public void DCMPL(int iid, int mid) {
-        processInstruction(new DCMPL(iid, mid));
+    public void I2S(long iid) {
+        processInstruction(new I2S(iid));
     }
 
-    public void DCMPG(int iid, int mid) {
-        processInstruction(new DCMPG(iid, mid));
+    public void LCMP(long iid) {
+        processInstruction(new LCMP(iid));
     }
 
-    public void IRETURN(int iid, int mid) {
-        processInstruction(new IRETURN(iid, mid));
+    public void FCMPL(long iid) {
+        processInstruction(new FCMPL(iid));
     }
 
-    public void LRETURN(int iid, int mid) {
-        processInstruction(new LRETURN(iid, mid));
+    public void FCMPG(long iid) {
+        processInstruction(new FCMPG(iid));
     }
 
-    public void FRETURN(int iid, int mid) {
-        processInstruction(new FRETURN(iid, mid));
+    public void DCMPL(long iid) {
+        processInstruction(new DCMPL(iid));
     }
 
-    public void DRETURN(int iid, int mid) {
-        processInstruction(new DRETURN(iid, mid));
+    public void DCMPG(long iid) {
+        processInstruction(new DCMPG(iid));
     }
 
-    public void ARETURN(int iid, int mid) {
-        processInstruction(new ARETURN(iid, mid));
+    public void IRETURN(long iid) {
+        processInstruction(new IRETURN(iid));
     }
 
-    public void RETURN(int iid, int mid) {
-        processInstruction(new RETURN(iid, mid));
+    public void LRETURN(long iid) {
+        processInstruction(new LRETURN(iid));
     }
 
-    public void ARRAYLENGTH(int iid, int mid) {
-        processInstruction(new ARRAYLENGTH(iid, mid));
+    public void FRETURN(long iid) {
+        processInstruction(new FRETURN(iid));
     }
 
-    public void ATHROW(int iid, int mid) {
-        processInstruction(new ATHROW(iid, mid));
+    public void DRETURN(long iid) {
+        processInstruction(new DRETURN(iid));
     }
 
-    public void MONITORENTER(int iid, int mid) {
-        processInstruction(new MONITORENTER(iid, mid));
+    public void ARETURN(long iid) {
+        processInstruction(new ARETURN(iid));
     }
 
-    public void MONITOREXIT(int iid, int mid) {
-        processInstruction(new MONITOREXIT(iid, mid));
+    public void RETURN(long iid) {
+        processInstruction(new RETURN(iid));
     }
 
-    public void GETVALUE_double(double v, int i) {
-        processInstruction(new GETVALUE_double(v, i));
+    public void ARRAYLENGTH(long iid) {
+        processInstruction(new ARRAYLENGTH(iid));
     }
 
-    public void GETVALUE_long(long v, int i) {
-        processInstruction(new GETVALUE_long(v, i));
+    public void ATHROW(long iid) {
+        processInstruction(new ATHROW(iid));
     }
 
-    public void GETVALUE_Object(Object v, int i) {
+    public void MONITORENTER(long iid) {
+        processInstruction(new MONITORENTER(iid));
+    }
+
+    public void MONITOREXIT(long iid) {
+        processInstruction(new MONITOREXIT(iid));
+    }
+
+    public void GETVALUE_double(long iid, double v, int i) {
+        processInstruction(new GETVALUE_double(iid, v, i));
+    }
+
+    public void GETVALUE_long(long iid, long v, int i) {
+        processInstruction(new GETVALUE_long(iid, v, i));
+    }
+
+    public void GETVALUE_Object(long iid, Object v, int i) {
+        // ToDo: Add all supported objects
         int id = System.identityHashCode(v);
-        if (v instanceof String) {
-            processInstruction(new GETVALUE_Object<>(id, (String) v, i));
-        } else if (v instanceof Long) {
-            processInstruction(new GETVALUE_Object<>(id, (Long) v, i));
-        } else if (v instanceof Integer) {
-            processInstruction(new GETVALUE_Object<>(id, (Integer) v, i));
+        if (v == null) {
+            processInstruction(new GETVALUE_Object<>(iid, id, null, i));
+        } else if (v instanceof String val) {
+            processInstruction(new GETVALUE_Object<>(iid, id, val, i));
+        } else if (v instanceof Long val) {
+            processInstruction(new GETVALUE_Object<>(iid, id, val, i));
+        } else if (v instanceof Integer val) {
+            processInstruction(new GETVALUE_Object<>(iid, id, val, i));
+        } else if (v instanceof Short val) {
+            processInstruction(new GETVALUE_Object<>(iid, id, val, i));
+        } else if (v instanceof Double val) {
+            processInstruction(new GETVALUE_Object<>(iid, id, val, i));
+        } else if (v instanceof Float val) {
+            processInstruction(new GETVALUE_Object<>(iid, id, val, i));
+        } else if (v instanceof Boolean val) {
+            processInstruction(new GETVALUE_Object<>(iid, id, val, i));
         } else {
-            processInstruction(new GETVALUE_Object<>(id, null, i));
+            processInstruction(new GETVALUE_Object<>(iid, id, v, i));
         }
     }
 
-    public void GETVALUE_boolean(boolean v, int i) {
-        processInstruction(new GETVALUE_boolean(v, i));
+    public void GETVALUE_boolean(long iid, boolean v, int i) {
+        processInstruction(new GETVALUE_boolean(iid, v, i));
     }
 
-    public void GETVALUE_byte(byte v, int i) {
-        processInstruction(new GETVALUE_byte(v, i));
+    public void GETVALUE_byte(long iid, byte v, int i) {
+        processInstruction(new GETVALUE_byte(iid, v, i));
     }
 
-    public void GETVALUE_char(char v, int i) {
-        processInstruction(new GETVALUE_char(v, i));
+    public void GETVALUE_char(long iid, char v, int i) {
+        processInstruction(new GETVALUE_char(iid, v, i));
     }
 
-    public void GETVALUE_float(float v, int i) {
-        processInstruction(new GETVALUE_float(v, i));
+    public void GETVALUE_float(long iid, float v, int i) {
+        processInstruction(new GETVALUE_float(iid, v, i));
     }
 
-    public void GETVALUE_int(int v, int i) {
-        processInstruction(new GETVALUE_int(v, i));
+    public void GETVALUE_int(long iid, int v, int i) {
+        processInstruction(new GETVALUE_int(iid, v, i));
     }
 
-    public void GETVALUE_short(short v, int i) {
-        processInstruction(new GETVALUE_short(v, i));
+    public void GETVALUE_short(long iid, short v, int i) {
+        processInstruction(new GETVALUE_short(iid, v, i));
     }
 
-    public void GETVALUE_void() {
-        processInstruction(new GETVALUE_void());
+    public void GETVALUE_void(long iid) {
+        processInstruction(new GETVALUE_void(iid));
     }
 
-    public void INVOKEMETHOD_EXCEPTION() {
-        processInstruction(new INVOKEMETHOD_EXCEPTION());
+    public void INVOKEMETHOD_EXCEPTION(long iid, long invokeId) {
+        processInstruction(new INVOKEMETHOD_EXCEPTION(iid, invokeId));
     }
 
-    public void INVOKEMETHOD_END() {
-        processInstruction(new INVOKEMETHOD_END());
+    public void INVOKEMETHOD_END(long iid, long invokeId) {
+        processInstruction(new INVOKEMETHOD_END(iid, invokeId));
     }
 
-    public void MAKE_SYMBOLIC() {
-        processInstruction(new MAKE_SYMBOLIC());
+    public void INVOKECLINIT_END(long iid, long invokeId) {
+        processInstruction(new INVOKECLINIT_END(iid, invokeId));
     }
 
-    public void LOOP_BEGIN(int iid) {
+    public void MAKE_SYMBOLIC(long iid) {
+        processInstruction(new MAKE_SYMBOLIC(iid));
+    }
+
+    public void LOOP_BEGIN(long iid) {
         processInstruction(new LOOP_BEGIN(iid));
     }
 
-    public void LOOP_END(int iid) {
+    public void LOOP_END(long iid) {
         processInstruction(new LOOP_END(iid));
     }
 
-    public void SPECIAL(int i) {
-        processInstruction(new SPECIAL(i));
+    public void SPECIAL(long iid, int i) {
+        processInstruction(new SPECIAL(iid, i));
     }
 
     public void flush() {

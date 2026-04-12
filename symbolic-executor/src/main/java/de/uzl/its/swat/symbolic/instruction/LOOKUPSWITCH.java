@@ -1,5 +1,9 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
+import java.util.Arrays;
+
 /**
  * LOOKUPSWITCH - Access jump table by key match and jump. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.lookupswitch">Java
@@ -20,13 +24,12 @@ public class LOOKUPSWITCH extends Instruction {
      * Creates a new LOOKUPSWITCH instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param dflt beginning of the default handler block.
      * @param keys the values of the keys.
      * @param labels beginnings of the handler blocks.
      */
-    public LOOKUPSWITCH(int iid, int mid, int dflt, int[] keys, int[] labels) {
-        super(iid, mid);
+    public LOOKUPSWITCH(long iid, int dflt, int[] keys, int[] labels) {
+        super(iid);
         this.dflt = dflt;
         this.keys = keys;
         this.labels = labels;
@@ -37,7 +40,7 @@ public class LOOKUPSWITCH extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitLOOKUPSWITCH(this);
     }
 
@@ -49,6 +52,6 @@ public class LOOKUPSWITCH extends Instruction {
     @Override
     public String toString() {
         return genericToString(
-                "LOOKUPSWITCH keys: " + keys + " labels: " + labels + " dflt: " + dflt);
+                "LOOKUPSWITCH keys: " + Arrays.toString(keys) + " labels: " + Arrays.toString(labels) + " dflt: " + dflt);
     }
 }

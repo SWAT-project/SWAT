@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * NEWARRAY - Create new array. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.newarray">Java VM
@@ -14,11 +16,10 @@ public class NEWARRAY extends Instruction {
      * Creates a new NEWARRAY instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param atype the type of the array to be created
      */
-    public NEWARRAY(int iid, int mid, int atype) {
-        super(iid, mid);
+    public NEWARRAY(long iid, int atype) {
+        super(iid);
         this.atype = atype;
     }
 
@@ -27,7 +28,7 @@ public class NEWARRAY extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitNEWARRAY(this);
     }
 

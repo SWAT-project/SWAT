@@ -3,7 +3,7 @@ package de.uzl.its.swat.symbolic.value.reference;
 import org.sosy_lab.java_smt.api.SolverContext;
 
 public class LambdaObjectValue extends ObjectValue {
-    public int getKey() {
+    public long getKey() {
         return key;
     }
 
@@ -12,10 +12,10 @@ public class LambdaObjectValue extends ObjectValue {
     }
 
     private final int parentAddress;
-    private final int key;
+    private final long key;
 
-    public LambdaObjectValue(SolverContext context, int address, int parentAddress, int key) {
-        super(context, -1, address);
+    public LambdaObjectValue(SolverContext context, int address, int parentAddress, long key) {
+        super(context, address);
         this.parentAddress = parentAddress;
         this.key = key;
     }

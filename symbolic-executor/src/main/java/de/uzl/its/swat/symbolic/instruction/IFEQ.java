@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * IFEQ - Branch if int comparison with zero succeeds (equal) For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.if_cond">Java VM
@@ -14,11 +16,10 @@ public class IFEQ extends Instruction {
      * Creates a new IFEQ instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param label the jump destination
      */
-    public IFEQ(int iid, int mid, int label) {
-        super(iid, mid);
+    public IFEQ(long iid, int label) {
+        super(iid);
         this.label = label;
     }
 
@@ -27,7 +28,7 @@ public class IFEQ extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitIFEQ(this);
     }
 
@@ -38,6 +39,6 @@ public class IFEQ extends Instruction {
      */
     @Override
     public String toString() {
-        return genericToString("IF_ICMPNE " + label);
+        return genericToString("IFEQ " + label);
     }
 }

@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * DCONST_0 - Push double (0.0d). For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.dconst_d">Java VM
@@ -11,10 +13,9 @@ public class DCONST_0 extends Instruction {
      * Creates a new DCONST_0 instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public DCONST_0(int iid, int mid) {
-        super(iid, mid);
+    public DCONST_0(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class DCONST_0 extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitDCONST_0(this);
     }
 

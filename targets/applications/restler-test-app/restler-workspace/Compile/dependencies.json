@@ -1,0 +1,44 @@
+{
+  "/books/new": {
+    "GET": {
+      "Query": [
+        {
+          "producer_endpoint": "",
+          "producer_method": "",
+          "producer_resource_name": "",
+          "consumer_param": "filter"
+        }
+      ]
+    }
+  },
+  "/dvds/classics/{start}/{end}": {
+    "GET": {
+      "Path": [
+        {
+          "producer_endpoint": "",
+          "producer_method": "",
+          "producer_resource_name": "",
+          "consumer_param": "end"
+        },
+        {
+          "producer_endpoint": "",
+          "producer_method": "",
+          "producer_resource_name": "",
+          "consumer_param": "start"
+        }
+      ]
+    }
+  },
+  "/games/by-price": {
+    "GET": {
+      "Query": [
+        {
+          "producer_endpoint": "",
+          "producer_method": "",
+          "producer_resource_name": "",
+          "consumer_param": "price"
+        }
+      ]
+    }
+  }
+}
