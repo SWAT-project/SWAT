@@ -1,11 +1,17 @@
 package de.uzl.its.swat.symbolic.trace;
 
+import ch.qos.logback.classic.Logger;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
+import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.HashMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.List;
+
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.FormulaManager;
 
@@ -18,7 +24,7 @@ public class SymbolicTraceHandler {
     // The symbolic trace storing constraints and inputs
     private final SymbolicTrace symbolicTrace;
 
-    private static final Logger logger = LoggerFactory.getLogger(SymbolicTraceHandler.class);
+    private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
 
     /** Constructs a new SymbolicTraceHandler. */
     public SymbolicTraceHandler() {
@@ -32,7 +38,7 @@ public class SymbolicTraceHandler {
      * @param constraint The constraint of the branch.
      * @param iid The iid of the branch instruction.
      */
-    public void checkAndSetBranch(boolean result, BooleanFormula constraint, int iid) {
+    public void checkAndSetBranch(boolean result, BooleanFormula constraint, long iid) throws NoThreadContextException {
 
         long threadId = Thread.currentThread().getId();
         BranchElement current;
@@ -41,7 +47,8 @@ public class SymbolicTraceHandler {
                 result ? constraint : fmgr.getBooleanFormulaManager().not(constraint);
 
         current = new BranchElement(result, pathConstraint, iid);
-        logger.debug("Registered branch constraint: " + current);
+        // check if the path constraint contains a free/ symbolic variable
+
         symbolicTrace.addTraceElement(current);
     }
 
@@ -52,10 +59,20 @@ public class SymbolicTraceHandler {
      * @param iid The iid of the special instruction.
      * @param inst The instruction of the special instruction.
      */
-    public void addSpecialElement(int iid, String inst) {
+    public void addSpecialElement(long iid, String inst) {
         symbolicTrace.addTraceElement(new SpecialElement(iid, inst));
     }
 
+    /**
+     * Adds a node to the trace to handle unexpected branching. Todo: Specify what branching can
+     * occur.
+     *
+     * @param iid The iid of the instruction.
+     * @param inst The type of invocation instruction.
+     */
+    public void recordInvocation(long iid, String inst) {
+        addSpecialElement(iid, inst);
+    }
     /**
      * Adds an input to the symbolic trace.
      *
@@ -63,8 +80,27 @@ public class SymbolicTraceHandler {
      * @param value The value of the input.
      */
     public void addInput(String name, Value<?, ?> value) {
-        logger.info("Input with name: " + name + " and value: " + value + "registered");
+        logger.info("Input with name: {} and value: {} registered", name, value);
         symbolicTrace.addInputElement(new InputElement(name, value));
+    }
+
+    /**
+     * Adds a global constraint to the symbolic trace.
+     * Used for UF definitions, invariants, and axioms that should always hold.
+     *
+     * @param constraint The constraint to add.
+     */
+    public void addConstraint(BooleanFormula constraint) {
+        if (constraint != null) {
+            symbolicTrace.addConstraint(constraint);
+            logger.debug("Added constraint: {}", constraint);
+        } else {
+            logger.warn("Attempted to add a null constraint to the symbolic trace.");
+        }
+    }
+
+    public List<BooleanFormula> getConstraints() {
+        return symbolicTrace.getConstraints();
     }
 
     /**
@@ -72,7 +108,7 @@ public class SymbolicTraceHandler {
      *
      * @return The symbolic trace encoded as a JSON string.
      */
-    public String getTraceDTO() {
+    public String getTraceDTO() throws NoThreadContextException, JsonProcessingException, NotImplementedException {
         return DTOBuilder.encodeTrace(symbolicTrace);
     }
 
@@ -119,8 +155,8 @@ public class SymbolicTraceHandler {
      *
      * @return The branch constraints from the symbolic trace.
      */
-    public HashMap<Integer, BooleanFormula> getBranchConstraints() {
-        HashMap<Integer, BooleanFormula> constraints = new HashMap<>();
+    public HashMap<Long, BooleanFormula> getBranchConstraints() {
+        HashMap<Long, BooleanFormula> constraints = new HashMap<>();
         for (Element elem : symbolicTrace.getTrace()) {
             if (elem instanceof BranchElement b) {
                 constraints.put(b.getIid(), b.getConstraint());
@@ -135,9 +171,8 @@ public class SymbolicTraceHandler {
      * @param iid The id of the branch constraint
      * @return The path constraints
      */
-    public HashMap<Integer, BooleanFormula> getPathConstraints(int iid)
-            throws IllegalArgumentException {
-        HashMap<Integer, BooleanFormula> constraints = new HashMap<>();
+    public HashMap<Long, BooleanFormula> getPathConstraints(long iid) throws IllegalArgumentException {
+        HashMap<Long, BooleanFormula> constraints = new HashMap<>();
         for (Element elem : symbolicTrace.getTrace()) {
             if (elem instanceof BranchElement b) {
                 if (b.getIid() == iid) {
@@ -155,12 +190,31 @@ public class SymbolicTraceHandler {
      *
      * @return The input bounds from the symbolic trace.
      */
-    public ArrayList<BooleanFormula> getInputBounds() {
+    public ArrayList<BooleanFormula> getInputBounds() throws NotImplementedException {
         ArrayList<BooleanFormula> bounds = new ArrayList<>();
         for (InputElement input : symbolicTrace.getInputs()) {
             bounds.add(input.getValue().getBounds(false));
             bounds.add(input.getValue().getBounds(true));
         }
         return bounds;
+    }
+
+    /**
+     * Records that a symbolic context loss occurred. This happens when a method is invoked with symbolic arguments
+     * but is not instrumented.
+     */
+    public void recordSymbolicContextLoss() {
+        symbolicTrace.setSymbolicContextLoss(true);
+    }
+
+    /**
+     * Records that reference equality semantics may have changed. This happens when Objects.equals
+     * is called (via refEquals transformation) on strings where at least one was explicitly created
+     * with new String() in user code. In such cases, the original reference equality check would
+     * return false for different objects, but value equality returns true for equal content.
+     */
+    public void recordReferenceSemanticChange() {
+        logger.warn("Reference semantic change detected: user-de-interned strings compared via Objects.equals");
+        symbolicTrace.setReferenceSemanticChange(true);
     }
 }

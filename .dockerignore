@@ -1,0 +1,9 @@
+.git
+.github
+.gradle
+build
+**/*.iml
+*.log
+*.swp
+.DS_Store
+docker-compose.yml

@@ -2,6 +2,7 @@ package de.uzl.its.swat.symbolic.trace;
 
 import static java.lang.Thread.currentThread;
 
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.thread.ThreadHandler;
 import lombok.Getter;
 import org.sosy_lab.java_smt.api.BooleanFormula;
@@ -24,7 +25,7 @@ final class BranchElement extends Element {
      * @param constraint The constraint of the branch
      * @param iid The unique identifier of the branch element derived from branch-instruction
      */
-    BranchElement(boolean branched, BooleanFormula constraint, int iid) {
+    BranchElement(boolean branched, BooleanFormula constraint, long iid) {
         this.branched = branched;
         this.constraint = constraint;
         this.setIid(iid);
@@ -43,8 +44,15 @@ final class BranchElement extends Element {
      */
     @Override
     public String toString() {
-        FormulaManager fmgr =
-                ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+        FormulaManager fmgr;
+        try {
+            fmgr = ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+        } catch (NoThreadContextException e) {
+            return "Branch ("
+                    + branched
+                    + ") "
+                    + this.getIid();
+        }
         return "Branch ("
                 + branched
                 + ") "

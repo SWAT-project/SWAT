@@ -7,7 +7,7 @@ class Solution:
         inputs (any): The concrete inputs that were used to reach the new branching points
     """
 
-    def __init__(self, sol=None, inputs=None):
+    def __init__(self, sol=None, inputs=None, endpoint_id=None):
         """
         Initializes a new instance of the Solution class.
 
@@ -17,6 +17,7 @@ class Solution:
         """
         self.solution = sol
         self.inputs = inputs
+        self.endpoint_id = endpoint_id
 
     def get_solution(self):
         """

@@ -1,4 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
+
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * ARRAYLENGTH - Get length of array. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.arraylength">Java
@@ -10,10 +13,9 @@ public class ARRAYLENGTH extends Instruction {
      * Creates a new ARRAYLENGTH instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public ARRAYLENGTH(int iid, int mid) {
-        super(iid, mid);
+    public ARRAYLENGTH(long iid) {
+        super(iid);
     }
 
     /**
@@ -21,7 +23,7 @@ public class ARRAYLENGTH extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitARRAYLENGTH(this);
     }
 

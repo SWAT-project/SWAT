@@ -1,0 +1,55 @@
+# The configuration for openolat service is not finished and tested yet!
+# Please use the docker-compose-database-only.yml to start the database and start openolat with run.sh
+
+services:
+  mysql_openolat:
+    image: mysql:8.0.42
+    container_name: mysql_openolat
+    hostname: mysql
+    command: --bind-address=mysql --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 20000
+        hard: 40000
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_ALLOW_EMPTY_PASSWORD=true
+      - MYSQL_USER=openolat
+      - MYSQL_PASSWORD=olat
+      - MYSQL_DATABASE=olat
+    expose:
+      - "3306"
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - "./env/sql/openolat.sql:/docker-entrypoint-initdb.d/openolat.sql"
+      - "./env/sql/db.cnf:/etc/mysql/mysql.conf.d/db.cnf"
+
+  # The configuration for openolat service is not finished and tested yet!
+  # Please use the docker-compose-database-only.yml to start the database and start openolat with run.sh
+  openolat:
+    build:
+      context: .
+      dockerfile: docker/run/Dockerfile
+    hostname: openolat
+    environment:
+      - MYSQL_HOST=mysql
+      - WAIT_HOSTS=mysql:3306
+      - WAIT_TIMEOUT=60
+    volumes:
+      - ./temp/olat-logs:/home/openolat/logs
+      # - olatdata-regular:/home/openolat/olatdata
+      - ./temp/olat-data:/home/openolat/olatdata
+      - ../../../symbolic-executor/build/libs/symbolic-executor.jar:/swat/symbolic-executor.jar
+      # SWAT logs
+    depends_on:
+      - mysql_openolat
+    expose:
+      - "8088"
+    ports:
+      - "127.0.0.1:8088:8088"
+      - "127.0.0.1:8085:8085"
+
+volumes:
+  olatdata-regular:

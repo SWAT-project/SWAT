@@ -1,0 +1,34 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '2.7.6'
+    id 'io.spring.dependency-management' version '1.0.11.RELEASE'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot Starter Web includes Spring MVC, Tomcat, Jackson, etc.
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.targets.DemoSpringBootApplication'
+    }
+}
+
+tasks.register('runSpring1', JavaExec) {
+    mainClass = 'de.uzl.its.targets.DemoSpringBootApplication'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g', // Sets the maximum size, in bytes, of the memory allocation pool
+            "-Dconfig.path=${rootDir}/targets/applications/spring-1/swat.cfg", // Custom configuration path
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar", // Java agent for instrumentation
+            "-Djava.library.path=${rootDir}/libs/java-library-path", // Custom Java library path
+    ]
+    dependsOn ':symbolic-executor:assemble'
+    dependsOn build
+}

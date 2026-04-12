@@ -1,0 +1,1 @@
+curl -X GET "http://localhost:8080/optaplanner/facilityLocationProblem?capacity=4500&demand=900&facilityCount=30&consumerCount=60&swcLongitude=51.44&swcLatitude=-0.16&necLongitude=51.56&necLatitude=-0.01&averageSetupCost=50000&setupCostStandardDeviation=10000"

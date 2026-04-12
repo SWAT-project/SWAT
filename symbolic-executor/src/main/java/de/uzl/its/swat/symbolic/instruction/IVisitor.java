@@ -1,361 +1,373 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 public interface IVisitor {
-    void visitAALOAD(AALOAD inst);
+    void visitAALOAD(AALOAD inst) throws SymbolicInstructionException;
 
-    void visitAASTORE(AASTORE inst);
+    void visitAASTORE(AASTORE inst) throws SymbolicInstructionException;
 
-    void visitACONST_NULL(ACONST_NULL inst);
+    void visitACONST_NULL(ACONST_NULL inst) throws SymbolicInstructionException;
 
-    void visitALOAD(ALOAD inst);
+    void visitALOAD(ALOAD inst) throws SymbolicInstructionException;
 
-    void visitANEWARRAY(ANEWARRAY inst);
+    void visitANEWARRAY(ANEWARRAY inst) throws SymbolicInstructionException;
 
-    void visitARETURN(ARETURN inst);
+    void visitARETURN(ARETURN inst) throws SymbolicInstructionException;
 
-    void visitARRAYLENGTH(ARRAYLENGTH inst);
+    void visitARRAYLENGTH(ARRAYLENGTH inst) throws SymbolicInstructionException;
 
-    void visitASTORE(ASTORE inst);
+    void visitASTORE(ASTORE inst) throws SymbolicInstructionException;
 
-    void visitATHROW(ATHROW inst);
+    void visitATHROW(ATHROW inst) throws SymbolicInstructionException;
 
-    void visitBALOAD(BALOAD inst);
+    void visitBALOAD(BALOAD inst) throws SymbolicInstructionException;
 
-    void visitBASTORE(BASTORE inst);
+    void visitBASTORE(BASTORE inst) throws SymbolicInstructionException;
 
-    void visitBIPUSH(BIPUSH inst);
+    void visitBIPUSH(BIPUSH inst) throws SymbolicInstructionException;
 
-    void visitCALOAD(CALOAD inst);
+    void visitCALOAD(CALOAD inst) throws SymbolicInstructionException;
 
-    void visitCASTORE(CASTORE inst);
+    void visitCASTORE(CASTORE inst) throws SymbolicInstructionException;
 
-    void visitCHECKCAST(CHECKCAST inst);
+    void visitCHECKCAST(CHECKCAST inst) throws SymbolicInstructionException;
 
-    void visitD2F(D2F inst);
+    void visitCLINIT(CLINIT inst) throws SymbolicInstructionException;
 
-    void visitD2I(D2I inst);
+    void visitD2F(D2F inst) throws SymbolicInstructionException;
 
-    void visitD2L(D2L inst);
+    void visitD2I(D2I inst) throws SymbolicInstructionException;
 
-    void visitDADD(DADD inst);
+    void visitD2L(D2L inst) throws SymbolicInstructionException;
 
-    void visitDALOAD(DALOAD inst);
+    void visitDADD(DADD inst) throws SymbolicInstructionException;
 
-    void visitDASTORE(DASTORE inst);
+    void visitDALOAD(DALOAD inst) throws SymbolicInstructionException;
 
-    void visitDCMPG(DCMPG inst);
+    void visitDASTORE(DASTORE inst) throws SymbolicInstructionException;
 
-    void visitDCMPL(DCMPL inst);
+    void visitDCMPG(DCMPG inst) throws SymbolicInstructionException;
 
-    void visitDCONST_0(DCONST_0 inst);
+    void visitDCMPL(DCMPL inst) throws SymbolicInstructionException;
 
-    void visitDCONST_1(DCONST_1 inst);
+    void visitDCONST_0(DCONST_0 inst) throws SymbolicInstructionException;
 
-    void visitDDIV(DDIV inst);
+    void visitDCONST_1(DCONST_1 inst) throws SymbolicInstructionException;
 
-    void visitDLOAD(DLOAD inst);
+    void visitDDIV(DDIV inst) throws SymbolicInstructionException;
 
-    void visitDMUL(DMUL inst);
+    void visitDLOAD(DLOAD inst) throws SymbolicInstructionException;
 
-    void visitDNEG(DNEG inst);
+    void visitDMUL(DMUL inst) throws SymbolicInstructionException;
 
-    void visitDREM(DREM inst);
+    void visitDNEG(DNEG inst) throws SymbolicInstructionException;
 
-    void visitDRETURN(DRETURN inst);
+    void visitDREM(DREM inst) throws SymbolicInstructionException;
 
-    void visitDSTORE(DSTORE inst);
+    void visitDRETURN(DRETURN inst) throws SymbolicInstructionException;
 
-    void visitDSUB(DSUB inst);
+    void visitDSTORE(DSTORE inst) throws SymbolicInstructionException;
 
-    void visitDUP(DUP inst);
+    void visitDSUB(DSUB inst) throws SymbolicInstructionException;
 
-    void visitDUP2(DUP2 inst);
+    void visitDUP(DUP inst) throws SymbolicInstructionException;
 
-    void visitDUP2_X1(DUP2_X1 inst);
+    void visitDUP2(DUP2 inst) throws SymbolicInstructionException;
 
-    void visitDUP2_X2(DUP2_X2 inst);
+    void visitDUP2_X1(DUP2_X1 inst) throws SymbolicInstructionException;
 
-    void visitDUP_X1(DUP_X1 inst);
+    void visitDUP2_X2(DUP2_X2 inst) throws SymbolicInstructionException;
 
-    void visitDUP_X2(DUP_X2 inst);
+    void visitDUP_X1(DUP_X1 inst) throws SymbolicInstructionException;
 
-    void visitF2D(F2D inst);
+    void visitDUP_X2(DUP_X2 inst) throws SymbolicInstructionException;
 
-    void visitF2I(F2I inst);
+    void visitF2D(F2D inst) throws SymbolicInstructionException;
 
-    void visitF2L(F2L inst);
+    void visitF2I(F2I inst) throws SymbolicInstructionException;
 
-    void visitFADD(FADD inst);
+    void visitF2L(F2L inst) throws SymbolicInstructionException;
 
-    void visitFALOAD(FALOAD inst);
+    void visitFADD(FADD inst) throws SymbolicInstructionException;
 
-    void visitFASTORE(FASTORE inst);
+    void visitFALOAD(FALOAD inst) throws SymbolicInstructionException;
 
-    void visitFCMPG(FCMPG inst);
+    void visitFASTORE(FASTORE inst) throws SymbolicInstructionException;
 
-    void visitFCMPL(FCMPL inst);
+    void visitFCMPG(FCMPG inst) throws SymbolicInstructionException;
 
-    void visitFCONST_0(FCONST_0 inst);
+    void visitFCMPL(FCMPL inst) throws SymbolicInstructionException;
 
-    void visitFCONST_1(FCONST_1 inst);
+    void visitFCONST_0(FCONST_0 inst) throws SymbolicInstructionException;
 
-    void visitFCONST_2(FCONST_2 inst);
+    void visitFCONST_1(FCONST_1 inst) throws SymbolicInstructionException;
 
-    void visitFDIV(FDIV inst);
+    void visitFCONST_2(FCONST_2 inst) throws SymbolicInstructionException;
 
-    void visitFLOAD(FLOAD inst);
+    void visitFDIV(FDIV inst) throws SymbolicInstructionException;
 
-    void visitFMUL(FMUL inst);
+    void visitFLOAD(FLOAD inst) throws SymbolicInstructionException;
 
-    void visitFNEG(FNEG inst);
+    void visitFMUL(FMUL inst) throws SymbolicInstructionException;
 
-    void visitFREM(FREM inst);
+    void visitFNEG(FNEG inst) throws SymbolicInstructionException;
 
-    void visitFRETURN(FRETURN inst);
+    void visitFREM(FREM inst) throws SymbolicInstructionException;
 
-    void visitFSTORE(FSTORE inst);
+    void visitFRETURN(FRETURN inst) throws SymbolicInstructionException;
 
-    void visitFSUB(FSUB inst);
+    void visitFSTORE(FSTORE inst) throws SymbolicInstructionException;
 
-    void visitGETFIELD(GETFIELD inst);
+    void visitFSUB(FSUB inst) throws SymbolicInstructionException;
 
-    void visitGETSTATIC(GETSTATIC inst);
+    void visitGETFIELD(GETFIELD inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_Object(GETVALUE_Object<?> inst);
+    void visitGETSTATIC(GETSTATIC inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_boolean(GETVALUE_boolean inst);
+    void visitGETVALUE_Object(GETVALUE_Object<?> inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_byte(GETVALUE_byte inst);
+    void visitGETVALUE_boolean(GETVALUE_boolean inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_char(GETVALUE_char inst);
+    void visitGETVALUE_byte(GETVALUE_byte inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_double(GETVALUE_double inst);
+    void visitGETVALUE_char(GETVALUE_char inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_float(GETVALUE_float inst);
+    void visitGETVALUE_double(GETVALUE_double inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_int(GETVALUE_int inst);
+    void visitGETVALUE_float(GETVALUE_float inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_long(GETVALUE_long inst);
+    void visitGETVALUE_int(GETVALUE_int inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_short(GETVALUE_short inst);
+    void visitGETVALUE_long(GETVALUE_long inst) throws SymbolicInstructionException;
 
-    void visitGETVALUE_void(GETVALUE_void inst);
+    void visitGETVALUE_short(GETVALUE_short inst) throws SymbolicInstructionException;
 
-    void visitGOTO(GOTO inst);
+    void visitGETVALUE_void(GETVALUE_void inst) throws SymbolicInstructionException;
 
-    void visitI2B(I2B inst);
+    void visitGOTO(GOTO inst) throws SymbolicInstructionException;
 
-    void visitI2C(I2C inst);
+    void visitI2B(I2B inst) throws SymbolicInstructionException;
 
-    void visitI2D(I2D inst);
+    void visitI2C(I2C inst) throws SymbolicInstructionException;
 
-    void visitI2F(I2F inst);
+    void visitI2D(I2D inst) throws SymbolicInstructionException;
 
-    void visitI2L(I2L inst);
+    void visitI2F(I2F inst) throws SymbolicInstructionException;
 
-    void visitI2S(I2S inst);
+    void visitI2L(I2L inst) throws SymbolicInstructionException;
 
-    void visitIADD(IADD inst);
+    void visitI2S(I2S inst) throws SymbolicInstructionException;
 
-    void visitIALOAD(IALOAD inst);
+    void visitIADD(IADD inst) throws SymbolicInstructionException;
 
-    void visitIAND(IAND inst);
+    void visitIALOAD(IALOAD inst) throws SymbolicInstructionException;
 
-    void visitIASTORE(IASTORE inst);
+    void visitIAND(IAND inst) throws SymbolicInstructionException;
 
-    void visitICONST_0(ICONST_0 inst);
+    void visitIASTORE(IASTORE inst) throws SymbolicInstructionException;
 
-    void visitICONST_1(ICONST_1 inst);
+    void visitICONST_0(ICONST_0 inst) throws SymbolicInstructionException;
 
-    void visitICONST_2(ICONST_2 inst);
+    void visitICONST_1(ICONST_1 inst) throws SymbolicInstructionException;
 
-    void visitICONST_3(ICONST_3 inst);
+    void visitICONST_2(ICONST_2 inst) throws SymbolicInstructionException;
 
-    void visitICONST_4(ICONST_4 inst);
+    void visitICONST_3(ICONST_3 inst) throws SymbolicInstructionException;
 
-    void visitICONST_5(ICONST_5 inst);
+    void visitICONST_4(ICONST_4 inst) throws SymbolicInstructionException;
 
-    void visitICONST_M1(ICONST_M1 inst);
+    void visitICONST_5(ICONST_5 inst) throws SymbolicInstructionException;
 
-    void visitIDIV(IDIV inst);
+    void visitICONST_M1(ICONST_M1 inst) throws SymbolicInstructionException;
 
-    void visitIFEQ(IFEQ inst);
+    void visitIDIV(IDIV inst) throws SymbolicInstructionException;
 
-    void visitIFGE(IFGE inst);
+    void visitIFEQ(IFEQ inst) throws SymbolicInstructionException;
 
-    void visitIFGT(IFGT inst);
+    void visitIFGE(IFGE inst) throws SymbolicInstructionException;
 
-    void visitIFLE(IFLE inst);
+    void visitIFGT(IFGT inst) throws SymbolicInstructionException;
 
-    void visitIFLT(IFLT inst);
+    void visitIFLE(IFLE inst) throws SymbolicInstructionException;
 
-    void visitIFNE(IFNE inst);
+    void visitIFLT(IFLT inst) throws SymbolicInstructionException;
 
-    void visitIFNONNULL(IFNONNULL inst);
+    void visitIFNE(IFNE inst) throws SymbolicInstructionException;
 
-    void visitIFNULL(IFNULL inst);
+    void visitIFNONNULL(IFNONNULL inst) throws SymbolicInstructionException;
 
-    void visitIF_ACMPEQ(IF_ACMPEQ inst);
+    void visitIFNULL(IFNULL inst) throws SymbolicInstructionException;
 
-    void visitIF_ACMPNE(IF_ACMPNE inst);
+    void visitIF_ACMPEQ(IF_ACMPEQ inst) throws SymbolicInstructionException;
 
-    void visitIF_ICMPEQ(IF_ICMPEQ inst);
+    void visitIF_ACMPNE(IF_ACMPNE inst) throws SymbolicInstructionException;
 
-    void visitIF_ICMPGE(IF_ICMPGE inst);
+    void visitIF_ICMPEQ(IF_ICMPEQ inst) throws SymbolicInstructionException;
 
-    void visitIF_ICMPGT(IF_ICMPGT inst);
+    void visitIF_ICMPGE(IF_ICMPGE inst) throws SymbolicInstructionException;
 
-    void visitIF_ICMPLE(IF_ICMPLE inst);
+    void visitIF_ICMPGT(IF_ICMPGT inst) throws SymbolicInstructionException;
 
-    void visitIF_ICMPLT(IF_ICMPLT inst);
+    void visitIF_ICMPLE(IF_ICMPLE inst) throws SymbolicInstructionException;
 
-    void visitIF_ICMPNE(IF_ICMPNE inst);
+    void visitIF_ICMPLT(IF_ICMPLT inst) throws SymbolicInstructionException;
 
-    void visitIINC(IINC inst);
+    void visitIF_ICMPNE(IF_ICMPNE inst) throws SymbolicInstructionException;
 
-    void visitILOAD(ILOAD inst);
+    void visitIINC(IINC inst) throws SymbolicInstructionException;
 
-    void visitIMUL(IMUL inst);
+    void visitILOAD(ILOAD inst) throws SymbolicInstructionException;
 
-    void visitINEG(INEG inst);
+    void visitIMUL(IMUL inst) throws SymbolicInstructionException;
 
-    void visitINSTANCEOF(INSTANCEOF inst);
+    void visitINEG(INEG inst) throws SymbolicInstructionException;
 
-    void visitINVOKEDYNAMIC(INVOKEDYNAMIC inst);
+    void visitINSTANCEOF(INSTANCEOF inst) throws SymbolicInstructionException;
 
-    void visitINVOKEINTERFACE(INVOKEINTERFACE inst);
+    void visitINVOKEDYNAMIC(INVOKEDYNAMIC inst) throws SymbolicInstructionException;
 
-    void visitINVOKEMETHOD_EXCEPTION(INVOKEMETHOD_EXCEPTION inst);
+    void visitINVOKEINTERFACE(INVOKEINTERFACE inst) throws SymbolicInstructionException;
 
-    void visitINVOKESPECIAL(INVOKESPECIAL inst);
+    void visitINVOKEMETHOD_EXCEPTION(INVOKEMETHOD_EXCEPTION inst) throws SymbolicInstructionException;
 
-    void visitINVOKESTATIC(INVOKESTATIC inst);
+    void visitINVOKESPECIAL(INVOKESPECIAL inst) throws SymbolicInstructionException;
 
-    void visitINVOKEVIRTUAL(INVOKEVIRTUAL inst);
+    void visitINVOKESTATIC(INVOKESTATIC inst) throws SymbolicInstructionException;
 
-    void visitIOR(IOR inst);
+    void visitINVOKEVIRTUAL(INVOKEVIRTUAL inst) throws SymbolicInstructionException;
 
-    void visitIREM(IREM inst);
+    void visitIOR(IOR inst) throws SymbolicInstructionException;
 
-    void visitIRETURN(IRETURN inst);
+    void visitIREM(IREM inst) throws SymbolicInstructionException;
 
-    void visitISHL(ISHL inst);
+    void visitIRETURN(IRETURN inst) throws SymbolicInstructionException;
 
-    void visitISHR(ISHR inst);
+    void visitISHL(ISHL inst) throws SymbolicInstructionException;
 
-    void visitISTORE(ISTORE inst);
+    void visitISHR(ISHR inst) throws SymbolicInstructionException;
 
-    void visitISUB(ISUB inst);
+    void visitISTORE(ISTORE inst) throws SymbolicInstructionException;
 
-    void visitIUSHR(IUSHR inst);
+    void visitISUB(ISUB inst) throws SymbolicInstructionException;
 
-    void visitIXOR(IXOR inst);
+    void visitIUSHR(IUSHR inst) throws SymbolicInstructionException;
 
-    void visitJSR(JSR inst);
+    void visitIXOR(IXOR inst) throws SymbolicInstructionException;
 
-    void visitL2D(L2D inst);
+    void visitJSR(JSR inst) throws SymbolicInstructionException;
 
-    void visitL2F(L2F inst);
+    void visitL2D(L2D inst) throws SymbolicInstructionException;
 
-    void visitL2I(L2I inst);
+    void visitL2F(L2F inst) throws SymbolicInstructionException;
 
-    void visitLADD(LADD inst);
+    void visitL2I(L2I inst) throws SymbolicInstructionException;
 
-    void visitLALOAD(LALOAD inst);
+    void visitLADD(LADD inst) throws SymbolicInstructionException;
 
-    void visitLAND(LAND inst);
+    void visitLALOAD(LALOAD inst) throws SymbolicInstructionException;
 
-    void visitLASTORE(LASTORE inst);
+    void visitLAND(LAND inst) throws SymbolicInstructionException;
 
-    void visitLCMP(LCMP inst);
+    void visitLASTORE(LASTORE inst) throws SymbolicInstructionException;
 
-    void visitLCONST_0(LCONST_0 inst);
+    void visitLCMP(LCMP inst) throws SymbolicInstructionException;
 
-    void visitLCONST_1(LCONST_1 inst);
+    void visitLCONST_0(LCONST_0 inst) throws SymbolicInstructionException;
 
-    void visitLDC_String(LDC_String inst);
+    void visitLCONST_1(LCONST_1 inst) throws SymbolicInstructionException;
 
-    void visitLDC_double(LDC_double inst);
+    void visitLDC_String(LDC_String inst) throws SymbolicInstructionException;
 
-    void visitLDC_float(LDC_float inst);
+    void visitLDC_double(LDC_double inst) throws SymbolicInstructionException;
 
-    void visitLDC_int(LDC_int inst);
+    void visitLDC_float(LDC_float inst) throws SymbolicInstructionException;
 
-    void visitLDC_long(LDC_long inst);
+    void visitLDC_int(LDC_int inst) throws SymbolicInstructionException;
 
-    void visitLDC_Object(LDC_Object inst);
+    void visitLDC_long(LDC_long inst) throws SymbolicInstructionException;
 
-    void visitLDIV(LDIV inst);
+    void visitLDC_Object(LDC_Object inst) throws SymbolicInstructionException;
 
-    void visitLLOAD(LLOAD inst);
+    void visitLDIV(LDIV inst) throws SymbolicInstructionException;
 
-    void visitLMUL(LMUL inst);
+    void visitLLOAD(LLOAD inst) throws SymbolicInstructionException;
 
-    void visitLNEG(LNEG inst);
+    void visitLMUL(LMUL inst) throws SymbolicInstructionException;
 
-    void visitLOOKUPSWITCH(LOOKUPSWITCH inst);
+    void visitLNEG(LNEG inst) throws SymbolicInstructionException;
 
-    void visitLOR(LOR inst);
+    void visitLOOKUPSWITCH(LOOKUPSWITCH inst) throws SymbolicInstructionException;
 
-    void visitLREM(LREM inst);
+    void visitLOR(LOR inst) throws SymbolicInstructionException;
 
-    void visitLRETURN(LRETURN inst);
+    void visitLREM(LREM inst) throws SymbolicInstructionException;
 
-    void visitLSHL(LSHL inst);
+    void visitLRETURN(LRETURN inst) throws SymbolicInstructionException;
 
-    void visitLSHR(LSHR inst);
+    void visitLSHL(LSHL inst) throws SymbolicInstructionException;
 
-    void visitLSTORE(LSTORE inst);
+    void visitLSHR(LSHR inst) throws SymbolicInstructionException;
 
-    void visitLSUB(LSUB inst);
+    void visitLSTORE(LSTORE inst) throws SymbolicInstructionException;
 
-    void visitLUSHR(LUSHR inst);
+    void visitLSUB(LSUB inst) throws SymbolicInstructionException;
 
-    void visitLXOR(LXOR inst);
+    void visitLUSHR(LUSHR inst) throws SymbolicInstructionException;
 
-    void visitMONITORENTER(MONITORENTER inst);
+    void visitLXOR(LXOR inst) throws SymbolicInstructionException;
 
-    void visitMONITOREXIT(MONITOREXIT inst);
+    void visitMONITORENTER(MONITORENTER inst) throws SymbolicInstructionException;
 
-    void visitMULTIANEWARRAY(MULTIANEWARRAY inst);
+    void visitMONITOREXIT(MONITOREXIT inst) throws SymbolicInstructionException;
 
-    void visitNEW(NEW inst);
+    void visitMULTIANEWARRAY(MULTIANEWARRAY inst) throws SymbolicInstructionException;
 
-    void visitNEWARRAY(NEWARRAY inst);
+    void visitNEW(NEW inst) throws SymbolicInstructionException;
 
-    void visitNOP(NOP inst);
+    void visitNEWARRAY(NEWARRAY inst) throws SymbolicInstructionException;
 
-    void visitPOP(POP inst);
+    void visitNOP(NOP inst) throws SymbolicInstructionException;
 
-    void visitPOP2(POP2 inst);
+    void visitPOP(POP inst) throws SymbolicInstructionException;
 
-    void visitPUTFIELD(PUTFIELD inst);
+    void visitPOP2(POP2 inst) throws SymbolicInstructionException;
 
-    void visitPUTSTATIC(PUTSTATIC inst);
+    void visitPUTFIELD(PUTFIELD inst) throws SymbolicInstructionException;
 
-    void visitRET(RET inst);
+    void visitPUTSTATIC(PUTSTATIC inst) throws SymbolicInstructionException;
 
-    void visitRETURN(RETURN inst);
+    void visitRET(RET inst) throws SymbolicInstructionException;
 
-    void visitSALOAD(SALOAD inst);
+    void visitRETURN(RETURN inst) throws SymbolicInstructionException;
 
-    void visitSASTORE(SASTORE inst);
+    void visitSALOAD(SALOAD inst) throws SymbolicInstructionException;
 
-    void visitSIPUSH(SIPUSH inst);
+    void visitSASTORE(SASTORE inst) throws SymbolicInstructionException;
 
-    void visitSWAP(SWAP inst);
+    void visitSIPUSH(SIPUSH inst) throws SymbolicInstructionException;
 
-    void visitTABLESWITCH(TABLESWITCH inst);
+    void visitSWAP(SWAP inst) throws SymbolicInstructionException;
 
-    void visitINVOKEMETHOD_END(INVOKEMETHOD_END inst);
+    void visitTABLESWITCH(TABLESWITCH inst) throws SymbolicInstructionException;
 
-    void visitMAKE_SYMBOLIC(MAKE_SYMBOLIC inst);
+    void visitINVOKEMETHOD_END(INVOKEMETHOD_END inst) throws SymbolicInstructionException;
 
-    void visitLOOP_BEGIN(LOOP_BEGIN inst);
+    void visitINVOKECLINIT_END(INVOKECLINIT_END inst) throws SymbolicInstructionException;
 
-    void visitLOOP_END(LOOP_END inst);
+    void visitMAKE_SYMBOLIC(MAKE_SYMBOLIC inst) throws SymbolicInstructionException;
 
-    void visitSPECIAL(SPECIAL inst);
+    void visitLOOP_BEGIN(LOOP_BEGIN inst) throws SymbolicInstructionException;
 
-    void setNext(Instruction next);
+    void visitLOOP_END(LOOP_END inst) throws SymbolicInstructionException;
+
+    void visitSPECIAL(SPECIAL inst) throws SymbolicInstructionException;
+
+    void setNextInst(Instruction inst) throws SymbolicInstructionException;
+
+    void visitUNPACK_INVOKE_PARAMETER(UNPACK_INVOKE_PARAMETER inst) throws SymbolicInstructionException;
+
+    void visitSET_FIELD_REFLECTION(SET_FIELD_REFLECTION inst) throws SymbolicInstructionException;
+
+    void visitGET_FIELD_REFLECTION(GET_FIELD_REFLECTION inst) throws SymbolicInstructionException;
 }

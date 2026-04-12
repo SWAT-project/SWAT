@@ -1,0 +1,23 @@
+{
+  "SwaggerSpecFilePath": [
+    "/home/developer/restler-working-dir/rest-test-app-open-api3.json"
+  ],
+  "GrammarOutputDirectoryPath": "/home/developer/restler-repo/Compile",
+  "CustomDictionaryFilePath": "/home/developer/restler-repo/Compile/defaultDict.json",
+  "IncludeOptionalParameters": true,
+  "UseHeaderExamples": true,
+  "UsePathExamples": false,
+  "UseQueryExamples": true,
+  "UseBodyExamples": true,
+  "UseAllExamplePayloads": false,
+  "DiscoverExamples": false,
+  "ExamplesDirectory": "",
+  "DataFuzzing": true,
+  "ReadOnlyFuzz": false,
+  "ResolveQueryDependencies": true,
+  "ResolveBodyDependencies": true,
+  "ResolveHeaderDependencies": false,
+  "UseRefreshableToken": true,
+  "AllowGetProducers": false,
+  "TrackFuzzedParameterNames": false
+}

@@ -1,0 +1,18 @@
+services:
+  mongodb-genomenexus:
+    image: local-genome-nexus-importer
+    container_name: gn-mongo
+    environment:
+      - REF_ENSEMBL_VERSION=${REF_ENSEMBL_VERSION}
+      - SPECIES=${SPECIES}
+    ports:
+      - "127.0.0.1:27017:27017"
+
+  mongodb-genomenexus-swat:
+    image: local-genome-nexus-importer
+    container_name: gn-mongo-swat
+    environment:
+      - REF_ENSEMBL_VERSION=${REF_ENSEMBL_VERSION}
+      - SPECIES=${SPECIES}
+    ports:
+      - "127.0.0.1:27018:27017"

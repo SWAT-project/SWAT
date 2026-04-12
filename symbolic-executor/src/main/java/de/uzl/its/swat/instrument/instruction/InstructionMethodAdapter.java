@@ -1,28 +1,45 @@
 package de.uzl.its.swat.instrument.instruction;
 
+import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.exceptions.InstrumentationException;
+import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.config.Config;
+import de.uzl.its.swat.coverage.BranchCoverage;
 import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
 import de.uzl.its.swat.instrument.TryCatchBlock;
 import de.uzl.its.swat.instrument.Utils;
-import de.uzl.its.swat.symbolic.ClassNames;
-import de.uzl.its.swat.symbolic.ObjectInfo;
+import de.uzl.its.swat.metadata.ClassDepot;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
-import java.util.LinkedList;
-import org.objectweb.asm.Handle;
-import org.objectweb.asm.Label;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
+import java.util.List;
+
+import de.uzl.its.swat.metadata.ClassDepotInstrumentation;
+import org.objectweb.asm.*;
 
 /** A visitor to visit a Java method */
 public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     boolean isInit;
+    boolean isStatic;
     boolean isSuperInitCalled;
-    LinkedList<TryCatchBlock> tryCatchBlocks;
     boolean calledNew = false;
+    private boolean seenCode = false;
 
     private final GlobalStateForInstrumentation instrumentationState;
-    private final ClassNames classNames;
+    private final ClassDepotInstrumentation classDepot = ClassDepot.getInstrumentationInstance();
     private final String methodName;
+    private final String desc;
+    private final String owner;
+    // private final String parentCname;
+    private long clinitInvokeId = -1;
+
+    List<String> setFieldMethods = Arrays.asList("set", "setBoolean", "setByte", "setChar", "setDouble",
+            "setFloat", "setInt", "setLong", "setShort");
+    List<String> getFieldMethods = Arrays.asList("get", "getBoolean", "getByte", "getChar", "getDouble",
+            "getFloat", "getInt", "getLong", "getShort");
+
     private final Config config = Config.instance();
 
     /**
@@ -31,35 +48,61 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      * @param mv The MethodVisitor that should be used
      * @param isInit Determines if the method is an initializer method
      * @param instrumentationState The current state of instrumentation
-     * @param classNames The class names
      * @param methodName The Method name
      */
     public InstructionMethodAdapter(
             MethodVisitor mv,
             boolean isInit,
+            boolean isStatic,
             GlobalStateForInstrumentation instrumentationState,
-            ClassNames classNames,
-            String methodName) {
+            String methodName,
+            String desc,
+            String owner) {
         super(ASM9, mv);
         this.isInit = isInit;
+        this.isStatic = isStatic;
         this.isSuperInitCalled = false;
-        tryCatchBlocks = new LinkedList<TryCatchBlock>();
 
         this.instrumentationState = instrumentationState;
-        this.classNames = classNames;
         this.methodName = methodName;
+        this.owner = owner;
+        this.desc = desc;
     }
 
     /** Starts the visit of the method's code, if any (i.e. non abstract method). */
     @Override
     public void visitCode() {
-        if (methodName.equals("<clinit>")) {
-            addSpecialInsn(mv, 2);
-        }
-        instrumentationState.incMid();
+        GlobalStateForInstrumentation.instance.setActiveInstrumentation(true);
+        seenCode = true;
+        // ToDo: Understand why or whether visitCode at the beginning is correct (rather than at the
+        // end)
         mv.visitCode();
+
+        long mIdx = ClassDepot.getInstrumentationInstance().getMethodIdxForInstrumentation(owner, methodName, desc);
+        instrumentationState.setMid(mIdx);
+
+        if (methodName.equals("<clinit>")) {
+            int cIdx = classDepot.getClassIndex(this.owner);
+            String clinit_desc = "(JIJ)V"; // (long iid, int cIdx, long invokeId)
+            addJpushInsn(mv, instrumentationState.incAndGetId());
+            addBipushInsn(mv, cIdx);
+            clinitInvokeId = instrumentationState.incAndGetInvokeId();
+            addJpushInsn(mv, clinitInvokeId);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    config.getInstrumentationDispatcher(),
+                    "CLINIT",
+                    clinit_desc,
+                    false);
+
+        } else {
+            addSpecialInsn(mv, 0);
+        }
     }
 
+    private static void addJpushInsn(MethodVisitor mv, long val) {
+        Utils.addJpushInsn(mv, val);
+    }
     /** Push a value onto the stack. */
     private static void addBipushInsn(MethodVisitor mv, int val) {
         Utils.addBipushInsn(mv, val);
@@ -76,27 +119,17 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     }
 
     private void addInsn(MethodVisitor mv, String insn, boolean exception, int opcode) {
-        String desc = "()V";
-        if (config.isInstrumentationInstructionIds()) {
-            desc = "(II)V";
-            addBipushInsn(mv, instrumentationState.incAndGetId());
-            addBipushInsn(mv, instrumentationState.getMid());
-        } else if (exception) {
-            desc = "(I)V";
-            addBipushInsn(mv, instrumentationState.incAndGetId());
-        }
+        String desc = "(J)V";
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+
         mv.visitMethodInsn(INVOKESTATIC, config.getInstrumentationDispatcher(), insn, desc, false);
         mv.visitInsn(opcode);
     }
 
     /** Add var insn and its instrumentation code. */
     private void addVarInsn(MethodVisitor mv, int var, String insn, int opcode) {
-        String desc = "(I)V";
-        if (config.isInstrumentationInstructionIds()) {
-            desc = "(III)V";
-            addBipushInsn(mv, instrumentationState.incAndGetId());
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
+        String desc = "(JI)V";
+        addJpushInsn(mv, instrumentationState.incAndGetId());
         addBipushInsn(mv, var);
         mv.visitMethodInsn(INVOKESTATIC, config.getInstrumentationDispatcher(), insn, desc, false);
 
@@ -104,12 +137,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     }
 
     private void addTypeInsn(MethodVisitor mv, String type, int opcode, String name) {
-        String desc = "(ILjava/lang/String;)V";
-        addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstrumentationInstructionIds()) {
-            desc = "(IILjava/lang/String;)V";
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
+        String desc = "(JLjava/lang/String;)V";
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+
         mv.visitLdcInsn(type);
         mv.visitMethodInsn(INVOKESTATIC, config.getInstrumentationDispatcher(), name, desc, false);
         mv.visitTypeInsn(opcode, type);
@@ -565,32 +595,48 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
             case IRETURN:
                 ex = true;
                 addInsn(mv, "IRETURN", ex, opcode);
-                addSpecialInsn(mv, 0); // for non-exceptional path
+                // addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
             case LRETURN:
                 ex = true;
                 addInsn(mv, "LRETURN", ex, opcode);
-                addSpecialInsn(mv, 0); // for non-exceptional path
+                // addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
             case FRETURN:
                 ex = true;
                 addInsn(mv, "FRETURN", ex, opcode);
-                addSpecialInsn(mv, 0); // for non-exceptional path
+                // addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
             case DRETURN:
                 ex = true;
                 addInsn(mv, "DRETURN", ex, opcode);
-                addSpecialInsn(mv, 0); // for non-exceptional path
+                // addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
             case ARETURN:
                 ex = true;
                 addInsn(mv, "ARETURN", ex, opcode);
-                addSpecialInsn(mv, 0); // for non-exceptional path
+                // addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
             case RETURN:
                 ex = true;
-                addInsn(mv, "RETURN", ex, opcode);
-                addSpecialInsn(mv, 0); // for non-exceptional path
+                // addInsn(mv, "RETURN", ex, opcode);
+                String desc = "(J)V";
+                addJpushInsn(mv, instrumentationState.incAndGetId());
+                mv.visitMethodInsn(
+                        INVOKESTATIC, config.getInstrumentationDispatcher(), "RETURN", desc, false);
+                if (methodName.equals("<clinit>")) {
+                    addJpushInsn(mv, instrumentationState.incAndGetId());
+                    addJpushInsn(mv, clinitInvokeId);
+                    mv.visitMethodInsn(
+                            INVOKESTATIC,
+                            config.getInstrumentationDispatcher(),
+                            "INVOKECLINIT_END",
+                            "(JJ)V",
+                            false);
+                }
+                mv.visitInsn(opcode);
+
+                // addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
             case ARRAYLENGTH:
                 ex = true;
@@ -613,8 +659,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addInsn(mv, "MONITOREXIT", ex, opcode);
                 addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
-            default:
-                throw new RuntimeException("Unknown instruction opcode " + opcode);
+            default: throw new InstrumentationException("Unknown instruction opcode " + opcode);
         }
     }
 
@@ -671,7 +716,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addVarInsn(mv, var, "RET", opcode);
                 break;
             default:
-                throw new RuntimeException("Unknown var insn");
+                throw new InstrumentationException("Unknown var insn");
         }
     }
 
@@ -688,16 +733,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitIntInsn(int opcode, int operand) {
+        String desc = "(JI)V";
+        addJpushInsn(mv, instrumentationState.incAndGetId());
 
-        String desc = "(I)V";
-        if (config.isInstrumentationInstructionIds()) {
-            desc = "(III)V";
-            addBipushInsn(mv, instrumentationState.incAndGetId());
-            addBipushInsn(mv, instrumentationState.getMid());
-        } else if (opcode == NEWARRAY) {
-            desc = "(II)V";
-            addBipushInsn(mv, instrumentationState.incAndGetId());
-        }
         switch (opcode) {
             case BIPUSH:
                 addBipushInsn(mv, operand);
@@ -721,7 +759,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 0); // for non-exceptional path
                 return;
             default:
-                throw new RuntimeException("Unknown int instruction opcode " + opcode);
+                throw new InstrumentationException("Unknown int instruction opcode " + opcode);
         }
         mv.visitIntInsn(opcode, operand);
     }
@@ -739,17 +777,14 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     public void visitTypeInsn(int opcode, String type) {
         switch (opcode) {
             case NEW:
-                String desc = "(ILjava/lang/String;I)V";
-                addBipushInsn(mv, instrumentationState.incAndGetId());
-                if (config.isInstrumentationInstructionIds()) {
-                    desc = "(IILjava/lang/String;I)V";
-                    addBipushInsn(mv, instrumentationState.getMid());
-                }
+                String desc = "(JLjava/lang/String;I)V";
+                addJpushInsn(mv, instrumentationState.incAndGetId());
                 mv.visitLdcInsn(type);
-                int cIdx = classNames.get(type);
+                int cIdx = classDepot.getClassIndex(type);
                 addBipushInsn(mv, cIdx);
                 mv.visitMethodInsn(
                         INVOKESTATIC, config.getInstrumentationDispatcher(), "NEW", desc, false);
+
                 mv.visitTypeInsn(opcode, type);
                 addSpecialInsn(mv, 0); // for non-exceptional path
 
@@ -769,7 +804,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addValueReadInsn(mv, "I", "GETVALUE_");
                 break;
             default:
-                throw new RuntimeException("Unknown type instruction opcode " + opcode);
+                throw new InstrumentationException("Unknown type instruction opcode " + opcode);
         }
     }
 
@@ -785,19 +820,14 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitFieldInsn(int opcode, String owner, String name, String desc) {
-        String d = "(IIILjava/lang/String;)V";
-        addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstrumentationInstructionIds()) {
-            d = "(IIIILjava/lang/String;)V";
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
-        int cIdx = classNames.get(owner);
+        String d = "(JILjava/lang/String;Ljava/lang/String;)V";
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+
+        int cIdx = classDepot.getClassIndex(owner);
         addBipushInsn(mv, cIdx);
-        ObjectInfo tmp = classNames.get(cIdx);
         switch (opcode) {
             case GETSTATIC:
-                int fIdx = tmp.getIdx(name, true);
-                addBipushInsn(mv, fIdx);
+                mv.visitLdcInsn(name);
                 mv.visitLdcInsn(desc);
 
                 mv.visitMethodInsn(
@@ -805,21 +835,22 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
                 mv.visitFieldInsn(opcode, owner, name, desc);
                 addSpecialInsn(mv, 0); // for non-exceptional path
+
                 addValueReadInsn(mv, owner + ":" + name + ":" + desc, "GETVALUE_");
                 break;
             case PUTSTATIC:
-                fIdx = tmp.getIdx(name, true);
-                addBipushInsn(mv, fIdx);
+                mv.visitLdcInsn(name);
                 mv.visitLdcInsn(desc);
 
                 mv.visitMethodInsn(
                         INVOKESTATIC, config.getInstrumentationDispatcher(), "PUTSTATIC", d, false);
+
                 mv.visitFieldInsn(opcode, owner, name, desc);
                 addSpecialInsn(mv, 0); // for non-exceptional path
+
                 break;
             case GETFIELD:
-                fIdx = tmp.getIdx(name, false);
-                addBipushInsn(mv, fIdx);
+                mv.visitLdcInsn(name);
                 mv.visitLdcInsn(desc);
 
                 mv.visitMethodInsn(
@@ -829,8 +860,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addValueReadInsn(mv, owner + ":" + name + ":" + desc, "GETVALUE_");
                 break;
             case PUTFIELD:
-                fIdx = tmp.getIdx(name, false);
-                addBipushInsn(mv, fIdx);
+                mv.visitLdcInsn(name);
                 mv.visitLdcInsn(desc);
 
                 mv.visitMethodInsn(
@@ -839,70 +869,700 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
             default:
-                throw new RuntimeException("Unknown field access opcode " + opcode);
+                throw new InstrumentationException("Unknown field access opcode " + opcode);
         }
     }
 
     private String getMethodNameByOpcode(int opcode) {
-        switch (opcode) {
-            case INVOKESPECIAL:
-                return "INVOKESPECIAL";
-            case INVOKESTATIC:
-                return "INVOKESTATIC";
-            case INVOKEINTERFACE:
-                return "INVOKEINTERFACE";
-            case INVOKEVIRTUAL:
-                return "INVOKEVIRTUAL";
-            case INVOKEDYNAMIC:
-                return "INVOKEDYNAMIC";
-            default:
-                throw new RuntimeException("Unknown opcode for method");
+        return switch (opcode) {
+            case INVOKESPECIAL -> "INVOKESPECIAL";
+            case INVOKESTATIC -> "INVOKESTATIC";
+            case INVOKEINTERFACE -> "INVOKEINTERFACE";
+            case INVOKEVIRTUAL -> "INVOKEVIRTUAL";
+            case INVOKEDYNAMIC -> "INVOKEDYNAMIC";
+            default -> throw new InstrumentationException("Unknown method access opcode " + opcode);
+        };
+    }
+
+    @SuppressWarnings("unused")
+    public static String getInitDescriptorFromParameterList(Class<?>[] constructorParameters) {
+
+        StringBuilder initDescriptor = new StringBuilder("(");
+        if (constructorParameters != null) {
+            for (Class<?> p : constructorParameters) {
+                String internalName = Type.getType(p).getDescriptor();
+                initDescriptor.append(internalName);
+            }
         }
+        return initDescriptor.append(")V").toString();
+    }
+
+    // First implementation only works for constructors without parameters
+    private void handleClassCreationByReflection(long invokeSpecialInvokeId) {
+
+        // get class name
+        mv.visitInsn(SWAP);
+        // DUP for getDeclaringClass
+        mv.visitInsn(DUP);
+        // DUP for Constructor Parameters
+        mv.visitInsn(DUP);
+
+        mv.visitMethodInsn(
+                INVOKEVIRTUAL,
+                "java/lang/reflect/Constructor",
+                "getParameterTypes",
+                "()[Ljava/lang/Class;",
+                false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                "getInitDescriptorFromParameterList",
+                "([Ljava/lang/Class;)Ljava/lang/String;",
+                false);
+
+        // Getting java/lang/Class object to retrieve constructor
+        mv.visitInsn(SWAP);
+
+        mv.visitMethodInsn(
+                INVOKEVIRTUAL,
+                "java/lang/reflect/Constructor",
+                "getDeclaringClass",
+                "()Ljava/lang/Class;",
+                false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                "org/objectweb/asm/Type",
+                "getInternalName",
+                "(Ljava/lang/Class;)Ljava/lang/String;",
+                false);
+
+        // Type name for NEW is on the stack; we duplicate because we need it to get the cidx
+        mv.visitInsn(DUP);
+        // Duplicating once more for the invoke special call at the end
+        mv.visitInsn(DUP);
+
+        long reflectNewId = instrumentationState.incAndGetId();
+        addJpushInsn(mv, reflectNewId);
+        // Duplicating the ID before the type name on the stack
+        mv.visitInsn(DUP2_X2);
+        // Afterward the ID on top of the stack can be discarded
+        mv.visitInsn(POP2);
+
+        // Finally, get the ClassDepot instance and put the cIdx on the stack
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                "de/uzl/its/swat/metadata/ClassDepot",
+                "getRuntimeInstance",
+                "()Lde/uzl/its/swat/metadata/ClassDepotRuntime;",
+                false);
+        mv.visitInsn(SWAP);
+        mv.visitMethodInsn(
+                INVOKEINTERFACE,
+                "de/uzl/its/swat/metadata/ClassDepotRuntime",
+                "getClassIndex",
+                "(Ljava/lang/String;)I",
+                true);
+
+        String descriptorNew = "(JLjava/lang/String;I)V";
+
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "SWAP", "(J)V", false);
+
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "POP", "(J)V", false);
+
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "NEW", descriptorNew, false);
+        addSpecialInsn(mv, 0);
+
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "DUP_X1", "(J)V", false);
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        mv.visitMethodInsn(
+                INVOKESTATIC, config.getInstrumentationDispatcher(), "SWAP", "(J)V", false);
+
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                config.getInstrumentationDispatcher(),
+                "UNPACK_INVOKE_PARAMETER",
+                "(J)V",
+                false);
+
+        // Filling the stack for INVOKESPECIAL, we should already have owner string on the stack,
+        // however, we have
+        // to move the instruction id and invoke id in front of that
+        // And before doing that, we swap the descriptor and classname
+        mv.visitInsn(SWAP);
+
+        long reflectInvokeSpecialId = instrumentationState.incAndGetId();
+        addJpushInsn(mv, reflectInvokeSpecialId);
+        mv.visitInsn(DUP2_X2);
+        mv.visitInsn(POP2);
+
+        addJpushInsn(mv, invokeSpecialInvokeId);
+        mv.visitInsn(DUP2_X2);
+        mv.visitInsn(POP2);
+
+        String invokeSpecialMethodName = "<init>";
+
+        mv.visitLdcInsn(invokeSpecialMethodName);
+        // mv.visitLdcInsn(invokeSpecialMethodDesc);
+        // Function name must and descriptor must be swapped.
+        mv.visitInsn(SWAP);
+        // There is another signature which additionally includes the method id, not implemented yet
+
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                config.getInstrumentationDispatcher(),
+                "INVOKESPECIAL",
+                "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+                false);
+
+        mv.visitInsn(SWAP);
+    }
+
+    @SuppressWarnings("unused")
+    public static MethodInvokeInformationHolder methodInvokeReceiver(
+            Method m, Object obj, Object[] args) {
+        String methodDescriptor = Type.getMethodDescriptor(m);
+        String methodName = m.getName();
+        // Class[] argTypes = m.getParameterTypes();
+        // Class returnType = m.getReturnType();
+        // ToDo: Do we have to add an L prefix?
+
+        boolean isStatic = Modifier.isStatic(m.getModifiers());
+
+        String owner;
+        if (isStatic) {
+            owner = Type.getInternalName(m.getDeclaringClass());
+        } else {
+            SWATAssert.enforce(obj != null, "Object cannot be null");
+            owner = Type.getInternalName(obj.getClass());
+        }
+
+        return new MethodInvokeInformationHolder(
+                methodName, methodDescriptor, owner, m, obj, args);
+    }
+
+    @SuppressWarnings("unused")
+    public static Method createSymbolicInvokeVirtualViaMethodInvoke(
+            MethodInvokeInformationHolder info) {
+        String dispatcherName = Config.instance().getInstrumentationDispatcher();
+        Method invokeVirtualMethod = null;
+        try {
+            Class<?> dispatcherClass = Class.forName(dispatcherName.replace("/", "."));
+            invokeVirtualMethod =
+                    dispatcherClass.getMethod(
+                            "INVOKEVIRTUAL",
+                            long.class,
+                            long.class,
+                            String.class,
+                            String.class,
+                            String.class);
+        } catch (Exception e) {
+            throw new InstrumentationException(e);
+        }
+
+        return invokeVirtualMethod;
+    }
+
+    private void handleMethodInvokeCall(long invokeId, long iid) {
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                "methodInvokeReceiver",
+                "(Ljava/lang/reflect/Method;Ljava/lang/Object;[Ljava/lang/Object;)Lde/uzl/its/swat/instrument/instruction/MethodInvokeInformationHolder;",
+                false);
+        mv.visitInsn(DUP);
+        mv.visitInsn(DUP);
+        // Prepare stack for invoke call
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                "createSymbolicInvokeVirtualViaMethodInvoke",
+                "(Lde/uzl/its/swat/instrument/instruction/MethodInvokeInformationHolder;)Ljava/lang/reflect/Method;",
+                false);
+        // place owner (java.lang.reflect.Method object) for invokevirtual via method.invoke
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        // place first parameter for invoke virtual
+        mv.visitInsn(ACONST_NULL);
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        // place second parameter for invoke virtual on the stack, this in a varargs array of
+        // java/lang/Objects
+        mv.visitInsn(ICONST_5);
+        mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
+        mv.visitInsn(DUP);
+        // Add first parameter of the dispatchers invokevirtual to the array
+        mv.visitInsn(ICONST_0);
+        mv.visitLdcInsn(iid);
+        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+        mv.visitInsn(AASTORE);
+        mv.visitInsn(DUP);
+        // Add the second parameter of the dispatchers invokevirtual
+        mv.visitInsn(ICONST_1);
+        mv.visitLdcInsn(invokeId);
+        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+        mv.visitInsn(AASTORE);
+
+        // Add the third parameter of the dispatchers invokevirtual to the array
+        // (owner)
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        mv.visitInsn(DUP_X1);
+        mv.visitFieldInsn(
+                GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/MethodInvokeInformationHolder",
+                "owner",
+                "Ljava/lang/String;");
+        mv.visitInsn(SWAP);
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(SWAP);
+        mv.visitInsn(ICONST_2);
+        mv.visitInsn(SWAP);
+        mv.visitInsn(AASTORE);
+        // place  fourth parameter of the dispatchers invokevirtual in the array
+        // (name)
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        mv.visitInsn(DUP_X1);
+        mv.visitFieldInsn(
+                GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/MethodInvokeInformationHolder",
+                "methodName",
+                "Ljava/lang/String;");
+        mv.visitInsn(SWAP);
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(SWAP);
+        mv.visitInsn(ICONST_3);
+        mv.visitInsn(SWAP);
+        mv.visitInsn(AASTORE);
+        // place the fifth parameter of the dispatchers invokevirtual in the array
+        // (desc)
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        mv.visitInsn(DUP_X1);
+        mv.visitFieldInsn(
+                GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/MethodInvokeInformationHolder",
+                "methodDescriptor",
+                "Ljava/lang/String;");
+        mv.visitInsn(SWAP);
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(SWAP);
+        mv.visitInsn(ICONST_4);
+        mv.visitInsn(SWAP);
+        mv.visitInsn(AASTORE);
+
+        mv.visitInsn(SWAP);
+        mv.visitInsn(POP);
+
+        mv.visitMethodInsn(
+                INVOKEVIRTUAL,
+                "java/lang/reflect/Method",
+                "invoke",
+                "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
+                false);
+        // Drop null return value as the called method returns null
+        mv.visitInsn(POP);
+
+        // restore stack for 'normal' execution
+        mv.visitInsn(DUP);
+        mv.visitFieldInsn(
+                GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/MethodInvokeInformationHolder",
+                "methodObject",
+                "Ljava/lang/reflect/Method;");
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        mv.visitInsn(DUP);
+        mv.visitFieldInsn(
+                GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/MethodInvokeInformationHolder",
+                "ownerObject",
+                "Ljava/lang/Object;");
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        mv.visitFieldInsn(
+                GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/MethodInvokeInformationHolder",
+                "argObjects",
+                "[Ljava/lang/Object;");
+    }
+
+    @SuppressWarnings("unused")
+    public static SetFieldInformationHolder.ObjectSetFieldInformationHolder setObjectFieldReceiver(
+            Field f, Object target, Object member) {
+        return new SetFieldInformationHolder.ObjectSetFieldInformationHolder(f, target, member);
+    }
+
+    @SuppressWarnings("unused")
+    public static SetFieldInformationHolder.BooleanSetFieldInformationHolder setBooleanFieldReceiver(
+            Field f, Object target, boolean member) {
+        return new SetFieldInformationHolder.BooleanSetFieldInformationHolder(f, target, member);
+    }
+
+    @SuppressWarnings("unused")
+    public static SetFieldInformationHolder.ByteSetFieldInformationHolder setByteFieldReceiver(
+            Field f, Object target, byte member) {
+        return new SetFieldInformationHolder.ByteSetFieldInformationHolder(f, target, member);
+    }
+
+    @SuppressWarnings("unused")
+    public static SetFieldInformationHolder.CharSetFieldInformationHolder setCharFieldReceiver(
+            Field f, Object target, char member) {
+        return new SetFieldInformationHolder.CharSetFieldInformationHolder(f, target, member);
+    }
+
+    @SuppressWarnings("unused")
+    public static SetFieldInformationHolder.DoubleSetFieldInformationHolder setDoubleFieldReceiver(
+            Field f, Object target, double member) {
+        return new SetFieldInformationHolder.DoubleSetFieldInformationHolder(f, target, member);
+    }
+
+    @SuppressWarnings("unused")
+    public static SetFieldInformationHolder.FloatSetFieldInformationHolder setFloatFieldReceiver(
+            Field f, Object target, float member) {
+        return new SetFieldInformationHolder.FloatSetFieldInformationHolder(f, target, member);
+    }
+
+    @SuppressWarnings("unused")
+    public static SetFieldInformationHolder.IntSetFieldInformationHolder setIntFieldReceiver(
+            Field f, Object target, int member) {
+        return new SetFieldInformationHolder.IntSetFieldInformationHolder(f, target, member);
+    }
+
+    @SuppressWarnings("unused")
+    public static SetFieldInformationHolder.LongSetFieldInformationHolder setLongFieldReceiver(
+            Field f, Object target, long member) {
+        return new SetFieldInformationHolder.LongSetFieldInformationHolder(f, target, member);
+    }
+
+    @SuppressWarnings("unused")
+    public static SetFieldInformationHolder.ShortSetFieldInformationHolder setShortFieldReceiver(
+            Field f, Object target, short member) {
+        return new SetFieldInformationHolder.ShortSetFieldInformationHolder(f, target, member);
+    }
+
+    private void handleFieldSetFieldCall(String owner, String name, String desc, long invokeId) {
+        boolean isWideOperand = false;
+
+        if (name.equals("set")) {
+            mv.visitMethodInsn(INVOKESTATIC,
+                    "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                    "setObjectFieldReceiver",
+                    "(Ljava/lang/reflect/Field;Ljava/lang/Object;Ljava/lang/Object;)Lde/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$ObjectSetFieldInformationHolder;",
+                    false);
+        } else if (name.equals("setBoolean")) {
+            mv.visitMethodInsn(INVOKESTATIC,
+                    "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                    "setBooleanFieldReceiver",
+                    "(Ljava/lang/reflect/Field;Ljava/lang/Object;Z)Lde/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$BooleanSetFieldInformationHolder;",
+                    false);
+        } else if (name.equals("setByte")) {
+            mv.visitMethodInsn(INVOKESTATIC,
+                    "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                    "setByteFieldReceiver",
+                    "(Ljava/lang/reflect/Field;Ljava/lang/Object;B)Lde/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$ByteSetFieldInformationHolder;",
+                    false);
+        } else if (name.equals("setChar")) {
+            mv.visitMethodInsn(INVOKESTATIC,
+                    "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                    "setCharFieldReceiver",
+                    "(Ljava/lang/reflect/Field;Ljava/lang/Object;C)Lde/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$CharSetFieldInformationHolder;",
+                    false);
+        } else if (name.equals("setDouble")) {
+            isWideOperand = true;
+            mv.visitMethodInsn(INVOKESTATIC,
+                    "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                    "setDoubleFieldReceiver",
+                    "(Ljava/lang/reflect/Field;Ljava/lang/Object;D)Lde/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$DoubleSetFieldInformationHolder;",
+                    false);
+        } else if (name.equals("setFloat")) {
+            mv.visitMethodInsn(INVOKESTATIC,
+                    "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                    "setFloatFieldReceiver",
+                    "(Ljava/lang/reflect/Field;Ljava/lang/Object;F)Lde/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$FloatSetFieldInformationHolder;",
+                    false);
+        } else if (name.equals("setInt")) {
+            mv.visitMethodInsn(INVOKESTATIC,
+                    "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                    "setIntFieldReceiver",
+                    "(Ljava/lang/reflect/Field;Ljava/lang/Object;I)Lde/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$IntSetFieldInformationHolder;",
+                    false);
+        } else if (name.equals("setLong")) {
+            isWideOperand = true;
+            mv.visitMethodInsn(INVOKESTATIC,
+                    "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                    "setLongFieldReceiver",
+                    "(Ljava/lang/reflect/Field;Ljava/lang/Object;J)Lde/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$LongSetFieldInformationHolder;",
+                    false);
+        } else if (name.equals("setShort")) {
+            mv.visitMethodInsn(INVOKESTATIC,
+                    "de/uzl/its/swat/instrument/instruction/InstructionMethodAdapter",
+                    "setShortFieldReceiver",
+                    "(Ljava/lang/reflect/Field;Ljava/lang/Object;S)Lde/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$ShortSetFieldInformationHolder;",
+                    false);
+        }
+
+        mv.visitInsn(DUP);
+
+        mv.visitLdcInsn(owner);
+        mv.visitInsn(SWAP);
+        mv.visitLdcInsn(name);
+        mv.visitInsn(SWAP);
+        mv.visitLdcInsn(desc);
+        mv.visitInsn(SWAP);
+
+        mv.visitInsn(DUP);
+        mv.visitFieldInsn(GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$BaseSetFieldInformationHolder",
+                "f",
+                "Ljava/lang/reflect/Field;");
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getName", "()Ljava/lang/String;", false);
+        mv.visitInsn(SWAP);
+        mv.visitInsn(DUP);
+        mv.visitFieldInsn(GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$BaseSetFieldInformationHolder",
+                "f",
+                "Ljava/lang/reflect/Field;");
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getDeclaringClass", "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                "org/objectweb/asm/Type",
+                "getInternalName",
+                "(Ljava/lang/Class;)Ljava/lang/String;",
+                false);
+        mv.visitInsn(SWAP);
+        if (isWideOperand) {
+            mv.visitInsn(ICONST_1);
+        } else {
+            mv.visitInsn(ICONST_0);
+        }
+        mv.visitInsn(SWAP);
+        mv.visitFieldInsn(GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$BaseSetFieldInformationHolder",
+                "f",
+                "Ljava/lang/reflect/Field;");
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getModifiers", "()I", false);
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        addJpushInsn(mv, invokeId);
+        mv.visitMethodInsn(INVOKESTATIC,
+                config.getInstrumentationDispatcher(),
+                "SET_FIELD_REFLECTION",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZIJJ)V",
+                false);
+
+        mv.visitInsn(DUP);
+        mv.visitFieldInsn(GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$BaseSetFieldInformationHolder",
+                "f",
+                "Ljava/lang/reflect/Field;");
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        mv.visitInsn(DUP);
+        mv.visitFieldInsn(GETFIELD,
+                "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$BaseSetFieldInformationHolder",
+                "target",
+                "Ljava/lang/Object;");
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        if (name.equals("set")) {
+            mv.visitFieldInsn(GETFIELD, "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$ObjectSetFieldInformationHolder",
+                    "member", "Ljava/lang/Object;");
+        } else if (name.equals("setBoolean")) {
+            mv.visitFieldInsn(GETFIELD, "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$BooleanSetFieldInformationHolder",
+                    "member", "Z");
+        } else if (name.equals("setByte")) {
+            mv.visitFieldInsn(GETFIELD, "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$ByteSetFieldInformationHolder",
+                    "member", "B");
+        } else if (name.equals("setChar")) {
+            mv.visitFieldInsn(GETFIELD, "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$CharSetFieldInformationHolder",
+                    "member", "C");
+        } else if (name.equals("setDouble")) {
+            mv.visitFieldInsn(GETFIELD, "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$DoubleSetFieldInformationHolder",
+                    "member", "D");
+        } else if (name.equals("setFloat")) {
+            mv.visitFieldInsn(GETFIELD, "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$FloatSetFieldInformationHolder",
+                    "member", "F");
+        } else if (name.equals("setInt")) {
+            mv.visitFieldInsn(GETFIELD, "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$IntSetFieldInformationHolder",
+                    "member", "I");
+        } else if (name.equals("setLong")) {
+            mv.visitFieldInsn(GETFIELD, "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$LongSetFieldInformationHolder",
+                    "member", "J");
+        } else if (name.equals("setShort")) {
+            mv.visitFieldInsn(GETFIELD, "de/uzl/its/swat/instrument/instruction/SetFieldInformationHolder$ShortSetFieldInformationHolder",
+                    "member", "S");
+        }
+
+        // No invokevirtual with set and get reflection calls
+        // ToDo: Is there a nicer way which includes INVOKEVIRTUAL?
+        // addJpushInsn(mv, instrumentationState.incAndGetId());
+        // addJpushInsn(mv, invokeId);
+        // mv.visitLdcInsn(owner);
+        // mv.visitLdcInsn(name);
+        // mv.visitLdcInsn(desc);
+        // mv.visitMethodInsn(
+        //         INVOKESTATIC,
+        //         config.getInstrumentationDispatcher(),
+        //         "INVOKEVIRTUAL",
+        //         "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+        //         false);
+    }
+
+    private void handleFieldGetFieldCall(String owner, String name, String desc, long invokeId) {
+        // Initial stack layout:
+        //
+        // Field
+        // Object (field holder)
+
+        mv.visitInsn(SWAP);
+        mv.visitInsn(DUP);
+
+        mv.visitLdcInsn(owner);
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        mv.visitLdcInsn(name);
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+        mv.visitLdcInsn(desc);
+        mv.visitInsn(DUP_X1);
+        mv.visitInsn(POP);
+
+        mv.visitInsn(DUP);
+        mv.visitInsn(DUP);
+
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getName", "()Ljava/lang/String;", false);
+        mv.visitInsn(DUP_X2);
+        mv.visitInsn(POP);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getDeclaringClass", "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                "org/objectweb/asm/Type",
+                "getInternalName",
+                "(Ljava/lang/Class;)Ljava/lang/String;",
+                false);
+        mv.visitInsn(SWAP);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/reflect/Field", "getModifiers", "()I", false);
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        addJpushInsn(mv, invokeId);
+
+        mv.visitMethodInsn(INVOKESTATIC,
+                config.getInstrumentationDispatcher(),
+                "GET_FIELD_REFLECTION",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IJJ)V",
+                false);
+
+        mv.visitInsn(SWAP);
+
+        // No invokevirtual with set and get reflection calls
+        // ToDo: Is there a nicer way which includes INVOKEVIRTUAL?
+        // addJpushInsn(mv, instrumentationState.incAndGetId());
+        // addJpushInsn(mv, invokeId);
+        // mv.visitLdcInsn(owner);
+        // mv.visitLdcInsn(name);
+        // mv.visitLdcInsn(desc);
+        // mv.visitMethodInsn(
+        //         INVOKESTATIC,
+        //         config.getInstrumentationDispatcher(),
+        //         "INVOKEVIRTUAL",
+        //         "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+        //        false);
+    }
+
+    private boolean isFieldSetFieldMethod(String method) {
+        return setFieldMethods.contains(method);
+    }
+
+    private boolean isFieldGetFieldMethod(String method) {
+        return getFieldMethods.contains(method);
     }
 
     private void addMethodWithTryCatch(
             int opcode, String owner, String name, String desc, boolean itf) {
-        String d = "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
-        addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstrumentationInstructionIds()) {
-            d = "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
-            addBipushInsn(mv, instrumentationState.getMid());
+
+        long invokeId = instrumentationState.incAndGetInvokeId();
+
+        TryCatchBlock tcb = new TryCatchBlock(new Label(),new Label(), new Label(), new Label(), null);
+        if (owner.equals("java/lang/reflect/Constructor") && name.equals("newInstance")) {
+            Utils.addTryCatchBlock(mv, true, tcb);
+            handleClassCreationByReflection(invokeId);
+            Utils.addTryCatchBlock(mv, false, tcb);
+        } else if (owner.equals("java/lang/reflect/Method") && name.equals("invoke")) {
+            addJpushInsn(mv, instrumentationState.incAndGetId());
+            Utils.addTryCatchBlock(mv, true, tcb);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    config.getInstrumentationDispatcher(),
+                    "UNPACK_INVOKE_PARAMETER",
+                    "(J)V",
+                    false);
+            handleMethodInvokeCall(invokeId, instrumentationState.incAndGetId());
+            Utils.addTryCatchBlock(mv, false, tcb);
+        } else if (owner.equals("java/lang/reflect/Field") && isFieldSetFieldMethod(name)) {
+            Utils.addTryCatchBlock(mv, true, tcb);
+            handleFieldSetFieldCall(owner, name, desc, invokeId);
+            Utils.addTryCatchBlock(mv, false, tcb);
+        } else if (owner.equals("java/lang/reflect/Field") && isFieldGetFieldMethod(name)) {
+            Utils.addTryCatchBlock(mv, true, tcb);
+            handleFieldGetFieldCall(owner, name, desc, invokeId);
+            Utils.addTryCatchBlock(mv, false, tcb);
+        } else {
+            String d = "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
+            addJpushInsn(mv, instrumentationState.incAndGetId());
+
+            addJpushInsn(mv, invokeId);
+            mv.visitLdcInsn(owner);
+            mv.visitLdcInsn(name);
+            mv.visitLdcInsn(desc);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    config.getInstrumentationDispatcher(),
+                    getMethodNameByOpcode(opcode),
+                    d,
+                    false);
         }
-        mv.visitLdcInsn(owner);
-        mv.visitLdcInsn(name);
-        mv.visitLdcInsn(desc);
-        mv.visitMethodInsn(
-                INVOKESTATIC,
-                config.getInstrumentationDispatcher(),
-                getMethodNameByOpcode(opcode),
-                d,
-                false);
         // Wrap the method call in a try-catch block
-        Label begin = new Label();
+        Label start = new Label();
         Label handler = new Label();
         Label end = new Label();
+        Label jumpTarget = new Label();
 
-        tryCatchBlocks.addFirst(new TryCatchBlock(begin, handler, handler, null));
+        new TryCatchBlock(start, end, handler, jumpTarget, null).visit(mv);
 
-        mv.visitLabel(begin);
+        mv.visitLabel(start);
+
         mv.visitMethodInsn(opcode, owner, name, desc, itf);
-        mv.visitJumpInsn(GOTO, end);
+        mv.visitLabel(end);
 
+        mv.visitJumpInsn(GOTO, jumpTarget);
         mv.visitLabel(handler);
+
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        addJpushInsn(mv, invokeId);
         mv.visitMethodInsn(
                 INVOKESTATIC,
                 config.getInstrumentationDispatcher(),
                 "INVOKEMETHOD_EXCEPTION",
-                "()V",
+                "(JJ)V",
                 false);
         mv.visitInsn(ATHROW);
 
-        mv.visitLabel(end);
+        mv.visitLabel(jumpTarget);
+
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        addJpushInsn(mv, invokeId);
         mv.visitMethodInsn(
                 INVOKESTATIC,
                 config.getInstrumentationDispatcher(),
                 "INVOKEMETHOD_END",
-                "()V",
+                "(JJ)V",
                 false);
 
         addValueReadInsn(mv, owner + ":" + name + ":" + desc, "GETVALUE_");
@@ -921,14 +1581,13 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
-        String d = "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
+        String d = "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
         // increment and pushes the instruction id to the stack using the mv
-        addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstrumentationInstructionIds()) {
-            d = "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
-            // push the current method id to the stack using mv
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+
+        long invokeId = instrumentationState.incAndGetInvokeId();
+        addJpushInsn(mv, invokeId);
+
         // load the owner to the stack (param 1)
         mv.visitLdcInsn(bsm.getOwner());
         // load the name to the stack (param 2)
@@ -949,28 +1608,35 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         Label begin = new Label();
         Label handler = new Label();
         Label end = new Label();
+        Label jumpTarget = new Label();
 
-        tryCatchBlocks.addFirst(new TryCatchBlock(begin, handler, handler, null));
+        new TryCatchBlock(begin, end, handler, jumpTarget, null).visit(mv);
 
         mv.visitLabel(begin); // for adding try catch?
         mv.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs); // calling the actual method
-        mv.visitJumpInsn(GOTO, end); // still try catch
+        mv.visitLabel(end);
+        mv.visitJumpInsn(GOTO, jumpTarget); // still try catch
 
         mv.visitLabel(handler);
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        addJpushInsn(mv, invokeId);
         mv.visitMethodInsn(
                 INVOKESTATIC,
                 config.getInstrumentationDispatcher(),
                 "INVOKEMETHOD_EXCEPTION",
-                "()V",
+                "(JJ)V",
                 false);
         mv.visitInsn(ATHROW);
 
-        mv.visitLabel(end);
+        mv.visitLabel(jumpTarget);
+        // mv.visitLabel(end);
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+        addJpushInsn(mv, invokeId);
         mv.visitMethodInsn(
                 INVOKESTATIC,
                 config.getInstrumentationDispatcher(),
                 "INVOKEMETHOD_END",
-                "()V",
+                "(JJ)V",
                 false);
 
         addValueReadInsn(mv, bsm.getOwner() + ":" + name + ":" + desc, "GETVALUE_");
@@ -1000,14 +1666,12 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 // if (!desc.equals("()V") || true) {
                 addSpecialInsn(mv, 420);
 
-                String d = "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
+                String d = "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
                 // increment and pushes the instruction id to the stack using the mv
-                addBipushInsn(mv, instrumentationState.incAndGetId());
-                if (config.isInstrumentationInstructionIds()) {
-                    d = "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
-                    // push the current method id to the stack using mv
-                    addBipushInsn(mv, instrumentationState.getMid());
-                }
+                addJpushInsn(mv, instrumentationState.incAndGetId());
+
+                long invokeId = instrumentationState.incAndGetInvokeId();
+                addJpushInsn(mv, invokeId);
 
                 mv.visitLdcInsn(owner);
                 mv.visitLdcInsn(name);
@@ -1021,11 +1685,13 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
                 mv.visitMethodInsn(opcode, owner, name, desc, itf);
 
+                addJpushInsn(mv, instrumentationState.incAndGetId());
+                addJpushInsn(mv, invokeId);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
                         "INVOKEMETHOD_END",
-                        "()V",
+                        "(JJ)V",
                         false);
                 addValueReadInsn(mv, owner + ":" + name + ":" + desc, "GETVALUE_");
 
@@ -1043,8 +1709,6 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                     calledNew = false;
                     addValueReadInsn(mv, "Ljava/lang/Object;", "GETVALUE_");
                 }
-                // throw new RuntimeException("I will never be called, because name==<init> and thus
-                // isInit is true " + name + ", " + isInit);
             }
         } else {
             addMethodWithTryCatch(opcode, owner, name, desc, itf);
@@ -1053,52 +1717,56 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitJumpInsn(int opcode, Label label) {
-        int iid3;
-        String desc = "(II)V";
-        addBipushInsn(mv, iid3 = instrumentationState.incAndGetId());
-        if (config.isInstrumentationInstructionIds()) {
-            desc = "(III)V";
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
+        long iid3;
+        String desc = "(JI)V";
+        addJpushInsn(mv, iid3 = instrumentationState.incAndGetId());
+
         addBipushInsn(mv, System.identityHashCode(label)); // label.getOffset()
         switch (opcode) {
             case IFEQ:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC, config.getInstrumentationDispatcher(), "IFEQ", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFNE:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC, config.getInstrumentationDispatcher(), "IFNE", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFLT:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC, config.getInstrumentationDispatcher(), "IFLT", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFGE:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC, config.getInstrumentationDispatcher(), "IFGE", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFGT:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC, config.getInstrumentationDispatcher(), "IFGT", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFLE:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC, config.getInstrumentationDispatcher(), "IFLE", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPEQ:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
@@ -1109,6 +1777,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPNE:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
@@ -1119,6 +1788,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPLT:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
@@ -1129,6 +1799,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPGE:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
@@ -1139,6 +1810,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPGT:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
@@ -1149,6 +1821,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ICMPLE:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
@@ -1159,6 +1832,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ACMPEQ:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
@@ -1169,6 +1843,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IF_ACMPNE:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
@@ -1189,12 +1864,14 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 mv.visitJumpInsn(opcode, label);
                 break;
             case IFNULL:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC, config.getInstrumentationDispatcher(), "IFNULL", desc, false);
                 mv.visitJumpInsn(opcode, label);
                 addSpecialInsn(mv, 1); // for true path
                 break;
             case IFNONNULL:
+                BranchCoverage.addBranch(iid3);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
                         config.getInstrumentationDispatcher(),
@@ -1205,19 +1882,16 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 addSpecialInsn(mv, 1); // for true path
                 break;
             default:
-                throw new RuntimeException("Unknown jump opcode " + opcode);
+                throw new InstrumentationException("Unknown jump opcode " + opcode);
         }
     }
 
     @Override
     public void visitLdcInsn(Object cst) {
 
-        String desc = "(I";
-        addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstrumentationInstructionIds()) {
-            desc = "(II";
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
+        String desc = "(J";
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+
         mv.visitLdcInsn(cst);
         if (cst instanceof Integer) {
             mv.visitMethodInsn(
@@ -1269,12 +1943,8 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     @Override
     public void visitIincInsn(int var, int increment) {
 
-        String desc = "(II)V";
-        if (config.isInstrumentationInstructionIds()) {
-            desc = "(IIII)V";
-            addBipushInsn(mv, instrumentationState.incAndGetId());
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
+        String desc = "(JII)V";
+        addJpushInsn(mv, instrumentationState.incAndGetId());
         addBipushInsn(mv, var);
         addBipushInsn(mv, increment);
         mv.visitMethodInsn(
@@ -1284,14 +1954,12 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
-        int iid3;
+        long iid3;
 
-        String desc = "(IIII[I[I)V"; // Add an extra array for case values
-        addBipushInsn(mv, iid3 = instrumentationState.incAndGetId());
-        if (config.isInstrumentationInstructionIds()) {
-            desc = "(IIIII[I[I)V"; // Adjust descriptor for the added array
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
+        String desc = "(JIII[I[I)V"; // Add an extra array for case values
+        addJpushInsn(mv, iid3 = instrumentationState.incAndGetId());
+
+        BranchCoverage.addBranch(iid3);
         addBipushInsn(mv, min);
         addBipushInsn(mv, max);
         addBipushInsn(mv, System.identityHashCode(dflt)); // label.getOffset()
@@ -1322,14 +1990,11 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
-        int iid3;
+        long iid3;
 
-        String desc = "(II[I[I)V";
-        addBipushInsn(mv, iid3 = instrumentationState.incAndGetId());
-        if (config.isInstrumentationInstructionIds()) {
-            desc = "(III[I[I)V";
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
+        String desc = "(JI[I[I)V";
+        addJpushInsn(mv, iid3 = instrumentationState.incAndGetId());
+
         addBipushInsn(mv, System.identityHashCode(dflt)); // label.getOffset()
 
         addBipushInsn(mv, keys.length);
@@ -1361,12 +2026,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitMultiANewArrayInsn(String desc, int dims) {
-        String d = "(ILjava/lang/String;I)V";
-        addBipushInsn(mv, instrumentationState.incAndGetId());
-        if (config.isInstrumentationInstructionIds()) {
-            d = "(IILjava/lang/String;I)V";
-            addBipushInsn(mv, instrumentationState.getMid());
-        }
+        String d = "(JLjava/lang/String;I)V";
+        addJpushInsn(mv, instrumentationState.incAndGetId());
+
         mv.visitLdcInsn(desc);
         addBipushInsn(mv, dims);
         mv.visitMethodInsn(
@@ -1374,17 +2036,11 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         mv.visitMultiANewArrayInsn(desc, dims);
         addSpecialInsn(mv, 0); // for non-exceptional path
     }
-
     @Override
-    public void visitMaxs(int maxStack, int maxLocals) {
-        for (TryCatchBlock b : tryCatchBlocks) {
-            b.visit(mv);
+    public void visitEnd() {
+        mv.visitEnd();
+        if(seenCode) {
+            GlobalStateForInstrumentation.instance.setActiveInstrumentation(false);
         }
-        super.visitMaxs(maxStack, maxLocals);
-    }
-
-    @Override
-    public void visitTryCatchBlock(Label label, Label label1, Label label2, String s) {
-        tryCatchBlocks.addLast(new TryCatchBlock(label, label1, label2, s));
     }
 }

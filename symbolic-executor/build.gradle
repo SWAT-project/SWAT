@@ -1,9 +1,25 @@
+buildscript {
+    ext {
+        asmAsmVersion = "9.6" // https://gitlab.ow2.org/asm/asm/-/tags
+    }
+    configurations {
+        classpath {
+            resolutionStrategy {
+                //in order to handle jackson's higher release version in shadow, this needs to be upgraded to latest.
+                force(group: "org.ow2.asm", name: "asm", version: asmAsmVersion)
+                force(group: "org.ow2.asm", name: "asm-commons", version: asmAsmVersion)
+            }
+        }
+    }
+}
+
 plugins {
     id 'java'
     id 'groovy'
     id 'eclipse'
     id 'application'
     id 'io.freefair.lombok' version '8.4'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -17,14 +33,13 @@ repositories {
 
 // In this section you declare the dependencies for your production and test code
 dependencies {
+    implementation project(':annotations')
     implementation libs.bundles.logging
     implementation libs.bundles.asm
-    implementation libs.bundles.httpcomponents
     implementation libs.jackson.databind
-    implementation libs.gson
     implementation libs.java.smt
 
-    implementation rootProject.fileTree(dir: 'libs/java-library-path', include: ['*.jar']) // loads com.microsoft.z3
+    implementation rootProject.fileTree(dir: 'libs/java-library-path', include: ['*.jar']) // loads com.microsoft.z3 and java-smt
 
     testImplementation libs.spock.core
     testImplementation libs.jackson.databind
@@ -33,10 +48,17 @@ dependencies {
 
 test {
     systemProperty "java.library.path", "../libs/java-library-path"
+
+    testLogging {
+        // Show events for passed, skipped, and failed tests
+        events "passed", "failed", "skipped"
+        // Enable standard output/error to be shown
+        showStandardStreams = true
+    }
 }
 
 jar {
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes (
                 "Can-Redefine-Classes": true,
@@ -44,15 +66,38 @@ jar {
                 'Premain-Class': 'de.uzl.its.swat.instrument.Transformer')
     }
 
-    from {
-        exclude '**/module-info.class'
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
-    }
+    // from {
+    //     exclude '**/module-info.class'
+    //     configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    // }
 
 }
 
+shadowJar {
+    mainClassName = ""
+    relocate 'ch.qos.logback', 'shadow.swat.ch.qos.logback'
+    relocate 'org.slf4j', 'shadow.swat.org.slf4j'
+    relocate 'org.objectweb.asm', 'shadow.swat.objectweb.asm'
+    relocate 'com.fasterxml.jackson', 'shadow.swat.com.fasterxml.jackson'
+    relocate 'org.sosy_lab', 'shadow.swat.org.sosy_lab'
+    //relocate 'ap', 'shadow.swat.ap'
+    relocate 'com.github', 'shadow.swat.com.github'
+    relocate 'com.google', 'shadow.swat.com.google'
+    //relocate 'com.microsoft', 'shadow.swat.com.microsoft'
+    relocate 'de.uni_freiburg', 'shadow.swat.de.uni_freiburg'
+    relocate 'edu.umd', 'shadow.swat.edu.umd'
+    relocate 'org.checkerframework', 'shadow.swat.org.checkerframework'
+    relocate 'org.codehaus', 'shadow.swat.org.codehaus'
+    relocate 'scala', 'shadow.swat.scala'
+    relocate 'java_cup', 'shadow.swat.java_cup'
+    relocate 'jakarta', 'shadow.swat.jakarta'
+    // relocate 'com.microsoft.z3', 'shadow.swat.com.microsoft.z3'
+    // transform(ServiceFileTransformer.class)
+    mergeServiceFiles()
+}
+
 tasks.register('copyJar', Copy) {
-    from jar
+    from shadowJar
     into 'lib'
     rename (String fileName) -> { fileName = 'symbolic-executor.jar' }
 }
@@ -63,10 +108,10 @@ test {
 }
 
 // Set duplicate strategy to remove a warning
-distTar.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
-distZip.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
+// distTar.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
+// distZip.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)
 
 
-
+tasks.build.dependsOn tasks.shadowJar
 build.finalizedBy copyJar
 assemble.finalizedBy copyJar

@@ -1,4 +1,6 @@
 package de.uzl.its.swat.symbolic.instruction;
+
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
 /**
  * CASTORE - Store into char array. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.castore">Java VM
@@ -9,17 +11,16 @@ public class CASTORE extends Instruction {
      * Creates a new CASTORE instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public CASTORE(int iid, int mid) {
-        super(iid, mid);
+    public CASTORE(long iid) {
+        super(iid);
     }
     /**
      * Accept method for the visitor.
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitCASTORE(this);
     }
 

@@ -1,4 +1,6 @@
 package de.uzl.its.swat.symbolic.instruction;
+
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
 /**
  * BALOAD - Load byte or boolean from array. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.baload">Java VM
@@ -9,10 +11,9 @@ public class BALOAD extends Instruction {
      * Creates a new BALOAD instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public BALOAD(int iid, int mid) {
-        super(iid, mid);
+    public BALOAD(long iid) {
+        super(iid);
     }
 
     /**
@@ -20,7 +21,7 @@ public class BALOAD extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitBALOAD(this);
     }
 

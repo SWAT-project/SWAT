@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /** LOOP_END - Custom method call handled as an instruction to detect the end of loops. */
 public class LOOP_END extends Instruction {
 
@@ -8,8 +10,8 @@ public class LOOP_END extends Instruction {
      *
      * @param iid instruction id.
      */
-    public LOOP_END(int iid) {
-        super(iid, -1);
+    public LOOP_END(long iid) {
+        super(iid);
     }
 
     /**
@@ -17,7 +19,7 @@ public class LOOP_END extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitLOOP_END(this);
     }
 

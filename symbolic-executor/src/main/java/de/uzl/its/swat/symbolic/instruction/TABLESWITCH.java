@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * TABLESWITCH - Access jump table by index and jump. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.tableswitch">Java
@@ -22,15 +24,14 @@ public class TABLESWITCH extends Instruction {
      * Creates a new TABLESWITCH instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param min min value.
      * @param max max value.
      * @param dflt the default jump label.
      * @param labels the conditional jump labels.
      * @param values the conditions/ keys.
      */
-    public TABLESWITCH(int iid, int mid, int min, int max, int dflt, int[] labels, int[] values) {
-        super(iid, mid);
+    public TABLESWITCH(long iid, int min, int max, int dflt, int[] labels, int[] values) {
+        super(iid);
         this.min = min;
         this.max = max;
         this.dflt = dflt;
@@ -43,7 +44,7 @@ public class TABLESWITCH extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitTABLESWITCH(this);
     }
 

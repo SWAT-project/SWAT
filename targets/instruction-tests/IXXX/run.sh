@@ -13,7 +13,7 @@ java \
 -Xmx32g \
 -Dconfig.path=../targets/instruction-tests/IXXX/swat.cfg \
 -Djava.library.path=../libs/java-library-path \
--Dlogging.level=DEBUG \
+-Dagent.logging.level=DEBUG \
 -javaagent:../symbolic-executor/lib/symbolic-executor.jar \
 -jar ../targets/instruction-tests/IXXX/build/libs/IXXX.jar > ../targets/instruction-tests/IXXX/run.log 2>&1
 

@@ -1,17 +1,27 @@
 package de.uzl.its.swat.symbolic.value.primitive.numeric.integral;
 
+import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
+import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.IntegerObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import lombok.Getter;
 import org.sosy_lab.java_smt.api.*;
 
 /**
- * IntValue contains a pair of concrete value and a path constraint. Note that the path constraint
- * flip the boolean signs according to the evaluated concrete value.
+ * Wrapper to represent int values (32-bit signed) on the symbolic stack.
  */
-public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Integer> {
+public class IntValue extends NumericalValue<BitvectorFormula, Integer> {
+    @Getter
     private static final String symbolicPrefix = "I";
+
+    /** Bit width for int values */
+    private static final int BIT_WIDTH = 32;
+
+    /** Bitvector formula manager for handling 32-bit bitvector formulas */
+    protected BitvectorFormulaManager bvmgr;
 
     /**
      * Instantiates a new Int value.
@@ -21,35 +31,63 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      */
     public IntValue(SolverContext context, int concrete) {
         this.context = context;
+        this.bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
         this.imgr = context.getFormulaManager().getIntegerFormulaManager();
         this.concrete = concrete;
-        this.formula = imgr.makeNumber(concrete);
+        this.formula = bvmgr.makeBitvector(BIT_WIDTH, concrete);
     }
 
     /**
-     * Instantiates a new Int value.
+     * Instantiates a new Int value with a bitvector formula.
      *
      * @param context the context
      * @param concrete the concrete
-     * @param formula the formula
+     * @param formula the bitvector formula
      */
-    public IntValue(SolverContext context, int concrete, NumeralFormula.IntegerFormula formula) {
+    public IntValue(SolverContext context, int concrete, BitvectorFormula formula) {
         this.context = context;
+        this.bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
         this.imgr = context.getFormulaManager().getIntegerFormulaManager();
         this.concrete = concrete;
         this.formula = formula;
     }
 
     /**
+     * Instantiates a new Int value from an IntegerFormula (for backward compatibility).
+     * Converts the IntegerFormula to BitvectorFormula.
+     *
+     * @param context the context
+     * @param concrete the concrete
+     * @param intFormula the integer formula to convert
+     */
+    public IntValue(SolverContext context, int concrete, NumeralFormula.IntegerFormula intFormula) {
+        this.context = context;
+        this.bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
+        this.imgr = context.getFormulaManager().getIntegerFormulaManager();
+        this.concrete = concrete;
+        // Convert IntegerFormula to BitvectorFormula
+        this.formula = bvmgr.makeBitvector(BIT_WIDTH, intFormula);
+    }
+
+    /**
      * Turns this IntValue into a symbolic variable
      *
-     * @param namePrefix
+     * @param prefixOrIdx
      * @return The numerical identifier of this symbolic variable
      */
     @Override
-    public String MAKE_SYMBOLIC(String namePrefix) {
-        initSymbolic(namePrefix);
-        formula = imgr.makeVariable(name);
+    public String MAKE_SYMBOLIC(String prefixOrIdx) {
+        if (prefixOrIdx.matches("-?\\d+")){
+            // We assume a constructed idx was passed as it is a number
+            initSymbolic(symbolicPrefix, prefixOrIdx);
+        } else if (prefixOrIdx.matches(".*-?\\d+") || prefixOrIdx.contains("_length")){
+            // It is a list or the length of an array which already has prefix and idx
+            initSymbolicWithoutIdx(prefixOrIdx);
+        } else {
+            // If it's not a number we assume prefix
+            initSymbolic(prefixOrIdx);
+        }
+        formula = bvmgr.makeVariable(BIT_WIDTH, name);
         return name;
     }
 
@@ -62,7 +100,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
     @Override
     public String MAKE_SYMBOLIC(long idx) {
         initSymbolic(symbolicPrefix, idx);
-        formula = imgr.makeVariable(name);
+        formula = bvmgr.makeVariable(BIT_WIDTH, name);
         return name;
     }
 
@@ -74,21 +112,21 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
     @Override
     public String MAKE_SYMBOLIC() {
         initSymbolic(symbolicPrefix);
-        formula = imgr.makeVariable(name);
+        formula = bvmgr.makeVariable(BIT_WIDTH, name);
         return name;
     }
 
     /**
-     * Creates a formula that asserts that this symbolic value is withing the bounds of this type
+     * Creates a formula that asserts that this symbolic value is within the bounds of this type.
+     * For BitvectorFormula, bounds are implicit (32-bit), so we return TRUE.
      *
      * @param upper If the upper or lower bound should be created
-     * @return The {@link BooleanFormula BooleanFormula} that represents the bounds check
+     * @return The {@link BooleanFormula BooleanFormula} that represents the bounds check (always TRUE)
      */
     @Override
     public BooleanFormula getBounds(boolean upper) {
-        return upper
-                ? imgr.lessOrEquals(imgr.makeVariable(name), imgr.makeNumber(Integer.MAX_VALUE))
-                : imgr.greaterOrEquals(imgr.makeVariable(name), imgr.makeNumber(Integer.MIN_VALUE));
+        // Bitvector is inherently bounded to 32 bits - no explicit bounds needed
+        return context.getFormulaManager().getBooleanFormulaManager().makeTrue();
     }
 
     /**
@@ -97,102 +135,71 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return The {@link BooleanFormula BooleanFormula} that represents the check
      */
     public BooleanFormula checkPositive() {
-        return imgr.greaterOrEquals(formula, imgr.makeNumber(0));
+        return bvmgr.greaterOrEquals(formula, bvmgr.makeBitvector(BIT_WIDTH, 0), true);
     }
 
     /**
-     * Adds two integers
+     * Adds two integers. Bitvector addition automatically handles overflow.
      *
      * @param i The other {@link IntValue IntValue}
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue IADD(IntValue i) {
-        return new IntValue(
-                context, concrete + i.concrete, wrapInteger(imgr.add(formula, i.formula)));
+        return new IntValue(context, concrete + i.concrete, bvmgr.add(formula, i.formula));
     }
 
     /**
-     * Subtracts two integers
+     * Subtracts two integers. Bitvector subtraction automatically handles overflow.
      *
      * @param i The other {@link IntValue IntValue}
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue ISUB(IntValue i) {
-        return new IntValue(
-                context, concrete - i.concrete, wrapInteger(imgr.subtract(formula, i.formula)));
+        return new IntValue(context, concrete - i.concrete, bvmgr.subtract(formula, i.formula));
     }
 
     /**
-     * Multiplies two integers
+     * Multiplies two integers. Bitvector multiplication automatically handles overflow.
      *
      * @param i The other {@link IntValue IntValue}
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue IMUL(IntValue i) {
-        return new IntValue(
-                context, concrete * i.concrete, wrapInteger(imgr.multiply(formula, i.formula)));
+        return new IntValue(context, concrete * i.concrete, bvmgr.multiply(formula, i.formula));
     }
 
     /**
-     * Divides two integers
+     * Divides two integers using signed bitvector division.
      *
      * @param i The other {@link IntValue IntValue}
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue IDIV(IntValue i) {
-        assert i.concrete != 0 : "Division by zero!";
-        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        BooleanFormula cond =
-                bmgr.or(
-                        imgr.greaterOrEquals(formula, imgr.makeNumber(0)),
-                        imgr.equal(imgr.modulo(formula, i.formula), imgr.makeNumber(0)));
-        NumeralFormula.IntegerFormula then = imgr.divide(formula, i.formula);
-
-        BooleanFormula innerCond = imgr.greaterOrEquals(i.formula, imgr.makeNumber(0));
-        NumeralFormula.IntegerFormula innerThen = imgr.add(then, imgr.makeNumber(1));
-        NumeralFormula.IntegerFormula innerElse = imgr.subtract(then, imgr.makeNumber(1));
-
-        NumeralFormula.IntegerFormula elze = bmgr.ifThenElse(innerCond, innerThen, innerElse);
-        NumeralFormula.IntegerFormula res = bmgr.ifThenElse(cond, then, elze);
-        return new IntValue(context, concrete / i.concrete, wrapInteger(res));
+        SWATAssert.enforce(i.concrete != 0, "Division by zero!");
+        return new IntValue(context, concrete / i.concrete, bvmgr.divide(formula, i.formula, true));
     }
 
     /**
-     * Calculates the modulo of two integers
+     * Calculates the remainder of two integers using signed bitvector remainder.
      *
      * @param i The other {@link IntValue IntValue}
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue IREM(IntValue i) {
-        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        BooleanFormula cond =
-                bmgr.or(
-                        imgr.greaterOrEquals(formula, imgr.makeNumber(0)),
-                        imgr.equal(imgr.modulo(formula, i.formula), imgr.makeNumber(0)));
-        NumeralFormula.IntegerFormula then = imgr.divide(formula, i.formula);
-
-        BooleanFormula innerCond = imgr.greaterOrEquals(i.formula, imgr.makeNumber(0));
-        NumeralFormula.IntegerFormula innerThen = imgr.add(then, imgr.makeNumber(1));
-        NumeralFormula.IntegerFormula innerElse = imgr.subtract(then, imgr.makeNumber(1));
-
-        NumeralFormula.IntegerFormula elze = bmgr.ifThenElse(innerCond, innerThen, innerElse);
-        NumeralFormula.IntegerFormula truncdiv = bmgr.ifThenElse(cond, then, elze);
-        NumeralFormula.IntegerFormula res =
-                imgr.subtract(formula, imgr.multiply(truncdiv, i.formula));
-        return new IntValue(context, concrete % i.concrete, res);
+        return new IntValue(context, concrete % i.concrete, bvmgr.remainder(formula, i.formula, true));
     }
 
     /**
-     * Negates an integer
+     * Negates an integer. Bitvector negation automatically handles overflow.
      *
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue INEG() {
-        return new IntValue(context, -1 * concrete, wrapInteger(imgr.negate(formula)));
+        return new IntValue(context, -concrete, bvmgr.negate(formula));
     }
 
     /**
-     * Increments an integer
+     * Increments an integer. Bitvector addition automatically handles overflow.
      *
      * @param increment The amount to increment
      * @return The incremented {@link IntValue IntValue}
@@ -201,100 +208,75 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
         return new IntValue(
                 context,
                 concrete + increment,
-                wrapInteger(imgr.add(formula, imgr.makeNumber(increment))));
+                bvmgr.add(formula, bvmgr.makeBitvector(BIT_WIDTH, increment)));
     }
 
     /**
-     * Calculates the bitwise and of two integers in binary representation
+     * Calculates the bitwise and of two integers.
      *
      * @param i The other {@link IntValue IntValue}
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue IAND(IntValue i) {
-        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
-        BitvectorFormula bv1 = bvmgr.makeBitvector(32, formula);
-        BitvectorFormula bv2 = bvmgr.makeBitvector(32, i.formula);
-        BitvectorFormula bv3 = bvmgr.and(bv1, bv2);
-        NumeralFormula.IntegerFormula i1 = bvmgr.toIntegerFormula(bv3, true);
-        return new IntValue(context, concrete & i.concrete, i1);
+        return new IntValue(context, concrete & i.concrete, bvmgr.and(formula, i.formula));
     }
 
     /**
-     * Calculates the bitwise left shift of an integer
+     * Calculates the bitwise left shift of an integer.
      *
      * @param i The amount to shift
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue ISHL(IntValue i) {
-        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
-        BitvectorFormula bv1 = bvmgr.makeBitvector(32, formula);
-        BitvectorFormula bv2 =
-                bvmgr.and(bvmgr.makeBitvector(32, i.formula), bvmgr.makeBitvector(32, 0b11111));
-        BitvectorFormula bv3 = bvmgr.shiftLeft(bv1, bv2);
-        NumeralFormula.IntegerFormula i1 = bvmgr.toIntegerFormula(bv3, true);
-        return new IntValue(context, concrete << i.concrete, i1);
+        // Java spec: shift amount is masked to 5 bits (0-31) for int
+        BitvectorFormula shiftAmount = bvmgr.and(i.formula, bvmgr.makeBitvector(BIT_WIDTH, 0b11111));
+        return new IntValue(context, concrete << i.concrete, bvmgr.shiftLeft(formula, shiftAmount));
     }
 
     /**
-     * Calculates the bitwise arithmetic right shift of an integer
+     * Calculates the bitwise arithmetic right shift of an integer.
      *
      * @param i The amount to shift
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue ISHR(IntValue i) {
-        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
-        BitvectorFormula bv1 = bvmgr.makeBitvector(32, formula);
-        BitvectorFormula bv2 =
-                bvmgr.and(bvmgr.makeBitvector(32, i.formula), bvmgr.makeBitvector(32, 0b11111));
-        BitvectorFormula bv3 = bvmgr.shiftRight(bv1, bv2, true);
-        NumeralFormula.IntegerFormula i1 = bvmgr.toIntegerFormula(bv3, true);
-        return new IntValue(context, concrete >> i.concrete, i1);
+        // Java spec: shift amount is masked to 5 bits (0-31) for int
+        BitvectorFormula shiftAmount = bvmgr.and(i.formula, bvmgr.makeBitvector(BIT_WIDTH, 0b11111));
+        // true = signed/arithmetic shift
+        return new IntValue(context, concrete >> i.concrete, bvmgr.shiftRight(formula, shiftAmount, true));
     }
 
     /**
-     * Calculates the bitwise logical right shift of an integer
+     * Calculates the bitwise logical right shift of an integer.
      *
      * @param i The amount to shift
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue IUSHR(IntValue i) {
-        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
-        BitvectorFormula bv1 = bvmgr.makeBitvector(32, formula);
-        BitvectorFormula bv2 =
-                bvmgr.and(bvmgr.makeBitvector(32, i.formula), bvmgr.makeBitvector(32, 0b11111));
-        BitvectorFormula bv3 = bvmgr.shiftRight(bv1, bv2, false);
-        NumeralFormula.IntegerFormula i1 = bvmgr.toIntegerFormula(bv3, true);
-        return new IntValue(context, concrete >>> i.concrete, i1);
+        // Java spec: shift amount is masked to 5 bits (0-31) for int
+        BitvectorFormula shiftAmount = bvmgr.and(i.formula, bvmgr.makeBitvector(BIT_WIDTH, 0b11111));
+        // false = unsigned/logical shift
+        return new IntValue(context, concrete >>> i.concrete, bvmgr.shiftRight(formula, shiftAmount, false));
     }
 
     /**
-     * Calculates the bitwise or of two integers
+     * Calculates the bitwise or of two integers.
      *
      * @param i The other {@link IntValue IntValue}
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue IOR(IntValue i) {
-        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
-        BitvectorFormula bv1 = bvmgr.makeBitvector(32, formula);
-        BitvectorFormula bv2 = bvmgr.makeBitvector(32, i.formula);
-        BitvectorFormula bv3 = bvmgr.or(bv1, bv2);
-        NumeralFormula.IntegerFormula i1 = bvmgr.toIntegerFormula(bv3, true);
-        return new IntValue(context, concrete | i.concrete, i1);
+        return new IntValue(context, concrete | i.concrete, bvmgr.or(formula, i.formula));
     }
 
     /**
-     * Calculates the bitwise exclusive or of two integers
+     * Calculates the bitwise exclusive or of two integers.
      *
      * @param i The other {@link IntValue IntValue}
      * @return The resulting {@link IntValue IntValue}
      */
     public IntValue IXOR(IntValue i) {
-        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
-        BitvectorFormula bv1 = bvmgr.makeBitvector(32, formula);
-        BitvectorFormula bv2 = bvmgr.makeBitvector(32, i.formula);
-        BitvectorFormula bv3 = bvmgr.xor(bv1, bv2);
-        NumeralFormula.IntegerFormula i1 = bvmgr.toIntegerFormula(bv3, true);
-        return new IntValue(context, concrete ^ i.concrete, i1);
+        return new IntValue(context, concrete ^ i.concrete, bvmgr.xor(formula, i.formula));
     }
 
     /**
@@ -303,7 +285,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IFEQ() {
-        return imgr.equal(formula, imgr.makeNumber(0));
+        return bvmgr.equal(formula, bvmgr.makeBitvector(BIT_WIDTH, 0));
     }
 
     /**
@@ -312,7 +294,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IFGE() {
-        return imgr.greaterOrEquals(formula, imgr.makeNumber(0));
+        return bvmgr.greaterOrEquals(formula, bvmgr.makeBitvector(BIT_WIDTH, 0), true);
     }
 
     /**
@@ -321,7 +303,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IFGT() {
-        return imgr.greaterThan(formula, imgr.makeNumber(0));
+        return bvmgr.greaterThan(formula, bvmgr.makeBitvector(BIT_WIDTH, 0), true);
     }
 
     /**
@@ -330,7 +312,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IFLE() {
-        return imgr.lessOrEquals(formula, imgr.makeNumber(0));
+        return bvmgr.lessOrEquals(formula, bvmgr.makeBitvector(BIT_WIDTH, 0), true);
     }
 
     /**
@@ -339,7 +321,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IFLT() {
-        return imgr.lessThan(formula, imgr.makeNumber(0));
+        return bvmgr.lessThan(formula, bvmgr.makeBitvector(BIT_WIDTH, 0), true);
     }
 
     /**
@@ -349,7 +331,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      */
     public BooleanFormula IFNE() {
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        return bmgr.not(imgr.equal(formula, imgr.makeNumber(0)));
+        return bmgr.not(bvmgr.equal(formula, bvmgr.makeBitvector(BIT_WIDTH, 0)));
     }
 
     /**
@@ -359,7 +341,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IF_ICMPEQ(IntValue i) {
-        return imgr.equal(formula, i.formula);
+        return bvmgr.equal(formula, i.formula);
     }
 
     /**
@@ -369,7 +351,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IF_ICMPGE(IntValue i) {
-        return imgr.greaterOrEquals(formula, i.formula);
+        return bvmgr.greaterOrEquals(formula, i.formula, true);
     }
 
     /**
@@ -379,7 +361,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IF_ICMPGT(IntValue i) {
-        return imgr.greaterThan(formula, i.formula);
+        return bvmgr.greaterThan(formula, i.formula, true);
     }
 
     /**
@@ -389,7 +371,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IF_ICMPLE(IntValue i) {
-        return imgr.lessOrEquals(formula, i.formula);
+        return bvmgr.lessOrEquals(formula, i.formula, true);
     }
 
     /**
@@ -399,7 +381,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return A {@link BooleanFormula BooleanFormula} that represents this check
      */
     public BooleanFormula IF_ICMPLT(IntValue i) {
-        return imgr.lessThan(formula, i.formula);
+        return bvmgr.lessThan(formula, i.formula, true);
     }
 
     /**
@@ -410,7 +392,7 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      */
     public BooleanFormula IF_ICMPNE(IntValue i) {
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        return bmgr.not(imgr.equal(formula, i.formula));
+        return bmgr.not(bvmgr.equal(formula, i.formula));
     }
 
     /**
@@ -419,12 +401,13 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return The resulting {@link DoubleValue DoubleValue}
      */
     public DoubleValue I2D() {
-        return new DoubleValue(
-                context,
-                (double) concrete,
-                context.getFormulaManager()
-                        .getFloatingPointFormulaManager()
-                        .castFrom(formula, true, DoubleValue.precision));
+        FloatingPointFormulaManager fpmgr = context.getFormulaManager().getFloatingPointFormulaManager();
+        FloatingPointFormula fpFormula = fpmgr.castFrom(
+                formula,
+                true,  // signed
+                DoubleValue.precision,
+                FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
+        return new DoubleValue(context, (double) concrete, fpFormula);
     }
 
     /**
@@ -433,12 +416,13 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return The resulting {@link FloatValue FloatValue}
      */
     public FloatValue I2F() {
-        return new FloatValue(
-                context,
-                (float) concrete,
-                context.getFormulaManager()
-                        .getFloatingPointFormulaManager()
-                        .castFrom(formula, true, FloatValue.precision));
+        FloatingPointFormulaManager fpmgr = context.getFormulaManager().getFloatingPointFormulaManager();
+        FloatingPointFormula fpFormula = fpmgr.castFrom(
+                formula,
+                true,  // signed
+                FloatValue.precision,
+                FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
+        return new FloatValue(context, (float) concrete, fpFormula);
     }
 
     /**
@@ -447,7 +431,9 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return The resulting {@link LongValue LongValue}
      */
     public LongValue I2L() {
-        return new LongValue(context, concrete.longValue(), formula);
+        // Sign-extend 32-bit to 64-bit bitvector
+        BitvectorFormula bv64 = bvmgr.extend(formula, 32, true);  // sign extend by 32 bits
+        return new LongValue(context, concrete.longValue(), bv64);
     }
 
     /**
@@ -456,19 +442,22 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return The resulting {@link ByteValue ByteValue}
      */
     public ByteValue I2B() {
-        return new ByteValue(context, concrete.byteValue(), wrapByte(formula));
+        // Extract low 8 bits and convert to signed integer
+        BitvectorFormula low8 = bvmgr.extract(formula, 7, 0);
+        NumeralFormula.IntegerFormula byteFormula = bvmgr.toIntegerFormula(low8, true);
+        return new ByteValue(context, concrete.byteValue(), byteFormula);
     }
 
     /**
-     * Converts an {@link IntValue IntValue} into a {@link CharValue CharValue} ToDo (Nils):
-     * Symbolic information is lost! See: <a
-     * href="https://git.its.uni-luebeck.de/research-projects/pet-hmr/knife-fuzzer/-/issues/60">Issue
-     * 60</a>
+     * Converts an {@link IntValue IntValue} into a {@link CharValue CharValue}
      *
      * @return The resulting {@link CharValue CharValue}
      */
     public CharValue I2C() {
-        return new CharValue(context, (char) concrete.intValue(), wrapCharacter(formula));
+        // Extract low 16 bits and convert to unsigned integer (char is unsigned)
+        BitvectorFormula low16 = bvmgr.extract(formula, 15, 0);
+        NumeralFormula.IntegerFormula charFormula = bvmgr.toIntegerFormula(low16, false);
+        return new CharValue(context, (char) concrete.intValue(), charFormula);
     }
 
     /**
@@ -477,12 +466,20 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
      * @return The resulting {@link ShortValue ShortValue}
      */
     public ShortValue I2S() {
-        return new ShortValue(context, concrete.shortValue(), wrapShort(formula));
+        // Extract low 16 bits and convert to signed integer
+        BitvectorFormula low16 = bvmgr.extract(formula, 15, 0);
+        NumeralFormula.IntegerFormula shortFormula = bvmgr.toIntegerFormula(low16, true);
+        return new ShortValue(context, concrete.shortValue(), shortFormula);
     }
 
+    /**
+     * Creates a formula that asserts that a value is not zero.
+     *
+     * @return A {@link BooleanFormula BooleanFormula} that represents this check
+     */
     public BooleanFormula checkZero() {
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        return bmgr.not(imgr.equal(formula, imgr.makeNumber(0)));
+        return bmgr.not(bvmgr.equal(formula, bvmgr.makeBitvector(BIT_WIDTH, 0)));
     }
 
     @Override
@@ -492,56 +489,98 @@ public class IntValue extends NumericalValue<NumeralFormula.IntegerFormula, Inte
 
     @Override
     public CharValue asCharValue() {
-        // ToDo (Nils): What if int is out of bounds?
         return I2C();
     }
 
     @Override
     public BooleanValue asBooleanValue() {
-        // ToDo (Nils): Formula creation not verified
-        if (concrete != 0 && concrete != 1)
-            throw new RuntimeException(
-                    "Cannot convert: "
-                            + this
-                            + " to a BooleanValue because the concrete value is neither 0 nor 1!");
-        return new BooleanValue(context, concrete != 0, imgr.equal(formula, imgr.makeNumber(1)));
+        SWATAssert.enforce(
+                concrete == 0 || concrete == 1,
+                "Cannot convert {} to a BooleanValue because the concrete value is neither 0 nor 1!", this);
+        return new BooleanValue(context, concrete != 0, bvmgr.equal(formula, bvmgr.makeBitvector(BIT_WIDTH, 1)));
     }
 
     @Override
     public LongValue asLongValue() {
-        return new LongValue(this.context, this.concrete.longValue(), this.formula);
+        return I2L();
     }
 
     @Override
     public ShortValue asShortValue() {
-        // ToDo: No restrictions for range of short in formula
-        return new ShortValue(this.context, this.concrete.shortValue(), this.formula);
+        return I2S();
     }
 
     @Override
     public ByteValue asByteValue() {
-        // ToDo: No restrictions for range of short in formula
-        return new ByteValue(this.context, this.concrete.byteValue(), this.formula);
+        return I2B();
+    }
+
+    @Override
+    public FloatValue asFloatValue() {
+        return I2F();
+    }
+
+    @Override
+    public DoubleValue asDoubleValue() {
+        return I2D();
     }
 
     @Override
     public StringValue asStringValue() {
-        // ToDo (Nils): Not validated
-        return new StringValue(
-                this.context,
-                String.valueOf(concrete),
-                context.getFormulaManager().getStringFormulaManager().toStringFormula(this.formula),
-                -1);
+        // Note: Z3's str.from_int only works with non-negative integers (returns "" for negative).
+        // To handle negative numbers, we use: ite(i < 0, str.++ "-" (str.from_int |i|), str.from_int i)
+        StringFormulaManager sfm = context.getFormulaManager().getStringFormulaManager();
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+
+        BitvectorFormula zero32 = bvmgr.makeBitvector(32, 0);
+
+        // Check if value is negative (signed comparison)
+        BooleanFormula isNegative = bvmgr.lessThan(formula, zero32, true);
+
+        // Get unsigned interpretation of the bitvector
+        NumeralFormula.IntegerFormula unsignedVal = bvmgr.toIntegerFormula(formula, false);
+
+        // For non-negative: just convert unsigned value to string
+        StringFormula nonNegStr = sfm.toStringFormula(unsignedVal);
+
+        // For negative: absolute value = 2^32 - unsigned_value, then prepend "-"
+        NumeralFormula.IntegerFormula twoTo32 = imgr.makeNumber(4294967296L);
+        NumeralFormula.IntegerFormula absVal = imgr.subtract(twoTo32, unsignedVal);
+        StringFormula negStr = sfm.concat(sfm.makeString("-"), sfm.toStringFormula(absVal));
+
+        // Combine with if-then-else
+        StringFormula resultFormula = bmgr.ifThenElse(isNegative, negStr, nonNegStr);
+
+        return new StringValue(this.context, String.valueOf(concrete), resultFormula, -1);
     }
 
     @Override
-    public NumericalValue<NumeralFormula.IntegerFormula, Integer> asNumericalValue() {
+    public IntegerObjectValue asObjectValue() {
+        return new IntegerObjectValue(this.context, this, ObjectValue.ADDRESS_UNKNOWN);
+    }
+
+    @Override
+    public NumericalValue<BitvectorFormula, Integer> asNumericalValue() {
         return this;
+    }
+
+    /**
+     * Returns the formula as an IntegerFormula for use with array indexing and string operations.
+     *
+     * @return The formula converted to IntegerFormula
+     */
+    public NumeralFormula.IntegerFormula asIntegerFormula() {
+        return bvmgr.toIntegerFormula(formula, true);
     }
 
     @Override
     public String getConcreteEncoded() {
         return Integer.toString(concrete);
+    }
+
+    @Override
+    public String getSymPrefix(){
+        return symbolicPrefix;
     }
 
     /**

@@ -15,10 +15,11 @@ from strategy.StrategyService import StrategyService
 from enum import Enum
 from svcomp.SymbolicStorage import SymbolicStorage
 import logging 
-from log import verdict_logger
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+
+import log
+logger = log.get_logger()
+verdict_logger = log.get_verdict_logger()
     
-logger = logging.getLogger(__name__)
 
 class ExecutionStatus(Enum):
     SUCCESS = 1
@@ -222,7 +223,7 @@ class SVCompHandler:
         
     def run(self, basedir, classpath: [str], agentpath: str, configpath:str, z3dir:str):
         Database.instance().add_endpoint(0)
-        logger.info(f'[SVCOMP] Beginning testcase analysis]')
+        logger.info(f'[SVCOMP] Beginning testcase analysis')
         verdict = self.run_testcase(basedir, classpath, agentpath, configpath, z3dir)
         
         if (verdict == Verdict.SAFE) and self.check_missing_invocations():
@@ -231,7 +232,7 @@ class SVCompHandler:
         if verdict == Verdict.NO_SYMBOLIC_VARS:
             verdict = Verdict.SAFE
 
-        verdict_logger.info(f'[VERDICT] {verdict.value}')
+        verdict_logger.info(f'[VERDICT ASSERT] {verdict.value}')
 
         
         self.kill_current_process()

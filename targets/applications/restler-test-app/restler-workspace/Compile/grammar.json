@@ -1,0 +1,251 @@
+{
+  "Requests": [
+    {
+      "id": {
+        "endpoint": "/games/by-price",
+        "method": "Get"
+      },
+      "method": "Get",
+      "basePath": "",
+      "path": [
+        {
+          "Constant": [
+            "String",
+            "games"
+          ]
+        },
+        {
+          "Constant": [
+            "String",
+            "by-price"
+          ]
+        }
+      ],
+      "queryParameters": [
+        [
+          "Schema",
+          {
+            "ParameterList": [
+              {
+                "name": "price",
+                "payload": {
+                  "LeafNode": {
+                    "name": "",
+                    "payload": {
+                      "Fuzzable": {
+                        "primitiveType": "Number",
+                        "defaultValue": "1.23"
+                      }
+                    },
+                    "isRequired": true,
+                    "isReadOnly": false
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      ],
+      "bodyParameters": [
+        [
+          "Schema",
+          {
+            "ParameterList": []
+          }
+        ]
+      ],
+      "headerParameters": [
+        [
+          "Schema",
+          {
+            "ParameterList": []
+          }
+        ],
+        [
+          "DictionaryCustomPayload",
+          {
+            "ParameterList": []
+          }
+        ]
+      ],
+      "token": "Refreshable",
+      "headers": [
+        [
+          "Accept",
+          "application/json"
+        ],
+        [
+          "Host",
+          "localhost:8091"
+        ]
+      ],
+      "httpVersion": "1.1",
+      "requestMetadata": {
+        "isLongRunningOperation": false
+      }
+    },
+    {
+      "id": {
+        "endpoint": "/dvds/classics/{start}/{end}",
+        "method": "Get"
+      },
+      "method": "Get",
+      "basePath": "",
+      "path": [
+        {
+          "Constant": [
+            "String",
+            "dvds"
+          ]
+        },
+        {
+          "Constant": [
+            "String",
+            "classics"
+          ]
+        },
+        {
+          "Fuzzable": {
+            "primitiveType": "Int",
+            "defaultValue": "1"
+          }
+        },
+        {
+          "Fuzzable": {
+            "primitiveType": "Int",
+            "defaultValue": "1"
+          }
+        }
+      ],
+      "queryParameters": [
+        [
+          "Schema",
+          {
+            "ParameterList": []
+          }
+        ]
+      ],
+      "bodyParameters": [
+        [
+          "Schema",
+          {
+            "ParameterList": []
+          }
+        ]
+      ],
+      "headerParameters": [
+        [
+          "Schema",
+          {
+            "ParameterList": []
+          }
+        ],
+        [
+          "DictionaryCustomPayload",
+          {
+            "ParameterList": []
+          }
+        ]
+      ],
+      "token": "Refreshable",
+      "headers": [
+        [
+          "Accept",
+          "application/json"
+        ],
+        [
+          "Host",
+          "localhost:8091"
+        ]
+      ],
+      "httpVersion": "1.1",
+      "requestMetadata": {
+        "isLongRunningOperation": false
+      }
+    },
+    {
+      "id": {
+        "endpoint": "/books/new",
+        "method": "Get"
+      },
+      "method": "Get",
+      "basePath": "",
+      "path": [
+        {
+          "Constant": [
+            "String",
+            "books"
+          ]
+        },
+        {
+          "Constant": [
+            "String",
+            "new"
+          ]
+        }
+      ],
+      "queryParameters": [
+        [
+          "Schema",
+          {
+            "ParameterList": [
+              {
+                "name": "filter",
+                "payload": {
+                  "LeafNode": {
+                    "name": "",
+                    "payload": {
+                      "Fuzzable": {
+                        "primitiveType": "String",
+                        "defaultValue": "fuzzstring"
+                      }
+                    },
+                    "isRequired": true,
+                    "isReadOnly": false
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      ],
+      "bodyParameters": [
+        [
+          "Schema",
+          {
+            "ParameterList": []
+          }
+        ]
+      ],
+      "headerParameters": [
+        [
+          "Schema",
+          {
+            "ParameterList": []
+          }
+        ],
+        [
+          "DictionaryCustomPayload",
+          {
+            "ParameterList": []
+          }
+        ]
+      ],
+      "token": "Refreshable",
+      "headers": [
+        [
+          "Accept",
+          "application/json"
+        ],
+        [
+          "Host",
+          "localhost:8091"
+        ]
+      ],
+      "httpVersion": "1.1",
+      "requestMetadata": {
+        "isLongRunningOperation": false
+      }
+    }
+  ]
+}

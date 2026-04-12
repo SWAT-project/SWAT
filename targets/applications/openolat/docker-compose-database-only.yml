@@ -1,0 +1,24 @@
+services:
+  mysql_openolat:
+    image: mysql:8.0.42
+    container_name: mysql_openolat
+    hostname: mysql
+    command: --bind-address=mysql --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 20000
+        hard: 40000
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_ALLOW_EMPTY_PASSWORD=true
+      - MYSQL_USER=openolat
+      - MYSQL_PASSWORD=olat
+      - MYSQL_DATABASE=olat
+    expose:
+      - "3306"
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - "./env/sql/openolat.sql:/docker-entrypoint-initdb.d/openolat.sql"
+      - "./env/sql/db.cnf:/etc/mysql/mysql.conf.d/db.cnf"

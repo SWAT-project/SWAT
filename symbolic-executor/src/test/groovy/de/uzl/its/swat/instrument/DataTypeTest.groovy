@@ -21,6 +21,9 @@ class DataTypeTest extends Specification {
         '[I'                        || DataType.ARRAY_TYPE
         '[Ljava/lang/String;'       || DataType.ARRAY_TYPE
         '[[I'                       || DataType.ARRAY_TYPE
+        'Ljava/util/List;'          || DataType.LIST_TYPE
+        'Ljava/util/ArrayList;'     || DataType.ARRAYLIST_TYPE
+        'Ljava/util/LinkedList;'    || DataType.LINKEDLIST_TYPE
     }
 
     def "Should return the identifier for a DataType"() {
@@ -39,9 +42,12 @@ class DataTypeTest extends Specification {
         DataType.DOUBLE_TYPE  || 'D'
         DataType.VOID_TYPE    || 'V'
         DataType.OBJECT_TYPE  || 'L'
-        DataType.ARRAY_TYPE   || '['
-        DataType.METHOD_TYPE  || '('
-        DataType.UNKNOWN_TYPE || 'UNKNOWN_TYPE'
-        DataType.STRING_TYPE  || 'Ljava/lang/String'
+        DataType.ARRAY_TYPE        || '['
+        DataType.METHOD_TYPE       || '('
+        DataType.LIST_TYPE         || 'Ljava/util/List;'
+        DataType.ARRAYLIST_TYPE    || 'Ljava/util/ArrayList;'
+        DataType.LINKEDLIST_TYPE   || 'Ljava/util/LinkedList;'
+        DataType.UNKNOWN_TYPE      || 'UNKNOWN_TYPE'
+        DataType.STRING_TYPE       || 'Ljava/lang/String;'
     }
 }

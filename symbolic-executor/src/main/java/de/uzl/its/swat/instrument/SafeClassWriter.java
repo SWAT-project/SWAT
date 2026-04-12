@@ -30,6 +30,9 @@ package de.uzl.its.swat.instrument;
 
 import java.io.IOException;
 import java.io.InputStream;
+
+import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.exceptions.InstrumentationException;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -90,8 +93,10 @@ public class SafeClassWriter extends ClassWriter {
                     return result;
                 }
             }
-        } catch (IOException e) {
-            throw new RuntimeException(e.toString());
+        } catch (Throwable t) {
+            // The ErrorHandler has to be here as this method transfers control to ASM
+            new ErrorHandler().handleException(new InstrumentationException(t));
+            return null;
         }
     }
 
@@ -156,13 +161,11 @@ public class SafeClassWriter extends ClassWriter {
     private ClassReader typeInfo(final String type) throws IOException {
         String resource = type + ".class";
         InputStream is = loader.getResourceAsStream(resource);
-        if (is == null) {
-            throw new IOException("Cannot create ClassReader for type " + type);
-        }
-        try {
+        try (is) {
+            if (is == null) {
+                throw new IOException("Cannot create ClassReader for type " + type);
+            }
             return new ClassReader(is);
-        } finally {
-            is.close();
         }
     }
 }

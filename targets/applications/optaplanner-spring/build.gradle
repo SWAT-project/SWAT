@@ -1,0 +1,29 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.5'
+}
+
+group = 'de.uzl.its.targets'
+version = '0.0.1-SNAPSHOT'
+
+def javaVer = JavaVersion.VERSION_17
+java {
+    sourceCompatibility = javaVer
+    targetCompatibility = javaVer
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:3.5.5')
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.13'
+
+    implementation("org.optaplanner:optaplanner-core:10.1.0")
+    implementation("org.optaplanner:optaplanner-constraint-streams-drools:10.1.0")
+}
+
+tasks.named('test') { useJUnitPlatform() }

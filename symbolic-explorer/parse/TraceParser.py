@@ -3,8 +3,9 @@ from typing import List
 from data.trace.Special import Special
 from data.trace.Branch import Branch
 from data.trace.Input import Input
+from data.trace.UF import UF
 
-from parse.DataTransferObjects import TraceItem, InputItem
+from parse.DataTransferObjects import TraceItem, InputItem, UFItem
 
 
 class Parser:
@@ -33,7 +34,7 @@ class Parser:
         return _trace
 
     @staticmethod
-    def parse_inputs(inputs: List[InputItem]) -> List:
+    def parse_inputs(inputs: List[InputItem]) -> List[Input]:
         _inputs = []
         for input in inputs:
             _inputs.append(Input(name=input.name,
@@ -42,3 +43,10 @@ class Parser:
                                  lower_bound=input.lowerBound,
                                  upper_bound=input.upperBound))
         return _inputs
+
+    @staticmethod
+    def parse_ufs(ufs: List[UFItem]) -> List:
+        _ufs = []
+        for uf in ufs:
+            _ufs.append(UF(definition=uf.definition))
+        return _ufs 

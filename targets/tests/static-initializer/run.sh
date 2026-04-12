@@ -13,7 +13,7 @@ java \
 -Xmx32g \
 -Dconfig.path=../targets/tests/static-initializer/swat.cfg \
 -Djava.library.path=../libs/java-library-path \
--Dlogging.level=DEBUG \
+-Dagent.logging.level=DEBUG \
 -javaagent:../symbolic-executor/lib/symbolic-executor.jar \
 -jar ../targets/tests/static-initializer/build/libs/static-initializer.jar > ../targets/examples/static-initializer/run.log 2>&1
 

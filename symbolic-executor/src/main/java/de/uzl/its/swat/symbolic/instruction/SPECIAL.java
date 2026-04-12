@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * A special probe instruction added by the instrumentation. The int value identifies which branch
  * does the instruction correspond to.
@@ -14,8 +16,8 @@ public class SPECIAL extends Instruction {
      *
      * @param i marker value
      */
-    public SPECIAL(int i) {
-        super(-1, -1);
+    public SPECIAL(long iid, int i) {
+        super(iid);
         this.i = i;
     }
 
@@ -24,7 +26,7 @@ public class SPECIAL extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitSPECIAL(this);
     }
 

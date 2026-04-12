@@ -1,0 +1,16 @@
+GET|/e1/depth/1?a=<string_0>
+GET|/e1/depth/2?a=<string_1>&b=<int_2>
+GET|/e1/depth/3?flag=<boolean_3>&role=<string_4>&level=<int_5>
+GET|/e1/depth/4?score=<double_6>&age=<int_7>&region=<string_8>&consent=<boolean_9>
+GET|/e1/depth/5?dateString=<string_10>&hour=<int_11>&weekday=<boolean_12>&token=<string_13>&id=<long_14>
+POST|/e1/depth/6?x=<int_15>&y=<int_16>&tag=<string_17>&active=<boolean_18>&ratio=<double_19>|{"val":"<string_124>"}
+GET|/e1/depth/7?nums=<list[int,4]_20>&threshold=<int_21>&allowEqual=<boolean_22>&key=<string_23>
+POST|/e1/depth/8?user=<string_24>&domain=<string_25>&attempts=<int_26>&locked=<boolean_27>&latencyMs=<double_28>&quota=<long_29>&note=<string_30>|{"val":"<string_124>"}
+POST|/e1/depth/9?a=<int_31>&b=<int_32>&c=<int_33>&f=<float_34>&ok=<boolean_35>&s=<string_36>&limit=<int_37>&strict=<boolean_38>|{"val":"<string_124>"}
+POST|/e1/depth/10?country=<string_39>&currency=<string_40>&year=<int_41>&month=<int_42>&day=<int_43>&amount=<double_44>&vip=<boolean_45>&coupon=<string_46>&tx=<long_47>|{"val":"<string_124>"}
+POST|/e1/depth/11?a1=<boolean_48>&a2=<boolean_49>&a3=<boolean_50>&a4=<boolean_51>&a5=<boolean_52>&label=<string_53>&min=<int_54>&max=<int_55>&val=<int_56>&hint=<string_57>|{"val":"<string_124>"}
+POST|/e1/depth/12?host=<string_58>&port=<int_59>&ssl=<boolean_60>&path=<string_61>&size=<long_62>&load=<double_63>&clients=<int_64>&cap=<int_65>&version=<string_66>&health=<boolean_67>&zone=<string_68>|{"val":"<string_124>"}
+POST|/e1/depth/13?email=<string_69>&alt=<string_70>&verified=<boolean_71>&age=<int_72>&terms=<boolean_73>&plan=<string_74>&discount=<double_75>&seats=<int_76>&locale=<string_77>&marketingOptIn=<boolean_78>&ref=<string_79>&ts=<long_80>|{"val":"<string_124>"}
+POST|/e1/depth/14?p1=<int_81>&p2=<int_82>&p3=<int_83>&p4=<int_84>&p5=<int_85>&p6=<int_86>&p7=<int_87>&p8=<int_88>&p9=<int_89>&p10=<int_90>&p11=<int_91>&p12=<int_92>&p13=<int_93>|{"val":"<string_124>"}
+POST|/e1/depth/15?a=<string_94>&b=<string_95>&c=<string_96>&d=<string_97>&n1=<int_98>&n2=<int_99>&n3=<int_100>&t1=<double_101>&t2=<double_102>&z1=<boolean_103>&z2=<boolean_104>&opt=<string_105>&id=<long_106>&when=<string_107>|{"val":"<string_124>"}
+POST|/e1/depth/16?s1=<string_108>&s2=<string_109>&s3=<string_110>&i1=<int_111>&i2=<int_112>&i3=<int_113>&d1=<double_114>&d2=<double_115>&d3=<double_116>&b1=<boolean_117>&b2=<boolean_118>&b3=<boolean_119>&start=<string_120>&end=<string_121>&extras=<list[int,2]_122>|{"val":"<string_123>"}

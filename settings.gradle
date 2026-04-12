@@ -1,24 +1,62 @@
-plugins {
-    id "org.gradle.toolchains.foojay-resolver-convention" version "0.8.0"
-}
+// plugins {
+//     id "org.gradle.toolchains.foojay-resolver-convention" version "0.8.0"
+// }
 
 rootProject.name = "SWAT"
 
 include 'symbolic-executor'
+include 'annotations'
+include 'targets:sv-comp:WitnessCreator'
 
 include 'targets:instruction-tests:IFXX'
 include 'targets:instruction-tests:I2X'
 include 'targets:instruction-tests:IXXX'
+include 'targets:instruction-tests:DXXX'
 include 'targets:instruction-tests:TRYCATCH'
 include 'targets:instruction-tests:XASTORE'
+include 'targets:instruction-tests:INVOKESTATIC'
 
 include 'targets:tests:static-initializer'
+include 'targets:tests:try-catch'
+include 'targets:tests:boxed-integer'
+include 'targets:tests:symbolic-annotation'
+include 'targets:tests:symbolic-parameters'
+include 'targets:tests:array-symbolization'
+include 'targets:tests:string-interning'
+include 'targets:tests:boxed-caching'
+include 'targets:tests:array-list'
+include 'targets:tests:field-tracking'
+include 'targets:tests:null-values'
+include 'targets:tests:database-mock-test'
+include 'targets:tests:stringbuilder'
+include 'targets:tests:java:lang:String'
+include 'targets:tests:reference-equality'
+include 'targets:tests:array-symbolization-explorer'
 
-include 'targets:examples:Basic-1'
+include 'targets:examples:basic-1'
+include 'targets:examples:spring-1'
 
-include 'targets:applications:gson'
+include 'targets:applications:spring-1'
+include 'targets:applications:restler-test-app'
+include 'targets:applications:spring-in-memory-db'
+include 'targets:applications:xss-demo'
 
+include 'targets:applications:emb-artificial:ncs-target'
+include 'targets:applications:emb-artificial:scs-target'
 
+include 'targets:applications:optaplanner-poj'
+include 'targets:applications:optaplanner-spring'
+
+include 'targets:applications:simple-list-endpoint'
+
+include 'targets:applications:swat-artificial:target-1'
+include 'targets:applications:swat-artificial:finance-advice'
+include 'targets:applications:swat-artificial:personal-finance-engine-v2'
+include 'targets:applications:swat-artificial:fleet-route'
+
+include 'targets:applications:oss-fuzz:gson'
+include 'targets:applications:oss-fuzz:java-diff-utils'
+include 'targets:applications:oss-fuzz:spatial4j'
 
 dependencyResolutionManagement {
     versionCatalogs {
@@ -29,19 +67,20 @@ dependencyResolutionManagement {
             library('asm-util', 'org.ow2.asm','asm-util').versionRef('asm')
             library('asm-tree', 'org.ow2.asm','asm-tree').versionRef('asm')
             library('jackson-databind', 'com.fasterxml.jackson.core:jackson-databind:2.14.1')
-            library('java-smt', 'org.sosy-lab:java-smt:4.1.1')
-            library('httpcomponents-httpclient', 'org.apache.httpcomponents:httpclient:4.5.14')
-            library('httpcomponents-httpasyncclient', 'org.apache.httpcomponents:httpasyncclient:4.1.5')
+            library('java-smt', 'org.sosy-lab:java-smt:5.0.1')
             library('spock-core', 'org.spockframework:spock-core:2.2-M1-groovy-4.0')
-            library('gson', 'com.google.code.gson:gson:2.9.0')
             library('mockito-core', 'org.mockito:mockito-core:3.12.4')
             library('logback-classic', 'ch.qos.logback:logback-classic:1.5.3')
             library('logback-core', 'ch.qos.logback:logback-core:1.5.3')
+            library('slf4j-api', 'org.slf4j:slf4j-api:2.0.13')
+            library('cfg-extractor', 'de.uzl.its:cfg-extractor:1.0-SNAPSHOT')
 
-            bundle('httpcomponents', ['httpcomponents-httpclient', 'httpcomponents-httpasyncclient'])
             bundle('asm', ['asm-core', 'asm-commons', 'asm-util', 'asm-tree'])
-            bundle('logging', ['logback-core', 'logback-classic'])
-
+            bundle('logging', ['logback-core', 'logback-classic', 'slf4j-api'])
         }
     }
 }
+include 'targets:applications:modelmapper-test-app'
+findProject(':targets:applications:modelmapper-test-app')?.name = 'modelmapper-test-app'
+include 'targets:applications:reflection-test-app'
+findProject(':targets:applications:reflection-test-app')?.name = 'reflection-test-app'

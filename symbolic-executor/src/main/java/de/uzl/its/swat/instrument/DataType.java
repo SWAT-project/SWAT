@@ -1,5 +1,7 @@
 package de.uzl.its.swat.instrument;
 
+import de.uzl.its.swat.config.Config;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -17,8 +19,11 @@ public enum DataType {
     OBJECT_TYPE("L"),
     ARRAY_TYPE("["),
     METHOD_TYPE("("),
+    LIST_TYPE("Ljava/util/List;"),
+    ARRAYLIST_TYPE("Ljava/util/ArrayList;"),
+    LINKEDLIST_TYPE("Ljava/util/LinkedList;"),
     UNKNOWN_TYPE("UNKNOWN_TYPE"),
-    STRING_TYPE("Ljava/lang/String");
+    STRING_TYPE(Config.instance().getStringProxy());
 
     private static final Map<String, DataType> identifierToDataType = new HashMap<>();
 
@@ -55,7 +60,7 @@ public enum DataType {
      * @return the corresponding DataType, or UNKNOWN_TYPE if not found
      */
     public static DataType getDataType(String identifier) {
-        identifier = identifier.replace(";", "");
+        //identifier = identifier.replace(";", "");
 
         DataType dataType = identifierToDataType.get(identifier);
         if (dataType != null) {
@@ -63,6 +68,16 @@ public enum DataType {
         }
 
         if (identifier.startsWith("L")) {
+            // Check for specific list types before falling back to OBJECT_TYPE
+            if (identifier.equals("Ljava/util/List;")) {
+                return LIST_TYPE;
+            }
+            if (identifier.equals("Ljava/util/ArrayList;")) {
+                return ARRAYLIST_TYPE;
+            }
+            if (identifier.equals("Ljava/util/LinkedList;")) {
+                return LINKEDLIST_TYPE;
+            }
             return OBJECT_TYPE;
         }
 

@@ -13,7 +13,7 @@ java \
 -Xmx32g \
 -Dconfig.path=../targets/applications/gson/swat.cfg \
 -Djava.library.path=../libs/java-library-path \
--Dlogging.level=DEBUG \
+-Dagent.logging.level=DEBUG \
 -javaagent:../symbolic-executor/lib/symbolic-executor.jar \
 -jar ../targets/applications/gson/build/libs/Basic1.jar > ../targets/applications/gson/run.log 2>&1
 

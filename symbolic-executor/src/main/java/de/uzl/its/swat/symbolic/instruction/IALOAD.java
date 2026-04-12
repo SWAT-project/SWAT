@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * IALOAD - Load int from array. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.iaload">Java VM
@@ -11,10 +13,9 @@ public class IALOAD extends Instruction {
      * Creates a new IALOAD instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public IALOAD(int iid, int mid) {
-        super(iid, mid);
+    public IALOAD(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class IALOAD extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitIALOAD(this);
     }
 

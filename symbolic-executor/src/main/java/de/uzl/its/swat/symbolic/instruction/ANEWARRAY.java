@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * ANEWARRAY - Create new array of reference. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.anewarray">Java VM
@@ -13,11 +15,10 @@ public class ANEWARRAY extends Instruction {
      * Creates a new ANEWARRAY instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param type type of the array to create.
      */
-    public ANEWARRAY(int iid, int mid, String type) {
-        super(iid, mid);
+    public ANEWARRAY(long iid, String type) {
+        super(iid);
         this.type = type;
     }
 
@@ -26,7 +27,7 @@ public class ANEWARRAY extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitANEWARRAY(this);
     }
 

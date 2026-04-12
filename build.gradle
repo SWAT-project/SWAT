@@ -6,18 +6,22 @@ plugins {
 
 tasks.register('copyNativeLibs', Copy) { // copies correct native z3 files to libs/
         def osArchMap = [
-                'windows-x64': 'z3-4.12.5-x64-win',
-                'windows-x86': 'z3-4.12.5-x86-win',
-                'osx-x64'    : 'z3-4.12.5-x64-osx-11.7.10',
-                'osx-arm64'  : 'z3-4.12.5-arm64-osx-11.0',
-                'linux-x64'  : 'z3-4.12.5-x64-glibc-2.31',
-                'linux-arm64': 'z3-4.12.5-arm64-glibc-2.35'
+                'windows-x64': 'z3-4.15.4-x64-win',
+                'windows-x86': 'z3-4.15.4-x86-win',
+                'osx-x64'    : 'z3-4.15.4-x64-osx-13.7.6',
+                'osx-arm64'  : 'z3-4.15.4-arm64-osx-13.7.6',
+                'linux-x64'  : 'z3-4.15.4-x64-glibc-2.39',
+                'linux-arm64': 'z3-4.15.4-arm64-glibc-2.34'
         ]
 
         def os = OperatingSystem.current()
         println("Operating system: $os")
-        def arch = os.getArch()
-        def osKey = ''
+
+        def arch = System.getProperty("os.arch") // Use Java system property to get architecture
+        println("Architecture: $arch")
+
+
+    def osKey = ''
         switch (os) {
             case OperatingSystem.LINUX:
                 osKey = arch == "aarch64" ? "linux-arm64" : "linux-x64"
@@ -50,6 +54,57 @@ tasks.register('copyNativeLibs', Copy) { // copies correct native z3 files to li
             includeEmptyDirs false
 
     }
+tasks.register('downloadJacoco') {
+    description = 'Downloads JaCoCo agent jar for coverage collection'
+    def jacocoVersion = '0.8.13'
+    def jacocoUrl = "https://repo1.maven.org/maven2/org/jacoco/org.jacoco.agent/${jacocoVersion}/org.jacoco.agent-${jacocoVersion}-runtime.jar"
+    def jacocoCliUrl = "https://repo1.maven.org/maven2/org/jacoco/org.jacoco.cli/${jacocoVersion}/org.jacoco.cli-${jacocoVersion}-nodeps.jar"
+    def jacocoDir = file('libs/jacoco')
+    def jacocoAgent = file("${jacocoDir}/jacocoagent.jar")
+    def jacocoCli = file("${jacocoDir}/jacococli.jar")
+
+    outputs.files(jacocoAgent, jacocoCli)
+
+    doLast {
+        jacocoDir.mkdirs()
+
+        // Download JaCoCo agent
+        if (!jacocoAgent.exists()) {
+            println "Downloading JaCoCo agent from ${jacocoUrl}"
+            new URL(jacocoUrl).withInputStream{ i -> jacocoAgent.withOutputStream{ it << i }}
+        }
+
+        // Download JaCoCo CLI for report generation
+        if (!jacocoCli.exists()) {
+            println "Downloading JaCoCo CLI from ${jacocoCliUrl}"
+            new URL(jacocoCliUrl).withInputStream{ i -> jacocoCli.withOutputStream{ it << i }}
+        }
+
+        println "JaCoCo agent downloaded to: ${jacocoAgent.absolutePath}"
+        println "JaCoCo CLI downloaded to: ${jacocoCli.absolutePath}"
+    }
+}
+
+configurations {
+    cfgExtractor
+}
+
+dependencies {
+    cfgExtractor 'de.uzl.its:cfg-extractor:1.0-SNAPSHOT'
+}
+
+tasks.register('downloadCfgExtractor', Copy) {
+    description = 'Downloads cfg-extractor fat JAR from GitHub Packages'
+    from configurations.cfgExtractor
+    into 'libs/cfg-extractor'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    doLast {
+        def jarFile = fileTree('libs/cfg-extractor').matching { include '*.jar' }.singleFile
+        println "cfg-extractor fat JAR downloaded to: ${jarFile.absolutePath}"
+        println "Usage: java -jar ${jarFile.name} <input-path> <output-dir> [entry-class] [entry-method] [analysis-type]"
+    }
+}
 
 
 allprojects {
@@ -57,6 +112,26 @@ allprojects {
     apply plugin: 'java'
     repositories {
         mavenCentral()
+
+        // GitHub Packages repository for cfg-extractor
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/SWAT-project/SWAT-Research")
+            credentials {
+                username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_USERNAME")
+                password = project.findProperty("gpr.token") ?: System.getenv("GITHUB_TOKEN")
+            }
+        }
+
+        // JitPack for SootUp dependencies (dex-tools)
+        maven {
+            url = uri("https://jitpack.io")
+        }
+
+        // Google's Maven repository for Android tools (R8)
+        maven {
+            url = uri("https://maven.google.com")
+        }
     }
     java {
         toolchain {

@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * RET - Return from subroutine. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.ret">Java VM
@@ -14,11 +16,10 @@ public class RET extends Instruction {
      * Creates a new RET instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param var local variable index to the return address
      */
-    public RET(int iid, int mid, int var) {
-        super(iid, mid);
+    public RET(long iid, int var) {
+        super(iid);
         this.var = var;
     }
 
@@ -27,7 +28,7 @@ public class RET extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitRET(this);
     }
 

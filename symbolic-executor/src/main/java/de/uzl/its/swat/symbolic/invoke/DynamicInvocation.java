@@ -1,5 +1,8 @@
 package de.uzl.its.swat.symbolic.invoke;
 
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
+import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.ValueFactory;
@@ -9,7 +12,7 @@ import org.objectweb.asm.Type;
 public class DynamicInvocation {
 
     public static Value<?, ?> invokeMethod(
-            String owner, String name, Value<?, ?>[] args, String bsm) {
+            String owner, String name, Value<?, ?>[] args, String bsm) throws NoThreadContextException, NotImplementedException, ValueConversionException {
         if (owner.equals("java/lang/invoke/StringConcatFactory")
                 && name.equals("makeConcatWithConstants")) {
             String[] constants = bsm.substring(1, bsm.length() - 1).split("\u0001", -1);

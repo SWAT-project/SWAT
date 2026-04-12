@@ -2,7 +2,9 @@ package de.uzl.its.swat.symbolic.value.primitive.numeric.integral;
 
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.BooleanObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import lombok.Getter;
 import org.sosy_lab.java_smt.api.*;
 
 /**
@@ -13,6 +15,7 @@ import org.sosy_lab.java_smt.api.*;
  * @version 2022.07.25
  */
 public class BooleanValue extends NumericalValue<BooleanFormula, Boolean> {
+    @Getter
     private static final String symbolicPrefix = "Z";
 
     /** Java-smt formula manager for handling boolean formulas */
@@ -50,12 +53,21 @@ public class BooleanValue extends NumericalValue<BooleanFormula, Boolean> {
     /**
      * Turns this BooleanValue into a symbolic variable
      *
-     * @param namePrefix
+     * @param prefixOrIdx
      * @return The numerical identifier of this symbolic variable
      */
     @Override
-    public String MAKE_SYMBOLIC(String namePrefix) {
-        initSymbolic(namePrefix);
+    public String MAKE_SYMBOLIC(String prefixOrIdx) {
+        if (prefixOrIdx.matches("-?\\d+")){
+            // We assume a constructed idx was passed as it is a number
+            initSymbolic(symbolicPrefix, prefixOrIdx);
+        } else if (prefixOrIdx.matches(".*-?\\d+")){
+            // Its a list which already has prefix and idx
+            initSymbolicWithoutIdx(prefixOrIdx);
+        } else {
+            // If it's not a number we assume prefix
+            initSymbolic(prefixOrIdx);
+        }
         formula = bmgr.makeVariable(name);
         return name;
     }
@@ -125,9 +137,20 @@ public class BooleanValue extends NumericalValue<BooleanFormula, Boolean> {
     }
 
     @Override
+    public BooleanObjectValue asObjectValue(){
+        return new BooleanObjectValue(context, this, ObjectValue.ADDRESS_UNKNOWN);
+    }
+
+    @Override
     public String getConcreteEncoded() {
         return Boolean.toString(concrete);
     }
+
+    @Override
+    public String getSymPrefix(){
+        return symbolicPrefix;
+    }
+
     /**
      * Returns the string representation of the value used to visualize the stack. The
      * representation is not complete.

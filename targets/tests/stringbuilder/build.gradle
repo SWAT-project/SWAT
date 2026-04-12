@@ -1,0 +1,35 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.tests.Main'
+    }
+}
+
+tasks.register('deleteLogs', Delete) {
+    // Delete the 'logs' folder relative to this build.gradle file.
+    delete file('logs')
+}
+
+tasks.register('stringbuilderTest', JavaExec) {
+    mainClass = 'de.uzl.its.tests.Main'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g',
+            "-Dconfig.path=${rootDir}/targets/tests/stringbuilder/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path",
+            "-Dagent.logging.level=DEBUG"
+    ]
+    dependsOn ':symbolic-executor:assemble'
+    dependsOn build
+    dependsOn tasks.named('deleteLogs')
+}
+
+

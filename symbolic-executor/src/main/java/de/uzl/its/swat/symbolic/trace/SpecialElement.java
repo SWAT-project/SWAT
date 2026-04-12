@@ -19,7 +19,7 @@ class SpecialElement extends Element {
      * @param iid The unique identifier of the element
      * @param inst The string representation of the instruction that caused the special element
      */
-    SpecialElement(int iid, String inst) {
+    SpecialElement(long iid, String inst) {
         this.setIid(iid);
         this.inst = inst;
     }

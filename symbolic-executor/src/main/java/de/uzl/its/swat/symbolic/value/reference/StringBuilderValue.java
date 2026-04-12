@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.value.reference;
 
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
+import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -18,7 +20,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     private IntValue capacity;
 
     public StringBuilderValue(SolverContext context) {
-        super(context, 100, -1);
+        super(context, ObjectValue.ADDRESS_UNKNOWN);
         this.smgr = context.getFormulaManager().getStringFormulaManager();
         this.imgr = context.getFormulaManager().getIntegerFormulaManager();
 
@@ -26,7 +28,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     }
 
     public StringBuilderValue(SolverContext context, StringValue v, int address) {
-        super(context, 100, address);
+        super(context, address);
         this.smgr = context.getFormulaManager().getStringFormulaManager();
         this.imgr = context.getFormulaManager().getIntegerFormulaManager();
         this.stringValue = v;
@@ -48,7 +50,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      *     implemented or void should be returned
      */
     @Override
-    public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args) {
+    public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
         return switch (name) {
             case "<init>" -> invokeInit(args, desc);
             case "append" -> invokeAppend(args, desc);
@@ -93,7 +95,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeInit(Value<?, ?>[] args, Type[] desc) {
+    private Value<?, ?> invokeInit(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
         int numberOfArgs = args.length;
         if (numberOfArgs == 0) {
             return invokeInit();
@@ -125,6 +127,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     }
 
     private Value<?, ?> invokeInit(StringValue str) {
+        this.capacity = new IntValue(this.context, 16 + str.concrete.length());
         this.stringValue = str;
         return VoidValue.instance;
     }
@@ -140,7 +143,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeAppend(Value<?, ?>[] args, Type[] desc) {
+    private Value<?, ?> invokeAppend(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
         int numberOfArgs = args.length;
         if (numberOfArgs == 1) {
             return switch (desc[0].getDescriptor()) {
@@ -172,7 +175,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         return PlaceHolder.instance;
     }
 
-    private StringBuilderValue invokeAppend(StringValue s) {
+    private StringBuilderValue invokeAppend(StringValue s) throws NotImplementedException, ValueConversionException {
         String desc = "(Ljava.lang.String;)";
         Type[] type = Type.getArgumentTypes(desc);
         this.stringValue =
@@ -180,7 +183,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         return this;
     }
 
-    private Value<?, ?> invokeAppend(CharArrayValue str) {
+    private Value<?, ?> invokeAppend(CharArrayValue str) throws NotImplementedException, ValueConversionException {
         int size = str.size.concrete;
         for (int i = 0; i < size; i++) {
             invokeAppend(str.getElement(new IntValue(str.getContext(), i)).asStringValue());
@@ -205,7 +208,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         }
     }
 
-    private Value<?, ?> invokeAppend(CharArrayValue str, IntValue offset, IntValue len) {
+    private Value<?, ?> invokeAppend(CharArrayValue str, IntValue offset, IntValue len) throws NotImplementedException, ValueConversionException {
         for (int i = 0; i < len.concrete; i++) {
             invokeAppend(
                     str.getElement(new IntValue(str.getContext(), i + offset.concrete))
@@ -260,11 +263,11 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeCharAt(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) {
+    private Value<?, ?> invokeCharAt(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) throws NotImplementedException, ValueConversionException {
         return new CharValue(
                 context,
                 this.stringValue.concrete.charAt(args[0].asIntValue().concrete),
-                this.smgr.charAt(this.stringValue.formula, args[0].asIntValue().formula));
+                this.smgr.charAt(this.stringValue.formula, args[0].asIntValue().asIntegerFormula()));
     }
 
     /**
@@ -384,15 +387,15 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         IntValue start = (IntValue) args[0];
         IntValue end = (IntValue) args[1];
         NumeralFormula.IntegerFormula remainingLength =
-                this.imgr.subtract(this.smgr.length(this.stringValue.formula), end.formula);
+                this.imgr.subtract(this.smgr.length(this.stringValue.formula), end.asIntegerFormula());
         this.stringValue.formula =
                 this.smgr.concat(
                         this.smgr.substring(
                                 this.stringValue.formula,
-                                new IntValue(context, 0).formula,
-                                start.formula),
+                                new IntValue(context, 0).asIntegerFormula(),
+                                start.asIntegerFormula()),
                         this.smgr.substring(
-                                this.stringValue.formula, end.formula, remainingLength));
+                                this.stringValue.formula, end.asIntegerFormula(), remainingLength));
         StringBuilder deleteBuilder = new StringBuilder(this.stringValue.concrete);
         this.stringValue.concrete = deleteBuilder.delete(start.concrete, end.concrete).toString();
         return this;
@@ -410,14 +413,14 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeDeleteCharAt(
-            Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) {
+            Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) throws NotImplementedException, ValueConversionException {
         IntValue endIndex =
                 new IntValue(
                         this.context,
                         args[0].asIntValue().concrete + 1,
                         this.imgr.add(
-                                args[0].asIntValue().formula,
-                                new IntValue(this.context, 1).formula));
+                                args[0].asIntValue().asIntegerFormula(),
+                                new IntValue(this.context, 1).asIntegerFormula()));
         return invokeDelete(
                 new Value<?, ?>[] {args[0], endIndex}, new Type[] {Type.INT_TYPE, Type.INT_TYPE});
     }
@@ -467,7 +470,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeIndexOf(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) {
+    private Value<?, ?> invokeIndexOf(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) throws NotImplementedException, ValueConversionException {
         if (args.length == 1) {
             return invokeIndexOf(args[0].asStringValue());
         } else if (args.length == 2) {
@@ -483,14 +486,14 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
                 this.smgr.indexOf(
                         this.stringValue.formula,
                         str.formula,
-                        new IntValue(this.context, 0).formula));
+                        new IntValue(this.context, 0).asIntegerFormula()));
     }
 
     private Value<?, ?> invokeIndexOf(StringValue str, IntValue fromIndex) {
         return new IntValue(
                 this.context,
                 this.stringValue.concrete.indexOf(str.concrete),
-                this.smgr.indexOf(this.stringValue.formula, str.formula, fromIndex.formula));
+                this.smgr.indexOf(this.stringValue.formula, str.formula, fromIndex.asIntegerFormula()));
     }
 
     /**
@@ -504,7 +507,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeInsert(Value<?, ?>[] args, Type[] desc) {
+    private Value<?, ?> invokeInsert(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
         if (args.length == 2) {
             return switch (desc[1].getDescriptor()) {
                 case "I" -> invokeInsert(
@@ -551,12 +554,12 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
                 this.smgr.concat(
                         smgr.substring(
                                 this.stringValue.formula,
-                                new IntValue(this.context, 0).formula,
-                                offset.formula),
+                                new IntValue(this.context, 0).asIntegerFormula(),
+                                offset.asIntegerFormula()),
                         str.formula,
                         smgr.substring(
                                 this.stringValue.formula,
-                                offset.formula,
+                                offset.asIntegerFormula(),
                                 smgr.length(stringValue.formula)));
         this.stringValue.concrete =
                 this.stringValue
@@ -573,7 +576,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         return PlaceHolder.instance;
     }
 
-    private Value<?, ?> invokeInsert(IntValue offset, CharArrayValue str) {
+    private Value<?, ?> invokeInsert(IntValue offset, CharArrayValue str) throws NotImplementedException, ValueConversionException {
         int size = str.size.concrete;
         StringValue newStr = new StringValue(this.context, "", -1);
         for (int i = 0; i < size; i++) {
@@ -589,7 +592,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     }
 
     private Value<?, ?> invokeInsert(
-            IntValue index, CharArrayValue str, IntValue offset, IntValue len) {
+            IntValue index, CharArrayValue str, IntValue offset, IntValue len) throws NotImplementedException, ValueConversionException {
         StringValue newStr = new StringValue(this.context, "", -1);
         for (int i = 0; i < len.concrete; i++) {
             newStr.invokeMethod(
@@ -684,8 +687,8 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         StringFormula substring =
                 this.smgr.substring(
                         this.stringValue.formula,
-                        start.formula,
-                        this.imgr.subtract(end.formula, start.formula));
+                        start.asIntegerFormula(),
+                        this.imgr.subtract(end.asIntegerFormula(), start.asIntegerFormula()));
         this.stringValue.formula =
                 smgr.replace(this.stringValue.formula, substring, replacement.formula);
         StringBuilder builderReplace = new StringBuilder(this.stringValue.concrete);
@@ -801,7 +804,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeSubstring(
-            Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) {
+            Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) throws NotImplementedException, ValueConversionException {
         if (args.length == 1) {
             return invokeSubstring(args[0].asIntValue());
         } else if (args.length == 2) {
@@ -812,9 +815,9 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
 
     private Value<?, ?> invokeSubstring(IntValue start) {
         NumeralFormula.IntegerFormula remainingLength =
-                this.imgr.subtract(this.smgr.length(this.stringValue.formula), start.formula);
+                this.imgr.subtract(this.smgr.length(this.stringValue.formula), start.asIntegerFormula());
         this.stringValue.formula =
-                this.smgr.substring(this.stringValue.formula, start.formula, remainingLength);
+                this.smgr.substring(this.stringValue.formula, start.asIntegerFormula(), remainingLength);
         this.stringValue.concrete = this.stringValue.concrete.substring(start.concrete);
         return new StringValue(
                 this.context, this.stringValue.concrete, this.stringValue.formula, -1);
@@ -822,7 +825,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
 
     private Value<?, ?> invokeSubstring(IntValue start, IntValue end) {
         this.stringValue.formula =
-                this.smgr.substring(this.stringValue.formula, start.formula, end.formula);
+                this.smgr.substring(this.stringValue.formula, start.asIntegerFormula(), end.asIntegerFormula());
         this.stringValue.concrete =
                 this.stringValue.concrete.substring(start.concrete, end.concrete);
         return new StringValue(

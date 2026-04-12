@@ -1,0 +1,100 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':annotations')
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.tests.Main'
+    }
+}
+
+tasks.register('deleteLogs', Delete) {
+    // Delete the 'logs' folder relative to this build.gradle file.
+    delete file('logs')
+}
+
+
+tasks.register('symbolicAnnotationLiftingTest', JavaExec) {
+    description = 'Runs symbolic lifting tests and automatically validates the results'
+    group = 'tests'
+
+    mainClass = 'de.uzl.its.tests.Main'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g',
+            "-Dconfig.path=${rootDir}/targets/tests/symbolic-annotation/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path",
+            "-Dagent.logging.level=DEBUG"
+    ]
+    dependsOn ':symbolic-executor:assemble'
+    dependsOn build
+    dependsOn tasks.named('deleteLogs')
+
+    // Capture console output
+    def consoleOutput = new ByteArrayOutputStream()
+    standardOutput = consoleOutput
+    doFirst {
+        println "Starting symbolic lifting test..."
+    }
+    doLast {
+        def consoleText = consoleOutput.toString()
+
+        // Extract the expected variables count from console output
+        def expectedMatcher = consoleText =~ /Expected symbolic variables: (\d+)/
+        def expectedVariables = expectedMatcher ? expectedMatcher[0][1].toInteger() : -1
+
+
+        // Count registered input messages
+        def registeredCount = (consoleText =~ /Input with name: .* and value: .* registered/).size()
+
+        def testMatcher = consoleText =~ /Executed tests: (\d+)/
+        def testCount = testMatcher ? testMatcher[0][1].toInteger() : -1
+        def modelCount = (consoleText =~ /.\[Model\].*/).size()
+
+
+        StringBuilder results = new StringBuilder()
+        results.append "\n" + "=" * 60  + "\n"
+        results.append "SYMBOLIC LIFTING VALIDATION RESULTS\n"
+        results.append "=" * 60  + "\n"
+        results.append "Symbolic Variables\n"
+        results.append "  ↳ Expected symbolic variables: ${expectedVariables}\n"
+        results.append "  ↳ Registration messages found: ${registeredCount}\n"
+        results.append "  ↳ Success rate: ${(registeredCount / expectedVariables * 100).round(1)}%\n"
+        results.append "Symbolic Models\n"
+        results.append "  ↳ Expected models: ${testCount}\n"
+        results.append "  ↳ Identified models: ${modelCount}\n"
+        results.append "  ↳ Success rate: ${(modelCount / testCount * 100).round(1)}%\n"
+        results.append "=" * 60  + "\n"
+
+
+
+        if (registeredCount != expectedVariables) {
+            println consoleText
+            println results.toString()
+            def missing = expectedVariables - registeredCount
+            println "❌ FAIL: Missing ${missing} symbolic variables"
+            println "   Only ${registeredCount}/${expectedVariables} variables were tracked"
+            throw new GradleException("Symbolic lifting test failed: ${missing} variables not tracked")
+        } else if (testCount != modelCount){
+            println consoleText
+            println results.toString()
+            def missing = testCount - modelCount
+            println "❌ FAIL: Missing ${missing} models"
+            println "   Only ${modelCount}/${testCount} models were generated"
+            throw new GradleException("Symbolic lifting test failed: ${missing} models not generated")
+
+        } else {
+            println results.toString()
+            println "✅ PASS: All symbolic variables successfully tracked!"
+        }
+    }
+}

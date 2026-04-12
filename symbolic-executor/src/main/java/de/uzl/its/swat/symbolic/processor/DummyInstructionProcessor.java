@@ -2,365 +2,384 @@ package de.uzl.its.swat.symbolic.processor;
 
 public class DummyInstructionProcessor implements InstructionProcessor {
 
-    public void LDC(int iid, int mid, int c) {}
+    public void LDC(long iid, int c) {}
 
-    public void LDC(int iid, int mid, long c) {}
+    public void LDC(long iid, long c) {}
 
-    public void LDC(int iid, int mid, float c) {}
+    public void LDC(long iid, float c) {}
 
-    public void LDC(int iid, int mid, double c) {}
+    public void LDC(long iid, double c) {}
 
-    public void LDC(int iid, int mid, String c) {}
+    public void LDC(long iid, String c) {}
 
-    public void LDC(int iid, int mid, Object c) {}
+    public void LDC(long iid, Object c) {}
 
-    public void IINC(int iid, int mid, int var, int increment) {}
+    public void IINC(long iid, int var, int increment) {}
 
-    public void MULTIANEWARRAY(int iid, int mid, String desc, int dims) {}
+    public void MULTIANEWARRAY(long iid, String desc, int dims) {}
 
-    public void LOOKUPSWITCH(int iid, int mid, int dflt, int[] keys, int[] labels) {}
+    public void LOOKUPSWITCH(long iid, int dflt, int[] keys, int[] labels) {}
 
     public void TABLESWITCH(
-            int iid, int mid, int min, int max, int dflt, int[] labels, int[] values) {}
+            long iid, int min, int max, int dflt, int[] labels, int[] values) {}
 
-    public void IFEQ(int iid, int mid, int label) {}
+    public void IFEQ(long iid, int label) {}
 
-    public void IFNE(int iid, int mid, int label) {}
+    public void IFNE(long iid, int label) {}
 
-    public void IFLT(int iid, int mid, int label) {}
+    public void IFLT(long iid, int label) {}
 
-    public void IFGE(int iid, int mid, int label) {}
+    public void IFGE(long iid, int label) {}
 
-    public void IFGT(int iid, int mid, int label) {}
+    public void IFGT(long iid, int label) {}
 
-    public void IFLE(int iid, int mid, int label) {}
+    public void IFLE(long iid, int label) {}
 
-    public void IF_ICMPEQ(int iid, int mid, int label) {}
+    public void IF_ICMPEQ(long iid, int label) {}
 
-    public void IF_ICMPNE(int iid, int mid, int label) {}
+    public void IF_ICMPNE(long iid, int label) {}
 
-    public void IF_ICMPLT(int iid, int mid, int label) {}
+    public void IF_ICMPLT(long iid, int label) {}
 
-    public void IF_ICMPGE(int iid, int mid, int label) {}
+    public void IF_ICMPGE(long iid, int label) {}
 
-    public void IF_ICMPGT(int iid, int mid, int label) {}
+    public void IF_ICMPGT(long iid, int label) {}
 
-    public void IF_ICMPLE(int iid, int mid, int label) {}
+    public void IF_ICMPLE(long iid, int label) {}
 
-    public void IF_ACMPEQ(int iid, int mid, int label) {}
+    public void IF_ACMPEQ(long iid, int label) {}
 
-    public void IF_ACMPNE(int iid, int mid, int label) {}
+    public void IF_ACMPNE(long iid, int label) {}
 
-    public void GOTO(int iid, int mid, int label) {}
+    public void GOTO(long iid, int label) {}
 
-    public void JSR(int iid, int mid, int label) {}
+    public void JSR(long iid, int label) {}
 
-    public void IFNULL(int iid, int mid, int label) {}
+    public void IFNULL(long iid, int label) {}
 
-    public void IFNONNULL(int iid, int mid, int label) {}
+    public void IFNONNULL(long iid, int label) {}
 
-    public void INVOKEVIRTUAL(int iid, int mid, String owner, String name, String desc) {}
+    public void INVOKEVIRTUAL(
+            long iid, long invokeId, String owner, String name, String desc) {}
 
-    public void INVOKESPECIAL(int iid, int mid, String owner, String name, String desc) {}
+    public void INVOKESPECIAL(
+            long iid, long invokeId, String owner, String name, String desc) {}
 
-    public void INVOKESTATIC(int iid, int mid, String owner, String name, String desc) {}
+    public void INVOKESTATIC(
+            long iid, long invokeId, String owner, String name, String desc) {}
 
     public void INVOKEDYNAMIC(
-            int iid, int mid, String owner, String name, String desc, String lambda) {}
+            long iid,
+            long invokeId,
+            String owner,
+            String name,
+            String desc,
+            String lambda) {}
 
-    public void INVOKEINTERFACE(int iid, int mid, String owner, String name, String desc) {}
+    public void INVOKEINTERFACE(
+            long iid, long invokeId, String owner, String name, String desc) {}
 
-    public void GETSTATIC(int iid, int mid, int cIdx, int fIdx, String desc) {}
+    public void GETSTATIC(long iid, int cIdx, String name, String desc) {}
 
-    public void PUTSTATIC(int iid, int mid, int cIdx, int fIdx, String desc) {}
+    public void PUTSTATIC(long iid, int cIdx, String name, String desc) {}
 
-    public void GETFIELD(int iid, int mid, int cIdx, int fIdx, String desc) {}
+    public void GETFIELD(long iid, int cIdx, String name, String desc) {}
 
-    public void PUTFIELD(int iid, int mid, int cIdx, int fIdx, String desc) {}
+    public void PUTFIELD(long iid, int cIdx, String name, String desc) {}
 
-    public void NEW(int iid, int mid, String type, int cIdx) {}
+    public void NEW(long iid, String type, int cIdx) {}
 
-    public void ANEWARRAY(int iid, int mid, String type) {}
+    public void CLINIT(long iid, int cIdx, long invokeId) {}
 
-    public void CHECKCAST(int iid, int mid, String type) {}
+    public void UNPACK_INVOKE_PARAMETER(long iid) {}
 
-    public void INSTANCEOF(int iid, int mid, String type) {}
+    public void SET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, boolean isWideOperand, int modifiers, long iid, long invokeId) {}
 
-    public void BIPUSH(int iid, int mid, int value) {}
+    public void GET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, int modifiers, long iid, long invokeId) {}
 
-    public void SIPUSH(int iid, int mid, int value) {}
+    public void ANEWARRAY(long iid, String type) {}
 
-    public void NEWARRAY(int iid, int mid, int atype) {}
+    public void CHECKCAST(long iid, String type) {}
 
-    public void ILOAD(int iid, int mid, int var) {}
+    public void INSTANCEOF(long iid, String type) {}
 
-    public void LLOAD(int iid, int mid, int var) {}
+    public void BIPUSH(long iid, int value) {}
 
-    public void FLOAD(int iid, int mid, int var) {}
+    public void SIPUSH(long iid, int value) {}
 
-    public void DLOAD(int iid, int mid, int var) {}
+    public void NEWARRAY(long iid, int atype) {}
 
-    public void ALOAD(int iid, int mid, int var) {}
+    public void ILOAD(long iid, int var) {}
 
-    public void ISTORE(int iid, int mid, int var) {}
+    public void LLOAD(long iid, int var) {}
 
-    public void LSTORE(int iid, int mid, int var) {}
+    public void FLOAD(long iid, int var) {}
 
-    public void FSTORE(int iid, int mid, int var) {}
+    public void DLOAD(long iid, int var) {}
 
-    public void DSTORE(int iid, int mid, int var) {}
+    public void ALOAD(long iid, int var) {}
 
-    public void ASTORE(int iid, int mid, int var) {}
+    public void ISTORE(long iid, int var) {}
 
-    public void RET(int iid, int mid, int var) {}
+    public void LSTORE(long iid, int var) {}
 
-    public void NOP(int iid, int mid) {}
+    public void FSTORE(long iid, int var) {}
 
-    public void ACONST_NULL(int iid, int mid) {}
+    public void DSTORE(long iid, int var) {}
 
-    public void ICONST_M1(int iid, int mid) {}
+    public void ASTORE(long iid, int var) {}
 
-    public void ICONST_0(int iid, int mid) {}
+    public void RET(long iid, int var) {}
 
-    public void ICONST_1(int iid, int mid) {}
+    public void NOP(long iid) {}
 
-    public void ICONST_2(int iid, int mid) {}
+    public void ACONST_NULL(long iid) {}
 
-    public void ICONST_3(int iid, int mid) {}
+    public void ICONST_M1(long iid) {}
 
-    public void ICONST_4(int iid, int mid) {}
+    public void ICONST_0(long iid) {}
 
-    public void ICONST_5(int iid, int mid) {}
+    public void ICONST_1(long iid) {}
 
-    public void LCONST_0(int iid, int mid) {}
+    public void ICONST_2(long iid) {}
 
-    public void LCONST_1(int iid, int mid) {}
+    public void ICONST_3(long iid) {}
 
-    public void FCONST_0(int iid, int mid) {}
+    public void ICONST_4(long iid) {}
 
-    public void FCONST_1(int iid, int mid) {}
+    public void ICONST_5(long iid) {}
 
-    public void FCONST_2(int iid, int mid) {}
+    public void LCONST_0(long iid) {}
 
-    public void DCONST_0(int iid, int mid) {}
+    public void LCONST_1(long iid) {}
 
-    public void DCONST_1(int iid, int mid) {}
+    public void FCONST_0(long iid) {}
 
-    public void IALOAD(int iid, int mid) {}
+    public void FCONST_1(long iid) {}
 
-    public void LALOAD(int iid, int mid) {}
+    public void FCONST_2(long iid) {}
 
-    public void FALOAD(int iid, int mid) {}
+    public void DCONST_0(long iid) {}
 
-    public void DALOAD(int iid, int mid) {}
+    public void DCONST_1(long iid) {}
 
-    public void AALOAD(int iid, int mid) {}
+    public void IALOAD(long iid) {}
 
-    public void BALOAD(int iid, int mid) {}
+    public void LALOAD(long iid) {}
 
-    public void CALOAD(int iid, int mid) {}
+    public void FALOAD(long iid) {}
 
-    public void SALOAD(int iid, int mid) {}
+    public void DALOAD(long iid) {}
 
-    public void IASTORE(int iid, int mid) {}
+    public void AALOAD(long iid) {}
 
-    public void LASTORE(int iid, int mid) {}
+    public void BALOAD(long iid) {}
 
-    public void FASTORE(int iid, int mid) {}
+    public void CALOAD(long iid) {}
 
-    public void DASTORE(int iid, int mid) {}
+    public void SALOAD(long iid) {}
 
-    public void AASTORE(int iid, int mid) {}
+    public void IASTORE(long iid) {}
 
-    public void BASTORE(int iid, int mid) {}
+    public void LASTORE(long iid) {}
 
-    public void CASTORE(int iid, int mid) {}
+    public void FASTORE(long iid) {}
 
-    public void SASTORE(int iid, int mid) {}
+    public void DASTORE(long iid) {}
 
-    public void POP(int iid, int mid) {}
+    public void AASTORE(long iid) {}
 
-    public void POP2(int iid, int mid) {}
+    public void BASTORE(long iid) {}
 
-    public void DUP(int iid, int mid) {}
+    public void CASTORE(long iid) {}
 
-    public void DUP_X1(int iid, int mid) {}
+    public void SASTORE(long iid) {}
 
-    public void DUP_X2(int iid, int mid) {}
+    public void POP(long iid) {}
 
-    public void DUP2(int iid, int mid) {}
+    public void POP2(long iid) {}
 
-    public void DUP2_X1(int iid, int mid) {}
+    public void DUP(long iid) {}
 
-    public void DUP2_X2(int iid, int mid) {}
+    public void DUP_X1(long iid) {}
 
-    public void SWAP(int iid, int mid) {}
+    public void DUP_X2(long iid) {}
 
-    public void IADD(int iid, int mid) {}
+    public void DUP2(long iid) {}
 
-    public void LADD(int iid, int mid) {}
+    public void DUP2_X1(long iid) {}
 
-    public void FADD(int iid, int mid) {}
+    public void DUP2_X2(long iid) {}
 
-    public void DADD(int iid, int mid) {}
+    public void SWAP(long iid) {}
 
-    public void ISUB(int iid, int mid) {}
+    public void IADD(long iid) {}
 
-    public void LSUB(int iid, int mid) {}
+    public void LADD(long iid) {}
 
-    public void FSUB(int iid, int mid) {}
+    public void FADD(long iid) {}
 
-    public void DSUB(int iid, int mid) {}
+    public void DADD(long iid) {}
 
-    public void IMUL(int iid, int mid) {}
+    public void ISUB(long iid) {}
 
-    public void LMUL(int iid, int mid) {}
+    public void LSUB(long iid) {}
 
-    public void FMUL(int iid, int mid) {}
+    public void FSUB(long iid) {}
 
-    public void DMUL(int iid, int mid) {}
+    public void DSUB(long iid) {}
 
-    public void IDIV(int iid, int mid) {}
+    public void IMUL(long iid) {}
 
-    public void LDIV(int iid, int mid) {}
+    public void LMUL(long iid) {}
 
-    public void FDIV(int iid, int mid) {}
+    public void FMUL(long iid) {}
 
-    public void DDIV(int iid, int mid) {}
+    public void DMUL(long iid) {}
 
-    public void IREM(int iid, int mid) {}
+    public void IDIV(long iid) {}
 
-    public void LREM(int iid, int mid) {}
+    public void LDIV(long iid) {}
 
-    public void FREM(int iid, int mid) {}
+    public void FDIV(long iid) {}
 
-    public void DREM(int iid, int mid) {}
+    public void DDIV(long iid) {}
 
-    public void INEG(int iid, int mid) {}
+    public void IREM(long iid) {}
 
-    public void LNEG(int iid, int mid) {}
+    public void LREM(long iid) {}
 
-    public void FNEG(int iid, int mid) {}
+    public void FREM(long iid) {}
 
-    public void DNEG(int iid, int mid) {}
+    public void DREM(long iid) {}
 
-    public void ISHL(int iid, int mid) {}
+    public void INEG(long iid) {}
 
-    public void LSHL(int iid, int mid) {}
+    public void LNEG(long iid) {}
 
-    public void ISHR(int iid, int mid) {}
+    public void FNEG(long iid) {}
 
-    public void LSHR(int iid, int mid) {}
+    public void DNEG(long iid) {}
 
-    public void IUSHR(int iid, int mid) {}
+    public void ISHL(long iid) {}
 
-    public void LUSHR(int iid, int mid) {}
+    public void LSHL(long iid) {}
 
-    public void IAND(int iid, int mid) {}
+    public void ISHR(long iid) {}
 
-    public void LAND(int iid, int mid) {}
+    public void LSHR(long iid) {}
 
-    public void IOR(int iid, int mid) {}
+    public void IUSHR(long iid) {}
 
-    public void LOR(int iid, int mid) {}
+    public void LUSHR(long iid) {}
 
-    public void IXOR(int iid, int mid) {}
+    public void IAND(long iid) {}
 
-    public void LXOR(int iid, int mid) {}
+    public void LAND(long iid) {}
 
-    public void I2L(int iid, int mid) {}
+    public void IOR(long iid) {}
 
-    public void I2F(int iid, int mid) {}
+    public void LOR(long iid) {}
 
-    public void I2D(int iid, int mid) {}
+    public void IXOR(long iid) {}
 
-    public void L2I(int iid, int mid) {}
+    public void LXOR(long iid) {}
 
-    public void L2F(int iid, int mid) {}
+    public void I2L(long iid) {}
 
-    public void L2D(int iid, int mid) {}
+    public void I2F(long iid) {}
 
-    public void F2I(int iid, int mid) {}
+    public void I2D(long iid) {}
 
-    public void F2L(int iid, int mid) {}
+    public void L2I(long iid) {}
 
-    public void F2D(int iid, int mid) {}
+    public void L2F(long iid) {}
 
-    public void D2I(int iid, int mid) {}
+    public void L2D(long iid) {}
 
-    public void D2L(int iid, int mid) {}
+    public void F2I(long iid) {}
 
-    public void D2F(int iid, int mid) {}
+    public void F2L(long iid) {}
 
-    public void I2B(int iid, int mid) {}
+    public void F2D(long iid) {}
 
-    public void I2C(int iid, int mid) {}
+    public void D2I(long iid) {}
 
-    public void I2S(int iid, int mid) {}
+    public void D2L(long iid) {}
 
-    public void LCMP(int iid, int mid) {}
+    public void D2F(long iid) {}
 
-    public void FCMPL(int iid, int mid) {}
+    public void I2B(long iid) {}
 
-    public void FCMPG(int iid, int mid) {}
+    public void I2C(long iid) {}
 
-    public void DCMPL(int iid, int mid) {}
+    public void I2S(long iid) {}
 
-    public void DCMPG(int iid, int mid) {}
+    public void LCMP(long iid) {}
 
-    public void IRETURN(int iid, int mid) {}
+    public void FCMPL(long iid) {}
 
-    public void LRETURN(int iid, int mid) {}
+    public void FCMPG(long iid) {}
 
-    public void FRETURN(int iid, int mid) {}
+    public void DCMPL(long iid) {}
 
-    public void DRETURN(int iid, int mid) {}
+    public void DCMPG(long iid) {}
 
-    public void ARETURN(int iid, int mid) {}
+    public void IRETURN(long iid) {}
 
-    public void RETURN(int iid, int mid) {}
+    public void LRETURN(long iid) {}
 
-    public void ARRAYLENGTH(int iid, int mid) {}
+    public void FRETURN(long iid) {}
 
-    public void ATHROW(int iid, int mid) {}
+    public void DRETURN(long iid) {}
 
-    public void MONITORENTER(int iid, int mid) {}
+    public void ARETURN(long iid) {}
 
-    public void MONITOREXIT(int iid, int mid) {}
+    public void RETURN(long iid) {}
 
-    public void GETVALUE_double(double v, int i) {}
+    public void ARRAYLENGTH(long iid) {}
 
-    public void GETVALUE_long(long v, int i) {}
+    public void ATHROW(long iid) {}
 
-    public void GETVALUE_Object(Object v, int i) {}
+    public void MONITORENTER(long iid) {}
 
-    public void GETVALUE_boolean(boolean v, int i) {}
+    public void MONITOREXIT(long iid) {}
 
-    public void GETVALUE_byte(byte v, int i) {}
+    public void GETVALUE_double(long iid, double v, int i) {}
 
-    public void GETVALUE_char(char v, int i) {}
+    public void GETVALUE_long(long iid, long v, int i) {}
 
-    public void GETVALUE_float(float v, int i) {}
+    public void GETVALUE_Object(long iid, Object v, int i) {}
 
-    public void GETVALUE_int(int v, int i) {}
+    public void GETVALUE_boolean(long iid, boolean v, int i) {}
 
-    public void GETVALUE_short(short v, int i) {}
+    public void GETVALUE_byte(long iid, byte v, int i) {}
 
-    public void GETVALUE_void() {}
+    public void GETVALUE_char(long iid, char v, int i) {}
 
-    public void INVOKEMETHOD_EXCEPTION() {}
+    public void GETVALUE_float(long iid, float v, int i) {}
 
-    public void INVOKEMETHOD_END() {}
+    public void GETVALUE_int(long iid, int v, int i) {}
 
-    public void MAKE_SYMBOLIC() {}
+    public void GETVALUE_short(long iid, short v, int i) {}
+
+    public void GETVALUE_void(long iid) {}
+
+    public void INVOKEMETHOD_EXCEPTION(long iid, long invokeId) {}
+
+    public void INVOKEMETHOD_END(long iid, long invokeId) {}
+
+    public void INVOKECLINIT_END(long iid, long invokeId) {}
+
+    public void MAKE_SYMBOLIC(long iid) {}
 
     @Override
-    public void LOOP_BEGIN(int iid) {}
+    public void LOOP_BEGIN(long iid) {}
 
     @Override
-    public void LOOP_END(int iid) {}
+    public void LOOP_END(long iid) {}
 
-    public void SPECIAL(int i) {}
+    public void SPECIAL(long iid, int i) {}
 
     public void flush() {}
 }

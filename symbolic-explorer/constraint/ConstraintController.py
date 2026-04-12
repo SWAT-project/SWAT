@@ -1,21 +1,24 @@
-from flask_restful import Resource
-from flask import request
+from fastapi import APIRouter
+from fastapi import Query
 import threading
 from constraint.ConstraintService import ConstraintService
-from parse.TraceParser import parse_trace, parse_inputs
-from log import request_logger as logger
+from parse.DataTransferObjects import ConstraintRequest
 
-class ConstraintController(Resource):
+class ConstraintController:
     """
-    A Flask-Restful resource for handling constraints related to an endpoint.
+    API for handling constraints related to an endpoint.
     This controller is responsible for processing POST requests that contain 
     constraints data, such as traces and inputs, related to an endpoint.
 
-    The constraints data is processed in a separate thread to avoid blocking 
-    the main execution thread of the Flask application.
+    The constraints data is processed in a separate thread to ensure that the answer .
     """
 
-    def post(self):
+    def __init__(self):
+        self.router = APIRouter()
+        self.router.add_api_route("/constraints/submit", self.post, methods=["POST"])
+
+    @staticmethod
+    def post(request: ConstraintRequest, endpointID: str = Query(...), traceID: str = Query(...)):
         """
         Handles a POST request to add constraints related to an endpoint.
 
@@ -32,24 +35,24 @@ class ConstraintController(Resource):
         and a status code of 202 (Accepted).
         """
 
-        # Retrieve endpoint ID and trace ID from query parameters
-        endpoint_id = request.args.get('endpointID')
-        trace_id = request.args.get('traceID')
+        trace = request.trace
+        inputs = request.inputs
+        ufs = request.ufs
+        symbolicContextLoss = request.symbolicContextLoss
+        symbolicPrecisionLoss = request.symbolicPrecisionLoss
+        referenceSemanticChange = request.referenceSemanticChange
 
-        # Retrieve constraints data from the request body
-        content = request.json
-
-        # Parse the trace and inputs from the constraints data
-        trace = parse_trace(content['trace'], trace_id=trace_id)
-        inputs = parse_inputs(content['inputs'])
-       
         # Start a new thread to add constraints
         thread = threading.Thread(target=ConstraintService.add_constraints, kwargs={
-            'endpoint_id': endpoint_id,
-            'trace_id': trace_id,
+            'endpoint_id': endpointID,
+            'trace_id': traceID,
             'trace': trace,
-            'inputs': inputs})
+            'inputs': inputs,
+            'ufs': ufs,
+            'symbolic_context_loss': symbolicContextLoss,
+            'symbolic_precision_loss': symbolicPrecisionLoss,
+            'reference_semantic_change': referenceSemanticChange})
         thread.start()
-
+        thread.join() # To ensure trace is added in SV-Comp mode
         # Return a response indicating that the request has been accepted
         return {"message": "Accepted"}, 202
