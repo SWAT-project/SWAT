@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * F2I - Convert float to int. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.f2i">Java VM
@@ -10,10 +12,9 @@ public class F2I extends Instruction {
      * Creates a new F2I instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public F2I(int iid, int mid) {
-        super(iid, mid);
+    public F2I(long iid) {
+        super(iid);
     }
 
     /**
@@ -21,7 +22,7 @@ public class F2I extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitF2I(this);
     }
 

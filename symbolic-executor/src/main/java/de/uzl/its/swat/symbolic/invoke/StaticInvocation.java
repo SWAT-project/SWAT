@@ -1,17 +1,24 @@
 package de.uzl.its.swat.symbolic.invoke;
 
-import static de.uzl.its.swat.symbolic.value.reference.ObjectValue.ADDRESS_UNKNOWN;
+import org.objectweb.asm.Type;
 
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
+import de.uzl.its.swat.common.exceptions.ValueConversionException;
+import de.uzl.its.swat.symbolic.invoke.java.lang.BooleanInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.ByteInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.CharacterInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.DoubleInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.FloatInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.IntegerInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.LongInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.MathInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.ShortInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.StringInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.util.ObjectsInvocation;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
-import de.uzl.its.swat.symbolic.value.ValueFactory;
-import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
-import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
-import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.LongValue;
-import org.objectweb.asm.Type;
-import org.sosy_lab.java_smt.api.*;
-import org.sosy_lab.java_smt.api.BooleanFormula;
 
 public final class StaticInvocation {
 
@@ -20,53 +27,36 @@ public final class StaticInvocation {
             String name,
             Type[] desc,
             Value<?, ?>[] args,
-            SymbolicTraceHandler symbolicStateHandler) {
-        if (owner.equals("de/uzl/its/swat/Main")) {
-            return InternalInvocation.invokeMethod(name, args, desc, symbolicStateHandler);
-        } else if (owner.equals("java/lang/String")) {
-            return StringInvocation.invokeMethod(name, args, desc, symbolicStateHandler);
-        } else if (owner.equals("java/lang/Character")) {
-            return CharacterInvocation.invokeMethod(name, args, desc, symbolicStateHandler);
-        } else if (owner.equals("java/lang/Integer") && name.equals("valueOf")) {
-            if (args[0] instanceof IntValue intValue) {
-                return ValueFactory.createIntegerObjectValue(intValue, ADDRESS_UNKNOWN);
-            }
-        } else if (owner.equals("java/lang/Long") && name.equals("valueOf")) {
-            if (args[0] instanceof LongValue longValue) {
-                return ValueFactory.createLongObjectValue(longValue, ADDRESS_UNKNOWN);
-            }
-
-        } else if (owner.equals("java/lang/invoke/LambdaMetafactory")) {
-            throw new RuntimeException("Unexpected case!");
-        } else if (owner.equals("java/lang/Math") && name.equals("max") && args.length == 2) {
-            if (args[0] instanceof IntValue a && args[1] instanceof IntValue b) {
-                return invokeMax(a, b);
-            }
-            if (args[0] instanceof DoubleValue a && args[1] instanceof DoubleValue b) {
-                return invokeMax(a, b);
-            }
-        } else if (owner.equals("java/lang/Math") && name.equals("min") && args.length == 2) {
-            if (args[0] instanceof IntValue a && args[1] instanceof IntValue b) {
-                return a.concrete < b.concrete ? a : b;
-            }
-        }
-        return PlaceHolder.instance;
-    }
-
-    private static IntValue invokeMax(IntValue a, IntValue b) {
-        FormulaManager fmgr = a.context.getFormulaManager();
-        BooleanFormula cond = fmgr.getIntegerFormulaManager().greaterOrEquals(a.formula, b.formula);
-        NumeralFormula.IntegerFormula res =
-                fmgr.getBooleanFormulaManager().ifThenElse(cond, a.formula, b.formula);
-        return new IntValue(a.context, Math.max(a.concrete, b.concrete), res);
-    }
-
-    private static DoubleValue invokeMax(DoubleValue a, DoubleValue b) {
-        FormulaManager fmgr = a.context.getFormulaManager();
-        BooleanFormula cond =
-                fmgr.getFloatingPointFormulaManager().greaterOrEquals(a.formula, b.formula);
-        FloatingPointFormula res =
-                fmgr.getBooleanFormulaManager().ifThenElse(cond, a.formula, b.formula);
-        return new DoubleValue(a.context, Math.max(a.concrete, b.concrete), res);
+            SymbolicTraceHandler symbolicStateHandler) throws NoThreadContextException, ValueConversionException, NotImplementedException {
+        Value<?, ?> ret =
+                switch (owner) {
+                    case "de/uzl/its/swat/Main" -> InternalInvocation.invokeStaticMethod(
+                            name, args, desc, symbolicStateHandler);
+                    case "de/uzl/its/swat/instrument/Intrinsics" -> InternalInvocation.invokeStaticMethod(
+                            name, args, desc, symbolicStateHandler);
+                    case "java/lang/Boolean" -> BooleanInvocation.invokeStaticMethod(
+                            name, args, desc);
+                    case "java/lang/Byte" -> ByteInvocation.invokeStaticMethod(
+                            name, args, desc, symbolicStateHandler);
+                    case "java/lang/String" -> StringInvocation.invokeStaticMethod(
+                            name, args, desc);
+                    case "java/lang/Character" -> CharacterInvocation.invokeStaticMethod(
+                            name, args, desc, symbolicStateHandler);
+                    case "java/lang/Integer" -> IntegerInvocation.invokeStaticMethod(
+                            name, args, desc);
+                    case "java/lang/Long" -> LongInvocation.invokeStaticMethod(
+                            name, args, desc, symbolicStateHandler);
+                    case "java/lang/Math", "java/lang/StrictMath" -> MathInvocation.invokeStaticMethod(
+                            name, args, desc, symbolicStateHandler);
+                    case "java/lang/Short" -> ShortInvocation.invokeStaticMethod(name, args, desc);
+                    case "java/lang/Float" -> FloatInvocation.invokeStaticMethod(
+                            name, args, desc, symbolicStateHandler);
+                    case "java/lang/Double" -> DoubleInvocation.invokeStaticMethod(
+                            name, args, desc, symbolicStateHandler);
+                    case "java/util/Objects" -> ObjectsInvocation.invokeStaticMethod(
+                            name, args, desc, symbolicStateHandler);
+                    default -> PlaceHolder.instance;
+                };
+        return ret;
     }
 }

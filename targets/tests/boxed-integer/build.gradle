@@ -1,0 +1,49 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.tests.Main'
+    }
+}
+
+tasks.register('deleteLogs', Delete) {
+    // Delete the 'logs' folder relative to this build.gradle file.
+    delete file('logs')
+}
+
+tasks.register('boxedIntegerTest', JavaExec) {
+    mainClass = 'de.uzl.its.tests.Main'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g',
+            "-Dconfig.path=${rootDir}/targets/tests/boxed-integer/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path",
+            "-Dagent.logging.level=DEBUG"
+    ]
+    dependsOn ':symbolic-executor:assemble'
+    dependsOn build
+    dependsOn tasks.named('deleteLogs')
+}
+
+
+tasks.register('boxedIntegerIntegrationTest', Exec) {
+    // Set the working directory if it's different from the root
+    workingDir "${rootDir}"
+
+    // Set the command line to execute the Python script
+    commandLine 'python3', "${rootDir}/symbolic-explorer/SymbolicExplorer.py", "--mode", "active", "--target", "${rootDir}/targets/tests/boxed-integer/build/libs/boxed-integer.jar", "--symbolicvars", "Ljava/lang/Integer;Ljava/lang/Integer", "--config", "${rootDir}/targets/tests/static-initializer/swat.cfg", "--agent", "${rootDir}/symbolic-executor/lib/symbolic-executor.jar", "--z3dir", "${rootDir}/libs/java-library-path"
+
+    // Set environment variables
+    environment "PYTHONUNBUFFERED", "1"
+
+    // Use this if you need to depend on another task, like building your Java project first
+    dependsOn build
+    dependsOn tasks.named('deleteLogs')
+}

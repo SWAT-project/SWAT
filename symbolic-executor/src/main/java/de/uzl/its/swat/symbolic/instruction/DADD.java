@@ -1,4 +1,6 @@
 package de.uzl.its.swat.symbolic.instruction;
+
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
 /**
  * DADD - Add double. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.dadd">Java VM
@@ -10,10 +12,9 @@ public class DADD extends Instruction {
      * Creates a new DADD instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public DADD(int iid, int mid) {
-        super(iid, mid);
+    public DADD(long iid) {
+        super(iid);
     }
 
     /**
@@ -21,7 +22,7 @@ public class DADD extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitDADD(this);
     }
 

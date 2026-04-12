@@ -34,6 +34,6 @@ public class ParameterMethodAdapter extends AbstractMethodAdapter {
      */
     @Override
     public void visitCode() {
-        handleMethodParameters(access, ParameterTransformer.getPrintBox());
+        handleMethodParameters(access, ParameterTransformer.getPrintBox(), false);
     }
 }

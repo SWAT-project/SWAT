@@ -2,16 +2,20 @@ package de.uzl.its.swat.solver;
 
 import static java.lang.Thread.currentThread;
 
+import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
+import de.uzl.its.swat.common.Util;
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.common.logging.GlobalLogger;
+import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
+import de.uzl.its.swat.metadata.ClassDepot;
+import de.uzl.its.swat.metadata.ClassDepotRuntime;
 import de.uzl.its.swat.symbolic.trace.*;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.sosy_lab.java_smt.api.*;
 
 /**
@@ -21,16 +25,16 @@ import org.sosy_lab.java_smt.api.*;
  * for debugging and testing purposes.
  */
 public class LocalSolver {
-    private static final Logger logger = LoggerFactory.getLogger(LocalSolver.class);
+    private static final Logger logger = GlobalLogger.getSolutionLogger();
 
     /**
      * Retrieves all recorded constraints and collects input bounds and path constraints for each
      * constraint. Then, it tries to find a solution for each constraint and logs it.
      */
-    public static void solve() {
-        logger.debug("Beginning to solve constraints.");
+    public static void solve() throws NoThreadContextException {
+        logger.warn("Beginning to solve constraints.");
         SymbolicTraceHandler symbolicTraceHandler =
-                ThreadHandler.getSymbolicVisitor(currentThread().getId()).getSymbolicStateHandler();
+                ThreadHandler.getSymbolicVisitor(currentThread().getId()).getSymbolicTraceHandler();
         FormulaManager fmgr =
                 ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
         BooleanFormulaManager bmgr = fmgr.getBooleanFormulaManager();
@@ -38,16 +42,37 @@ public class LocalSolver {
         // Logs all constraints
         // symbolicTraceHandler.dumpConstraints(logger.getLogger());
 
-        HashMap<Integer, BooleanFormula> constraints = symbolicTraceHandler.getBranchConstraints();
-        logger.debug("Found " + constraints.size() + " constraints.");
-        HashSet<String> solutions = new HashSet<>();
+        HashMap<Long, BooleanFormula> constraints = symbolicTraceHandler.getBranchConstraints();
+        logger.warn("Found " + constraints.size() + " constraints.");
 
+
+        ClassDepotRuntime classDepot = ClassDepot.getRuntimeInstance();
+        int nullcnt = 0;
+        int ooscnt = 0;
         // Iterates over all constraints and tries to find a solution for each
-        for (Map.Entry<Integer, BooleanFormula> entry : constraints.entrySet()) {
+        for (Map.Entry<Long, BooleanFormula> entry : constraints.entrySet()) {
 
+
+            long iid = entry.getKey();
+            int cid = (int) GlobalStateForInstrumentation.extractCid(iid);
+            if (cid >= ClassDepot.getRuntimeInstance().getClassCounter()) {
+                new ErrorHandler().raiseException("cid " + cid + " larger than class count "
+                        + ClassDepot.getRuntimeInstance().getClassCounter());
+            }
+
+            String cname = classDepot.getClassName(cid);
+            if (cname == null){
+                nullcnt++;
+                continue;
+            } else if (!Util.isInSymbolicScope(cname)) {
+                ooscnt++;
+                continue;
+            }
             // The constraint is negated to find a solution leading the opposite branching
             // direction.
             BooleanFormula constraint = bmgr.not(entry.getValue());
+            logger.info("Processing constraint for class {}: {}", cname, constraint);
+
 
             Map<String, Formula> freeVars = fmgr.extractVariablesAndUFs(constraint);
             // Only solve for constraints that contain symbolic variables (free variables)
@@ -63,7 +88,7 @@ public class LocalSolver {
                     }
 
                     // Add path constraints
-                    HashMap<Integer, BooleanFormula> pathConstraints =
+                    HashMap<Long, BooleanFormula> pathConstraints =
                             symbolicTraceHandler.getPathConstraints(entry.getKey());
                     for (BooleanFormula pathConstraint : pathConstraints.values()) {
                         prover.addConstraint(pathConstraint);
@@ -87,16 +112,20 @@ public class LocalSolver {
                                             .replaceAll("[\\r\\n]", ""));
                     if (!isUnsat) {
                         Model model = prover.getModel();
-                        String sol = String.valueOf(model.asList());
-                        printBox.addMsg("[Model] " + sol);
+
+                        printBox.addMsg("[Model] " + model);
                     } else {
                         printBox.addMsg("[Model] UNSAT");
                     }
-                    logger.info(printBox.toString());
+                    logger.warn(printBox.toString());
                 } catch (Throwable t) {
                     new ErrorHandler().handleException("Error while solving constraints", t);
                 }
+            } else {
+                logger.warn("Skipping constraint without free variables");
             }
         }
+        logger.info("Skipped {} constraints with null class names.", nullcnt);
+        logger.info("Skipped {} constraints with out-of-scope class names.", ooscnt);
     }
 }

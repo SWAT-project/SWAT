@@ -3,7 +3,9 @@ from data.trace.Input import Input
 from z3 import Solver, is_true, Not
 from enum import Enum
 from typing import Union, Dict, Tuple, Any
-from log import logger
+
+import log
+logger = log.get_logger()
 
 class DataTypes(Enum):
     BOOLEAN = 'Z'
@@ -14,7 +16,8 @@ class DataTypes(Enum):
     FLOAT = 'F'
     LONG = 'J'
     DOUBLE = 'D'
-    STRING = 'Ljava/lang/String'
+    STRING = 'java/lang/String'
+    LIST = 'Ljava/util/List;'
 
 
 class SymbolicStorage:
@@ -23,8 +26,21 @@ class SymbolicStorage:
         self.vars = {}
         self.input_type = None
 
-    def register_vars(self, sym_vars: [str]) -> None:
-        for idx, var in enumerate(sym_vars):
+    def register_vars(self, sym_vars: [str], indices: [int] = None) -> None:
+        """Register symbolic variables with their actual indices from DSE.
+        
+        Args:
+            sym_vars: List of variable type strings (e.g., ['I', 'F', 'java/lang/String'])
+            indices: List of actual indices from DSE (e.g., [5, 10, 15]). If None, uses enumerate starting from 0.
+        """
+        if indices is None:
+            # Fallback to enumerate for backward compatibility
+            indices = list(range(len(sym_vars)))
+        
+        if len(sym_vars) != len(indices):
+            raise ValueError(f"Length mismatch: sym_vars has {len(sym_vars)} elements, indices has {len(indices)}")
+        
+        for var, idx in zip(sym_vars, indices):
             v = SymbolicVar(dtype=DataTypes(var), idx=idx)
             self.vars[int(v.idx)] = v
             logger.info(f'[EXPLORER] Registered symbolic variable {v.dType.name}_{v.idx}')
@@ -53,8 +69,15 @@ class SymbolicStorage:
 
 
     def store_solution(self, sol: dict):
-        for s in sol.values():
-            self.vars[int(s['index'])].newValue = s['encoded_value']
+        """Store solution from solver, handling both simple and list element variables."""
+        # Store the raw solution for list element access
+        self.raw_solution = sol
+
+        # Update registered variables with new values
+        for var_name, var_data in sol.items():
+            idx = int(var_data['index'])
+            if idx in self.vars:
+                self.vars[idx].newValue = var_data['encoded_value']
 
 
 class SymbolicVar:
@@ -65,4 +88,4 @@ class SymbolicVar:
         self.newValue = None
 
     def __str__(self) -> str:
-        return f'{self.dType.name}_{self.idx} = {self.value}'
+        return f'{self.dType.name}_{self.idx} = {self.value} -> {self.newValue}'

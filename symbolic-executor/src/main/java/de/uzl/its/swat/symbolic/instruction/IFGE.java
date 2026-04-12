@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * IFGE - Branch if int comparison with zero succeeds (greater or equal) For more information see
  * the <a
@@ -14,11 +16,10 @@ public class IFGE extends Instruction {
      * Creates a new IFGE instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param label the jump destination
      */
-    public IFGE(int iid, int mid, int label) {
-        super(iid, mid);
+    public IFGE(long iid, int label) {
+        super(iid);
         this.label = label;
     }
 
@@ -27,7 +28,7 @@ public class IFGE extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitIFGE(this);
     }
 

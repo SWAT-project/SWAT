@@ -1,0 +1,45 @@
+name: Run SV-COMP Targets
+
+on:
+  push:
+    branches: [ "development" , "nico/ci-test"]
+
+jobs:
+  build-and-run:
+    name: Build & Run Container
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Checkout SV-Benchmarks
+        uses: actions/checkout@v4
+        with:
+          repository: 'SWAT-project/SV-Benchmarks'
+          ssh-key: '${{ secrets.SWAT_PROJECT_SV_BENCHMARKS }}'
+          path: ./targets/sv-comp/sv-benchmarks
+
+      - name: Build Docker Image
+        run: |
+          docker build --no-cache -f ./docker/Dockerfile -t swat-svcomp-image:ci .
+
+      - name: Run SV-COMP Target Tests
+        run: |
+          summary_dir=$(dirname "$GITHUB_STEP_SUMMARY")
+          summary_file=$(basename "$GITHUB_STEP_SUMMARY")
+          docker run --rm \
+            -w /app/targets/sv-comp/scripts \
+            -v "$summary_dir:/gh-summary" \
+            -e GITHUB_STEP_SUMMARY="/gh-summary/$summary_file" \
+            swat-svcomp-image:ci ./ci_run.sh
+
+      - name: Remove Docker Image
+        if: always()
+        run: |
+          docker rmi -f swat-svcomp-image:ci || true
+
+      - name: Cleanup Work Directory
+        if: always()
+        run: |
+          rm -rf ./targets/sv-comp/sv-benchmarks || true

@@ -1,4 +1,6 @@
 package de.uzl.its.swat.symbolic.instruction;
+
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
 /**
  * DUP2_X1 - Duplicate the top one or two operand stack values and insert two or three values down.
  * For more information see the <a
@@ -11,10 +13,9 @@ public class DUP2_X1 extends Instruction {
      * Creates a new DUP2_X1 instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public DUP2_X1(int iid, int mid) {
-        super(iid, mid);
+    public DUP2_X1(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class DUP2_X1 extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitDUP2_X1(this);
     }
 

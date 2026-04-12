@@ -1,5 +1,7 @@
 package de.uzl.its.swat.request;
 
+import ch.qos.logback.classic.Logger;
+import de.uzl.its.swat.common.logging.GlobalLogger;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -7,10 +9,9 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
-import org.slf4j.LoggerFactory;
 
 public abstract class Request {
-    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Request.class);
+    private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
 
     public static void send(
             String host,
@@ -25,15 +26,17 @@ public abstract class Request {
                 String.format(
                         "http://%s:%d/%s?endpointID=%d&traceID=%d",
                         host, port, path, endpointID, traceID);
-        logger.info("Sending request to: " + url);
+        logger.info("Sending request to: {}", url);
         HttpRequest request =
                 HttpRequest.newBuilder()
                         .uri(URI.create(url))
                         .header("Content-Type", "application/json")
+                        .version(HttpClient.Version.HTTP_1_1)
                         .POST(
                                 HttpRequest.BodyPublishers.ofString(
                                         requestBodyJson, StandardCharsets.UTF_8))
                         .build();
+        logger.trace("Request body: {}", requestBodyJson);
         CompletableFuture<HttpResponse<String>> responseFuture =
                 httpClient.sendAsync(request, BodyHandlers.ofString());
 

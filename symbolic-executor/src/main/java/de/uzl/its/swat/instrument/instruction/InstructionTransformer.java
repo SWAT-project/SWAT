@@ -1,30 +1,40 @@
 package de.uzl.its.swat.instrument.instruction;
 
+import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
+import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.common.Util;
+import de.uzl.its.swat.common.logging.GlobalLogger;
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
+import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+import java.util.Arrays;
 import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
-import org.slf4j.LoggerFactory;
+import org.objectweb.asm.util.CheckClassAdapter;
 
 /**
  * An agent provides an implementation of this interface in order to transform class files. The
  * transformation occurs before the class is defined by the JVM.
  */
 public class InstructionTransformer implements ClassFileTransformer {
-    private static final org.slf4j.Logger logger =
-            LoggerFactory.getLogger(InstructionTransformer.class);
+    private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
 
-    @Getter private static PrintBox printBox;
+
+    private static final ThreadLocal<PrintBox> printBox = ThreadLocal.withInitial(() -> new PrintBox(60, "Transformer" + InstructionTransformer.class.getSimpleName()));
+
+    public static PrintBox getPrintBox() {
+        return printBox.get();
+    }
 
     public InstructionTransformer() {
-        printBox = new PrintBox(60, "Transformer: " + "Instruction");
         Transformer.getPrintBox()
                 .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
     }
@@ -53,34 +63,77 @@ public class InstructionTransformer implements ClassFileTransformer {
             Class<?> classBeingRedefined,
             ProtectionDomain d,
             byte[] cbuf) {
-
-        if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) return cbuf;
-        printBox.addMsg("Class: " + cname);
-        printBox.setContentPresent(true);
         try {
+
+            if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return cbuf;
+            getPrintBox().addMsg("Class: " + cname);
+            getPrintBox().setContentPresent(true);
+
             ClassReader cr = new ClassReader(cbuf);
             ClassWriter cw =
                     new SafeClassWriter(
-                            cr, loader, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
-            ClassVisitor cv = new InstructionClassAdapter(cw, cname);
+                            cr, loader, ClassWriter.COMPUTE_FRAMES);
+            ClassVisitor cv = new InstructionClassAdapter(new CheckClassAdapter(cw, true), cname);
             try {
                 cr.accept(cv, ClassReader.SKIP_FRAMES);
+
+                if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {
+                    StringWriter stringWriter = new StringWriter();
+                    PrintWriter printWriter = new PrintWriter(stringWriter);
+                    CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false, printWriter);
+                    SWATAssert.enforce(stringWriter.toString().isEmpty(), "Instrumentation error: {}", stringWriter);
+                }
             } catch (Exception e) {
-                logger.info("Error: " + e);
+                byte[] partlyTransformedClass = cw.toByteArray();
+                saveClass(partlyTransformedClass, cname);
+                logger.info("Error: " + e.getMessage());
+                for (StackTraceElement ste : Arrays.stream(e.getStackTrace()).toList()) {
+
+                    logger.info("Error: " + ste.toString());
+                }
                 new ErrorHandler()
                         .handleException("[INSTRUCTION TRANSFORMER] Error while instrumenting", e);
             }
 
             Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
-            // if (printBox.isContentPresent()) logger.info(printBox.toString());
+            if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
             return cw.toByteArray();
 
         } catch (Exception e) {
             new ErrorHandler()
                     .handleException("[INSTRUCTION TRANSFORMER] Error while instrumenting", e);
+            System.err.println("HALT!");
+            Runtime.getRuntime().halt(3742);
+            // new ErrorHandler()
+            //         .handleException("[INSTRUCTION TRANSFORMER] Error while instrumenting", e);
         }
+
         Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
-        // if (printBox.isContentPresent()) logger.info(printBox.toString());
+        if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
         return cbuf;
+    }
+
+    public void saveClass(byte[] transformedClass, String cname) throws Exception {
+        String fullPath =
+                Config.instance().getLoggingDirectory()
+                        + "/"
+                        + "instrumented"
+                        + "/"
+                        + cname.replace('.', '/')
+                        + ".class";
+
+        try {
+            File file = new File(fullPath);
+            File parent = new File(file.getParent());
+            if (!parent.exists()) {
+                parent.mkdirs();
+            }
+
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                out.write(transformedClass);
+            }
+        } catch (Exception e) {
+            new ErrorHandler().handleException(e);
+        }
     }
 }

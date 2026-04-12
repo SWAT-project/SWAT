@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * FALOAD - Load float from array. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.faload">Java VM
@@ -11,10 +13,9 @@ public class FALOAD extends Instruction {
      * Creates a new FALOAD instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public FALOAD(int iid, int mid) {
-        super(iid, mid);
+    public FALOAD(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class FALOAD extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitFALOAD(this);
     }
 

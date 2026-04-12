@@ -1,0 +1,28 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.tests.DXXX'
+    }
+}
+
+tasks.register('runDXXX', JavaExec) {
+    mainClass = 'de.uzl.its.tests.DXXX'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g',
+            "-Dconfig.path=${rootDir}/targets/instruction-tests/DXXX/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path",
+            "-Dagent.logging.level=DEBUG"
+    ]
+    dependsOn ':symbolic-executor:assemble'
+    dependsOn build
+}

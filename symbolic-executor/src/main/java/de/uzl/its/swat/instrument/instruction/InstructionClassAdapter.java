@@ -1,10 +1,13 @@
 package de.uzl.its.swat.instrument.instruction;
 
+import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
-import de.uzl.its.swat.symbolic.ClassNames;
+import de.uzl.its.swat.metadata.ClassDepot;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.commons.JSRInlinerAdapter;
+import org.objectweb.asm.commons.TryCatchBlockSorter;
 
 /**
  * A visitor to visit a Java class. The methods of this class must be called in the following order:
@@ -22,6 +25,20 @@ public class InstructionClassAdapter extends ClassVisitor {
     public InstructionClassAdapter(ClassVisitor cv, String cname) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
+    }
+
+    @Override
+    public void visit(
+            int version,
+            int access,
+            String name,
+            String signature,
+            String superName,
+            String[] interfaces) {
+        long cIdx = ClassDepot.getInstrumentationInstance().getClassIndex(name);
+        GlobalStateForInstrumentation.instance.setCid(cIdx);
+
+        super.visit(version, access, name, signature, superName, interfaces);
     }
 
     /**
@@ -47,13 +64,25 @@ public class InstructionClassAdapter extends ClassVisitor {
         if (cname.equals("de/uzl/its/swat/instrument/svcomp/Verifier") && !name.equals("assume")) {
             return mv;
         }
+
+        if(Util.ignoreMethod(name)) {
+            // Avoid Jacoco
+            return mv;
+        }
+
         if (mv != null) {
-            return new InstructionMethodAdapter(
-                    mv,
-                    name.equals("<init>"),
-                    GlobalStateForInstrumentation.instance,
-                    ClassNames.getInstance(),
-                    name);
+            InstructionMethodAdapter ima =
+                    new InstructionMethodAdapter(
+                            new TryCatchBlockSorter(
+                                    new JSRInlinerAdapter(mv, access, name, desc, signature, exceptions)
+                                    , access, name, desc, signature, exceptions),
+                            name.equals("<init>"),
+                            (access & Opcodes.ACC_STATIC) != 0,
+                            GlobalStateForInstrumentation.instance,
+                            name,
+                            desc,
+                            cname);
+            return ima;
         }
 
         return null;

@@ -1,0 +1,10 @@
+server:
+  port: 8080
+spring:
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+logging:
+  level:
+    root: INFO
+    de.uzl.its.fleet: DEBUG

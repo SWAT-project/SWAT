@@ -1,18 +1,25 @@
 package de.uzl.its.swat.instrument.svcomp;
 
+import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
+import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.common.Util;
+import de.uzl.its.swat.common.logging.GlobalLogger;
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
+import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+
 import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.tree.ClassNode;
-import org.slf4j.LoggerFactory;
+import org.objectweb.asm.util.CheckClassAdapter;
 
 /**
  * An agent provides an implementation of this interface in order to transform class files. The
@@ -20,13 +27,16 @@ import org.slf4j.LoggerFactory;
  */
 public class SVCompTransformer implements ClassFileTransformer {
 
-    @Getter private static PrintBox printBox;
 
-    @Getter
-    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(SVCompTransformer.class);
+    private static final ThreadLocal<PrintBox> printBox = ThreadLocal.withInitial(() -> new PrintBox(60, "Transformer" + SVCompTransformer.class.getSimpleName()));
+
+    public static PrintBox getPrintBox() {
+        return printBox.get();
+    }
+
+    @Getter private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
 
     public SVCompTransformer() {
-        printBox = new PrintBox(60, "Transformer: " + "SV-Comp");
         Transformer.getPrintBox()
                 .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
     }
@@ -56,18 +66,25 @@ public class SVCompTransformer implements ClassFileTransformer {
             ProtectionDomain d,
             byte[] cbuf) {
 
-        if (classBeingRedefined != null || !Transformer.shouldInstrument(cname)) return cbuf;
-        printBox.addMsg("Class: " + cname);
+        if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return cbuf;
+        getPrintBox().addMsg("Class: " + cname);
+        getPrintBox().setContentPresent(true);
         try {
             ClassReader cr = new ClassReader(cbuf);
-            ClassNode cn = new ClassNode(Opcodes.ASM9);
-            cr.accept(cn, ClassReader.EXPAND_FRAMES);
+            ClassWriter cw =
+                    new SafeClassWriter(
+                            cr, loader, ClassWriter.COMPUTE_FRAMES);
+            ClassVisitor cv = new SVCompClassAdapter(new CheckClassAdapter(cw, true), cname);
+            cr.accept(cv, ClassReader.SKIP_FRAMES);
 
-            ClassWriter cw = new ClassWriter(cr, ClassReader.EXPAND_FRAMES);
-            ClassVisitor cv = new SVCompClassAdapter(cname, cw);
-            cr.accept(cv, ClassReader.EXPAND_FRAMES);
+            if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {
+                StringWriter stringWriter = new StringWriter();
+                PrintWriter printWriter = new PrintWriter(stringWriter);
+                CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false, printWriter);
+                SWATAssert.enforce(stringWriter.toString().isEmpty(), "Instrumentation error: {}", stringWriter);
+            }
 
-            if (printBox.isContentPresent()) logger.info(printBox.toString());
+            if (getPrintBox().isContentPresent()) logger.info(getPrintBox().toString());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -75,7 +92,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SV_COMP);
-        if (printBox.isContentPresent()) logger.info(printBox.toString());
+        if (getPrintBox().isContentPresent()) logger.info(getPrintBox().toString());
 
         return cbuf;
     }

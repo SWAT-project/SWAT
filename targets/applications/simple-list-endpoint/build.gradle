@@ -1,0 +1,50 @@
+plugins {
+    id 'org.springframework.boot' version '3.5.5'
+    id 'java'
+}
+
+group = 'de.uzl.its.targets'
+version = '0.0.1-SNAPSHOT'
+
+description = "Simple List Endpoint Example"
+
+def javaVer = JavaVersion.VERSION_17
+println "Required JAVA version: ${javaVer}"
+java {
+    sourceCompatibility = javaVer
+    targetCompatibility = javaVer
+}
+
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:3.5.5')
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.13'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.targets.simple_list_endpoint.SimpleListEndpointApplication'
+    }
+}
+
+task enforceJavaVersion {
+    doLast {
+        def activeJavaVersion = JavaVersion.current()
+        if(activeJavaVersion != javaVer) {
+            throw new IllegalStateException("Wrong active Java version; Found: "
+                    + activeJavaVersion + " Required: " + javaVer)
+        }
+    }
+}
+
+compileJava.dependsOn(enforceJavaVersion)
+
+bootRun {
+    // Default profile will be used if no profile is specified
+    systemProperty "spring.profiles.active", "default"
+}

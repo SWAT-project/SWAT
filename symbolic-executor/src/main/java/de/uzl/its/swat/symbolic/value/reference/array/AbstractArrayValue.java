@@ -1,10 +1,15 @@
 package de.uzl.its.swat.symbolic.value.reference.array;
 
+import com.google.common.collect.ImmutableSet;
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
+import de.uzl.its.swat.common.exceptions.NotSupportedException;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import javax.annotation.Nullable;
+
+import lombok.Getter;
 import org.sosy_lab.java_smt.api.*;
 
 /**
@@ -25,6 +30,7 @@ public abstract class AbstractArrayValue<
     protected ArrayFormulaManager amgr;
 
     /** Solver context to interact with the native solver (used for creating formulas) */
+    @Getter
     protected SolverContext context;
 
     /** Formula type used for the indices of the symbolic array */
@@ -41,14 +47,17 @@ public abstract class AbstractArrayValue<
 
     @Nullable protected IntValue parentRefIdx;
     @Nullable protected ArrayArrayValue parentRef;
+    @Getter
+    private static final String symbolicArrayPrefix = "[";
 
     public AbstractArrayValue(
             SolverContext context,
             FormulaType<TI> indexFormulaType,
             FormulaType<TE> elementFormulaType,
+            String symbolicPrefix,
             IntValue size,
             int address) {
-        super(context, 100, address);
+        super(context, address);
         this.context = context;
         this.amgr = context.getFormulaManager().getArrayFormulaManager();
         Value.symbol = Value.symbol + Value.inc;
@@ -56,7 +65,7 @@ public abstract class AbstractArrayValue<
         this.elementFormulaType = elementFormulaType;
         formulaType = FormulaType.getArrayType(indexFormulaType, elementFormulaType);
 
-        this.formula = amgr.makeArray("a" + (Value.symbol - Value.inc), formulaType);
+        this.formula = amgr.makeArray(symbolicPrefix + "_" + (Value.symbol - Value.inc), formulaType);
         this.size = size;
         this.parentRefIdx = null;
         this.parentRef = null;
@@ -69,7 +78,7 @@ public abstract class AbstractArrayValue<
             ArrayFormula<TI, TE> formula,
             IntValue size,
             int address) {
-        super(context, 100, address);
+        super(context, address);
         this.context = context;
         this.amgr = context.getFormulaManager().getArrayFormulaManager();
         this.indexFormulaType = indexFormulaType;
@@ -84,7 +93,7 @@ public abstract class AbstractArrayValue<
      *
      * @return The default value for the type of array.
      */
-    abstract TE getDefaultValue();
+    abstract TE getDefaultValue() throws NotSupportedException;
 
     /**
      * Returns a formula representing the index specified by i.
@@ -113,9 +122,10 @@ public abstract class AbstractArrayValue<
     public BooleanFormula checkIndex(IntValue idx) {
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
         IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
+        // Use asIntegerFormula() to convert BV index to Int for array bounds checking
         return bmgr.and(
-                imgr.lessThan(idx.formula, size.formula),
-                imgr.greaterOrEquals(idx.formula, imgr.makeNumber(0)));
+                imgr.lessThan(idx.asIntegerFormula(), size.asIntegerFormula()),
+                imgr.greaterOrEquals(idx.asIntegerFormula(), imgr.makeNumber(0)));
     }
 
     /**
@@ -123,51 +133,135 @@ public abstract class AbstractArrayValue<
      *
      * @param size The size of the array.
      */
-    protected abstract void initArray(int size);
+    protected abstract void initArray(int size) throws NotSupportedException;
 
     @Override
     public AbstractArrayValue<TI, TE, VI, VE, K> asArrayValue() {
         return this;
     }
 
-    public IntArrayValue asIntArrayValue() {
-        throw new RuntimeException("Cannot convert AbstractArrayValue to IntArrayValue");
+    public IntArrayValue asIntArrayValue() throws NotImplementedException {
+        throw new NotImplementedException(this.getClass());
     }
 
-    public BooleanArrayValue asBooleanArrayValue() {
-        throw new RuntimeException("Cannot convert AbstractArrayValue to BooleanArrayValue");
+    public BooleanArrayValue asBooleanArrayValue() throws NotImplementedException {
+        throw new NotImplementedException(this.getClass());
     }
 
-    public LongArrayValue asLongArrayValue() {
-        throw new RuntimeException("Cannot convert AbstractArrayValue to LongArrayValue");
+    public LongArrayValue asLongArrayValue() throws NotImplementedException {
+        throw new NotImplementedException(this.getClass());
     }
 
-    public FloatArrayValue asFloatArrayValue() {
-        throw new RuntimeException("Cannot convert AbstractArrayValue to FloatArrayValue");
+    public FloatArrayValue asFloatArrayValue() throws NotImplementedException {
+        throw new NotImplementedException(this.getClass());
     }
 
-    public ObjectArrayValue asObjectArrayValue() {
-        throw new RuntimeException("Cannot convert AbstractArrayValue to ObjectArrayValue");
+    public ObjectArrayValue asObjectArrayValue() throws NotImplementedException {
+        throw new NotImplementedException(this.getClass());
     }
 
-    public ByteArrayValue asByteArrayValue() {
-        throw new RuntimeException("Cannot convert AbstractArrayValue to ByteArrayValue");
+    public ByteArrayValue asByteArrayValue() throws NotImplementedException {
+        throw new NotImplementedException(this.getClass());
     }
 
-    public CharArrayValue asCharArrayValue() {
-        throw new RuntimeException("Cannot convert AbstractArrayValue to CharArrayValue");
+    public CharArrayValue asCharArrayValue() throws NotImplementedException {
+        throw new NotImplementedException(this.getClass());
     }
 
-    public DoubleArrayValue asDoubleArrayValue() {
-        throw new RuntimeException("Cannot convert AbstractArrayValue to DoubleArrayValue");
+    public DoubleArrayValue asDoubleArrayValue() throws NotImplementedException {
+        throw new NotImplementedException(this.getClass());
     }
 
-    public ShortArrayValue asShortArrayValue() {
-        throw new RuntimeException("Cannot convert AbstractArrayValue to DoubleArrayValue");
+    public ShortArrayValue asShortArrayValue() throws NotImplementedException {
+        throw new NotImplementedException(this.getClass());
     }
 
-    public SolverContext getContext() {
-        return context;
+    /**
+     * Turns this ArrayValue into a symbolic variable
+     *
+     * @param prefixOrIdx The prefix or index for the symbolic variable
+     * @return The numerical identifier of this symbolic variable
+     */
+    @Override
+    public String MAKE_SYMBOLIC(String prefixOrIdx) {
+        if (prefixOrIdx.matches("-?\\d+")){
+            // We assume a constructed idx was passed as it is a number
+            initSymbolic(getSymbolicPrefix(), prefixOrIdx);
+        } else if (prefixOrIdx.matches(".*-?\\d+")){
+            // Its a list which already has prefix and idx
+            initSymbolicWithoutIdx(prefixOrIdx);
+        } else {
+            // If it's not a number we assume prefix
+            initSymbolic(prefixOrIdx);
+        }
+        formula = amgr.makeArray(name, formulaType);
+        return name;
+    }
+
+    /**
+     * Turns this ArrayValue into a symbolic variable
+     *
+     * @param idx The index for the symbolic variable
+     * @return The numerical identifier of this symbolic variable
+     */
+    @Override
+    public String MAKE_SYMBOLIC(long idx) {
+        initSymbolic(getSymbolicPrefix(), idx);
+        formula = amgr.makeArray(name, formulaType);
+        return name;
+    }
+
+    /**
+     * Turns this ArrayValue into a symbolic variable
+     *
+     * @return The numerical identifier of this symbolic variable
+     */
+    @Override
+    public String MAKE_SYMBOLIC() {
+        initSymbolic(getSymbolicPrefix());
+        formula = amgr.makeArray(name, formulaType);
+        return name;
+    }
+
+    /**
+     * Returns the symbolic prefix for this array type.
+     * Subclasses should override this to provide their specific prefix.
+     *
+     * @return The symbolic prefix
+     */
+    protected abstract String getSymbolicPrefix();
+
+    /**
+     * Public accessor for the symbolic prefix, required by liftValue operations.
+     *
+     * @return The symbolic prefix
+     */
+    @Override
+    public String getSymPrefix() {
+        return getSymbolicPrefix();
+    }
+
+    /**
+     * Returns bounds constraints for arrays. Arrays themselves don't have numeric bounds,
+     * so this returns a tautology (always true). Individual elements within the array
+     * will have their own bounds.
+     *
+     * @param upper Whether to return upper or lower bound (unused for arrays)
+     * @return A BooleanFormula that is always true
+     */
+    @Override
+    public BooleanFormula getBounds(boolean upper) {
+        return context.getFormulaManager().getBooleanFormulaManager().makeTrue();
+    }
+
+    @Override
+    public boolean isSymbolic() {
+        return !context.getFormulaManager().extractVariables(formula).isEmpty();
+    }
+
+    @Override
+    public ImmutableSet<String> getSymbolicVariables() {
+        return context.getFormulaManager().extractVariables(formula).keySet();
     }
 
     public String genericToString(String type) {

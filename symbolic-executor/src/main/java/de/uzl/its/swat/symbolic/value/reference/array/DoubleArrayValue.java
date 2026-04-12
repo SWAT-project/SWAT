@@ -1,7 +1,10 @@
 package de.uzl.its.swat.symbolic.value.reference.array;
 
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ByteValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
+import lombok.Getter;
+
 import org.sosy_lab.java_smt.api.*;
 
 /**
@@ -18,6 +21,8 @@ public class DoubleArrayValue
                 DoubleValue,
                 double[]> {
 
+    private static final String symbolicPrefix = AbstractArrayValue.getSymbolicArrayPrefix() + DoubleValue.getSymbolicPrefix();
+
     /**
      * Creates a new symbolic array that contains double values
      *
@@ -26,7 +31,7 @@ public class DoubleArrayValue
      * @param address The address of the array reference
      */
     public DoubleArrayValue(SolverContext context, IntValue size, int address) {
-        super(context, FormulaType.IntegerType, DoubleValue.precision, size, address);
+        super(context, FormulaType.IntegerType, DoubleValue.precision, symbolicPrefix, size, address);
         concrete = new double[size.concrete];
         initArray(size.concrete);
     }
@@ -47,6 +52,7 @@ public class DoubleArrayValue
                 context,
                 FormulaType.IntegerType,
                 DoubleValue.precision,
+                symbolicPrefix,
                 new IntValue(context, concrete.length),
                 address);
         this.concrete = concrete;
@@ -84,7 +90,7 @@ public class DoubleArrayValue
      */
     @Override
     public DoubleValue getElement(IntValue idx) {
-        return new DoubleValue(context, concrete[idx.concrete], amgr.select(formula, idx.formula));
+        return new DoubleValue(context, concrete[idx.concrete], amgr.select(formula, idx.asIntegerFormula()));
     }
 
     /**
@@ -95,7 +101,7 @@ public class DoubleArrayValue
      */
     @Override
     public void storeElement(IntValue idx, DoubleValue val) {
-        formula = amgr.store(formula, idx.formula, val.formula);
+        formula = amgr.store(formula, idx.asIntegerFormula(), val.formula);
         concrete[idx.concrete] = val.concrete;
         if (parentRef != null) {
             parentRef.updateFormula(parentRefIdx, formula);
@@ -132,6 +138,11 @@ public class DoubleArrayValue
 
     public DoubleArrayValue asDoubleArrayValue() {
         return this;
+    }
+
+    @Override
+    public String getSymPrefix() {
+        return symbolicPrefix;
     }
 
     /**

@@ -1,0 +1,60 @@
+plugins {
+    id 'org.springframework.boot' version '2.7.6'
+    id 'java'
+}
+
+group = 'de.uzl.its.targets'
+version = '0.0.1-SNAPSHOT'
+
+description = "A demo for 2nd order XSS with an in memory database"
+
+def javaVer = JavaVersion.VERSION_17
+println "Required JAVA version: ${javaVer}"
+java {
+    sourceCompatibility = javaVer
+    targetCompatibility = javaVer
+}
+
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:2.7.6')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-test'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'mysql:mysql-connector-java'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.targets.database.XssDemoApplication'
+    }
+}
+
+task enforceJavaVersion {
+    doLast {
+        def activeJavaVersion = JavaVersion.current()
+        if(activeJavaVersion != javaVer) {
+            throw new IllegalStateException("Wrong active Java version; Found: "
+                    + activeJavaVersion + " Required: " + javaVer)
+        }
+    }
+}
+
+compileJava.dependsOn(enforceJavaVersion)
+
+bootRun {
+    // Default profile will be used if no profile is specified
+    systemProperty "spring.profiles.active", "default"
+}
+
+task bootRunTainted(type: org.springframework.boot.gradle.tasks.run.BootRun) {
+    group = 'application'
+    description = 'Runs the application with tainted profile'
+    systemProperty "spring.profiles.active", "tainted"
+}

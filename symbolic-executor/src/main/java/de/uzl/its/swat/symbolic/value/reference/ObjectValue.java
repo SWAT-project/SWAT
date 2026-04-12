@@ -1,44 +1,54 @@
 package de.uzl.its.swat.symbolic.value.reference;
 
+import com.google.common.collect.ImmutableSet;
+import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
+import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.array.AbstractArrayValue;
 import de.uzl.its.swat.symbolic.value.reference.array.ObjectArrayValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import de.uzl.its.swat.thread.ThreadHandler;
+import lombok.Getter;
+import lombok.Setter;
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.BooleanFormulaManager;
 import org.sosy_lab.java_smt.api.SolverContext;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Objects;
+import java.util.Set;
+
+import static java.lang.Thread.currentThread;
+
 public class ObjectValue<T, K> extends Value<T, K> {
 
     public static final int ADDRESS_UNKNOWN = -1;
+    public static final int ADDRESS_NULL = 0;
     public String className;
-    protected int address; // address 0 is null, address -1 is uninitialized address
+    @Setter @Getter protected int address; // address 0 is null, address -1 is uninitialized address
 
     // For array object, fields are the content of the array.
     // For plain object, fields are the instance variables.
-    private Value<?, ?>[] fields;
-    private IntValue nFields;
+    @Setter @Getter private Value<?, ?>[] fields;
+    @Getter private IntValue nFields;
 
-    public void setFields(Value<?, ?>[] fields) {
-        this.fields = fields;
-    }
-
-    public Value<?, ?>[] getFields() {
-        return fields;
-    }
-
-    private BooleanFormulaManager bmgr;
+    private BooleanFormulaManager bfm;
 
     // Initialize
     // TODO: why is the first arg there?
-    public ObjectValue(SolverContext context, int unused, int v) {
+    public ObjectValue(SolverContext context, int address) {
         fields = null;
-        address = v;
+        this.address = address;
         this.context = context;
-        this.bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        this.bfm = context.getFormulaManager().getBooleanFormulaManager();
     }
 
     public ObjectValue(SolverContext context, String className, IntValue nFields) {
@@ -47,9 +57,46 @@ public class ObjectValue<T, K> extends Value<T, K> {
         this.nFields = nFields;
         address = -1;
         this.className = className;
-        this.bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        this.bfm = context.getFormulaManager().getBooleanFormulaManager();
     }
 
+    public ObjectValue(SolverContext context, String className, IntValue nFields, int address) {
+        fields = new Value[nFields.concrete];
+        this.context = context;
+        this.nFields = nFields;
+        this.address = address;
+        this.className = className;
+        this.bfm = context.getFormulaManager().getBooleanFormulaManager();
+    }
+
+    /**
+     * Returns the symbolic prefix for Object values.
+     *
+     * @return The symbolic prefix "O"
+     */
+    @Override
+    public String getSymPrefix() {
+        return "O";
+    }
+
+    /**
+     * Returns bounds constraints for objects. Objects don't have numeric bounds,
+     * so this returns a tautology (always true).
+     *
+     * @param upper Whether to return upper or lower bound (unused for objects)
+     * @return A BooleanFormula that is always true
+     */
+    @Override
+    public BooleanFormula getBounds(boolean upper) {
+        return bfm.makeTrue();
+    }
+
+    /**
+     * Generates a unique symbolic identifier for the object based on the provided prefix.
+     *
+     * @param namePrefix The prefix that will be used to generate the symbolic identifier
+     * @return The generated symbolic identifier.
+     */
     @Override
     public String MAKE_SYMBOLIC(String namePrefix) {
         MAKE_SYMBOLIC();
@@ -59,6 +106,12 @@ public class ObjectValue<T, K> extends Value<T, K> {
         return name;
     }
 
+    /**
+     * Generates a unique symbolic identifier for the object based on the datatype of the object and
+     * a counter.
+     *
+     * @return The generated symbolic identifier.
+     */
     @Override
     public String MAKE_SYMBOLIC() {
         if (name == null) {
@@ -68,26 +121,18 @@ public class ObjectValue<T, K> extends Value<T, K> {
         return name;
     }
 
+    //Todo: should this be an empty impl? what is the benefit here? Should this actually not be here at all as we have equals methods?
     @Override
     public boolean equals(Object o) {
         if (o == null) {
             return false;
         } else if (o == this) {
             return true;
-        } else if (o instanceof ObjectValue) {
-            ObjectValue<?, ?> other = (ObjectValue<?, ?>) o;
+        } else if (o instanceof ObjectValue<?, ?> other) {
             return (address == other.address && fields.length == other.fields.length);
         } else {
             return false;
         }
-    }
-
-    public IntValue getnFields() {
-        return nFields;
-    }
-
-    public int getAddress() {
-        return address;
     }
 
     @Override
@@ -104,9 +149,8 @@ public class ObjectValue<T, K> extends Value<T, K> {
      * @param o2 The other object
      * @return A BooleanValue representing the result
      */
-    public BooleanFormula IF_ACMPEQ(ObjectValue o2) {
-        BooleanFormula b = bmgr.makeBoolean(this == o2);
-        return b;
+    public BooleanFormula IF_ACMPEQ(ObjectValue<?, ?> o2) {
+        return bfm.makeBoolean(this == o2);
     }
 
     /**
@@ -115,9 +159,8 @@ public class ObjectValue<T, K> extends Value<T, K> {
      * @param o2 The other object
      * @return A BooleanFormula representing the result
      */
-    public BooleanFormula IF_ACMPNE(ObjectValue o2) {
-        BooleanFormula b = bmgr.makeBoolean(this != o2);
-        return b;
+    public BooleanFormula IF_ACMPNE(ObjectValue<?, ?> o2) {
+        return bfm.makeBoolean(this != o2);
     }
 
     /**
@@ -126,7 +169,7 @@ public class ObjectValue<T, K> extends Value<T, K> {
      * @return A BooleanFormula representing the result
      */
     public BooleanFormula IFNULL() {
-        return bmgr.makeBoolean(this.address == 0);
+        return bfm.makeBoolean(this.address == 0);
     }
 
     /**
@@ -135,40 +178,48 @@ public class ObjectValue<T, K> extends Value<T, K> {
      * @return A BooleanFormula representing the result
      */
     public BooleanFormula IFNONNULL() {
-        return bmgr.makeBoolean(this.address != 0);
+        return bfm.makeBoolean(this.address != 0);
     }
 
-    public Value<?, ?> getField(int fieldId) {
-        if (address == 0) {
-            throw new NullPointerException("User NullPointerException");
-        }
+
+    public Value<?, ?> getField(int fieldId) throws NoThreadContextException {
+        SWATAssert.check(address != 0, "Trying to get a field of NULL (NullPointerException)");
         if (fields == null) {
+            logger.warn("[{}]: Fields are null for object {}",
+                    ThreadHandler.getCurrentInstruction(currentThread().getId()), this);
             return PlaceHolder.instance;
         } else {
             Value<?, ?> v = fields[fieldId];
             if (v == null) {
+                logger.warn("{}]: No value for field {} in object {}",
+                        ThreadHandler.getCurrentInstruction(currentThread().getId()), fieldId, this);
                 return PlaceHolder.instance;
             }
             return v;
         }
     }
 
+    /**
+     * Sets the value of a field in the object
+     * The object cannot be NULL (address == 0)
+     * The fields array must be initialized and the fieldId must be within bounds.
+     * ToDo: Be more lenient and initialize fields array if it is null
+     *
+     * @param fieldId The index of the field
+     * @param value The value to set
+     */
     public void setField(int fieldId, Value<?, ?> value) {
-        if (address == 0) {
-            System.out.println("SEVERE: Trying to set a field of NULL");
-        } else if (fields != null) {
-            fields[fieldId] = value;
-        }
+        // Todo: Some of the enforcement could be relaxed to checks
+        SWATAssert.enforce(address != 0, "Trying to set a field of NULL");
+        SWATAssert.enforce(fields != null, "Cannot set field of object without fields");
+        SWATAssert.enforce(fieldId < fields.length, "Field index out of bounds");
+        fields[fieldId] = value;
     }
 
-    public void setAddress(int address) {
-        this.address = address;
-    }
-
-    public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args) {
+    public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
         if (this.name != null) {
             for (String prefix : PlaceHolder.valueOriginPrefixMap.values()) {
-                if (!prefix.equals("") && this.name.startsWith(prefix)) {
+                if (!prefix.isEmpty() && this.name.startsWith(prefix)) {
                     return new PlaceHolder(true, PlaceHolder.prefixValueOriginMap.get(prefix));
                 }
             }
@@ -183,47 +234,91 @@ public class ObjectValue<T, K> extends Value<T, K> {
     }
 
     @Override
-    public FloatValue asFloatValue() {
-        throw new RuntimeException("Cannot convert objectValue to FloatValue");
-        // return new FloatValue(this.address); // TODO not verified yet
+    public FloatValue asFloatValue() throws ValueConversionException {
+        throw new ValueConversionException("Cannot convert object to float");
+        // return new FloatValue(this.address); // TODO not verified yet -> This should be FloatObjectValue?
     }
 
-    public AbstractArrayValue<?, ?, ?, ?, ?> asArrayValue() {
-        throw new RuntimeException("Cannot convert ObjectValue to AbstractArrayValue");
+    public AbstractArrayValue<?, ?, ?, ?, ?> asArrayValue() throws ValueConversionException {
+        throw new ValueConversionException("Cannot convert object to array");
     }
 
-    public ObjectArrayValue asObjectArrayValue() {
-        throw new RuntimeException("Cannot convert ObjectValue to ObjectArrayValue");
+    public ObjectArrayValue asObjectArrayValue() throws NotImplementedException, ValueConversionException {
+        throw new ValueConversionException("Cannot convert object to (object) array");
     }
 
     @Override
-    public IntValue asIntValue() {
-
-        System.out.println(
-                "Fields-Length: "
-                        + (fields == null ? "null" : fields.length)
-                        + ", Address: "
-                        + address);
-
-        StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
-                .forEach(
-                        frame ->
-                                System.out.println(
-                                        Thread.currentThread().getName()
-                                                + " | "
-                                                + frame.getDeclaringClass()
-                                                + " | "
-                                                + frame.getMethodName()
-                                                + " | "
-                                                + frame.getLineNumber()));
-
-        Runtime.getRuntime().halt(1);
-        return null;
+    public IntValue asIntValue() throws ValueConversionException  {
+        throw new ValueConversionException("Cannot convert" + this.getClass().getSimpleName() +  " to IntValue");
     }
 
     public String toString() {
-        return className != null
-                ? className
-                : "Ljava/lang/Object;" + " @" + Integer.toHexString(address);
+        return "ObjectValue[" + this.internalID +"] @"
+                + Integer.toHexString(address)
+                + " { nFields="
+                + nFields
+                + ", className="
+                + className
+                + "}";
+    }
+
+
+    @Override
+    public boolean isSymbolic() throws NotImplementedException {
+        return isSymbolic(new HashSet<>());
+        // return fields != null && Arrays.stream(fields).filter(Objects::nonNull).anyMatch(Value::isSymbolic);
+    }
+
+    @Override
+    public boolean isSymbolic(Set<Value<?, ?>> visited) throws NotImplementedException, RuntimeException {
+        // If this object is already being checked, return false to avoid recursion
+        if (!visited.add(this)) {
+            return false;
+        }
+        return fields != null && Arrays.stream(fields)
+                .filter(Objects::nonNull)
+                .anyMatch(field -> {
+                    try {
+                        return field.isSymbolic(visited);
+                    } catch (NotImplementedException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+    }
+
+    @Override
+    public ImmutableSet<String> getSymbolicVariables() throws NotImplementedException, RuntimeException {
+        if (fields == null) {
+            return ImmutableSet.of();
+        }
+        return Arrays.stream(fields).filter(Objects::nonNull)
+                .filter(field -> {
+                    try {
+                        return !field.getSymbolicVariables().isEmpty();
+                    } catch (NotImplementedException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .flatMap(field -> {
+                    try {
+                        return field.getSymbolicVariables().stream();
+                    } catch (NotImplementedException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .collect(ImmutableSet.toImmutableSet());
+    }
+
+    public boolean isNullValue() {
+        return address == ObjectValue.ADDRESS_NULL;
+    }
+
+    @Override
+    public StringValue asStringValue() throws NotImplementedException {
+        if (this.address == ObjectValue.ADDRESS_NULL) {
+            return new StringValue(context, "null", ObjectValue.ADDRESS_UNKNOWN);
+        } else {
+            throw new NotImplementedException("Cannot convert " + this.getClass().getSimpleName() + " to StringValue");
+        }
     }
 }

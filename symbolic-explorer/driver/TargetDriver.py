@@ -7,7 +7,9 @@ from enum import Enum
 from data.Database import Database
 from driver.SymbolicStorage import SymbolicStorage
 # import logging
-from log import logger
+
+import log
+logger = log.get_logger()
 from solver.SolverHandler import SATResult
 from strategy.StrategyService import StrategyService
 
@@ -45,23 +47,25 @@ class State:
 
 
 class TargetDriver:
-    def __init__(self):
+    def __init__(self, args):
         self.state = State()
         self.sym_storage = SymbolicStorage()
         self.endpoint_id = None
+        self.args = args
 
-    def build_command(self, args, mem: int = 32) -> [str]:
+    def build_command(self, mem: int = 32) -> [str]:
         """Builds the Java command list with given parameters."""
         cmd = [
             'java',
             f'-Xmx{mem}g',
-            f'-Dconfig.path={args.config}',
-            f'-javaagent:{args.agent}',
-            f"-Djava.library.path={args.z3dir}",
-            '-Dlogging.level=DEBUG',
+            f'-Dconfig.path={self.args.config}',
+            f'-javaagent:{self.args.agent}',
+            f"-Djava.library.path={self.args.z3dir}",
+            '-Dsolver.mode=HTTP',
+            '-Dagent.logging.level=DEBUG',
             '-ea',
-            '-jar',
-            args.target
+            '-jar' if ".jar" in self.args.target else '',
+            self.args.target
         ]
         return cmd
 
@@ -74,7 +78,10 @@ class TargetDriver:
             else:
                 val = var.newValue
                 var.value = var.newValue
-            cmd.append(f'{val}')
+            if self.args.mode == "args":
+                cmd.append(f'{val}')
+            else:
+                cmd.insert(1, f'-Dswat.assignment.{var.dType.value}_{var.idx}={val}')
         return cmd
 
     def run_command_with_timeout(self, cmd: [str], timeout: int = 60) -> (ExecutionStatus, dict):
@@ -162,24 +169,25 @@ class TargetDriver:
 
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
         logger.info(f'[EXPLORER] Found new solution: {sol_viz}')
-        # self.sym_storage.register_vars(symbolic_vars)
+        self.sym_storage.register_vars([var.name.split('_')[0] for var in symbolic_vars])
         self.sym_storage.store_solution(sol)
         return Action.SYMBOLICNEXT
 
-    def run(self, args):
-        verdict = self.exec(args)
+    def run(self):
+        verdict = self.exec()
         logger.info(f'[EXPLORER] Verdict: {verdict}')
         self.kill_current_process()
 
-    def exec(self, args):
+    def exec(self):
 
         """Runs the symbolic execution on the given testcase."""
         logger.info(f'[EXPLORER] Beginning testcase analysis')
-        # Register symbolic variables
-        self.sym_storage.register_vars(args.symbolicvars)
-        self.sym_storage.init_values()
+        # Register symbolic variables (in case of cmd line argument mode)
+        if self.args.mode == "args":
+            self.sym_storage.register_vars(self.args.symbolicvars)
+            self.sym_storage.init_values()
         # Build the command to execute target
-        base_cmd = self.build_command(args)
+        base_cmd = self.build_command()
         # Main execution loop
         while True:
             # Add the symbolic values
@@ -189,8 +197,8 @@ class TargetDriver:
             # Determine the next step
             next_step = self.determine_next_step(status, output)
             # Select the (only!) endpoint
-            assert len(Database.instance().get_endpoint_ids()) == 1
-            self.endpoint_id = Database.instance().get_endpoint_ids()[0]
+            assert len(Database.instance().get_endpoints()) == 1
+            self.endpoint_id = Database.instance().get_endpoints()[0]
             if next_step == Action.REPORTVERDICT:
                 break
 

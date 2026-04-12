@@ -2,6 +2,8 @@ package de.uzl.its.swat.symbolic.value.reference.array;
 
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
+import lombok.Getter;
+
 import org.sosy_lab.java_smt.api.*;
 
 public class FloatArrayValue
@@ -12,8 +14,11 @@ public class FloatArrayValue
                 FloatValue,
                 float[]> {
 
+
+    private static final String symbolicPrefix = AbstractArrayValue.getSymbolicArrayPrefix() + FloatValue.getSymbolicPrefix();
+
     public FloatArrayValue(SolverContext context, IntValue size, int address) {
-        super(context, FormulaType.IntegerType, FloatValue.precision, size, address);
+        super(context, FormulaType.IntegerType, FloatValue.precision, symbolicPrefix, size, address);
         concrete = new float[size.concrete];
         initArray(size.concrete);
     }
@@ -34,6 +39,7 @@ public class FloatArrayValue
                 context,
                 FormulaType.IntegerType,
                 FloatValue.precision,
+                symbolicPrefix,
                 new IntValue(context, concrete.length),
                 address);
         this.concrete = concrete;
@@ -54,12 +60,12 @@ public class FloatArrayValue
 
     @Override
     public FloatValue getElement(IntValue idx) {
-        return new FloatValue(context, concrete[idx.concrete], amgr.select(formula, idx.formula));
+        return new FloatValue(context, concrete[idx.concrete], amgr.select(formula, idx.asIntegerFormula()));
     }
 
     @Override
     public void storeElement(IntValue idx, FloatValue val) {
-        formula = amgr.store(formula, idx.formula, val.formula);
+        formula = amgr.store(formula, idx.asIntegerFormula(), val.formula);
         concrete[idx.concrete] = val.concrete;
         if (parentRef != null) {
             parentRef.updateFormula(parentRefIdx, formula);
@@ -92,6 +98,14 @@ public class FloatArrayValue
     public FloatArrayValue asFloatArrayValue() {
         return this;
     }
+
+ 
+
+    @Override
+    public String getSymPrefix() {
+        return symbolicPrefix;
+    }
+
 
     /**
      * Returns the string representation of the value used to visualize the stack. The

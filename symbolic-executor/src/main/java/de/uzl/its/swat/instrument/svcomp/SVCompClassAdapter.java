@@ -1,5 +1,6 @@
 package de.uzl.its.swat.instrument.svcomp;
 
+import de.uzl.its.swat.common.Util;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -19,7 +20,7 @@ public class SVCompClassAdapter extends ClassVisitor {
      *
      * @param cv Parent ClassVisitor
      */
-    public SVCompClassAdapter(String cname, ClassVisitor cv) {
+    public SVCompClassAdapter(ClassVisitor cv, String cname) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
     }
@@ -46,6 +47,12 @@ public class SVCompClassAdapter extends ClassVisitor {
             int access, String name, String desc, String signature, String[] exceptions) {
 
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
+
+        if(Util.ignoreMethod(name)) {
+            // Avoid Jacoco
+            return mv;
+        }
+
         if (!cname.equals("org/sosy_lab/sv_benchmarks/Verifier")) {
             SVCompTransformer.getPrintBox().addMsg("Method: " + name);
             return new SVCompMethodAdapter(access, mv, cname, name, desc);

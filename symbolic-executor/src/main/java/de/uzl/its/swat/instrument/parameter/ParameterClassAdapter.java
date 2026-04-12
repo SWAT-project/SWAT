@@ -1,5 +1,6 @@
 package de.uzl.its.swat.instrument.parameter;
 
+import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.config.Config;
 import java.util.regex.Pattern;
 import org.objectweb.asm.ClassVisitor;
@@ -13,19 +14,17 @@ import org.objectweb.asm.Opcodes;
  * visitInnerClass | visitRecordComponent | visitField | visitMethod )* visitEnd.
  */
 public class ParameterClassAdapter extends ClassVisitor {
-
-    private final String cname;
     private final Config config = Config.instance();
+    private final String cname;
 
     /**
      * Constructor that calls the super from the default ClassVisitor
      *
      * @param cv Parent ClassVisitor
-     * @param className Name of the Class
      */
-    public ParameterClassAdapter(ClassVisitor cv, String className) {
+    public ParameterClassAdapter(ClassVisitor cv, String cname) {
         super(Opcodes.ASM9, cv);
-        this.cname = className;
+        this.cname = cname;
     }
 
     /**
@@ -51,8 +50,14 @@ public class ParameterClassAdapter extends ClassVisitor {
 
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
 
+
+        if(Util.ignoreMethod(name)) {
+            // Avoid Jacoco
+            return mv;
+        }
+
         // Check if the name matches the pattern
-        if (!Pattern.matches(config.getInstrumentationParameterSymbolicMethodName(), name))
+        if (!Util.isSymbolicMethod(cname, name))
             return mv;
         ParameterTransformer.getPrintBox().addMsg("Method: " + name);
 

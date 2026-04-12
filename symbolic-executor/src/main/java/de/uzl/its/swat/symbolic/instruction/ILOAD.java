@@ -1,4 +1,6 @@
 package de.uzl.its.swat.symbolic.instruction;
+
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
 /**
  * ILOAD - Load int from local variable. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.iload">Java VM
@@ -13,11 +15,10 @@ public class ILOAD extends Instruction {
      * Creates a new ILOAD instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param var local variable index
      */
-    public ILOAD(int iid, int mid, int var) {
-        super(iid, mid);
+    public ILOAD(long iid, int var) {
+        super(iid);
         this.var = var;
     }
 
@@ -26,7 +27,7 @@ public class ILOAD extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitILOAD(this);
     }
 

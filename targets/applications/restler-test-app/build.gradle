@@ -1,0 +1,46 @@
+plugins {
+    id 'org.springframework.boot' version '2.7.6'
+    id 'java'
+}
+
+group = 'de.uzl.its.targets'
+version = '0.0.1-SNAPSHOT'
+
+description = "A simple Spring Boot Restler Test App"
+
+def javaVer = JavaVersion.VERSION_17
+println "Required JAVA version: ${javaVer}"
+java {
+    sourceCompatibility = javaVer
+    targetCompatibility = javaVer
+}
+
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:2.7.6')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-test'
+    implementation 'org.springdoc:springdoc-openapi-ui:1.6.15'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.pethmr.target.RestlerTestSpringBootApplication'
+    }
+}
+
+task enforceJavaVersion {
+    doLast {
+        def activeJavaVersion = JavaVersion.current()
+        if(activeJavaVersion != javaVer) {
+            throw new IllegalStateException("Wrong active Java version; Found: "
+                    + activeJavaVersion + " Required: " + javaVer)
+        }
+    }
+}
+compileJava.dependsOn(enforceJavaVersion)

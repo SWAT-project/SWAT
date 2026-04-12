@@ -1,0 +1,123 @@
+[
+  {
+    "consumer": {
+      "id": {
+        "RequestId": {
+          "endpoint": "/books/new",
+          "method": "Get"
+        },
+        "ResourceReference": {
+          "QueryResource": "filter"
+        },
+        "ContainerName": "new",
+        "PathContainerName": "new",
+        "CandidateTypeNames": [
+          "new"
+        ],
+        "AccessPathParts": {
+          "path": []
+        },
+        "ResourceName": "filter",
+        "ProducerParameterName": "filter",
+        "IsNestedBodyResource": false,
+        "PrimitiveType": "String"
+      },
+      "parameterKind": "Query"
+    }
+  },
+  {
+    "consumer": {
+      "id": {
+        "RequestId": {
+          "endpoint": "/dvds/classics/{start}/{end}",
+          "method": "Get"
+        },
+        "ResourceReference": {
+          "PathResource": {
+            "name": "end",
+            "pathToParameter": [
+              "dvds",
+              "classics",
+              "{start}"
+            ],
+            "responsePath": {
+              "path": []
+            }
+          }
+        },
+        "ContainerName": "classics",
+        "CandidateTypeNames": [
+          "classic"
+        ],
+        "AccessPathParts": {
+          "path": []
+        },
+        "ResourceName": "end",
+        "ProducerParameterName": "end",
+        "IsNestedBodyResource": false,
+        "PrimitiveType": "String"
+      },
+      "parameterKind": "Path"
+    }
+  },
+  {
+    "consumer": {
+      "id": {
+        "RequestId": {
+          "endpoint": "/dvds/classics/{start}/{end}",
+          "method": "Get"
+        },
+        "ResourceReference": {
+          "PathResource": {
+            "name": "start",
+            "pathToParameter": [
+              "dvds",
+              "classics"
+            ],
+            "responsePath": {
+              "path": []
+            }
+          }
+        },
+        "ContainerName": "classics",
+        "CandidateTypeNames": [
+          "classic"
+        ],
+        "AccessPathParts": {
+          "path": []
+        },
+        "ResourceName": "start",
+        "ProducerParameterName": "start",
+        "IsNestedBodyResource": false,
+        "PrimitiveType": "String"
+      },
+      "parameterKind": "Path"
+    }
+  },
+  {
+    "consumer": {
+      "id": {
+        "RequestId": {
+          "endpoint": "/games/by-price",
+          "method": "Get"
+        },
+        "ResourceReference": {
+          "QueryResource": "price"
+        },
+        "ContainerName": "by-price",
+        "PathContainerName": "by-price",
+        "CandidateTypeNames": [
+          "by__price"
+        ],
+        "AccessPathParts": {
+          "path": []
+        },
+        "ResourceName": "price",
+        "ProducerParameterName": "price",
+        "IsNestedBodyResource": false,
+        "PrimitiveType": "String"
+      },
+      "parameterKind": "Query"
+    }
+  }
+]

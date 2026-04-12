@@ -11,5 +11,5 @@ import lombok.Setter;
 @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, include = JsonTypeInfo.As.PROPERTY, property = "@class")
 class Element implements Serializable {
     // Unique identifier for the element
-    private int iid;
+    private long iid;
 }

@@ -1,0 +1,49 @@
+plugins {
+    id 'org.springframework.boot' version '2.7.6'
+    id 'java'
+}
+
+group = 'de.uzl.its.targets'
+version = '0.0.1-SNAPSHOT'
+
+description = "A simple Spring Boot H2 application for testing"
+
+def javaVer = JavaVersion.VERSION_17
+println "Required JAVA version: ${javaVer}"
+java {
+    sourceCompatibility = javaVer
+    targetCompatibility = javaVer
+}
+
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:2.7.6')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-test'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'com.h2database:h2'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.targets.database.SpringBootH2Application'
+    }
+}
+
+task enforceJavaVersion {
+    doLast {
+        def activeJavaVersion = JavaVersion.current()
+        if(activeJavaVersion != javaVer) {
+            throw new IllegalStateException("Wrong active Java version; Found: "
+                    + activeJavaVersion + " Required: " + javaVer)
+        }
+    }
+}
+
+compileJava.dependsOn(enforceJavaVersion)

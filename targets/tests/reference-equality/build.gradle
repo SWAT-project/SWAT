@@ -1,0 +1,65 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':annotations')
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'de.uzl.its.tests.Main'
+    }
+}
+
+tasks.register('deleteLogs', Delete) {
+    // Delete the 'logs' folder relative to this build.gradle file.
+    delete file('logs')
+}
+
+
+tasks.register('referenceEqualityTest', JavaExec) {
+    description = 'Runs symbolic lifting tests and automatically validates the results'
+    group = 'tests'
+    
+    mainClass = 'de.uzl.its.tests.Main'
+    classpath = sourceSets.main.runtimeClasspath
+    jvmArgs = [
+            '-Xmx32g',
+            "-Dconfig.path=${rootDir}/targets/tests/reference-equality/swat.cfg",
+            "-javaagent:${rootDir}/symbolic-executor/lib/symbolic-executor.jar",
+            "-Djava.library.path=${rootDir}/libs/java-library-path",
+            "-Dagent.logging.level=DEBUG"
+    ]
+    dependsOn ':symbolic-executor:assemble'
+    dependsOn build
+    dependsOn tasks.named('deleteLogs')
+    
+    // Capture console output
+    def consoleOutput = new ByteArrayOutputStream()
+    standardOutput = consoleOutput
+    doFirst {
+        println "Starting reference equality test..."
+    }
+    doLast {
+        def consoleText = consoleOutput.toString()
+        List<String> expectedLines = [
+                "Symbolic Integer i = 1; Symbolic Integer j = 1; i == j: true",
+                "Integer 1 == 1: true",
+                "Integer i = 1; Integer j = 1; i == j: true",
+                "new HelperClass(1) == new HelperClass(1): false",
+                "new HelperClass(1) == new HelperClass(2): false",
+        ]
+        for (String line : expectedLines) {
+            if (!consoleText.contains(line)) {
+                throw new GradleException("❌ FAIL: Expected output line not found: '${line}'")
+            }
+        }
+        println("✅ PASS: All expected output lines found.")
+    }
+
+}

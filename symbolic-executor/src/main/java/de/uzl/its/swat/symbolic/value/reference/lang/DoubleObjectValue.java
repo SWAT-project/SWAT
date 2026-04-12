@@ -1,38 +1,66 @@
 package de.uzl.its.swat.symbolic.value.reference.lang;
 
 import com.google.common.base.Objects;
+import com.google.common.collect.ImmutableSet;
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
+import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
+import de.uzl.its.swat.symbolic.value.VoidValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
-import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ByteValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.LongValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ShortValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import de.uzl.its.swat.thread.ThreadHandler;
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.FloatingPointFormulaManager;
 import org.sosy_lab.java_smt.api.SolverContext;
 import org.sosy_lab.java_smt.api.StringFormulaManager;
 
-public class DoubleObjectValue extends ObjectValue<Object, Object> {
+public class DoubleObjectValue extends BoxedValue<DoubleValue> {
 
-    private DoubleValue doubleValue;
-    private FloatingPointFormulaManager fpmgr;
-    private StringFormulaManager smgr;
+    private final FloatingPointFormulaManager fpfm;
+    private final StringFormulaManager sfm;
 
-    public DoubleObjectValue(SolverContext context) {
-        super(context, 100, -1);
-        this.fpmgr = context.getFormulaManager().getFloatingPointFormulaManager();
-        this.smgr = context.getFormulaManager().getStringFormulaManager();
-        this.doubleValue = new DoubleValue(context, 0);
+    public DoubleObjectValue(SolverContext ctx, DoubleValue val, int address) {
+        super(ctx, address);
+        SWATAssert.enforce(val != null, "Double has to be instantiated with default value!");
+        this.val = val;
+        this.fpfm = ctx.getFormulaManager().getFloatingPointFormulaManager();
+        this.sfm = ctx.getFormulaManager().getStringFormulaManager();
     }
 
-    public DoubleObjectValue(SolverContext context, DoubleValue floatValue, int address) {
-        super(context, 100, address);
-        this.doubleValue = floatValue;
-        this.fpmgr = context.getFormulaManager().getFloatingPointFormulaManager();
-        this.smgr = context.getFormulaManager().getStringFormulaManager();
+    /**
+     * Generates a symbolic identifier for the underlying primitive value.
+     *
+     * @param prefixOrIdx The prefix that will be used to generate the symbolic identifier
+     * @return The symbolic identifier
+     * @throws NullPointerException If the (primitive) value is not initialized, i.e. null. Should
+     *     not happen
+     */
+    @Override
+    public String MAKE_SYMBOLIC(String prefixOrIdx) throws NullPointerException {
+        SWATAssert.enforce(val != null, "Cannot make uninitialized value symbolic!");
+        return val.MAKE_SYMBOLIC(prefixOrIdx);
     }
 
-    public DoubleValue getDoubleValue() {
-        return doubleValue;
+    /**
+     * Generates a symbolic identifier for the underlying primitive value.
+     *
+     * @return The symbolic identifier
+     * @throws NullPointerException If the (primitive) value is not initialized, i.e. null. Should
+     *     not happen
+     */
+    @Override
+    public String MAKE_SYMBOLIC() throws NullPointerException {
+        SWATAssert.enforce(val != null, "Cannot make uninitialized value symbolic!");
+        return val.MAKE_SYMBOLIC();
     }
 
     /**
@@ -43,33 +71,310 @@ public class DoubleObjectValue extends ObjectValue<Object, Object> {
      */
     @Override
     public BooleanFormula getBounds(boolean upper) {
-        if (doubleValue == null) {
-            throw new RuntimeException("ERROR: Cannot create bound for non symbolic value!");
-        }
-        return doubleValue.getBounds(upper);
+        SWATAssert.enforce(val != null, "Cannot create bound for uninitialized value!");
+        return val.getBounds(upper);
     }
 
+    /**
+     * Handles method invocation for Java's <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html">Double</a>
+     * (Java 17).
+     *
+     * @param name The name of the method that is called
+     * @param desc The Type descriptions for all Arguments
+     * @param args The Value's representing the arguments
+     * @return The return Value of the Method, or a PlaceHolder::instance if the Method is not
+     *     implemented or void should be returned
+     */
     @Override
-    public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args) {
+    public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args) 
+            throws NotImplementedException, ValueConversionException {
+        return switch (name) {
+            case "<init>" -> invokeInit(args, desc);
+            case "doubleValue" -> invokeDoubleValue(args, desc);
+            case "floatValue" -> invokeFloatValue(args, desc);
+            case "longValue" -> invokeLongValue(args, desc);
+            case "intValue" -> invokeIntValue(args, desc);
+            case "shortValue" -> invokeShortValue(args, desc);
+            case "byteValue" -> invokeByteValue(args, desc);
+            case "toString" -> invokeToString(args, desc);
+            case "hashCode" -> invokeHashCode(args, desc);
+            case "equals" -> invokeEquals(args, desc);
+            case "compareTo" -> invokeCompareTo(args, desc);
+            case "isNaN" -> invokeIsNaN(args, desc);
+            case "isInfinite" -> invokeIsInfinite(args, desc);
+            case "describeConstable" -> invokeDescribeConstable(args, desc);
+            case "resolveConstantDesc" -> invokeResolveConstantDesc(args, desc);
+            default -> PlaceHolder.instance;
+        };
+    }
+
+    private Value<?, ?> invokeInit(Value<?, ?>[] args, Type[] desc) {
+        if (args[0] instanceof DoubleValue dv) {
+            this.val = new DoubleValue(context, dv.concrete, dv.formula);
+            return VoidValue.instance;
+        }
+        return PlaceHolder.instance;
+    }
+
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#doubleValue()">doubleValue</a>().
+     * Returns the primitive double value of this Double object.
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return The primitive DoubleValue
+     */
+    private Value<?, ?> invokeDoubleValue(Value<?, ?>[] args, Type[] desc) {
+        SWATAssert.enforce(args.length == 0, "Wrong number of arguments for doubleValue() method");
+        return new DoubleValue(context, val.concrete, val.formula);
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#floatValue()">floatValue</a>().
+     * Returns the value as a float after narrowing primitive conversion.
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return FloatValue representing the converted value
+     */
+    private Value<?, ?> invokeFloatValue(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+        SWATAssert.enforce(args.length == 0, "Wrong number of arguments for floatValue() method");
+        return val.asFloatValue();
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#longValue()">longValue</a>().
+     * Returns the value as a long after narrowing primitive conversion.
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return LongValue representing the converted value
+     */
+    private Value<?, ?> invokeLongValue(Value<?, ?>[] args, Type[] desc) throws NotImplementedException {
+        SWATAssert.enforce(args.length == 0, "Wrong number of arguments for longValue() method");
+        return val.asLongValue();
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#intValue()">intValue</a>().
+     * Returns the value as an int after narrowing primitive conversion.
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return IntValue representing the converted value
+     */
+    private Value<?, ?> invokeIntValue(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+        SWATAssert.enforce(args.length == 0, "Wrong number of arguments for intValue() method");
+        return val.asIntValue();
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#shortValue()">shortValue</a>().
+     * Returns the value as a short after narrowing primitive conversion.
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return ShortValue representing the converted value
+     */
+    private Value<?, ?> invokeShortValue(Value<?, ?>[] args, Type[] desc) throws NotImplementedException {
+        SWATAssert.enforce(args.length == 0, "Wrong number of arguments for shortValue() method");
+        return val.asShortValue();
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#byteValue()">byteValue</a>().
+     * Returns the value as a byte after narrowing primitive conversion.
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return ByteValue representing the converted value
+     */
+    private Value<?, ?> invokeByteValue(Value<?, ?>[] args, Type[] desc) throws NotImplementedException {
+        SWATAssert.enforce(args.length == 0, "Wrong number of arguments for byteValue() method");
+        return val.asByteValue();
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#toString()">toString</a>().
+     * Returns a String representation of this Double object.
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return StringValue representing the string representation
+     */
+    private Value<?, ?> invokeToString(Value<?, ?>[] args, Type[] desc) {
+        SWATAssert.enforce(args.length == 0, "Wrong number of arguments for toString() method");
+        // Symbolic converison currently not supported
+        return PlaceHolder.instance;
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#hashCode()">hashCode</a>().
+     * Returns a hash code for this Double object.
+     * No symbolic benefit, so returns placeholder to let concrete execution handle it.
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return PlaceHolder since no symbolic benefit
+     */
+    private Value<?, ?> invokeHashCode(Value<?, ?>[] args, Type[] desc) {
+        return PlaceHolder.instance;
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#equals(java.lang.Object)">equals</a>().
+     * Compares this Double object with another object for equality.
+     *
+     * @param args List of Values that correspond to the method arguments
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return BooleanValue representing the equality result
+     */
+    private Value<?, ?> invokeEquals(Value<?, ?>[] args, Type[] desc) {
+        SWATAssert.enforce(args.length == 1, "Wrong number of arguments for equals() method");
+        Value<?, ?> other = args[0];
+        try {
+            DoubleObjectValue otherDouble = other.asDoubleObjectValue();
+            boolean result = val.concrete.equals(otherDouble.val.concrete);
+            return new BooleanValue(context, result, fpfm.equalWithFPSemantics(val.formula, otherDouble.val.formula));
+        } catch (Exception ignored) {
+            boolean result = false;
+            return new BooleanValue(context, result, context.getFormulaManager().getBooleanFormulaManager().makeBoolean(false));
+        }
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#compareTo(java.lang.Double)">compareTo</a>().
+     * Compares this Double instance with another Double instance.
+     *
+     * @param args List of Values that correspond to the method arguments
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return IntValue representing the comparison result (-1, 0, or 1)
+     */
+    private Value<?, ?> invokeCompareTo(Value<?, ?>[] args, Type[] desc) throws NotImplementedException {
+        if (args.length == 1) {
+            DoubleObjectValue other = args[0].asDoubleObjectValue();
+            int result = val.concrete.compareTo(other.val.concrete);
+            
+            // Use floating point formula managers for proper symbolic handling
+            BooleanFormula equal = fpfm.equalWithFPSemantics(val.formula, other.val.formula);
+            BooleanFormula greater = fpfm.greaterThan(val.formula, other.val.formula);
+            
+            // Create the symbolic result using if-then-else logic
+            var imgr = context.getFormulaManager().getIntegerFormulaManager();
+            var symbolicResult = context.getFormulaManager().getBooleanFormulaManager().ifThenElse(equal,
+                imgr.makeNumber(0),
+                context.getFormulaManager().getBooleanFormulaManager().ifThenElse(greater, 
+                    imgr.makeNumber(1), 
+                    imgr.makeNumber(-1)));
+                
+            return new IntValue(context, result, symbolicResult);
+        } else {
+            return PlaceHolder.instance;
+        }
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#isNaN()">isNaN</a>().
+     * Returns true if this Double value is a Not-a-Number (NaN).
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return BooleanValue representing the NaN check result
+     */
+    private Value<?, ?> invokeIsNaN(Value<?, ?>[] args, Type[] desc) {
+        SWATAssert.enforce(args.length == 0, "Wrong number of arguments for isNaN() method");
+        boolean result = val.concrete.isNaN();
+        return new BooleanValue(context, result, fpfm.isNaN(val.formula));
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#isInfinite()">isInfinite</a>().
+     * Returns true if this Double value is infinitely large in magnitude.
+     *
+     * @param args List of Values that correspond to the method arguments (should be empty)
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return BooleanValue representing the infinity check result
+     */
+    private Value<?, ?> invokeIsInfinite(Value<?, ?>[] args, Type[] desc) {
+        SWATAssert.enforce(args.length == 0, "Wrong number of arguments for isInfinite() method");
+        boolean result = val.concrete.isInfinite();
+        return new BooleanValue(context, result, fpfm.isInfinity(val.formula));
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#describeConstable()">describeConstable</a>().
+     * Returns PlaceHolder since requires complex reflection-based functionality.
+     *
+     * @param args List of Values that correspond to the method arguments
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return PlaceHolder since not symbolically implementable
+     */
+    private Value<?, ?> invokeDescribeConstable(Value<?, ?>[] args, Type[] desc) {
+        return PlaceHolder.instance;
+    }
+
+    /**
+     * Invocation handling for the Double instance method <a
+     * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Double.html#resolveConstantDesc(java.lang.invoke.MethodHandles.Lookup)">resolveConstantDesc</a>().
+     * Returns PlaceHolder since requires complex reflection-based functionality.
+     *
+     * @param args List of Values that correspond to the method arguments
+     * @param desc Array of Type descriptions of the methods' signature
+     * @return PlaceHolder since not symbolically implementable
+     */
+    private Value<?, ?> invokeResolveConstantDesc(Value<?, ?>[] args, Type[] desc) {
         return PlaceHolder.instance;
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        if (!super.equals(o)) return false;
-        DoubleObjectValue that = (DoubleObjectValue) o;
-        return Objects.equal(doubleValue, that.doubleValue);
+        if (o == null) {
+            return false;
+        }
+        if (o == this) {
+            return true;
+        }
+        if (o instanceof DoubleObjectValue other) {
+            return (val.equals(other.val));
+        } else if (o instanceof DoubleValue other) {
+            return val.equals(other);
+        } else {
+            return false;
+        }
+    }
+
+    @Override
+    public DoubleValue asDoubleValue() {
+        return val;
+    }
+
+    @Override
+    public DoubleObjectValue asDoubleObjectValue() {
+        return this;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hashCode(doubleValue);
+        return Objects.hashCode(val);
     }
 
     @Override
     public String toString() {
-        return "Ljava/lang/Double; @" + Integer.toHexString(address);
+        return "Ljava/lang/Double; @" + Integer.toHexString(address) + " -> " + val;
     }
 }

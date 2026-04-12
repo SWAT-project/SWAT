@@ -1,0 +1,82 @@
+version: "3.9"
+
+x-repo: &repository-args
+  OH_CORE_BRANCH: v1.12.0
+  OH_API_BRANCH: v1.12.0
+  GITHUB_ORG: informatici
+  MYSQL_DUMP: ./db/dump.sql
+  MYSQL_DB_PROTOCOL: jdbc:mysql
+x-mysql: &mysql-env
+  MYSQL_DATABASE: oh
+  MYSQL_PORT: 3306
+  MYSQL_ROOT_PASSWORD: root
+  MYSQL_USER: isf
+  MYSQL_PASSWORD: isf123
+x-ui: &ui-env
+  PUBLIC_URL: /
+  REACT_APP_USE_MOCK_API:
+  REACT_APP_BASE_PATH: http://localhost:8080
+x-pg-admin: &pg-admin-env
+  PMA_HOST: "database"
+  PMA_PORT: 3306
+  PMA_USER: "root"
+  PMA_PASSWORD: "root"
+
+services:
+#  frontend:
+#    build:
+#      context: ./
+#      dockerfile: ./docker/frontend-depr/Dockerfile
+#    environment: *ui-env
+#    ports:
+#      - 3030:3000
+#    volumes:
+#      - ./:/oh
+#      - /oh/node_modules
+#      - /oh/build
+#      - /oh/docs
+#    depends_on:
+#      - backend
+#    networks:
+#      - openhospital
+#    stdin_open: true
+
+#  backend:
+#    build:
+#      context: ./docker
+#      dockerfile: Dockerfile
+#      args: *repository-args
+#    ports:
+#      - "8080:8080"
+#      - "5005:5005"
+#    depends_on:
+#      - database
+##    command: java -cp "openhospital-api-0.0.2.jar:rsc/:static/" -agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005 org.springframework.boot.loader.JarLauncher
+#    networks:
+#      - openhospital
+
+  database:
+    build:
+      context: ./
+      dockerfile: docker/database/Dockerfile
+      args: *repository-args
+    environment: *mysql-env
+    ports:
+      - "3306:3306"
+    command: mysqld --sql_mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION" --lower_case_table_names=1
+#    networks:
+#      - openhospital
+
+  db-admin:
+    image: phpmyadmin/phpmyadmin
+    ports:
+      - "9000:80"
+    environment:
+      <<: [*mysql-env, *pg-admin-env]
+    depends_on:
+      - database
+#    networks:
+#      - openhospital
+
+# networks:
+#  openhospital:

@@ -2,24 +2,31 @@ package de.uzl.its.swat.symbolic.value.reference.array;
 
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ByteValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
+
 import org.sosy_lab.java_smt.api.*;
 
 /**
  * Wrapper for Arrays that contain byte values.
+ * Uses BitvectorFormula (8-bit) for elements.
  *
  * @author Nils Loose
  * @version 2022.07.25
  */
 public class ByteArrayValue
         extends AbstractArrayValue<
-                NumeralFormula.IntegerFormula,
-                NumeralFormula.IntegerFormula,
+                NumeralFormula.IntegerFormula,  // Index type (Int)
+                BitvectorFormula,                // Element type (8-bit BV)
                 IntValue,
                 ByteValue,
                 byte[]> {
 
+    private static final int BIT_WIDTH = 8;
+
+
+    private static final String symbolicPrefix = AbstractArrayValue.getSymbolicArrayPrefix() + ByteValue.getSymbolicPrefix();
+
     public ByteArrayValue(SolverContext context, IntValue size, int address) {
-        super(context, FormulaType.IntegerType, FormulaType.IntegerType, size, address);
+        super(context, FormulaType.IntegerType, FormulaType.getBitvectorTypeWithSize(BIT_WIDTH), symbolicPrefix, size, address);
         concrete = new byte[size.concrete];
         initArray(size.concrete);
     }
@@ -39,7 +46,8 @@ public class ByteArrayValue
         super(
                 context,
                 FormulaType.IntegerType,
-                FormulaType.IntegerType,
+                FormulaType.getBitvectorTypeWithSize(BIT_WIDTH),
+                symbolicPrefix,
                 new IntValue(context, concrete.length),
                 address);
         this.concrete = concrete;
@@ -52,8 +60,8 @@ public class ByteArrayValue
      * @return The default value for the type of array.
      */
     @Override
-    NumeralFormula.IntegerFormula getDefaultValue() {
-        return context.getFormulaManager().getIntegerFormulaManager().makeNumber(0);
+    BitvectorFormula getDefaultValue() {
+        return context.getFormulaManager().getBitvectorFormulaManager().makeBitvector(BIT_WIDTH, 0);
     }
 
     /**
@@ -75,7 +83,7 @@ public class ByteArrayValue
      */
     @Override
     public ByteValue getElement(IntValue idx) {
-        return new ByteValue(context, concrete[idx.concrete], amgr.select(formula, idx.formula));
+        return new ByteValue(context, concrete[idx.concrete], amgr.select(formula, idx.asIntegerFormula()));
     }
 
     /**
@@ -85,7 +93,7 @@ public class ByteArrayValue
      * @param val The element formula.
      */
     public void storeElement(IntValue idx, ByteValue val) {
-        formula = amgr.store(formula, idx.formula, val.formula);
+        formula = amgr.store(formula, idx.asIntegerFormula(), val.formula);
         concrete[idx.concrete] = val.concrete;
         if (parentRef != null) {
             parentRef.updateFormula(parentRefIdx, formula);
@@ -99,24 +107,34 @@ public class ByteArrayValue
      */
     @Override
     protected void initArray(int size) {
-        // ToDo (Nils): Is this needed or correct?
+        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
         for (int i = 0; i < size; i++) {
-            formula = amgr.store(formula, getIndex(i), getDefaultValue());
+            formula = amgr.store(formula, getIndex(i), bvmgr.makeBitvector(BIT_WIDTH, 0));
             concrete[i] = 0;
         }
     }
 
-    protected void initArray(byte[] array) {
-        IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
-        // ToDo (Nils): Is this needed or correct?
-        for (int i = 0; i < array.length; i++) {
-            formula = amgr.store(formula, getIndex(i), imgr.makeNumber(concrete[i]));
+    /**
+     * Initializes the array with specific concrete values.
+     *
+     * @param concreteArray The concrete values to initialize the array with.
+     */
+    protected void initArray(byte[] concreteArray) {
+        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
+        for (int i = 0; i < concreteArray.length; i++) {
+            formula = amgr.store(formula, getIndex(i), bvmgr.makeBitvector(BIT_WIDTH, concreteArray[i]));
         }
     }
 
     @Override
     public ByteArrayValue asByteArrayValue() {
         return this;
+    }
+
+
+    @Override
+    public String getSymPrefix() {
+        return symbolicPrefix;
     }
 
     /**

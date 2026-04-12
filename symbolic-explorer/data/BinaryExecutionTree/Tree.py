@@ -1,7 +1,14 @@
+from typing import List, Set
 from data.trace.Branch import Branch
 from data.BinaryExecutionTree.Leaf import Leaf
 from data.BinaryExecutionTree.Node import Node
+from data.trace.Input import Input
+from data.trace.UF import UF
+
+import log
+logger = log.get_logger()
 #import pygraphviz as pgv
+
 class Tree:
     """
     Represents a binary execution tree used to model decision points in an execution flow.
@@ -23,18 +30,59 @@ class Tree:
         """
         self.root = None
         self.endpoint_id = endpoint_id
+        self.symbolic_context_loss = False
+        self.symbolic_precision_loss = False
+        self.reference_semantic_change = False
+        self.uncaught_exceptions: int = 0
+        self.symbolic_vars: Set = set()
+        self.ufs: Set = set()
 
-    def add(self, trace, inputs):
+
+    def record_inputs(self, inputs: List[Input]):
+        """
+        Records the inputs associated with the tree.
+
+        Args:
+            inputs (list): A list of inputs associated with the tree.
+        """
+        for input in inputs:
+            self.symbolic_vars.add(input.name)
+                                   
+    def record_ufs(self, ufs: List[UF]):
+        """
+        Records the UFs associated with the tree.
+
+        Args:
+            ufs (list): A list of UFs associated with the tree.
+        """
+        for uf in ufs:
+            self.ufs.add(uf.definition)
+                                   
+
+    def record_context_loss(self):
+        logger.warning("Context loss recorded!")
+        self.symbolic_context_loss = True
+        
+    def record_precision_loss(self):
+        logger.warning("Precision loss recorded!")
+        self.symbolic_precision_loss = True
+
+    def record_reference_semantic_change(self):
+        logger.warning("Reference semantic change recorded: user-de-interned strings compared via Objects.equals")
+        self.reference_semantic_change = True
+        
+    def add(self, trace, inputs, ufs):
         """
         Adds a branch to the tree based on the provided trace and inputs.
 
         Args:
             trace (list): A list of trace elements defining the execution path.
             inputs (any): The inputs associated with the branch being added.
+            ufs (any): The UFs associated with the branch being added.
         """
-        self.root = self.add_recursive(None, self.root, trace, inputs)
+        self.root = self.add_recursive(None, self.root, trace, inputs, ufs)
 
-    def add_recursive(self, parent, node, trace, inputs):
+    def add_recursive(self, parent, node, trace, inputs, ufs):
         """
         Recursively adds nodes or leaves to the tree.
 
@@ -43,6 +91,7 @@ class Tree:
             node (Node/Leaf): The current node to add to.
             trace (list): The remaining trace elements.
             inputs (any): The inputs associated with the current node.
+            ufs (any): The UFs associated with the current node.
 
         Returns:
             Node/Leaf: The newly added or modified node or leaf.
@@ -52,7 +101,7 @@ class Tree:
         """
         if node is None:
             # Create a new Node or Leaf if the current node is None
-            return Node(parent, trace, inputs) if len(trace) > 0 else Leaf(parent, inputs)
+            return Node(parent, trace, inputs, ufs) if len(trace) > 0 else Leaf(parent, inputs, ufs)
 
         if len(trace) > 0:
             if isinstance(node, Node):
@@ -68,12 +117,16 @@ class Tree:
 
                 # Recurse into the correct branch based on the trace
                 if new_node.has_branched:
-                    node.branched = self.add_recursive(node, node.branched, trace, inputs)
+                    if node.branched is None and node.skipped is not None:
+                        logger.info(f"New branch from node {node.id} (branched)")
+                    node.branched = self.add_recursive(node, node.branched, trace, inputs, ufs)
                 else:
-                    node.skipped = self.add_recursive(node, node.skipped, trace, inputs)
+                    if node.skipped is None and node.branched is not None:
+                        logger.info(f"New branch from node {node.id} (skipped)")
+                    node.skipped = self.add_recursive(node, node.skipped, trace, inputs, ufs)
             else:
                 # Create a new Node or Leaf if the current node is a Leaf
-                return Node(parent, trace, inputs) if len(trace) > 0 else Leaf(parent, inputs)
+                return Node(parent, trace, inputs, ufs) if len(trace) > 0 else Leaf(parent, inputs, ufs)
 
         return node
     def get_constraint_label(self, parent, node):
@@ -99,11 +152,11 @@ class Tree:
                 self.add_to_dot(node.branched, graph, node)
                 self.add_to_dot(node.skipped, graph, node)
 
-    def plot_tree (self, idx):
-        return None
-        """Plot the tree using Graphviz and save to a file."""
-        #log.info(self.to_string())
-        G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
-        self.add_to_dot(self.root, G)
-        G.layout(prog="dot")
-        G.draw(f"tree_{idx}.png")
+#    def plot_tree(self, idx):
+#        return None
+#        """Plot the tree using Graphviz and save to a file."""
+#        #log.info(self.to_string())
+#        G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
+#        self.add_to_dot(self.root, G)
+#        G.layout(prog="dot")
+#        G.draw(f"tree_{idx}.png")

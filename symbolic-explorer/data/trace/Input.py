@@ -26,3 +26,6 @@ class Input:
         self.type = type
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
+
+    def __str__(self):
+        return f'{self.name}: {self.value} ({self.type})'

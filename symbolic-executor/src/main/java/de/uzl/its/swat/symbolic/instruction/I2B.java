@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * I2B - Convert int to byte. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.i2b">Java VM
@@ -11,10 +13,9 @@ public class I2B extends Instruction {
      * Creates a new I2B instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public I2B(int iid, int mid) {
-        super(iid, mid);
+    public I2B(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class I2B extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitI2B(this);
     }
 

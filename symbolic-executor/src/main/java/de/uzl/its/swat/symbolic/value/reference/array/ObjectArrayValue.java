@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.value.reference.array;
 
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
@@ -34,8 +35,8 @@ public class ObjectArrayValue extends ObjectValue {
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
         IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
         return bmgr.and(
-                imgr.lessThan(idx.formula, size.formula),
-                imgr.greaterOrEquals(idx.formula, imgr.makeNumber(0)));
+                imgr.lessThan(idx.asIntegerFormula(), size.asIntegerFormula()),
+                imgr.greaterOrEquals(idx.asIntegerFormula(), imgr.makeNumber(0)));
     }
 
     /**
@@ -47,7 +48,7 @@ public class ObjectArrayValue extends ObjectValue {
      * @param idx The index of the position to retrieve
      * @return The reference value at position idx
      */
-    public Value<?, ?> getElement(IntValue idx) {
+    public Value<?, ?> getElement(IntValue idx) throws NoThreadContextException {
         return getField(idx.concrete);
     }
 

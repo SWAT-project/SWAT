@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * LUSHR - Logical shift right long. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.lushr">Java VM
@@ -11,10 +13,9 @@ public class LUSHR extends Instruction {
      * Creates a new LUSHR instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public LUSHR(int iid, int mid) {
-        super(iid, mid);
+    public LUSHR(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class LUSHR extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitLUSHR(this);
     }
 

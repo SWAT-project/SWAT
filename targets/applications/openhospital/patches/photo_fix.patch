@@ -1,0 +1,17 @@
+diff --git a/src/main/java/org/isf/patient/service/FileSystemPatientPhotoRepository.java b/src/main/java/org/isf/patient/service/FileSystemPatientPhotoRepository.java
+index c314f627..6535ad1e 100644
+--- a/src/main/java/org/isf/patient/service/FileSystemPatientPhotoRepository.java
++++ b/src/main/java/org/isf/patient/service/FileSystemPatientPhotoRepository.java
+@@ -64,8 +64,10 @@ public class FileSystemPatientPhotoRepository {
+ 			patientProfilePhoto.setPatient(patient);
+ 			if (exist(path, patient.getCode())) {
+ 				Blob blob = this.load(patient.getCode(), path);
+-				byte[] blobAsBytes = blob.getBytes(1, (int) blob.length());
+-				patientProfilePhoto.setPhoto(blobAsBytes);
++				if (blob.length() > 0) {
++					byte[] blobAsBytes = blob.getBytes(1, (int) blob.length());
++					patientProfilePhoto.setPhoto(blobAsBytes);
++				}
+ 			}
+ 		} catch (SQLException e) {
+ 			LOGGER.error(e.getMessage(), e);

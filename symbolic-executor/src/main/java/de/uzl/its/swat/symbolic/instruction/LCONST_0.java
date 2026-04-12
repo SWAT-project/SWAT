@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * LCONST_0 - Push long constant (0L). For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.lconst_l">Java VM
@@ -11,10 +13,9 @@ public class LCONST_0 extends Instruction {
      * Creates a new LCONST_0 instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public LCONST_0(int iid, int mid) {
-        super(iid, mid);
+    public LCONST_0(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class LCONST_0 extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitLCONST_0(this);
     }
 

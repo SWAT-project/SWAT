@@ -1,11 +1,17 @@
 package de.uzl.its.swat.instrument.parameter;
 
+import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
+import de.uzl.its.swat.common.Util;
+import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 import java.util.regex.Pattern;
@@ -13,31 +19,35 @@ import lombok.Getter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
-import org.slf4j.LoggerFactory;
+import org.objectweb.asm.util.CheckClassAdapter;
 
 /**
  * An agent provides an implementation of this interface in order to transform class files. The
  * transformation occurs before the class is defined by the JVM.
  */
 public class ParameterTransformer implements ClassFileTransformer {
-    private static final org.slf4j.Logger logger =
-            LoggerFactory.getLogger(ParameterTransformer.class);
+    private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
     Config config = Config.instance();
-    @Getter private static PrintBox printBox;
+
+
+    private static final ThreadLocal<PrintBox> printBox = ThreadLocal.withInitial(() -> new PrintBox(60, "Transformer: " + ParameterTransformer.class.getSimpleName()));
+
+    public static PrintBox getPrintBox() {
+        return printBox.get();
+    }
 
     public ParameterTransformer() {
-        printBox = new PrintBox(60, "Transformer: " + "Parameter");
         Transformer.getPrintBox()
                 .addMsg("Initializing Transformer: " + this.getClass().getSimpleName());
         Transformer.getPrintBox()
                 .addMsg(
                         "    => Matching cname: "
-                                + config.getInstrumentationParameterSymbolicClassName());
+                                + config.getInstrumentationParameterSymbolicClassNames().toString());
         Transformer.getPrintBox()
                 .addMsg(
                         "    => Matching method: "
                                 + Pattern.compile(
-                                        config.getInstrumentationParameterSymbolicMethodName()));
+                                        config.getInstrumentationParameterSymbolicMethodNames().toString()));
     }
     /**
      * The implementation of this method may transform the supplied class file and return a new
@@ -63,22 +73,29 @@ public class ParameterTransformer implements ClassFileTransformer {
             ProtectionDomain d,
             byte[] cbuf) {
 
-        if (classBeingRedefined != null
-                || !cname.equals(config.getInstrumentationParameterSymbolicClassName())) {
+        if (classBeingRedefined != null || cname == null
+                || !Util.isSymbolicClass(cname)) {
             return cbuf;
         }
-        printBox.addMsg("Class: " + cname);
+        getPrintBox().addMsg("Class: " + cname);
         try {
 
             ClassReader cr = new ClassReader(cbuf);
-            ClassWriter cw =
-                    new SafeClassWriter(
-                            cr, loader, ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+            ClassWriter cw = new SafeClassWriter(cr, loader, ClassWriter.COMPUTE_FRAMES);
+            // | ClassWriter.COMPUTE_MAXS
             ClassVisitor cv = new ParameterClassAdapter(cw, cname);
 
             cr.accept(cv, 0);
+
+            if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {
+                StringWriter stringWriter = new StringWriter();
+                PrintWriter printWriter = new PrintWriter(stringWriter);
+                CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false, printWriter);
+                SWATAssert.enforce(stringWriter.toString().isEmpty(), "Instrumentation error: {}", stringWriter);
+            }
+
             Transformer.addInstrumentedClass(cname, InternalTransformerType.PARAMETER);
-            if (printBox.isContentPresent()) logger.info(printBox.toString());
+            if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
             return cw.toByteArray();
 
         } catch (Exception e) {
@@ -86,7 +103,7 @@ public class ParameterTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.PARAMETER);
-        if (printBox.isContentPresent()) logger.info(printBox.toString());
+        if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
         return cbuf;
     }
 }

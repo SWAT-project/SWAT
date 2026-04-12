@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * LDC(_String) - Push item from run-time constant pool. LDC instructions are handled based on the
  * datatype to load. For more information see the <a
@@ -18,12 +20,11 @@ public class LDC_String extends Instruction {
      * Creates a new LDC_String instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      * @param c the value to load
      * @param address the address of the object
      */
-    public LDC_String(int iid, int mid, String c, int address) {
-        super(iid, mid);
+    public LDC_String(long iid, String c, int address) {
+        super(iid);
         this.c = c;
         this.address = address;
     }
@@ -33,7 +34,7 @@ public class LDC_String extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitLDC_String(this);
     }
 

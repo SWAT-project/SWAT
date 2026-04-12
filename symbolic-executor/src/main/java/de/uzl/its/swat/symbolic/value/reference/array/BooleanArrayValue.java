@@ -2,6 +2,7 @@ package de.uzl.its.swat.symbolic.value.reference.array;
 
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
+import lombok.Getter;
 import org.sosy_lab.java_smt.api.*;
 
 /**
@@ -14,6 +15,8 @@ public class BooleanArrayValue
         extends AbstractArrayValue<
                 NumeralFormula.IntegerFormula, BooleanFormula, IntValue, BooleanValue, boolean[]> {
 
+    private static final String symbolicPrefix = AbstractArrayValue.getSymbolicArrayPrefix() + BooleanValue.getSymbolicPrefix();
+
     /**
      * Creates a new symbolic array that contains boolean values
      *
@@ -22,7 +25,7 @@ public class BooleanArrayValue
      * @param address The address of the array reference
      */
     public BooleanArrayValue(SolverContext context, IntValue size, int address) {
-        super(context, FormulaType.IntegerType, FormulaType.BooleanType, size, address);
+        super(context, FormulaType.IntegerType, FormulaType.BooleanType, symbolicPrefix, size, address);
         concrete = new boolean[size.concrete];
         initArray(size.concrete);
     }
@@ -43,6 +46,7 @@ public class BooleanArrayValue
                 context,
                 FormulaType.IntegerType,
                 FormulaType.BooleanType,
+                symbolicPrefix,
                 new IntValue(context, concrete.length),
                 address);
         this.concrete = concrete;
@@ -85,7 +89,7 @@ public class BooleanArrayValue
      */
     @Override
     public BooleanValue getElement(IntValue idx) {
-        return new BooleanValue(context, concrete[idx.concrete], amgr.select(formula, idx.formula));
+        return new BooleanValue(context, concrete[idx.concrete], amgr.select(formula, idx.asIntegerFormula()));
     }
 
     /**
@@ -96,7 +100,7 @@ public class BooleanArrayValue
      */
     @Override
     public void storeElement(IntValue idx, BooleanValue val) {
-        formula = amgr.store(formula, idx.formula, val.formula);
+        formula = amgr.store(formula, idx.asIntegerFormula(), val.formula);
         concrete[idx.concrete] = val.concrete;
 
         if (parentRef != null) {
@@ -121,6 +125,11 @@ public class BooleanArrayValue
     @Override
     public BooleanArrayValue asBooleanArrayValue() {
         return this;
+    }
+
+    @Override
+    public String getSymPrefix() {
+        return symbolicPrefix;
     }
 
     /**

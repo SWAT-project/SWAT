@@ -1,10 +1,12 @@
 package de.uzl.its.swat.instrument.svcomp;
 
 import de.uzl.its.swat.instrument.InternalTransformerType;
+import de.uzl.its.swat.instrument.Intrinsics;
 import de.uzl.its.swat.instrument.Transformer;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.LocalVariablesSorter;
 
 /** A visitor to visit a Java method */
@@ -45,7 +47,9 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
             final String name,
             final String descriptor,
             final boolean isInterface) {
-        if (name.startsWith("nondet") && owner.equals("org/sosy_lab/sv_benchmarks/Verifier")) {
+        // The weird concatenation is needed to avoid the relocation from the ShadowJar plugin to move this owner
+        String targetOwner = "org/".concat("sosy_lab/sv_benchmarks/Verifier");
+        if (name.startsWith("nondet") && owner.equals(targetOwner)) {
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SV_COMP);
             String newOwner = "de/uzl/its/swat/instrument/svcomp/Verifier";
             // Add one long argument into the desc (will be the only argument) old : ()X where x is
@@ -86,16 +90,41 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
              */
             visitMethodInsn(
                     Opcodes.INVOKESTATIC,
-                    "de/uzl/its/swat/Main",
-                    "MakeSymbolic",
+                    Type.getInternalName(Intrinsics.class),
+                    "liftValue",
                     "(" + retType + "J" + ")" + retType,
                     false);
             SVCompTransformer.getPrintBox().addMsg("      => Adding symbolic tracking");
         } else if (name.equals("assume")) {
             String newOwner = "de/uzl/its/swat/instrument/svcomp/Verifier";
             mv.visitMethodInsn(opcode, newOwner, name, descriptor, isInterface);
+        } else if (owner.equals("java/net/Socket")) {
+            String newOwner = "de/uzl/its/swat/instrument/svcomp/Socket";
+            mv.visitMethodInsn(opcode, newOwner, name, descriptor, isInterface);
         } else {
             mv.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+        }
+    }
+
+    @Override
+    public void visitTypeInsn(int opcode, String type) {
+        // Replace the type for `new java.net.Socket` with the mock type
+        if (opcode == Opcodes.NEW && type.equals("java/net/Socket")) {
+            String newType = "de/uzl/its/swat/instrument/svcomp/Socket";
+            super.visitTypeInsn(opcode, newType);
+        } else {
+            super.visitTypeInsn(opcode, type);
+        }
+    }
+
+    @Override
+    public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
+        // Redirect static field references or any field accesses from `java.net.Socket` to the mock
+        if (owner.equals("java/net/Socket")) {
+            String newOwner = "de/uzl/its/swat/instrument/svcomp/Socket";
+            super.visitFieldInsn(opcode, newOwner, name, descriptor);
+        } else {
+            super.visitFieldInsn(opcode, owner, name, descriptor);
         }
     }
 }

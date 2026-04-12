@@ -1,4 +1,5 @@
 from data.trace.Input import Input
+from data.trace.UF import UF
 
 GLOBAL_IID = -1
 
@@ -13,7 +14,7 @@ class Leaf:
         gid (int): A unique global identifier for this leaf node.
     """
 
-    def __init__(self, parent: 'Node', inputs: [Input]) -> None:
+    def __init__(self, parent: 'Node', inputs: [Input], ufs: [UF]) -> None:
         """
         Initializes a new instance of the Leaf class.
 
@@ -27,6 +28,7 @@ class Leaf:
         global GLOBAL_IID
         self.parent = parent
         self.inputs = inputs
+        self.ufs = ufs
         self.gid = GLOBAL_IID
         self.id = -1
         GLOBAL_IID -= 1

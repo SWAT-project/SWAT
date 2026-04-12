@@ -12,7 +12,7 @@ class DataTypes(Enum):
     FLOAT = 'F'    
     LONG = 'J'
     DOUBLE = 'D'
-    STRING = 'Ljava/lang/String'
+    STRING = 'java/lang/String'
 
 
 class SymbolicStorage:

@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * GETVALUE_char - Custom method call handled as an instruction to fetch the concrete value that was
  * produced/ loaded by another instruction.
@@ -12,8 +14,8 @@ public class GETVALUE_char extends GETVALUE_primitive {
      * @param v the concrete value
      * @param i an identifier
      */
-    public GETVALUE_char(char v, int i) {
-        super(v, i);
+    public GETVALUE_char(long iid, char v, int i) {
+        super(iid, v, i);
     }
 
     /**
@@ -21,7 +23,7 @@ public class GETVALUE_char extends GETVALUE_primitive {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitGETVALUE_char(this);
     }
 

@@ -1,0 +1,6 @@
+plugins {
+    id 'java'
+}
+
+group = 'de.uzl.its.swat'
+version = '1.0'

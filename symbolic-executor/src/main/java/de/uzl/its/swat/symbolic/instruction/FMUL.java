@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.instruction;
 
+import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
+
 /**
  * FMUL - Multiply float. For more information see the <a
  * href="https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-6.html#jvms-6.5.fmul">Java VM
@@ -11,10 +13,9 @@ public class FMUL extends Instruction {
      * Creates a new FMUL instruction.
      *
      * @param iid instruction id.
-     * @param mid method id.
      */
-    public FMUL(int iid, int mid) {
-        super(iid, mid);
+    public FMUL(long iid) {
+        super(iid);
     }
 
     /**
@@ -22,7 +23,7 @@ public class FMUL extends Instruction {
      *
      * @param visitor the visitor
      */
-    public void accept(IVisitor visitor) {
+    public void accept(IVisitor visitor) throws SymbolicInstructionException {
         visitor.visitFMUL(this);
     }
 
