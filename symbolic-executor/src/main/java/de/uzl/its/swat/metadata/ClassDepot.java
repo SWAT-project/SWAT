@@ -66,12 +66,20 @@ public class ClassDepot implements Serializable, ClassDepotInstrumentation, Clas
 
     /**
      * Registers type metadata (parent and interface names) for a class.
+     * Idempotent: silently returns if the class is already registered with identical metadata.
+     * Asserts if the class is already registered with different metadata.
      */
     public synchronized void registerTypeInfoForClass(String className, List<String> parents, List<String> interfaces) {
         String normalized = Util.formatClassName(className);
+        if (ancestorBaseCache.containsKey(normalized)) {
+            SWATAssert.enforce(
+                    parents.equals(classToParents.get(normalized))
+                            && interfaces.equals(classToInterfaces.get(normalized)),
+                    "Class " + normalized + " already registered in ancestorBaseCache with different metadata");
+            return;
+        }
         classToParents.put(normalized, parents);
         classToInterfaces.put(normalized, interfaces);
-        SWATAssert.enforce(!ancestorBaseCache.containsKey(normalized), "Class " + normalized + " already registered in ancestorBaseCache");
     }
 
     public synchronized List<String> getParentsForClass(String className) {
