@@ -67,7 +67,7 @@ dependencyResolutionManagement {
             library('asm-util', 'org.ow2.asm','asm-util').versionRef('asm')
             library('asm-tree', 'org.ow2.asm','asm-tree').versionRef('asm')
             library('jackson-databind', 'com.fasterxml.jackson.core:jackson-databind:2.14.1')
-            library('java-smt', 'org.sosy-lab:java-smt:5.0.1')
+            library('java-smt', 'org.sosy-lab:java-smt:6.0.0')
             library('spock-core', 'org.spockframework:spock-core:2.2-M1-groovy-4.0')
             library('mockito-core', 'org.mockito:mockito-core:3.12.4')
             library('logback-classic', 'ch.qos.logback:logback-classic:1.5.3')
