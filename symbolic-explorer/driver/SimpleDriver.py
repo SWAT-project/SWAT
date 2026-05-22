@@ -60,6 +60,7 @@ class SimpleDriver:
             f'-Dexplorer.port={self.args.port}',
             f'-javaagent:{self.args.agent}',
             f'-Djava.library.path={self.args.z3dir}',
+            '-Dsolver.mode=HTTP',
             '-ea',  # Enable assertions
         ]
 
@@ -172,8 +173,8 @@ class SimpleDriver:
                 # Array variables come in pairs: [I_0 (the array) and [I_0_length (the length)
                 # We only want to register the array itself, not the length
                 non_length_inputs = [inp for inp in branch.inputs if not inp.name.endswith('_length')]
-                var_types = [inp.type for inp in non_length_inputs]
-                var_indices = [int(inp.name.split('_')[-1]) for inp in non_length_inputs]
+                var_types = [inp.name.rsplit('_', 1)[0] for inp in non_length_inputs]
+                var_indices = [int(inp.name.rsplit('_', 1)[1]) for inp in non_length_inputs]
                 self.sym_storage.register_vars(var_types, var_indices)
                 self.sym_storage.store_solution(sol)
 

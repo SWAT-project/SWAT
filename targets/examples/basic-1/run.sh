@@ -23,7 +23,12 @@ echo "Running $target" in $mode mode
 # Execute based on the mode
 if [ "$mode" == "explorer" ]; then
     # Running the target from the symbolic explorer
-    python ../../../symbolic-explorer/SymbolicExplorer.py --target $target --agent ../../../symbolic-executor/lib/symbolic-executor.jar --z3dir ../../../libs/java-library-path
+    ../../../symbolic-explorer/.venv/bin/python3 ../../../symbolic-explorer/SymbolicExplorer.py \
+        --mode simple \
+        --target $target \
+        --classpath . \
+        --agent ../../../symbolic-executor/lib/symbolic-executor.jar \
+        --z3dir ../../../libs/java-library-path
 else
     # Running the target from the symbolic executor
     java \

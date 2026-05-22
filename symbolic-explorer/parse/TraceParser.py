@@ -14,14 +14,7 @@ class Parser:
         _trace = []
         for branch in trace:
             if branch.type == "Branch":
-                sanitized_constraint = ''
-                for c in branch.constraint:
-                    if ord(c) == 34:
-                        sanitized_constraint += '\\"'
-                    elif ord(c) == 10:
-                        sanitized_constraint += ''
-                    else:
-                        sanitized_constraint += c
+                sanitized_constraint = branch.constraint.replace('\n', '')
                 _trace.append(Branch(id=branch.iid,
                                      trace_id=trace_id,
                                      has_branched=branch.branched,
