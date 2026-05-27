@@ -61,7 +61,7 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--categories', multiple=True, help='Verification categories to run (e.g., valid-assert.prp)')
 @click.option('--target', help='Single target to run (only for single mode)')
 @click.pass_context
-def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target):
+def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target: str):
     """Run verification tests."""
     from lib import (
         extract_testcases,
@@ -128,7 +128,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
                 # Find and run specific target
                 ver_task = None
                 for task in ver_tasks_with_commands:
-                    if str(task['command']['target']) == target:
+                    if target.endswith(str(task['command']['target'])):
                         ver_task = task
                         break
 

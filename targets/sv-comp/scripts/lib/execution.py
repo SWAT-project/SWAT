@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-import logging, os, enum, subprocess
+import logging, os, enum, subprocess, signal
 import socket
 import time
 
@@ -256,7 +256,8 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[Execut
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
-            bufsize=1
+            bufsize=1,
+            start_new_session=True
     ) as proc:
         try:
             # Read output and wait for process to finish, with a timeout
@@ -267,6 +268,7 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[Execut
                
             
         except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL) # Kill the whole process group to prevent java subprocesses from sticking around
             proc.kill()
             stdout, _ = proc.communicate()
             output = stdout.splitlines()
@@ -274,6 +276,7 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[Execut
             
         except Exception as e:
             logger.critical(f'[SVCOMP] Exception: {e}')
+            os.killpg(proc.pid, signal.SIGKILL)
             proc.kill()
             output = [str(e)]
             return ExecutionStatus.ERROR, output + [str(e)]
