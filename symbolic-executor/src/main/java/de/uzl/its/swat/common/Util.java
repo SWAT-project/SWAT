@@ -228,7 +228,7 @@ public class Util {
 
 
     private static void checkClassName(String className) {
-        SWATAssert.check(!className.contains(";") ||!className.contains("(") || !className.contains(")") || !className.contains("L"),
+        SWATAssert.check(!className.contains(";") && !className.contains("(") && !className.contains(")") && !className.startsWith("L"),
                 "Class name should not contain ';' or brackets");
     }
     /**

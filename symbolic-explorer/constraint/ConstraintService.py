@@ -39,10 +39,10 @@ class ConstraintService:
         None: The result is the side effect of adding data to the database.
         """
 
+        # logger.info(f'[CONSTRAINT SERVICE] Received: {[t.__str__() for t in trace]}')
         trace = Parser.parse_trace(trace, trace_id=trace_id)
         inputs: List[Input] = Parser.parse_inputs(inputs)
         ufs: List[UF] = Parser.parse_ufs(ufs)
-        #logger.info(f'[CONSTRAINT SERVICE] Received: {[t.__str__() for t in trace]}')
         # Adding the trace and inputs to the database for the specified endpoint.
         Database.instance().add_trace(endpoint_id, trace_id, trace, inputs, ufs, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change)
         logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')

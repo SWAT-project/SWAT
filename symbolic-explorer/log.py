@@ -33,7 +33,7 @@ def setup_logger(_logger, log_file, level=logging.INFO, use_console_handler=True
     global _interal_logger 
 
     formatter = logging.Formatter(
-        "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s"
+        "%(asctime)s [%(threadName)-20.20s] [%(levelname)-5.5s]  %(message)s"
     )
     _interal_logger.debug(f"Setting up logger {_logger} with file {log_file}")
     
