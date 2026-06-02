@@ -10,7 +10,7 @@ from parse.DataTransferObjects import TraceItem, InputItem, UFItem
 
 class Parser:
     @staticmethod
-    def parse_trace(trace: List[TraceItem], trace_id: str) -> List:
+    def parse_trace(trace: List[TraceItem], trace_id: str) -> List[Branch | Special]:
         _trace = []
         for branch in trace:
             if branch.type == "Branch":

@@ -13,7 +13,7 @@ class Branch:
         constraint (any): The constraint or condition associated with the branch.
     """
 
-    def __init__(self, id, trace_id, has_branched, constraint):
+    def __init__(self, id: int, trace_id: str, has_branched: bool, constraint: str):
         """
         Initializes a new instance of the Branch class.
 

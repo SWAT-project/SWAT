@@ -1,7 +1,11 @@
 from data.BinaryExecutionTree.Leaf import Leaf
 import logging as log
 import json
+from typing import List, Optional
+
+from data.trace.Input import Input
 from data.trace.Special import Special
+from data.trace.UF import UF
 
 GLOBAL_IID = 0  # Global unique identifier for nodes
 
@@ -29,7 +33,7 @@ class Node:
         ValueError: If the trace argument is None or empty, indicating that the node cannot be created.
     """
 
-    def __init__(self, parent, trace, inputs, ufs):
+    def __init__(self, parent: Optional['Node'], trace: list, inputs: List[Input], ufs: List[UF]):
         """
         Initializes a new instance of the Node class.
 

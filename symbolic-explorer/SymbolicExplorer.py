@@ -29,7 +29,7 @@ class SymbolicExplorer:
 
     app = FastAPI(debug=True)
 
-    def __init__(self, args):
+    def __init__(self, args: argparse.Namespace):
         self.args = args
 
         self.constraint_controller = ConstraintController()
@@ -114,7 +114,7 @@ class SymbolicExplorer:
     #         pass
 
 
-def init_args(parser):
+def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-m", "--mode", choices=['passive', 'annotation', 'args', 'sv-comp', 'http', 'simple'], default='annotation',
                              help="Choose the desired mode")
     parser.add_argument("-t", "--target", help="Full path to the target JAR file")

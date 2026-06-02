@@ -9,5 +9,5 @@ class EndpointController:
         self.router = APIRouter()
         self.router.add_api_route("/endpoints", self.get, methods=["GET"], status_code=status.HTTP_200_OK)
 
-    def get(self):
+    def get(self) -> list:
         return Database.instance().get_endpoints()

@@ -1,3 +1,6 @@
+from typing import Any
+
+
 class Input:
     """
     Represents a symbolic input with its concrete value from a trace.
@@ -10,7 +13,7 @@ class Input:
         upper_bound (any): The (symbolic) upper bound for the value of the input parameter, if applicable.
     """
 
-    def __init__(self, name, value, type, lower_bound, upper_bound):
+    def __init__(self, name: str, value: Any, type: str, lower_bound: Any, upper_bound: Any):
         """
         Initializes a new instance of the Input class.
 

@@ -14,7 +14,7 @@ class Leaf:
         gid (int): A unique global identifier for this leaf node.
     """
 
-    def __init__(self, parent: 'Node', inputs: [Input], ufs: [UF]) -> None:
+    def __init__(self, parent: 'Node', inputs: list[Input], ufs: list[UF]) -> None:
         """
         Initializes a new instance of the Leaf class.
 

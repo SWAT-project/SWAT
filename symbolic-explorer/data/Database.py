@@ -1,6 +1,6 @@
 import threading
 import copy
-from typing import List
+from typing import Any, List, Union
 
 from data.BinaryExecutionTree.Tree import Tree
 from data.Solution.Solution import Solution
@@ -62,12 +62,12 @@ class Database:
 
         lock.release()
 
-    def add_constraints(self, trace_id, constraints):
+    def add_constraints(self, trace_id: str, constraints: dict):
         lock.acquire()
         self.constraints[trace_id] = constraints
         lock.release()
 
-    def get_constraints(self, trace_id):
+    def get_constraints(self, trace_id: str):
         lock.acquire()
         ret = copy.deepcopy(self.constraints[trace_id])
         lock.release()
@@ -78,7 +78,7 @@ class Database:
         self._add_violation(endpoint_id, sym_vars)
         lock.release()
 
-    def _add_violation(self, endpoint_id: int, sym_vars: List[SymbolicVar]):
+    def _add_violation(self, endpoint_id: str | int, sym_vars: List[SymbolicVar]):
         endpoint_id = str(endpoint_id)
         if endpoint_id not in self.violations:
             self.violations[endpoint_id] = [sym_vars]
@@ -93,12 +93,12 @@ class Database:
         lock.release()
         return violations
 
-    def add_endpoint(self, endpoint_id):
+    def add_endpoint(self, endpoint_id: Union[str, int]):
         lock.acquire()
         self._add_endpoint(endpoint_id)
         lock.release()
 
-    def _add_endpoint(self, endpoint_id):
+    def _add_endpoint(self, endpoint_id: Union[str, int]):
         endpoint_id = str(endpoint_id)
         if endpoint_id not in self.tree:
             self.endpoints.append(endpoint_id)
@@ -110,7 +110,9 @@ class Database:
         lock.release()
         return endpoints
 
-    def add_trace(self, endpoint_id, trace_id, trace, inputs: List[Input], ufs: List[UF], symbolic_context_loss, symbolic_precision_loss, reference_semantic_change=False):
+    def add_trace(self, endpoint_id: Union[str, int], trace_id: str, trace: list, inputs: List[Input], ufs: List[UF],
+                  symbolic_context_loss: bool, symbolic_precision_loss: bool,
+                  reference_semantic_change: bool = False):
         endpoint_id = str(endpoint_id)
 
         lock.acquire()
@@ -132,20 +134,20 @@ class Database:
         lock.release()
         return ret
 
-    def get_tree(self, endpoint_id):
+    def get_tree(self, endpoint_id: Union[str, int]):
         endpoint_id = str(endpoint_id)
         lock.acquire()
         ret = copy.deepcopy(self.tree[endpoint_id])
         lock.release()
         return ret
     
-    def record_uncaught_exception(self, endpoint_id):
+    def record_uncaught_exception(self, endpoint_id: Union[str, int]):
         endpoint_id = str(endpoint_id)
         lock.acquire()
         self.tree[endpoint_id].uncaught_exceptions += 1
         lock.release()
 
-    def add_solution(self, branch_id, sol, inputs, endpoint_id):
+    def add_solution(self, branch_id: int, sol: Any, inputs: List[Input], endpoint_id: Union[str, int]):
         lock.acquire()
         self.solutions[branch_id] = Solution(sol=sol, inputs=inputs, endpoint_id=endpoint_id)
         self.new_solutions.append(branch_id)
@@ -157,7 +159,7 @@ class Database:
         lock.release()
         return ret
 
-    def consume_new_solution(self, branch_id):
+    def consume_new_solution(self, branch_id: int):
         # raise Exception("CARFUL! Switched from node.id to node.gid, untested here")
         lock.acquire()
 
@@ -179,7 +181,7 @@ class Database:
         self.new_solutions.clear()
         lock.release()
 
-    def add_unsat_branch(self, branch_id):
+    def add_unsat_branch(self, branch_id: int):
         lock.acquire()
         self.unsat_branches.append(branch_id)
         lock.release()
@@ -190,7 +192,7 @@ class Database:
         lock.release()
         return ret
 
-    def add_branch_coverage(self, ids, total_branch_instr_count):
+    def add_branch_coverage(self, ids: List[int], total_branch_instr_count: int):
         lock.acquire()
 
         for _id in ids:
@@ -215,7 +217,7 @@ class Database:
 
         return ret
 
-    def add_instr_coverage(self, endpoint_id, ids, total_instr_count):
+    def add_instr_coverage(self, endpoint_id: Union[str, int], ids: List[int], total_instr_count: int):
 
         lock.acquire()
 
@@ -250,7 +252,7 @@ class Database:
 
         return ret
 
-    def get_endpoint_instr_coverage(self, endpoint_id):
+    def get_endpoint_instr_coverage(self, endpoint_id: Union[str, int]):
         lock.acquire()
 
         if endpoint_id in self.instr_coverage['endpoints'].keys():

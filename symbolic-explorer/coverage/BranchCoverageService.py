@@ -1,11 +1,12 @@
 from data.Database import Database
+from typing import Any
 
 import log
 logger = log.get_logger()
 
 
 class BranchCoverageService:
-    def add_coverage(**kwargs):
+    def add_coverage(**kwargs: Any):
         ids = kwargs.get('ids', {})
         total_branch_instr = kwargs.get('total', 0)
 
