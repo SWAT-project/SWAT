@@ -3,6 +3,7 @@ package de.uzl.its.swat.symbolic.invoke.java.lang;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
+import de.uzl.its.swat.symbolic.UFs.SinCosUF;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -11,6 +12,8 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValu
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.LongValue;
+import de.uzl.its.swat.thread.ThreadHandler;
+
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.*;
 
@@ -21,6 +24,8 @@ public class MathInvocation {
             Type[] desc,
             SymbolicTraceHandler symbolicTraceHandler) throws NotImplementedException, ValueConversionException {
         return switch (name) {
+            case "sin" -> invokeSin(args);
+            case "cos" -> invokeCos(args);
             case "abs" -> invokeAbs(args);
             case "max" -> invokeMax(args);
             case "min" -> invokeMin(args);
@@ -29,6 +34,90 @@ public class MathInvocation {
 
             default -> PlaceHolder.instance;
         };
+    }
+
+    /**
+     * Invocation handler for Math.sin(double a).
+     * Uses an UF.
+     *
+     * @see <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Math.html#sin(double)">Math.sin(double a)</a>
+     */
+    private static Value<?, ?> invokeSin(Value<?, ?>[] args) {
+        SWATAssert.enforce(args.length == 1, "Wrong argument counts");
+        SWATAssert.enforce(args[0] instanceof DoubleValue, "Wrong argument type");
+        return sin((DoubleValue) args[0]);
+    }
+
+    /**
+     * Symbolic wrapper for Math.sin(double a).
+     * Uses an UF.
+     *
+     * @see <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Math.html#sin(double)">Math.sin(double a)</a>
+     */
+    private static DoubleValue sin(DoubleValue a) {
+        SolverContext ctx = a.context;
+
+        // Fast path: concrete value only
+        if (!a.isSymbolic()) {
+            return new DoubleValue(ctx, Math.sin(a.concrete));
+            // potentially we could do an addConstraint to remember this concrete case for the UF or other trigonometric UFs
+        }
+
+        try {
+            SinCosUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getSinCosUF();
+
+            // The symbolic result
+            var ufResult = uf.applySin(a.formula);
+
+            // Return with concrete result for concolic steering
+            return new DoubleValue(ctx, Math.sin(a.concrete), ufResult);
+
+        } catch (Exception e) {
+            // Fallback to concrete-only if UF setup fails
+            return new DoubleValue(ctx, Math.sin(a.concrete));
+        }
+    }
+
+    /**
+     * Invocation handler for Math.cos(double a).
+     * Uses an UF.
+     *
+     * @see <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Math.html#cos(double)">Math.cos(double a)</a>
+     */
+    private static Value<?, ?> invokeCos(Value<?, ?>[] args) {
+        SWATAssert.enforce(args.length == 1, "Wrong argument counts");
+        SWATAssert.enforce(args[0] instanceof DoubleValue, "Wrong argument type");
+        return cos((DoubleValue) args[0]);
+    }
+
+    /**
+     * Symbolic wrapper for Math.cos(double a).
+     * Uses an UF.
+     *
+     * @see <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Math.html#cos(double)">Math.cos(double a)</a>
+     */
+    private static DoubleValue cos(DoubleValue a) {
+        SolverContext ctx = a.context;
+
+        // Fast path: concrete value only
+        if (!a.isSymbolic()) {
+            return new DoubleValue(ctx, Math.cos(a.concrete));
+            // potentially we could do an addConstraint to remember this concrete case for the UF or other trigonometric UFs
+        }
+
+        try {
+            SinCosUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getSinCosUF();
+
+            // The symbolic result
+            var ufResult = uf.applyCos(a.formula);
+
+            // Return with concrete result for concolic steering
+            return new DoubleValue(ctx, Math.cos(a.concrete), ufResult);
+
+        } catch (Exception e) {
+            // Fallback to concrete-only if UF setup fails
+            return new DoubleValue(ctx, Math.cos(a.concrete));
+        }
     }
 
     private static Value<?, ?> invokeAbs(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
@@ -47,7 +136,7 @@ public class MathInvocation {
             BitvectorFormulaManager bvmgr = val.context.getFormulaManager().getBitvectorFormulaManager();
             BitvectorFormula zero = bvmgr.makeBitvector(64, 0);
             return new LongValue(v.context, Math.abs(v.concrete), bfm.ifThenElse(
-                    bvmgr.greaterOrEquals(v.formula, zero, true),  // signed
+                    bvmgr.greaterOrEquals(v.formula, zero, true), // signed
                     v.formula,
                     bvmgr.negate(v.formula)));
         } else {
@@ -55,7 +144,7 @@ public class MathInvocation {
             BitvectorFormulaManager bvmgr = val.context.getFormulaManager().getBitvectorFormulaManager();
             BitvectorFormula zero = bvmgr.makeBitvector(32, 0);
             return new IntValue(v.context, Math.abs(v.concrete), bfm.ifThenElse(
-                    bvmgr.greaterOrEquals(v.formula, zero, true),  // signed
+                    bvmgr.greaterOrEquals(v.formula, zero, true), // signed
                     v.formula,
                     bvmgr.negate(v.formula)));
         }
@@ -63,7 +152,8 @@ public class MathInvocation {
 
     private static Value<?, ?> invokeMax(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
         SWATAssert.enforce(args.length == 2, "Wrong argument counts");
-        SWATAssert.enforce(args[0] instanceof NumericalValue || args[1] instanceof NumericalValue, "Wrong argument type");
+        SWATAssert.enforce(args[0] instanceof NumericalValue || args[1] instanceof NumericalValue,
+                "Wrong argument type");
         BooleanFormulaManager bfm = args[0].context.getFormulaManager().getBooleanFormulaManager();
 
         if (args[0] instanceof FloatValue v && args[1] instanceof FloatValue w) {
@@ -75,7 +165,7 @@ public class MathInvocation {
         } else if (args[0] instanceof LongValue v && args[1] instanceof LongValue w) {
             BitvectorFormulaManager bvmgr = v.context.getFormulaManager().getBitvectorFormulaManager();
             return new LongValue(v.context, Math.max(v.concrete, w.concrete), bfm.ifThenElse(
-                    bvmgr.greaterOrEquals(v.formula, w.formula, true),  // signed
+                    bvmgr.greaterOrEquals(v.formula, w.formula, true), // signed
                     v.formula,
                     w.formula));
         } else {
@@ -83,7 +173,7 @@ public class MathInvocation {
             IntValue w = args[1].asIntValue();
             BitvectorFormulaManager bvmgr = v.context.getFormulaManager().getBitvectorFormulaManager();
             return new IntValue(v.context, Math.max(v.concrete, w.concrete), bfm.ifThenElse(
-                    bvmgr.greaterOrEquals(v.formula, w.formula, true),  // signed
+                    bvmgr.greaterOrEquals(v.formula, w.formula, true), // signed
                     v.formula,
                     w.formula));
         }
@@ -91,7 +181,8 @@ public class MathInvocation {
 
     private static Value<?, ?> invokeMin(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
         SWATAssert.enforce(args.length == 2, "Wrong argument counts");
-        SWATAssert.enforce(args[0] instanceof NumericalValue || args[1] instanceof NumericalValue, "Wrong argument type");
+        SWATAssert.enforce(args[0] instanceof NumericalValue || args[1] instanceof NumericalValue,
+                "Wrong argument type");
         BooleanFormulaManager bfm = args[0].context.getFormulaManager().getBooleanFormulaManager();
 
         if (args[0] instanceof FloatValue v && args[1] instanceof FloatValue w) {
@@ -103,7 +194,7 @@ public class MathInvocation {
         } else if (args[0] instanceof LongValue v && args[1] instanceof LongValue w) {
             BitvectorFormulaManager bvmgr = v.context.getFormulaManager().getBitvectorFormulaManager();
             return new LongValue(v.context, Math.min(v.concrete, w.concrete), bfm.ifThenElse(
-                    bvmgr.lessOrEquals(v.formula, w.formula, true),  // signed
+                    bvmgr.lessOrEquals(v.formula, w.formula, true), // signed
                     v.formula,
                     w.formula));
         } else {
@@ -111,7 +202,7 @@ public class MathInvocation {
             IntValue w = args[1].asIntValue();
             BitvectorFormulaManager bvmgr = v.context.getFormulaManager().getBitvectorFormulaManager();
             return new IntValue(v.context, Math.min(v.concrete, w.concrete), bfm.ifThenElse(
-                    bvmgr.lessOrEquals(v.formula, w.formula, true),  // signed
+                    bvmgr.lessOrEquals(v.formula, w.formula, true), // signed
                     v.formula,
                     w.formula));
         }
@@ -139,7 +230,8 @@ public class MathInvocation {
      * Note: SMT's fp.to_sbv has undefined behavior for NaN/infinity, so we must
      * explicitly encode Java's semantics with if-then-else.
      */
-    private static Value<?, ?> invokeRound(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+    private static Value<?, ?> invokeRound(Value<?, ?>[] args)
+            throws NotImplementedException, ValueConversionException {
         SWATAssert.enforce(args.length == 1, "Wrong argument counts");
 
         if (args[0] instanceof FloatValue v) {
@@ -155,14 +247,17 @@ public class MathInvocation {
 
             // Float threshold for Integer.MIN_VALUE and MAX_VALUE
             // Integer.MIN_VALUE = -2147483648, Integer.MAX_VALUE = 2147483647
-            FloatingPointFormula minThreshold = fpfm.makeNumber(-2147483648.0f, FormulaType.getSinglePrecisionFloatingPointType());
-            FloatingPointFormula maxThreshold = fpfm.makeNumber(2147483647.0f, FormulaType.getSinglePrecisionFloatingPointType());
+            FloatingPointFormula minThreshold = fpfm.makeNumber(-2147483648.0f,
+                    FormulaType.getSinglePrecisionFloatingPointType());
+            FloatingPointFormula maxThreshold = fpfm.makeNumber(2147483647.0f,
+                    FormulaType.getSinglePrecisionFloatingPointType());
 
             // Check special conditions
             BooleanFormula isNaN = fpfm.isNaN(v.formula);
             BooleanFormula isNegInf = fpfm.isInfinity(v.formula);
             BooleanFormula isPosInf = fpfm.isInfinity(v.formula);
-            BooleanFormula isNegative = fpfm.lessThan(v.formula, fpfm.makeNumber(0.0f, FormulaType.getSinglePrecisionFloatingPointType()));
+            BooleanFormula isNegative = fpfm.lessThan(v.formula,
+                    fpfm.makeNumber(0.0f, FormulaType.getSinglePrecisionFloatingPointType()));
             BooleanFormula isNegInfOrVeryNeg = bmgr.or(bmgr.and(isNegInf, isNegative),
                     fpfm.lessOrEquals(v.formula, minThreshold));
             BooleanFormula isPosInfOrVeryPos = bmgr.or(bmgr.and(isPosInf, bmgr.not(isNegative)),
@@ -170,7 +265,8 @@ public class MathInvocation {
 
             // Normal case: round and convert to int
             FloatingPointFormula rounded = fpfm.round(v.formula, FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
-            BitvectorFormula normalResult = fpfm.castTo(rounded, true, FormulaType.getBitvectorTypeWithSize(32), FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
+            BitvectorFormula normalResult = fpfm.castTo(rounded, true, FormulaType.getBitvectorTypeWithSize(32),
+                    FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
 
             // Build if-then-else chain for Java semantics:
             // if NaN then 0
@@ -195,14 +291,18 @@ public class MathInvocation {
 
             // Double threshold for Long.MIN_VALUE and MAX_VALUE
             // Long.MIN_VALUE = -9223372036854775808, Long.MAX_VALUE = 9223372036854775807
-            // Note: These values can't be exactly represented as double, but we use the closest representable values
-            FloatingPointFormula minThreshold = fpfm.makeNumber((double) Long.MIN_VALUE, FormulaType.getDoublePrecisionFloatingPointType());
-            FloatingPointFormula maxThreshold = fpfm.makeNumber((double) Long.MAX_VALUE, FormulaType.getDoublePrecisionFloatingPointType());
+            // Note: These values can't be exactly represented as double, but we use the
+            // closest representable values
+            FloatingPointFormula minThreshold = fpfm.makeNumber((double) Long.MIN_VALUE,
+                    FormulaType.getDoublePrecisionFloatingPointType());
+            FloatingPointFormula maxThreshold = fpfm.makeNumber((double) Long.MAX_VALUE,
+                    FormulaType.getDoublePrecisionFloatingPointType());
 
             // Check special conditions
             BooleanFormula isNaN = fpfm.isNaN(v.formula);
             BooleanFormula isInf = fpfm.isInfinity(v.formula);
-            BooleanFormula isNegative = fpfm.lessThan(v.formula, fpfm.makeNumber(0.0, FormulaType.getDoublePrecisionFloatingPointType()));
+            BooleanFormula isNegative = fpfm.lessThan(v.formula,
+                    fpfm.makeNumber(0.0, FormulaType.getDoublePrecisionFloatingPointType()));
             BooleanFormula isNegInfOrVeryNeg = bmgr.or(bmgr.and(isInf, isNegative),
                     fpfm.lessOrEquals(v.formula, minThreshold));
             BooleanFormula isPosInfOrVeryPos = bmgr.or(bmgr.and(isInf, bmgr.not(isNegative)),
@@ -210,7 +310,8 @@ public class MathInvocation {
 
             // Normal case: round and convert to long
             FloatingPointFormula rounded = fpfm.round(v.formula, FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
-            BitvectorFormula normalResult = fpfm.castTo(rounded, true, FormulaType.getBitvectorTypeWithSize(64), FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
+            BitvectorFormula normalResult = fpfm.castTo(rounded, true, FormulaType.getBitvectorTypeWithSize(64),
+                    FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
 
             // Build if-then-else chain for Java semantics:
             // if NaN then 0
@@ -226,34 +327,36 @@ public class MathInvocation {
             return PlaceHolder.instance;
         }
     }
-/*
-
-   private static IntValue invokeMax(IntValue a, IntValue b) {
-       FormulaManager fmgr = a.context.getFormulaManager();
-       BooleanFormula cond = fmgr.getIntegerFormulaManager().greaterOrEquals(a.formula, b.formula);
-       NumeralFormula.IntegerFormula res =
-               fmgr.getBooleanFormulaManager().ifThenElse(cond, a.formula, b.formula);
-       return new IntValue(a.context, Math.max(a.concrete, b.concrete), res);
-   }
-
-   private static DoubleValue invokeMax(DoubleValue a, DoubleValue b) {
-       FormulaManager fmgr = a.context.getFormulaManager();
-       BooleanFormula cond =
-               fmgr.getFloatingPointFormulaManager().greaterOrEquals(a.formula, b.formula);
-       FloatingPointFormula res =
-               fmgr.getBooleanFormulaManager().ifThenElse(cond, a.formula, b.formula);
-       return new DoubleValue(a.context, Math.max(a.concrete, b.concrete), res);
-   }
-
-    if (args[0] instanceof IntValue a && args[1] instanceof IntValue b) {
-               return invokeMax(a, b);
-           }
-           if (args[0] instanceof DoubleValue a && args[1] instanceof DoubleValue b) {
-               return invokeMax(a, b);
-           }
-       } else if (owner.equals("java/lang/Math") && name.equals("min") && args.length == 2) {
-           if (args[0] instanceof IntValue a && args[1] instanceof IntValue b) {
-               return a.concrete < b.concrete ? a : b;
-           }
-*/
+    /*
+     * 
+     * private static IntValue invokeMax(IntValue a, IntValue b) {
+     * FormulaManager fmgr = a.context.getFormulaManager();
+     * BooleanFormula cond =
+     * fmgr.getIntegerFormulaManager().greaterOrEquals(a.formula, b.formula);
+     * NumeralFormula.IntegerFormula res =
+     * fmgr.getBooleanFormulaManager().ifThenElse(cond, a.formula, b.formula);
+     * return new IntValue(a.context, Math.max(a.concrete, b.concrete), res);
+     * }
+     * 
+     * private static DoubleValue invokeMax(DoubleValue a, DoubleValue b) {
+     * FormulaManager fmgr = a.context.getFormulaManager();
+     * BooleanFormula cond =
+     * fmgr.getFloatingPointFormulaManager().greaterOrEquals(a.formula, b.formula);
+     * FloatingPointFormula res =
+     * fmgr.getBooleanFormulaManager().ifThenElse(cond, a.formula, b.formula);
+     * return new DoubleValue(a.context, Math.max(a.concrete, b.concrete), res);
+     * }
+     * 
+     * if (args[0] instanceof IntValue a && args[1] instanceof IntValue b) {
+     * return invokeMax(a, b);
+     * }
+     * if (args[0] instanceof DoubleValue a && args[1] instanceof DoubleValue b) {
+     * return invokeMax(a, b);
+     * }
+     * } else if (owner.equals("java/lang/Math") && name.equals("min") &&
+     * args.length == 2) {
+     * if (args[0] instanceof IntValue a && args[1] instanceof IntValue b) {
+     * return a.concrete < b.concrete ? a : b;
+     * }
+     */
 }
