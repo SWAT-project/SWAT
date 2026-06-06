@@ -30,3 +30,5 @@ targets/sv-comp/sv-benchmarks/*
 **/analysis/
 !targets/sv-comp/scripts/lib/analysis
 libs/cfg-extractor/cfg-extractor-1.0-SNAPSHOT.jar
+targets/sv-comp/sv-benchmarks
+targets/sv-comp/wit4java
