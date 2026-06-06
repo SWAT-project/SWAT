@@ -23,7 +23,7 @@ def analyze_results(ctx, results_file, logs_dir):
 
     If RESULTS_FILE is not provided, will use the most recent results file.
     """
-    from lib.analysis import main as run_analysis
+    from lib.analysis.context_loss import main as run_analysis
 
     script_dir = ctx.obj['script_dir']
 
