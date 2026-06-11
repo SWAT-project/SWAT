@@ -7,6 +7,8 @@ from data.Solution.Solution import Solution
 from driver.SymbolicStorage import SymbolicVar
 from data.trace.Input import Input
 from data.trace.UF import UF
+from data.trace.Special import Special
+from data.trace.Branch import Branch
 
 lock = threading.Lock()
 
@@ -36,7 +38,7 @@ class Database:
         self.new_solutions = []
         self.unsat_branches = []
         self.endpoints = list()
-        self.traces = list()
+        self.traces: list[list[Branch | Special]] = list()
         self.instr_coverage = {'total_executed': {}, 'total_instr_count': 0, 'endpoints': {}}
         self.branch_coverage = {'total_executed': {}, 'total_branch_instr_count': 0}
         self.violations = {}
@@ -55,7 +57,7 @@ class Database:
         self.new_solutions = []
         self.unsat_branches = []
         self.endpoints = list()
-        self.traces = list()
+        self.traces: list[list[Branch | Special]] = list()
         self.instr_coverage = {'total_executed': {}, 'total_instr_count': 0, 'endpoints': {}}
         self.branch_coverage = {'total_executed': {}, 'total_branch_instr_count': 0}
         self.violations = {}
@@ -110,7 +112,7 @@ class Database:
         lock.release()
         return endpoints
 
-    def add_trace(self, endpoint_id: Union[str, int], trace_id: str, trace: list, inputs: List[Input], ufs: List[UF],
+    def add_trace(self, endpoint_id: Union[str, int], trace_id: str, trace: list[Branch | Special], inputs: List[Input], ufs: List[UF],
                   symbolic_context_loss: bool, symbolic_precision_loss: bool,
                   reference_semantic_change: bool = False):
         endpoint_id = str(endpoint_id)
@@ -118,7 +120,7 @@ class Database:
         lock.acquire()
 
         self._add_endpoint(endpoint_id)
-        self.traces.append(trace_id)
+        self.traces.append(trace)
         self.tree[endpoint_id].add(trace, inputs, ufs)
         self.tree[endpoint_id].record_inputs(inputs)
         self.tree[endpoint_id].record_ufs(ufs)
@@ -134,7 +136,13 @@ class Database:
         lock.release()
         return ret
 
-    def get_tree(self, endpoint_id: Union[str, int]):
+    def get_trace(self, idx: int):
+        lock.acquire()
+        ret = copy.deepcopy(self.traces[idx])
+        lock.release()
+        return ret
+
+    def get_tree(self, endpoint_id: Union[str, int]) -> Tree:
         endpoint_id = str(endpoint_id)
         lock.acquire()
         ret = copy.deepcopy(self.tree[endpoint_id])
@@ -160,7 +168,7 @@ class Database:
         return ret
 
     def consume_new_solution(self, branch_id: int):
-        # raise Exception("CARFUL! Switched from node.id to node.gid, untested here")
+        # raise Exception("CAREFUL! Switched from node.id to node.gid, untested here")
         lock.acquire()
 
         solution = copy.deepcopy(self.solutions[branch_id])

@@ -1,5 +1,6 @@
 from typing import List, Optional, Set, Union
 from data.trace.Branch import Branch
+from data.trace.Special import Special
 from data.BinaryExecutionTree.Leaf import Leaf
 from data.BinaryExecutionTree.Node import Node
 from data.trace.Input import Input
@@ -71,7 +72,7 @@ class Tree:
         logger.warning("Reference semantic change recorded: user-de-interned strings compared via Objects.equals")
         self.reference_semantic_change = True
         
-    def add(self, trace: list, inputs: List[Input], ufs: List[UF]):
+    def add(self, trace: list[Branch | Special], inputs: List[Input], ufs: List[UF]):
         """
         Adds a branch to the tree based on the provided trace and inputs.
 
@@ -80,9 +81,9 @@ class Tree:
             inputs (any): The inputs associated with the branch being added.
             ufs (any): The UFs associated with the branch being added.
         """
-        self.root = self.add_recursive(None, self.root, trace, inputs, ufs)
+        self.root = self.add_recursive(None, self.root, trace.copy(), inputs, ufs)
 
-    def add_recursive(self, parent: Optional[Node], node: Optional[Union[Node, Leaf]], trace: list, inputs: List[Input], ufs: List[UF]):
+    def add_recursive(self, parent: Optional[Node], node: Optional[Union[Node, Leaf]], trace: list[Branch | Special], inputs: List[Input], ufs: List[UF]):
         """
         Recursively adds nodes or leaves to the tree.
 
