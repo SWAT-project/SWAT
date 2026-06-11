@@ -2,6 +2,22 @@
   <img src="https://swat-project.github.io/docs/assets/images/logo.png" alt="SWAT Logo" width="300">
 </p>
 
+<p align="center">
+  <a href="https://github.com/SWAT-project/SWAT/actions/workflows/gradle.yml">
+    <img src="https://github.com/SWAT-project/SWAT/actions/workflows/gradle.yml/badge.svg?branch=main" alt="Build & Tests"></a>
+  <a href="https://swat-project.github.io/docs/">
+    <img src="https://img.shields.io/badge/docs-online-blue" alt="Documentation"></a>
+  <a href="https://swat-project.github.io/docs/javadoc">
+    <img src="https://img.shields.io/badge/javadoc-online-blue" alt="JavaDoc"></a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/SWAT-project/SWAT" alt="License"></a>
+  <img src="https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white" alt="Java 17">
+  <a href="https://sv-comp.sosy-lab.org/2026/results/results-verified/">
+    <img src="https://img.shields.io/badge/SV--COMP-2024%20%7C%202025%20%7C%202026-success" alt="SV-COMP"></a>
+  <a href="https://doi.org/10.5281/zenodo.17748741">
+    <img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17748741-blue" alt="DOI"></a>
+</p>
+
 # SWAT
 
 SWAT is a dynamic symbolic execution engine for Java applications. It uses on-the-fly bytecode instrumentation to facilitate symbolic tracking, enabling automated test generation and program analysis without requiring source code modifications.
