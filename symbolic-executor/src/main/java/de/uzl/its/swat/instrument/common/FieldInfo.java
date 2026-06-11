@@ -9,7 +9,6 @@ import org.objectweb.asm.Type;
  * @param declaringClass the class name in which the field is declared
  * @param name   the field name
  * @param desc   the field descriptor (type information)
- * @param type   the field type
  * @param access the field access flags
  */
 public record FieldInfo(String declaringClass, String name, String desc, int access) {

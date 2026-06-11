@@ -32,7 +32,7 @@ public abstract class BoxedValue<V extends NumericalValue> extends ObjectValue<O
      *
      * Z3's str.from_int only works for non-negative integers (returns empty string for negative values).
      * This method handles the sign manually:
-     * - If value < 0: returns "-" + str.from_int(abs(value))
+     * - If {@code value < 0}: returns "-" + str.from_int(abs(value))
      * - Otherwise: returns str.from_int(value)
      *
      * @param formula The integer formula to convert to string
