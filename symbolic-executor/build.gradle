@@ -48,6 +48,8 @@ dependencies {
 
 test {
     systemProperty "java.library.path", "../libs/java-library-path"
+    // Surface SWAT errors as exceptions instead of halting the test JVM
+    systemProperty "exitOnError", "false"
 
     testLogging {
         // Show events for passed, skipped, and failed tests

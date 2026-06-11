@@ -200,6 +200,10 @@ public class Config {
     @Getter private CoverageType coverageType;
     @Getter private boolean constraintsOnly;
 
+    /** Determines whether an unrecoverable error halts the JVM or rethrows the cause. */
+    @Getter private boolean exitOnError;
+    private static final boolean DEFAULT_EXIT_ON_ERROR = true;
+
     @Getter private boolean useAbortTimer;
     private static final boolean DEFAULT_USE_ABORT_TIMER = false;
     @Getter private int abortTimerValInMS;
@@ -419,6 +423,7 @@ public class Config {
         coverageType = CoverageType.valueOf(readString("coverageType", CoverageType.NONE.name()).toUpperCase());
         coverageOnly = readBoolean("coverageOnly", false);
         constraintsOnly = readBoolean("constraintsOnly", false);
+        exitOnError = readBoolean("exitOnError", DEFAULT_EXIT_ON_ERROR);
         useAbortTimer = readBoolean("useAbortTimer", DEFAULT_USE_ABORT_TIMER);
         abortTimerValInMS = readInt("abortTimerValInMS", DEFAULT_ABORT_TIMER_VAL_IN_MS);
 
