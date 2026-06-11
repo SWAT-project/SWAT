@@ -11,7 +11,6 @@
     <img src="https://img.shields.io/badge/javadoc-online-blue" alt="JavaDoc"></a>
   <a href="LICENSE">
     <img src="https://img.shields.io/github/license/SWAT-project/SWAT" alt="License"></a>
-  <img src="https://img.shields.io/badge/Java-17-orange?logo=openjdk&logoColor=white" alt="Java 17">
   <a href="https://sv-comp.sosy-lab.org/2026/results/results-verified/">
     <img src="https://img.shields.io/badge/SV--COMP-2024%20%7C%202025%20%7C%202026-success" alt="SV-COMP"></a>
   <a href="https://doi.org/10.5281/zenodo.17748741">
