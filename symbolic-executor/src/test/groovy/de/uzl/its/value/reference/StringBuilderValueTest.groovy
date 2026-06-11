@@ -28,7 +28,7 @@ class StringBuilderValueTest extends Specification {
     def prover = context.newProverEnvironment(
             SolverContext.ProverOptions.GENERATE_MODELS)
     def bmgr = context.getFormulaManager().getBooleanFormulaManager()
-    def imgr = context.getFormulaManager().getIntegerFormulaManager()
+    def bvmgr = context.getFormulaManager().getBitvectorFormulaManager()
     def smgr = context.getFormulaManager().getStringFormulaManager()
 
     def "substring(int start)" () {
@@ -215,8 +215,8 @@ class StringBuilderValueTest extends Specification {
 
         when:
         CharValue charValue = (CharValue) stringBuilderValue.invokeMethod("charAt", desc, args)
-        prover.addConstraint(imgr.equal(charValue.formula,
-                imgr.makeNumber(new StringBuilder(exampleString).charAt(index) as Integer)))
+        prover.addConstraint(bvmgr.equal(charValue.formula,
+                bvmgr.makeBitvector(16, new StringBuilder(exampleString).charAt(index) as Integer)))
 
         then:
         charValue.concrete == new StringBuilder(exampleString).charAt(index)
@@ -239,8 +239,8 @@ class StringBuilderValueTest extends Specification {
 
         when:
         IntValue index = (IntValue) stringBuilderValue.invokeMethod("indexOf", desc, args)
-        prover.addConstraint(imgr.equal(index.formula,
-                imgr.makeNumber(new StringBuilder(exampleString).indexOf(searchString))))
+        prover.addConstraint(bvmgr.equal(index.formula,
+                bvmgr.makeBitvector(32, new StringBuilder(exampleString).indexOf(searchString))))
 
         then:
         index.getConcrete() == new StringBuilder(exampleString).indexOf(searchString)

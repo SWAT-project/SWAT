@@ -5,10 +5,10 @@ import org.sosy_lab.common.ShutdownManager
 import org.sosy_lab.common.configuration.Configuration
 import org.sosy_lab.common.log.BasicLogManager
 import org.sosy_lab.java_smt.SolverContextFactory
+import org.sosy_lab.java_smt.api.BitvectorFormulaManager
 import org.sosy_lab.java_smt.api.BooleanFormulaManager
 import org.sosy_lab.java_smt.api.FloatingPointFormulaManager
 import org.sosy_lab.java_smt.api.FormulaManager
-import org.sosy_lab.java_smt.api.IntegerFormulaManager
 import org.sosy_lab.java_smt.api.ProverEnvironment
 import org.sosy_lab.java_smt.api.SolverContext
 import spock.lang.Shared
@@ -21,7 +21,7 @@ class DoubleValueTest extends Specification {
     ProverEnvironment prover
     FormulaManager fmgr
     BooleanFormulaManager bmgr
-    IntegerFormulaManager imgr
+    BitvectorFormulaManager bvmgr
     FloatingPointFormulaManager fpmgr
 
     def setup() {
@@ -35,7 +35,7 @@ class DoubleValueTest extends Specification {
                 SolverContext.ProverOptions.GENERATE_MODELS)
         fmgr = context.getFormulaManager()
         bmgr = fmgr.getBooleanFormulaManager()
-        imgr = fmgr.getIntegerFormulaManager()
+        bvmgr = fmgr.getBitvectorFormulaManager()
         fpmgr = fmgr.getFloatingPointFormulaManager()
     }
 
@@ -248,7 +248,7 @@ class DoubleValueTest extends Specification {
         when:
 
         def i1 = d1.DCMPG(d2)
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
         then:
         !prover.isUnsat()
         noExceptionThrown()
@@ -274,7 +274,7 @@ class DoubleValueTest extends Specification {
         when:
 
         def i1 = d1.DCMPL(d2)
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
         then:
         !prover.isUnsat()
         noExceptionThrown()
@@ -298,7 +298,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def i1 = d1.D2I()
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
         then:
         !prover.isUnsat()
         i1.concrete == res
@@ -336,7 +336,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def l1 = d1.D2L()
-        prover.addConstraint(imgr.equal(l1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(l1.formula, bvmgr.makeBitvector(64, res)))
         then:
         !prover.isUnsat()
         l1.concrete == res
@@ -357,7 +357,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def i1 = d1.D2I()
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
 
         then:
         !prover.isUnsat()
@@ -382,7 +382,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def i1 = d1.D2I()
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
 
         then:
         !prover.isUnsat()
@@ -410,7 +410,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def i1 = d1.D2I()
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
 
         then:
         !prover.isUnsat()
@@ -430,7 +430,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def i1 = d1.D2I()
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
 
         then:
         !prover.isUnsat()
@@ -452,7 +452,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def i1 = d1.D2I()
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
 
         then:
         !prover.isUnsat()
@@ -476,8 +476,8 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(10.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(100.0d, DoubleValue.precision)))
         // Constrain: 10 <= i <= 100
-        prover.addConstraint(imgr.greaterOrEquals(i1.formula, imgr.makeNumber(10)))
-        prover.addConstraint(imgr.lessOrEquals(i1.formula, imgr.makeNumber(100)))
+        prover.addConstraint(bvmgr.greaterOrEquals(i1.formula, bvmgr.makeBitvector(32, 10), true))
+        prover.addConstraint(bvmgr.lessOrEquals(i1.formula, bvmgr.makeBitvector(32, 100), true))
 
         then:
         // Should be SAT: values in [10, 100] map to integers in [10, 100]
@@ -495,7 +495,7 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(10.5d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(11.5d, DoubleValue.precision)))
         // Constrain: i must be exactly 11
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(11)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, 11)))
 
         then:
         // Should be SAT: values in [10.5, 11.5] truncate to 10 or 11
@@ -514,7 +514,7 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(10.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(20.0d, DoubleValue.precision)))
         // But require: i > 1000 (impossible!)
-        prover.addConstraint(imgr.greaterThan(i1.formula, imgr.makeNumber(1000)))
+        prover.addConstraint(bvmgr.greaterThan(i1.formula, bvmgr.makeBitvector(32, 1000), true))
 
         def isUnsat = prover.isUnsat()
         if (!isUnsat) {
@@ -547,7 +547,7 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(-100.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(-1.0d, DoubleValue.precision)))
         // But require: i > 0 (positive integer - impossible!)
-        prover.addConstraint(imgr.greaterThan(i1.formula, imgr.makeNumber(0)))
+        prover.addConstraint(bvmgr.greaterThan(i1.formula, bvmgr.makeBitvector(32, 0), true))
 
         def isUnsat = prover.isUnsat()
         if (!isUnsat) {
@@ -579,8 +579,8 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(40.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(60.0d, DoubleValue.precision)))
         // Require: 40 <= i <= 60
-        prover.addConstraint(imgr.greaterOrEquals(i1.formula, imgr.makeNumber(40)))
-        prover.addConstraint(imgr.lessOrEquals(i1.formula, imgr.makeNumber(60)))
+        prover.addConstraint(bvmgr.greaterOrEquals(i1.formula, bvmgr.makeBitvector(32, 40), true))
+        prover.addConstraint(bvmgr.lessOrEquals(i1.formula, bvmgr.makeBitvector(32, 60), true))
 
         then:
         // Should be SAT: ranges match
@@ -598,7 +598,7 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterThan(d1.formula, fpmgr.makeNumber(10.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessThan(d1.formula, fpmgr.makeNumber(11.0d, DoubleValue.precision)))
         // Require: i == 10
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(10)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, 10)))
 
         then:
         // Should be SAT: (10.0, 11.0) truncates to 10
@@ -616,7 +616,7 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterThan(d1.formula, fpmgr.makeNumber(10.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessThan(d1.formula, fpmgr.makeNumber(11.0d, DoubleValue.precision)))
         // But require: i == 11 (impossible - values in (10,11) can't truncate to 11)
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(11)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, 11)))
 
         def isUnsat = prover.isUnsat()
         if (!isUnsat) {
@@ -640,7 +640,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def b1 = d1.asByteValue()
-        prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, res)))
 
         then:
         !prover.isUnsat()
@@ -663,7 +663,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def b1 = d1.asByteValue()
-        prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, res)))
 
         then:
         !prover.isUnsat()
@@ -686,7 +686,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def b1 = d1.asByteValue()
-        prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, res)))
 
         then:
         !prover.isUnsat()
@@ -707,7 +707,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def b1 = d1.asByteValue()
-        prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, res)))
 
         then:
         !prover.isUnsat()
@@ -728,7 +728,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def b1 = d1.asByteValue()
-        prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, res)))
 
         then:
         !prover.isUnsat()
@@ -756,8 +756,8 @@ class DoubleValueTest extends Specification {
         when:
         def b1 = d1.asByteValue()
         // Constraint: byte value should be in range [1, 127] (positive bytes)
-        prover.addConstraint(imgr.greaterThan(b1.formula, imgr.makeNumber(0)))
-        prover.addConstraint(imgr.lessOrEquals(b1.formula, imgr.makeNumber(127)))
+        prover.addConstraint(bvmgr.greaterThan(b1.formula, bvmgr.makeBitvector(8, 0), true))
+        prover.addConstraint(bvmgr.lessOrEquals(b1.formula, bvmgr.makeBitvector(8, 127), true))
         // Original double should be in [1, 127] range (should map to positive bytes)
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(1.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(127.0d, DoubleValue.precision)))
@@ -775,7 +775,7 @@ class DoubleValueTest extends Specification {
         when:
         def b1 = d1.asByteValue()
         // Add constraint that the byte value should be greater than 0
-        prover.addConstraint(imgr.greaterThan(b1.formula, imgr.makeNumber(0)))
+        prover.addConstraint(bvmgr.greaterThan(b1.formula, bvmgr.makeBitvector(8, 0), true))
         // But constrain the original double to be in range [128, 256)
         // Values in this range wrap to negative bytes, so this should be UNSAT
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(128.0d, DoubleValue.precision)))
@@ -805,8 +805,8 @@ class DoubleValueTest extends Specification {
         when:
         def b1 = d1.asByteValue()
         // Constraint: byte value should be in range [-128, -1]
-        prover.addConstraint(imgr.greaterOrEquals(b1.formula, imgr.makeNumber(-128)))
-        prover.addConstraint(imgr.lessOrEquals(b1.formula, imgr.makeNumber(-1)))
+        prover.addConstraint(bvmgr.greaterOrEquals(b1.formula, bvmgr.makeBitvector(8, -128), true))
+        prover.addConstraint(bvmgr.lessOrEquals(b1.formula, bvmgr.makeBitvector(8, -1), true))
         // Original double should be in [128, 255] (after truncation gives values that wrap to negative bytes)
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(128.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessThan(d1.formula, fpmgr.makeNumber(256.0d, DoubleValue.precision)))
@@ -826,7 +826,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def s1 = d1.asShortValue()
-        prover.addConstraint(imgr.equal(s1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(s1.formula, bvmgr.makeBitvector(16, res)))
 
         then:
         !prover.isUnsat()
@@ -853,7 +853,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def s1 = d1.asShortValue()
-        prover.addConstraint(imgr.equal(s1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(s1.formula, bvmgr.makeBitvector(16, res)))
 
         then:
         !prover.isUnsat()
@@ -877,7 +877,7 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(100.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(200.0d, DoubleValue.precision)))
         // But require short > 10000 (impossible!)
-        prover.addConstraint(imgr.greaterThan(s1.formula, imgr.makeNumber(10000)))
+        prover.addConstraint(bvmgr.greaterThan(s1.formula, bvmgr.makeBitvector(16, 10000), true))
 
         then:
         prover.isUnsat()
@@ -894,8 +894,8 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(500.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(2000.0d, DoubleValue.precision)))
         // Require short in valid range (500-2000)
-        prover.addConstraint(imgr.greaterOrEquals(s1.formula, imgr.makeNumber(500)))
-        prover.addConstraint(imgr.lessOrEquals(s1.formula, imgr.makeNumber(2000)))
+        prover.addConstraint(bvmgr.greaterOrEquals(s1.formula, bvmgr.makeBitvector(16, 500), true))
+        prover.addConstraint(bvmgr.lessOrEquals(s1.formula, bvmgr.makeBitvector(16, 2000), true))
 
         then:
         !prover.isUnsat()
@@ -907,7 +907,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def ch1 = d1.asCharValue()
-        prover.addConstraint(imgr.equal(ch1.formula, imgr.makeNumber((int)res)))
+        prover.addConstraint(bvmgr.equal(ch1.formula, bvmgr.makeBitvector(16, (int)res)))
 
         then:
         !prover.isUnsat()
@@ -932,7 +932,7 @@ class DoubleValueTest extends Specification {
 
         when:
         def ch1 = d1.asCharValue()
-        prover.addConstraint(imgr.equal(ch1.formula, imgr.makeNumber((int)res)))
+        prover.addConstraint(bvmgr.equal(ch1.formula, bvmgr.makeBitvector(16, (int)res)))
 
         then:
         !prover.isUnsat()
@@ -956,8 +956,8 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(65.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(90.0d, DoubleValue.precision)))
         // Require char in valid range (65-90, 'A'-'Z')
-        prover.addConstraint(imgr.greaterOrEquals(ch1.formula, imgr.makeNumber(65)))
-        prover.addConstraint(imgr.lessOrEquals(ch1.formula, imgr.makeNumber(90)))
+        prover.addConstraint(bvmgr.greaterOrEquals(ch1.formula, bvmgr.makeBitvector(16, 65), false))
+        prover.addConstraint(bvmgr.lessOrEquals(ch1.formula, bvmgr.makeBitvector(16, 90), false))
 
         then:
         !prover.isUnsat()
@@ -974,7 +974,7 @@ class DoubleValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(d1.formula, fpmgr.makeNumber(0.0d, DoubleValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(d1.formula, fpmgr.makeNumber(100.0d, DoubleValue.precision)))
         // But require char > 1000 (impossible!)
-        prover.addConstraint(imgr.greaterThan(ch1.formula, imgr.makeNumber(1000)))
+        prover.addConstraint(bvmgr.greaterThan(ch1.formula, bvmgr.makeBitvector(16, 1000), false))
 
         then:
         prover.isUnsat()

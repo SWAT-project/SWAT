@@ -7,9 +7,9 @@ import org.sosy_lab.common.ShutdownManager
 import org.sosy_lab.common.configuration.Configuration
 import org.sosy_lab.common.log.BasicLogManager
 import org.sosy_lab.java_smt.SolverContextFactory
+import org.sosy_lab.java_smt.api.BitvectorFormulaManager
 import org.sosy_lab.java_smt.api.BooleanFormulaManager
 import org.sosy_lab.java_smt.api.FormulaManager
-import org.sosy_lab.java_smt.api.IntegerFormulaManager
 import org.sosy_lab.java_smt.api.ProverEnvironment
 import org.sosy_lab.java_smt.api.SolverContext
 import spock.lang.Specification
@@ -20,7 +20,7 @@ class CharValueTest extends Specification {
     ProverEnvironment prover
     FormulaManager fmgr
     BooleanFormulaManager bmgr
-    IntegerFormulaManager imgr
+    BitvectorFormulaManager bvmgr
 
     def setup() {
         context = SolverContextFactory.createSolverContext(
@@ -32,7 +32,7 @@ class CharValueTest extends Specification {
                 SolverContext.ProverOptions.GENERATE_MODELS)
         fmgr = context.getFormulaManager()
         bmgr = fmgr.getBooleanFormulaManager()
-        imgr = fmgr.getIntegerFormulaManager()
+        bvmgr = fmgr.getBitvectorFormulaManager()
     }
 
     def cleanup() {
@@ -74,10 +74,10 @@ class CharValueTest extends Specification {
         when:
         def b1 = c1.asByteValue()
         // Constrain char: 10 <= c <= 100
-        prover.addConstraint(imgr.greaterOrEquals(c1.formula, imgr.makeNumber(10)))
-        prover.addConstraint(imgr.lessOrEquals(c1.formula, imgr.makeNumber(100)))
+        prover.addConstraint(bvmgr.greaterOrEquals(c1.formula, bvmgr.makeBitvector(16, 10), false))
+        prover.addConstraint(bvmgr.lessOrEquals(c1.formula, bvmgr.makeBitvector(16, 100), false))
         // Require byte == 50 (possible!)
-        prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(50)))
+        prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, 50)))
 
         then:
         !prover.isUnsat()
@@ -92,10 +92,10 @@ class CharValueTest extends Specification {
         when:
         def b1 = c1.asByteValue()
         // Constrain char: 10 <= c <= 20
-        prover.addConstraint(imgr.greaterOrEquals(c1.formula, imgr.makeNumber(10)))
-        prover.addConstraint(imgr.lessOrEquals(c1.formula, imgr.makeNumber(20)))
+        prover.addConstraint(bvmgr.greaterOrEquals(c1.formula, bvmgr.makeBitvector(16, 10), false))
+        prover.addConstraint(bvmgr.lessOrEquals(c1.formula, bvmgr.makeBitvector(16, 20), false))
         // But require byte > 100 (impossible!)
-        prover.addConstraint(imgr.greaterThan(b1.formula, imgr.makeNumber(100)))
+        prover.addConstraint(bvmgr.greaterThan(b1.formula, bvmgr.makeBitvector(8, 100), true))
 
         then:
         prover.isUnsat()
@@ -134,10 +134,10 @@ class CharValueTest extends Specification {
         when:
         def s1 = c1.asShortValue()
         // Constrain char: 500 <= c <= 1500
-        prover.addConstraint(imgr.greaterOrEquals(c1.formula, imgr.makeNumber(500)))
-        prover.addConstraint(imgr.lessOrEquals(c1.formula, imgr.makeNumber(1500)))
+        prover.addConstraint(bvmgr.greaterOrEquals(c1.formula, bvmgr.makeBitvector(16, 500), false))
+        prover.addConstraint(bvmgr.lessOrEquals(c1.formula, bvmgr.makeBitvector(16, 1500), false))
         // Require short == 1000 (possible!)
-        prover.addConstraint(imgr.equal(s1.formula, imgr.makeNumber(1000)))
+        prover.addConstraint(bvmgr.equal(s1.formula, bvmgr.makeBitvector(16, 1000)))
 
         then:
         !prover.isUnsat()
@@ -152,10 +152,10 @@ class CharValueTest extends Specification {
         when:
         def s1 = c1.asShortValue()
         // Constrain char to high range: 40000 <= c <= 50000
-        prover.addConstraint(imgr.greaterOrEquals(c1.formula, imgr.makeNumber(40000)))
-        prover.addConstraint(imgr.lessOrEquals(c1.formula, imgr.makeNumber(50000)))
+        prover.addConstraint(bvmgr.greaterOrEquals(c1.formula, bvmgr.makeBitvector(16, 40000), false))
+        prover.addConstraint(bvmgr.lessOrEquals(c1.formula, bvmgr.makeBitvector(16, 50000), false))
         // But require short > 0 (impossible - high chars map to negative shorts!)
-        prover.addConstraint(imgr.greaterThan(s1.formula, imgr.makeNumber(0)))
+        prover.addConstraint(bvmgr.greaterThan(s1.formula, bvmgr.makeBitvector(16, 0), true))
 
         then:
         prover.isUnsat()
@@ -170,11 +170,11 @@ class CharValueTest extends Specification {
         when:
         def s1 = c1.asShortValue()
         // Constrain char: 32760 <= c <= 32770
-        prover.addConstraint(imgr.greaterOrEquals(c1.formula, imgr.makeNumber(32760)))
-        prover.addConstraint(imgr.lessOrEquals(c1.formula, imgr.makeNumber(32770)))
+        prover.addConstraint(bvmgr.greaterOrEquals(c1.formula, bvmgr.makeBitvector(16, 32760), false))
+        prover.addConstraint(bvmgr.lessOrEquals(c1.formula, bvmgr.makeBitvector(16, 32770), false))
         // Require short in range that crosses the boundary
-        prover.addConstraint(imgr.greaterOrEquals(s1.formula, imgr.makeNumber(-32768)))
-        prover.addConstraint(imgr.lessOrEquals(s1.formula, imgr.makeNumber(32767)))
+        prover.addConstraint(bvmgr.greaterOrEquals(s1.formula, bvmgr.makeBitvector(16, -32768), true))
+        prover.addConstraint(bvmgr.lessOrEquals(s1.formula, bvmgr.makeBitvector(16, 32767), true))
 
         then:
         !prover.isUnsat()

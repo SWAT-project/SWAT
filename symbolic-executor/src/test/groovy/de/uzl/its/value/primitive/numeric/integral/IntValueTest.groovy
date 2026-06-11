@@ -7,10 +7,10 @@ import org.sosy_lab.common.ShutdownManager
 import org.sosy_lab.common.configuration.Configuration
 import org.sosy_lab.common.log.BasicLogManager
 import org.sosy_lab.java_smt.SolverContextFactory
+import org.sosy_lab.java_smt.api.BitvectorFormulaManager
 import org.sosy_lab.java_smt.api.BooleanFormulaManager
 import org.sosy_lab.java_smt.api.FloatingPointFormulaManager
 import org.sosy_lab.java_smt.api.FormulaManager
-import org.sosy_lab.java_smt.api.IntegerFormulaManager
 import org.sosy_lab.java_smt.api.ProverEnvironment
 import org.sosy_lab.java_smt.api.SolverContext
 import spock.lang.Shared
@@ -23,7 +23,7 @@ class IntValueTest extends Specification {
 	ProverEnvironment prover
 	FormulaManager fmgr
 	BooleanFormulaManager bmgr
-	IntegerFormulaManager imgr
+	BitvectorFormulaManager bvmgr
 	FloatingPointFormulaManager fpmgr
 
 	def setup() {
@@ -37,7 +37,7 @@ class IntValueTest extends Specification {
 				SolverContext.ProverOptions.GENERATE_MODELS)
 		fmgr = context.getFormulaManager()
 		bmgr = fmgr.getBooleanFormulaManager()
-		imgr = fmgr.getIntegerFormulaManager()
+		bvmgr = fmgr.getBitvectorFormulaManager()
 		fpmgr = fmgr.getFloatingPointFormulaManager()
 	}
 	def cleanup(){
@@ -84,7 +84,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.IADD(i2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -113,7 +113,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.ISUB(i2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -142,7 +142,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.IMUL(i2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -173,14 +173,14 @@ class IntValueTest extends Specification {
 		AssertionError e = null;
 		try {
 			i3 = i1.IDIV(i2)
-			prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+			prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 		} catch (AssertionError a) {
 			e = a
 		}
 
 		then:
 		if (c2 == 0) {
-			assert e instanceof AssertionError && e.message == "Division by zero!"
+			assert e instanceof AssertionError && e.message == "[SWAT Assertion]: Division by zero!"
 		} else {
 			assert !prover.isUnsat()
 			assert i3.concrete == res
@@ -213,7 +213,7 @@ class IntValueTest extends Specification {
 		Exception e = null;
 		try {
 			i3 = i1.IREM(i2)
-			prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+			prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 		} catch (ArithmeticException a) {
 			e = a
 		}
@@ -249,7 +249,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.INEG()
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -272,7 +272,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.IINC(c2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -300,7 +300,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.IAND(i2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -328,7 +328,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.ISHL(i2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -357,7 +357,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.ISHR(i2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -386,7 +386,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.IUSHR(i2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -415,7 +415,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.IOR(i2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -444,7 +444,7 @@ class IntValueTest extends Specification {
 		when:
 
 		def i3 = i1.IXOR(i2)
-		prover.addConstraint(imgr.equal(i3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i3.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -828,7 +828,7 @@ class IntValueTest extends Specification {
 
 		when:
 		def l1 = i1.I2L()
-		prover.addConstraint(imgr.equal(l1.formula,imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l1.formula,bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		(l1.concrete == res)
@@ -850,7 +850,7 @@ class IntValueTest extends Specification {
 
 		when:
 		def b1 = i1.I2B()
-		prover.addConstraint(imgr.equal(b1.formula,imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(b1.formula,bvmgr.makeBitvector(8, res)))
 		then:
 		!prover.isUnsat()
 		(b1.concrete == res)
@@ -871,7 +871,7 @@ class IntValueTest extends Specification {
 
 		when:
 		def ch1 = i1.I2C()
-		prover.addConstraint(imgr.equal(ch1.formula,imgr.makeNumber((int) res)))
+		prover.addConstraint(bvmgr.equal(ch1.formula,bvmgr.makeBitvector(16, (int) res)))
 		then:
 		!prover.isUnsat()
 		(ch1.concrete == res)
@@ -892,7 +892,7 @@ class IntValueTest extends Specification {
 
 		when:
 		def s1 = i1.I2S()
-		prover.addConstraint(imgr.equal(s1.formula,imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(s1.formula,bvmgr.makeBitvector(16, res)))
 		then:
 		!prover.isUnsat()
 		(s1.concrete == res)
