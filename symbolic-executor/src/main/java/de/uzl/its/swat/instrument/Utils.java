@@ -95,6 +95,7 @@ public class Utils implements Opcodes {
      *     INVOKESTATIC Intrinsics.injectAssignment(<i>uid</i>, <i>value</i>)
      *     LDC <i>uid</i>
      *     INVOKESTATIC Intrinsics.liftValue(<i>uid</i>, <i>value</i>)
+     * </pre>
      *
      * @param type The type of the value to be lifted.
      * @return The sequence of instructions.

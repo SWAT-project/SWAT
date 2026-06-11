@@ -62,7 +62,7 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
     - name: Generate Javadoc
-      run: ./gradlew javadoc
+      run: ./gradlew :symbolic-executor:javadoc
     - name: Upload Javadoc
       uses: actions/upload-artifact@v4
       with:
