@@ -748,6 +748,25 @@ class DoubleValueTest extends Specification {
         128.1d   || (byte) -128
     }
 
+    def "asByteValue - special values"(double c1, byte res) {
+        given:
+        def d1 = new DoubleValue(context, c1)
+
+        when:
+        def b1 = d1.asByteValue()
+        prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, res)))
+
+        then:
+        !prover.isUnsat()
+        b1.concrete == res
+
+        where:
+        c1                          || res
+        Double.NaN                  || (byte) 0
+        Double.POSITIVE_INFINITY    || (byte) -1   // Integer.MAX_VALUE wraps to byte
+        Double.NEGATIVE_INFINITY    || (byte) 0    // Integer.MIN_VALUE wraps to byte
+    }
+
     def "asByteValue - symbolic constraint satisfaction"() {
         given:
         def d1 = new DoubleValue(context, 10.0d)

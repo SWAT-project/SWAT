@@ -384,8 +384,6 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
      */
     @Override
     public ByteValue asByteValue() {
-        // d2b is d2i followed by i2b (JVM Spec 2.8 / 2.11.4); staying in bitvector
-        // theory keeps the formula tractable (integer modulo mixed with FP is not)
         return D2I().I2B();
     }
 
@@ -398,8 +396,6 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
      */
     @Override
     public ShortValue asShortValue() {
-        // d2s is d2i followed by i2s (JVM Spec 2.8 / 2.11.4); staying in bitvector
-        // theory keeps the formula tractable (integer modulo mixed with FP is not)
         return D2I().I2S();
     }
 
@@ -412,8 +408,6 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
      */
     @Override
     public CharValue asCharValue() {
-        // d2c is d2i followed by i2c (JVM Spec 2.8 / 2.11.4); staying in bitvector
-        // theory keeps the formula tractable (integer modulo mixed with FP is not)
         return D2I().I2C();
     }
 
