@@ -34,6 +34,8 @@ import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
 import de.uzl.its.swat.thread.ThreadHandler
 import org.sosy_lab.java_smt.api.SolverContext
 import spock.lang.Specification
+
+import java.util.concurrent.atomic.AtomicInteger
 import de.uzl.its.swat.common.Util
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ShortValue
@@ -43,12 +45,18 @@ abstract class BaseSymbolicInstructionProcessorSpec extends Specification {
     protected final threadId = Thread.currentThread().getId()
     protected SolverContext solverContext
     protected static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
+    private static final AtomicInteger methodNameCounter = new AtomicInteger()
 
     /**
      * Initializes a clean thread context, registers the test class/method in the instrumentation
      * system, and sets up an initial frame in the shadow context.
      */
     def setupTestContext(String testClassName, String testMethodName, String testDesc = "()V") {
+        // Make the method name unique per test: GlobalStateForInstrumentation resets its
+        // per-method instruction counter on setCid/setMid but tracks seen instruction IDs
+        // globally, so re-instrumenting the same (class, method) across tests would produce
+        // duplicate instruction IDs.
+        testMethodName = testMethodName + "\$test" + methodNameCounter.incrementAndGet()
         Config config = Config.instance()
         config.setLogShadowStateToConsole(true)
         // Clean up any existing context for this thread.
@@ -67,6 +75,7 @@ abstract class BaseSymbolicInstructionProcessorSpec extends Specification {
         GlobalStateForInstrumentation.instance.setCid(classIndex)
         ClassDepot.getInstrumentationInstance().registerTypeInfoForClass(testClassName, ["java.lang.Object"], new ArrayList<>())
         int methodIdx = classDepot.getMethodIdxForInstrumentation(testClassName, testMethodName, testDesc)
+        GlobalStateForInstrumentation.instance.setMid(methodIdx)
         SymbolicInstructionVisitor visitor = ThreadHandler.getSymbolicVisitor(threadId)
         ShadowContext context = visitor.getStack()
         Frame frame = new Frame(testClassName, testMethodName, methodIdx)

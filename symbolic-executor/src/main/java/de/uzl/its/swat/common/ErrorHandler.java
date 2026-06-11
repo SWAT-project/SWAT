@@ -45,8 +45,9 @@ public class ErrorHandler {
     }
 
     /**
-     * Handles an exception with a custom message. Depending on the application configuration, it
-     * either logs the error or terminates the execution by throwing a RuntimeException.
+     * Handles an exception with a custom message. The error is always logged; afterwards the JVM
+     * is halted if {@code exitOnError} is set (the default), otherwise the throwable is rethrown
+     * so callers (e.g. tests) can observe it.
      *
      * @param msg the custom message to log along with the exception
      * @param t the throwable to handle
@@ -61,6 +62,16 @@ public class ErrorHandler {
         msg = "[SWAT Exception]: " + msg + " (at instruction: " + instCnt + ")";
         logException(msg, t);
         logger.error(msg);
+        if (!config.isExitOnError()) {
+            logger.error("Rethrowing error (exitOnError=false)...");
+            if (t instanceof RuntimeException) {
+                throw (RuntimeException) t;
+            }
+            if (t instanceof Error) {
+                throw (Error) t;
+            }
+            throw new RuntimeException(msg, t);
+        }
         logger.error("Preparing to halt execution due to error...");
         try {
             if (ThreadHandler.hasThreadContext(currentThread().getId())) {

@@ -9,7 +9,6 @@ import org.sosy_lab.java_smt.api.*
 import spock.lang.Specification
 import spock.lang.Unroll
 
-import java.util.regex.Pattern
 
 import static java.lang.Thread.currentThread
 
@@ -26,13 +25,12 @@ class StringValueTest extends Specification {
     // keep descriptor identical to original to avoid surprises
     private static final Type[] STRING_DESC = [Type.getType("Ljava/lang/String")] as Type[]
 
-    // regexes reused across tests
-    private static final Pattern DEF_S1 = Pattern.compile("\\(define-fun\\s+s1\\s*\\(\\)\\s*String\\s*\"([^\"]*)\"", Pattern.DOTALL)
-    private static final Pattern DEF_S2 = Pattern.compile("\\(define-fun\\s+s2\\s*\\(\\)\\s*String\\s*\"([^\"]*)\"", Pattern.DOTALL)
-
     def setup() {
         ThreadHandler.init()
-        ThreadHandler.addThreadContext(currentThread().id)
+        if (ThreadHandler.hasThreadContext(currentThread().id)) {
+            ThreadHandler.removeThreadContext(currentThread().id)
+        }
+        ThreadHandler.addThreadContext(currentThread().id, "Test-Thread", -2)
         context = ThreadHandler.getSolverContext(currentThread().id)
         prover  = context.newProverEnvironment(SolverContext.ProverOptions.GENERATE_MODELS)
         fmgr    = context.formulaManager
@@ -51,7 +49,10 @@ class StringValueTest extends Specification {
     // ---- helpers ----
 
     private void addUFConstraintsFromTrace() {
-        ThreadHandler.getSymbolicTraceHandler(currentThread().id).getUFs().each { prover.addConstraint(it) }
+        // UF-defining constraints are recorded on the symbolic trace (see
+        // StringValue.invokeEqualsIgnoreCase); the trace is fresh per test
+        // because setup() recreates the thread context.
+        ThreadHandler.getSymbolicTraceHandler(currentThread().id).getConstraints().each { prover.addConstraint(it) }
     }
 
     /** Force the SMT result to disagree with the concrete Java result. */
@@ -63,14 +64,15 @@ class StringValueTest extends Specification {
         }
     }
 
-    private static String modelString(ProverEnvironment p) {
-        // Only convert to String right here, never let Groovy stringify the Model implicitly.
-        return p.getModel().toString()
-    }
-
-    private static String extractOrNull(Pattern pat, String text) {
-        def m = pat.matcher(text)
-        return m.find() ? m.group(1) : null
+    /**
+     * Evaluates both string formulas in the current model. Unlike scraping the
+     * model dump, Model.evaluate also assigns don't-care variables that the
+     * solver omits from its partial model.
+     */
+    private List<String> evaluateModel(def f1, def f2) {
+        prover.getModel().withCloseable { model ->
+            [model.evaluate(f1), model.evaluate(f2)]
+        }
     }
 
     // ---- tests ----
@@ -94,8 +96,7 @@ class StringValueTest extends Specification {
         noExceptionThrown()
 
         and:
-        def model = modelString(prover)
-        def s1Model = extractOrNull(DEF_S1, model)
+        def (s1Model, _) = evaluateModel(lhs.formula, rhs.formula)
         assert s1Model != null
         assert (s1Model.equalsIgnoreCase(s2)) != expected
 
@@ -136,8 +137,7 @@ class StringValueTest extends Specification {
         noExceptionThrown()
 
         and:
-        def model = modelString(prover)
-        def s1Model = extractOrNull(DEF_S1, model)
+        def (s1Model, _) = evaluateModel(lhs.formula, rhs.formula)
         assert s1Model != null
         assert s1Model.length() == s2.length()
         assert (s1Model.equalsIgnoreCase(s2)) != expected
@@ -176,9 +176,7 @@ class StringValueTest extends Specification {
         noExceptionThrown()
 
         and:
-        def model = modelString(prover)
-        def s1Model = extractOrNull(DEF_S1, model)
-        def s2Model = extractOrNull(DEF_S2, model) ?: s2
+        def (s1Model, s2Model) = evaluateModel(lhs.formula, rhs.formula)
         assert s1Model != null
         assert (s1Model.equalsIgnoreCase(s2Model)) != expected
 
@@ -186,16 +184,12 @@ class StringValueTest extends Specification {
         prover.pop()
 
         where:
+        // With both strings symbolic the concrete values do not constrain the
+        // solver, so every row is the same (expensive, minutes-long) query —
+        // one row per expected value is full coverage.
         s1       | s2       | expected
         "hello"  | "HELLO"  | true
-        "Hello"  | "hello"  | true
-        "test"   | "TEST"   | true
         "abc"    | "xyz"    | false
-        "short"  | "longer" | false
-        "same"   | "same"   | true
-        ""       | ""       | true
-        "a"      | ""       | false
-        "Case"   | "case"   | true
     }
 
     @Unroll
@@ -219,9 +213,7 @@ class StringValueTest extends Specification {
         noExceptionThrown()
 
         and:
-        def model = modelString(prover)
-        def s1Model = extractOrNull(DEF_S1, model)
-        def s2Model = extractOrNull(DEF_S2, model) ?: s2
+        def (s1Model, s2Model) = evaluateModel(lhs.formula, rhs.formula)
         assert s1Model != null
         assert s1Model.length() == 10
         assert (s1Model.equalsIgnoreCase(s2Model)) != expected

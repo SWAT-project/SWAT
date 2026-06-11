@@ -6,10 +6,10 @@ import org.sosy_lab.common.ShutdownManager
 import org.sosy_lab.common.configuration.Configuration
 import org.sosy_lab.common.log.BasicLogManager
 import org.sosy_lab.java_smt.SolverContextFactory
+import org.sosy_lab.java_smt.api.BitvectorFormulaManager
 import org.sosy_lab.java_smt.api.BooleanFormulaManager
 import org.sosy_lab.java_smt.api.FloatingPointFormulaManager
 import org.sosy_lab.java_smt.api.FormulaManager
-import org.sosy_lab.java_smt.api.IntegerFormulaManager
 import org.sosy_lab.java_smt.api.ProverEnvironment
 import org.sosy_lab.java_smt.api.SolverContext
 import spock.lang.Shared
@@ -21,7 +21,7 @@ class FloatValueTest extends Specification {
     ProverEnvironment prover
     FormulaManager fmgr
     BooleanFormulaManager bmgr
-    IntegerFormulaManager imgr
+    BitvectorFormulaManager bvmgr
     FloatingPointFormulaManager fpmgr
 
     def setup() {
@@ -35,7 +35,7 @@ class FloatValueTest extends Specification {
                 SolverContext.ProverOptions.GENERATE_MODELS)
         fmgr = context.getFormulaManager()
         bmgr = fmgr.getBooleanFormulaManager()
-        imgr = fmgr.getIntegerFormulaManager()
+        bvmgr = fmgr.getBitvectorFormulaManager()
         fpmgr = fmgr.getFloatingPointFormulaManager()
     }
 
@@ -232,7 +232,7 @@ class FloatValueTest extends Specification {
 
         when:
         def i1 = f1.F2I()
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
 
         then:
         !prover.isUnsat()
@@ -274,7 +274,7 @@ class FloatValueTest extends Specification {
 
         when:
         def l1 = f1.F2L()
-        prover.addConstraint(imgr.equal(l1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(l1.formula, bvmgr.makeBitvector(64, res)))
 
         then:
         !prover.isUnsat()
@@ -295,7 +295,7 @@ class FloatValueTest extends Specification {
         when:
 
         def i1 = f1.FCMPG(f2)
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
         then:
         !prover.isUnsat()
         noExceptionThrown()
@@ -321,7 +321,7 @@ class FloatValueTest extends Specification {
         when:
 
         def i1 = f1.FCMPL(f2)
-        prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
         then:
         !prover.isUnsat()
         noExceptionThrown()
@@ -347,7 +347,7 @@ class FloatValueTest extends Specification {
 
         when:
         def b1 = f1.asByteValue()
-        prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, res)))
 
         then:
         !prover.isUnsat()
@@ -372,7 +372,7 @@ class FloatValueTest extends Specification {
 
         when:
         def b1 = f1.asByteValue()
-        prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, res)))
 
         then:
         !prover.isUnsat()
@@ -396,7 +396,7 @@ class FloatValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(f1.formula, fpmgr.makeNumber(10.0f, FloatValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(f1.formula, fpmgr.makeNumber(20.0f, FloatValue.precision)))
         // But require byte > 100 (impossible!)
-        prover.addConstraint(imgr.greaterThan(b1.formula, imgr.makeNumber(100)))
+        prover.addConstraint(bvmgr.greaterThan(b1.formula, bvmgr.makeBitvector(8, 100), true))
 
         then:
         prover.isUnsat()
@@ -408,7 +408,7 @@ class FloatValueTest extends Specification {
 
         when:
         def s1 = f1.asShortValue()
-        prover.addConstraint(imgr.equal(s1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(s1.formula, bvmgr.makeBitvector(16, res)))
 
         then:
         !prover.isUnsat()
@@ -433,7 +433,7 @@ class FloatValueTest extends Specification {
 
         when:
         def s1 = f1.asShortValue()
-        prover.addConstraint(imgr.equal(s1.formula, imgr.makeNumber(res)))
+        prover.addConstraint(bvmgr.equal(s1.formula, bvmgr.makeBitvector(16, res)))
 
         then:
         !prover.isUnsat()
@@ -457,7 +457,7 @@ class FloatValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(f1.formula, fpmgr.makeNumber(100.0f, FloatValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(f1.formula, fpmgr.makeNumber(200.0f, FloatValue.precision)))
         // But require short > 10000 (impossible!)
-        prover.addConstraint(imgr.greaterThan(s1.formula, imgr.makeNumber(10000)))
+        prover.addConstraint(bvmgr.greaterThan(s1.formula, bvmgr.makeBitvector(16, 10000), true))
 
         then:
         prover.isUnsat()
@@ -469,7 +469,7 @@ class FloatValueTest extends Specification {
 
         when:
         def ch1 = f1.asCharValue()
-        prover.addConstraint(imgr.equal(ch1.formula, imgr.makeNumber((int)res)))
+        prover.addConstraint(bvmgr.equal(ch1.formula, bvmgr.makeBitvector(16, (int)res)))
 
         then:
         !prover.isUnsat()
@@ -492,7 +492,7 @@ class FloatValueTest extends Specification {
 
         when:
         def ch1 = f1.asCharValue()
-        prover.addConstraint(imgr.equal(ch1.formula, imgr.makeNumber((int)res)))
+        prover.addConstraint(bvmgr.equal(ch1.formula, bvmgr.makeBitvector(16, (int)res)))
 
         then:
         !prover.isUnsat()
@@ -516,8 +516,8 @@ class FloatValueTest extends Specification {
         prover.addConstraint(fpmgr.greaterOrEquals(f1.formula, fpmgr.makeNumber(65.0f, FloatValue.precision)))
         prover.addConstraint(fpmgr.lessOrEquals(f1.formula, fpmgr.makeNumber(90.0f, FloatValue.precision)))
         // Require char in valid range (65-90, 'A'-'Z')
-        prover.addConstraint(imgr.greaterOrEquals(ch1.formula, imgr.makeNumber(65)))
-        prover.addConstraint(imgr.lessOrEquals(ch1.formula, imgr.makeNumber(90)))
+        prover.addConstraint(bvmgr.greaterOrEquals(ch1.formula, bvmgr.makeBitvector(16, 65), false))
+        prover.addConstraint(bvmgr.lessOrEquals(ch1.formula, bvmgr.makeBitvector(16, 90), false))
 
         then:
         !prover.isUnsat()

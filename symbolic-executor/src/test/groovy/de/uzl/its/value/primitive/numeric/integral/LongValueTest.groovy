@@ -8,10 +8,10 @@ import org.sosy_lab.common.ShutdownManager
 import org.sosy_lab.common.configuration.Configuration
 import org.sosy_lab.common.log.BasicLogManager
 import org.sosy_lab.java_smt.SolverContextFactory
+import org.sosy_lab.java_smt.api.BitvectorFormulaManager
 import org.sosy_lab.java_smt.api.BooleanFormulaManager
 import org.sosy_lab.java_smt.api.FloatingPointFormulaManager
 import org.sosy_lab.java_smt.api.FormulaManager
-import org.sosy_lab.java_smt.api.IntegerFormulaManager
 import org.sosy_lab.java_smt.api.ProverEnvironment
 import org.sosy_lab.java_smt.api.SolverContext
 import spock.lang.Shared
@@ -24,7 +24,7 @@ class LongValueTest extends Specification {
 	ProverEnvironment prover
 	FormulaManager fmgr
 	BooleanFormulaManager bmgr
-	IntegerFormulaManager imgr
+	BitvectorFormulaManager bvmgr
 	FloatingPointFormulaManager fpmgr
 
 	def setup() {
@@ -38,7 +38,7 @@ class LongValueTest extends Specification {
 				SolverContext.ProverOptions.GENERATE_MODELS)
 		fmgr = context.getFormulaManager()
 		bmgr = fmgr.getBooleanFormulaManager()
-		imgr = fmgr.getIntegerFormulaManager()
+		bvmgr = fmgr.getBitvectorFormulaManager()
 		fpmgr = fmgr.getFloatingPointFormulaManager()
 	}
 
@@ -103,7 +103,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l3 = l1.LADD(l2)
-		prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -129,7 +129,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l3 = l1.LAND(l2)
-		prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -157,8 +157,8 @@ class LongValueTest extends Specification {
 		Exception e = null
 		try {
 			l3 = l1.LDIV(l2)
-			prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
-			println fmgr.dumpFormula(imgr.equal(l3.formula, imgr.makeNumber(res)))
+			prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
+			println fmgr.dumpFormula(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		} catch (ArithmeticException a) {
 			e = a
 		}
@@ -189,7 +189,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l3 = l1.LMUL(l2)
-		prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -214,7 +214,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l2 = l1.LNEG()
-		prover.addConstraint(imgr.equal(l2.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l2.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -236,7 +236,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l3 = l1.LOR(l2)
-		prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -265,8 +265,8 @@ class LongValueTest extends Specification {
 		Exception e = null
 		try {
 			l3 = l1.LREM(l2)
-			prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
-			println fmgr.dumpFormula(imgr.equal(l3.formula, imgr.makeNumber(res)))
+			prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
+			println fmgr.dumpFormula(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		} catch (ArithmeticException a) {
 			e = a
 		}
@@ -297,7 +297,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l3 = l1.LSHL(i1)
-		prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -323,7 +323,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l3 = l1.LSHR(i1)
-		prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -349,7 +349,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l3 = l1.LSUB(l2)
-		prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -375,7 +375,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l3 = l1.LUSHR(i1)
-		prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -401,7 +401,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def l3 = l1.LXOR(l2)
-		prover.addConstraint(imgr.equal(l3.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(l3.formula, bvmgr.makeBitvector(64, res)))
 		then:
 		!prover.isUnsat()
 		noExceptionThrown()
@@ -427,7 +427,7 @@ class LongValueTest extends Specification {
 		when:
 
 		def i1 = l1.LCMP(l2)
-		prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
 
 		then:
 		!prover.isUnsat()
@@ -493,7 +493,7 @@ class LongValueTest extends Specification {
 
 		when:
 		def i1 = l1.L2I()
-		prover.addConstraint(imgr.equal(i1.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(i1.formula, bvmgr.makeBitvector(32, res)))
 		then:
 		!prover.isUnsat()
 		(i1.concrete == res)
@@ -514,7 +514,7 @@ class LongValueTest extends Specification {
 
 		when:
 		def b1 = l1.asByteValue()
-		prover.addConstraint(imgr.equal(b1.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(b1.formula, bvmgr.makeBitvector(8, res)))
 
 		then:
 		!prover.isUnsat()
@@ -539,10 +539,10 @@ class LongValueTest extends Specification {
 		when:
 		def b1 = l1.asByteValue()
 		// Constrain long: 10 <= l <= 20
-		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(10)))
-		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(20)))
+		prover.addConstraint(bvmgr.greaterOrEquals(l1.formula, bvmgr.makeBitvector(64, 10), true))
+		prover.addConstraint(bvmgr.lessOrEquals(l1.formula, bvmgr.makeBitvector(64, 20), true))
 		// But require byte > 100 (impossible!)
-		prover.addConstraint(imgr.greaterThan(b1.formula, imgr.makeNumber(100)))
+		prover.addConstraint(bvmgr.greaterThan(b1.formula, bvmgr.makeBitvector(8, 100), true))
 
 		then:
 		prover.isUnsat()
@@ -556,11 +556,11 @@ class LongValueTest extends Specification {
 		when:
 		def b1 = l1.asByteValue()
 		// Constrain long: 10 <= l <= 100
-		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(10)))
-		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(100)))
+		prover.addConstraint(bvmgr.greaterOrEquals(l1.formula, bvmgr.makeBitvector(64, 10), true))
+		prover.addConstraint(bvmgr.lessOrEquals(l1.formula, bvmgr.makeBitvector(64, 100), true))
 		// Require byte in valid range (10-100, all fit in byte)
-		prover.addConstraint(imgr.greaterOrEquals(b1.formula, imgr.makeNumber(10)))
-		prover.addConstraint(imgr.lessOrEquals(b1.formula, imgr.makeNumber(100)))
+		prover.addConstraint(bvmgr.greaterOrEquals(b1.formula, bvmgr.makeBitvector(8, 10), true))
+		prover.addConstraint(bvmgr.lessOrEquals(b1.formula, bvmgr.makeBitvector(8, 100), true))
 
 		then:
 		!prover.isUnsat()
@@ -572,7 +572,7 @@ class LongValueTest extends Specification {
 
 		when:
 		def s1 = l1.asShortValue()
-		prover.addConstraint(imgr.equal(s1.formula, imgr.makeNumber(res)))
+		prover.addConstraint(bvmgr.equal(s1.formula, bvmgr.makeBitvector(16, res)))
 
 		then:
 		!prover.isUnsat()
@@ -597,10 +597,10 @@ class LongValueTest extends Specification {
 		when:
 		def s1 = l1.asShortValue()
 		// Constrain long: 100 <= l <= 200
-		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(100)))
-		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(200)))
+		prover.addConstraint(bvmgr.greaterOrEquals(l1.formula, bvmgr.makeBitvector(64, 100), true))
+		prover.addConstraint(bvmgr.lessOrEquals(l1.formula, bvmgr.makeBitvector(64, 200), true))
 		// But require short > 10000 (impossible!)
-		prover.addConstraint(imgr.greaterThan(s1.formula, imgr.makeNumber(10000)))
+		prover.addConstraint(bvmgr.greaterThan(s1.formula, bvmgr.makeBitvector(16, 10000), true))
 
 		then:
 		prover.isUnsat()
@@ -614,11 +614,11 @@ class LongValueTest extends Specification {
 		when:
 		def s1 = l1.asShortValue()
 		// Constrain long: 500 <= l <= 2000
-		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(500)))
-		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(2000)))
+		prover.addConstraint(bvmgr.greaterOrEquals(l1.formula, bvmgr.makeBitvector(64, 500), true))
+		prover.addConstraint(bvmgr.lessOrEquals(l1.formula, bvmgr.makeBitvector(64, 2000), true))
 		// Require short in valid range (500-2000)
-		prover.addConstraint(imgr.greaterOrEquals(s1.formula, imgr.makeNumber(500)))
-		prover.addConstraint(imgr.lessOrEquals(s1.formula, imgr.makeNumber(2000)))
+		prover.addConstraint(bvmgr.greaterOrEquals(s1.formula, bvmgr.makeBitvector(16, 500), true))
+		prover.addConstraint(bvmgr.lessOrEquals(s1.formula, bvmgr.makeBitvector(16, 2000), true))
 
 		then:
 		!prover.isUnsat()
@@ -630,7 +630,7 @@ class LongValueTest extends Specification {
 
 		when:
 		def ch1 = l1.asCharValue()
-		prover.addConstraint(imgr.equal(ch1.formula, imgr.makeNumber((int)res)))
+		prover.addConstraint(bvmgr.equal(ch1.formula, bvmgr.makeBitvector(16, (int)res)))
 
 		then:
 		!prover.isUnsat()
@@ -656,11 +656,11 @@ class LongValueTest extends Specification {
 		when:
 		def ch1 = l1.asCharValue()
 		// Constrain long: 65 <= l <= 90 (ASCII 'A' to 'Z')
-		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(65)))
-		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(90)))
+		prover.addConstraint(bvmgr.greaterOrEquals(l1.formula, bvmgr.makeBitvector(64, 65), true))
+		prover.addConstraint(bvmgr.lessOrEquals(l1.formula, bvmgr.makeBitvector(64, 90), true))
 		// Require char in valid range (65-90, 'A'-'Z')
-		prover.addConstraint(imgr.greaterOrEquals(ch1.formula, imgr.makeNumber(65)))
-		prover.addConstraint(imgr.lessOrEquals(ch1.formula, imgr.makeNumber(90)))
+		prover.addConstraint(bvmgr.greaterOrEquals(ch1.formula, bvmgr.makeBitvector(16, 65), false))
+		prover.addConstraint(bvmgr.lessOrEquals(ch1.formula, bvmgr.makeBitvector(16, 90), false))
 
 		then:
 		!prover.isUnsat()
@@ -674,10 +674,10 @@ class LongValueTest extends Specification {
 		when:
 		def ch1 = l1.asCharValue()
 		// Constrain long: 0 <= l <= 100
-		prover.addConstraint(imgr.greaterOrEquals(l1.formula, imgr.makeNumber(0)))
-		prover.addConstraint(imgr.lessOrEquals(l1.formula, imgr.makeNumber(100)))
+		prover.addConstraint(bvmgr.greaterOrEquals(l1.formula, bvmgr.makeBitvector(64, 0), true))
+		prover.addConstraint(bvmgr.lessOrEquals(l1.formula, bvmgr.makeBitvector(64, 100), true))
 		// But require char > 10000 (impossible!)
-		prover.addConstraint(imgr.greaterThan(ch1.formula, imgr.makeNumber(10000)))
+		prover.addConstraint(bvmgr.greaterThan(ch1.formula, bvmgr.makeBitvector(16, 10000), false))
 
 		then:
 		prover.isUnsat()
