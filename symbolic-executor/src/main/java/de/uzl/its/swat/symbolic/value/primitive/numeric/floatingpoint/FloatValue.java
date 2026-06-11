@@ -332,25 +332,9 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
      * @return The resulting ByteValue
      */
     public ByteValue asByteValue() {
-        // Step 1: float → int using fpToIntFormula (eliminates UF)
-        NumeralFormula.IntegerFormula intFormula = fpToIntFormula(formula, 32);
-
-        // Step 2: int → byte 
-        byte byteVal = (byte) concrete.intValue();
-
-        // Java byte is signed: -128 to 127
-        NumeralFormula.IntegerFormula mod256 = imgr.modulo(intFormula, imgr.makeNumber(256));
-
-        // Adjust to signed byte range: if > 127, subtract 256
-        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        BooleanFormula isGreaterThan127 = imgr.greaterThan(mod256, imgr.makeNumber(127));
-        NumeralFormula.IntegerFormula byteFormula = bmgr.ifThenElse(
-            isGreaterThan127,
-            imgr.subtract(mod256, imgr.makeNumber(256)),
-            mod256
-        );
-
-        return new ByteValue(context, byteVal, byteFormula);
+        // f2b is f2i followed by i2b (JVM Spec 2.8 / 2.11.4); staying in bitvector
+        // theory keeps the formula tractable (integer modulo mixed with FP is not)
+        return F2I().I2B();
     }
 
     /**
@@ -362,26 +346,9 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
      */
     @Override
     public ShortValue asShortValue() {
-
-        // float → int 
-        NumeralFormula.IntegerFormula intFormula = fpToIntFormula(formula, 32);
-
-        // int → short 
-        short shortVal = (short) concrete.intValue();
-
-        // Java short is signed: -32768 to 32767
-        NumeralFormula.IntegerFormula mod65536 = imgr.modulo(intFormula, imgr.makeNumber(65536));
-
-        // Adjust to signed short range: if > 32767, subtract 65536
-        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        BooleanFormula isGreaterThan32767 = imgr.greaterThan(mod65536, imgr.makeNumber(32767));
-        NumeralFormula.IntegerFormula shortFormula = bmgr.ifThenElse(
-            isGreaterThan32767,
-            imgr.subtract(mod65536, imgr.makeNumber(65536)),
-            mod65536
-        );
-
-        return new ShortValue(context, shortVal, shortFormula);
+        // f2s is f2i followed by i2s (JVM Spec 2.8 / 2.11.4); staying in bitvector
+        // theory keeps the formula tractable (integer modulo mixed with FP is not)
+        return F2I().I2S();
     }
 
     /**
@@ -415,17 +382,9 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
      */
     @Override
     public CharValue asCharValue() {
-
-        // Step 1: float → int using fpToIntFormula (eliminates UF)
-        NumeralFormula.IntegerFormula intFormula = fpToIntFormula(formula, 32);
-
-        // Step 2: int → char 
-        char charVal = (char) concrete.intValue();
-
-        // modulo 65536 for unsigned 16-bit
-        NumeralFormula.IntegerFormula charFormula = imgr.modulo(intFormula, imgr.makeNumber(65536));
-
-        return new CharValue(context, charVal, charFormula);
+        // f2c is f2i followed by i2c (JVM Spec 2.8 / 2.11.4); staying in bitvector
+        // theory keeps the formula tractable (integer modulo mixed with FP is not)
+        return F2I().I2C();
     }
 
     @Override
