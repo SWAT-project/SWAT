@@ -109,7 +109,7 @@ public class InvocationHandler {
                     || retValue instanceof VoidValue vv && !vv.isSymbolic())  // To detect a missing implementation that returns nothing
                             && containsSymbolicArgument) {
                 // Too strict? What about void methods that always have return value PlaceHolder.instance?
-                logger.warn("Invocation of method {} in class {} with arguments {} cases context loss",
+                GlobalLogger.getErrorLogger().error("Invocation of method {} in class {} with arguments {} causes context loss",
                         name,
                         owner,
                         desc);

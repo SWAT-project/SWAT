@@ -19,17 +19,13 @@ def extract_context_loss_methods(log_content: str) -> list[str]:
     if not log_content:
         return list(methods)
 
-    # Look for "Context loss:" pattern
-    for match in re.finditer(r'Context loss:\s*(.+?)(?:\n|$)', log_content):
-        methods.add(match.group(1).strip())
-
-    # Also look for "Uninstrumented invocation" pattern
-    for match in re.finditer(r'Uninstrumented invocation.*?:\s*(.+?)(?:\n|$)', log_content):
-        methods.add(match.group(1).strip())
-
-    # Look for "Context loss recorded" with method info on previous lines
-    for match in re.finditer(r'(\S+\.\S+)\s*\n.*Context loss recorded', log_content):
-        methods.add(match.group(1).strip())
+    # Match: "Invocation of method {name} in class {owner} with arguments {desc} causes context loss"
+    for match in re.finditer(
+        r'Invocation of method (\S+) in class (\S+) with arguments (\S+) causes context loss',
+        log_content
+    ):
+        name, owner, desc = match.group(1), match.group(2), match.group(3)
+        methods.add(f"{owner}/{name}:{desc}")
 
     return list(methods)
 

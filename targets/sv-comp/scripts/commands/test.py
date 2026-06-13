@@ -57,12 +57,14 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--mode', type=click.Choice(['single', 'parallel']), default='parallel', help='Execution mode')
 @click.option('--workers', type=int, default=50, help='Number of parallel workers')
 @click.option('--benchmark-dir', type=click.Path(exists=True), help='Path to sv-benchmarks directory')
-@click.option('--config-file', default='sv-comp.cfg', help='Configuration file name')
+@click.option('--config-file', default=None, help='Configuration file name')
 @click.option('--categories', multiple=True, help='Verification categories to run (e.g., valid-assert.prp)')
+@click.option('--suite', default=None, help='Run only tests from this benchmark subfolder (e.g., securibench, autostub)')
+@click.option('--limit-nr-tests', type=int, default=None, help='Run only the first n tests')
 @click.option('--target', help='Single target to run (only for single mode)')
 @click.option('--no-witness', 'no_witness', is_flag=True, default=False, help='Skip witness creation and validation')
 @click.pass_context
-def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target: str, no_witness: bool):
+def run_tests(ctx, mode, workers: int, benchmark_dir, config_file, categories, suite, limit_nr_tests: int | None, target: str, no_witness: bool):
     """Run verification tests."""
     from lib import (
         extract_testcases,
@@ -106,14 +108,21 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
                 ver_tasks = [task for task in ver_tasks if task['category'] in selected_categories]
                 click.echo(f"Filtered to {len(ver_tasks)} test cases for categories: {[c.value for c in selected_categories]}")
 
-        # Generate commands
-        if mode == 'single' and target is None:
-            # Use default target from original script
-            config = 'swat-debug.cfg'
-        else:
-            config = config_file
+        # Filter by suite (benchmark subfolder) if specified
+        if suite:
+            ver_tasks = [task for task in ver_tasks if suite in task['file_path'].parts]
+            click.echo(f"Filtered to {len(ver_tasks)} test cases for suite: {suite}")
+            if not ver_tasks:
+                click.echo(f"Error: No test cases found for suite '{suite}'", err=True)
+                ctx.exit(1)
+        if limit_nr_tests:
+            ver_tasks = ver_tasks[:limit_nr_tests]
+            click.echo(f"Limiting number of tests to {limit_nr_tests} (now {len(ver_tasks)})")
 
-        ver_tasks_with_commands = generate_commands(ver_tasks, config)
+        # Generate commands
+        if config_file is None:
+            config_file = 'swat-debug.cfg' if mode == 'single' else 'sv-comp.cfg'
+        ver_tasks_with_commands = generate_commands(ver_tasks, config_file)
         click.echo(f"Generated {len(ver_tasks_with_commands)} commands")
 
         # Check port availability

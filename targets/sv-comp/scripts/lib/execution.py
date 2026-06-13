@@ -592,7 +592,7 @@ def generate_timing_histogram(category_stats, results, folder='results'):
         box_data = [times for times in category_times_dict.values()]
         box_labels = list(category_times_dict.keys())
 
-        bp = ax2.boxplot(box_data, labels=box_labels, patch_artist=True)
+        bp = ax2.boxplot(box_data, tick_labels=box_labels, patch_artist=True)
         for patch, color in zip(bp['boxes'], colors):
             patch.set_facecolor(color)
 

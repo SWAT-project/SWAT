@@ -34,7 +34,7 @@ def analyze_results(ctx, results_file, logs_dir):
         # Look for latest results file
         results_dir = script_dir.parent / 'results'
         if results_dir.exists():
-            json_files = list(results_dir.glob('results_*.json'))
+            json_files = list(results_dir.glob('results_valid-assert*.json'))
             if json_files:
                 results_path = max(json_files, key=lambda p: p.stat().st_mtime)
                 click.echo(f"Using latest results file: {results_path}")
