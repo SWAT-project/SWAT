@@ -6,7 +6,7 @@ class UF:
         definition (str): The smt formula that defines the UF
     """
 
-    def __init__(self, definition):
+    def __init__(self, definition: str):
         """
         Initializes a new instance of the UF class.
 

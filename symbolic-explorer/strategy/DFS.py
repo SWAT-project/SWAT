@@ -1,7 +1,9 @@
+from typing import List, Set
+
 from data.BinaryExecutionTree.Node import Node
 
 
-def dfs(visited, tree, node, solved_branches, unsat_branch_ids):
+def dfs(visited: Set[Node], tree, node: Node, solved_branches: Set[int], unsat_branch_ids: Set[int]) -> List[Node]:
     possible_nodes = list()
     if node is not None \
             and node not in visited \

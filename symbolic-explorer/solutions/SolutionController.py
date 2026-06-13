@@ -11,7 +11,7 @@ class SolutionController:
         self.solution_service = SolutionService()
 
     # Gets the next solution
-    def get(self, quantity, response: Response):
+    def get(self, quantity: str, response: Response):
         if quantity == 'all':
             return self.solution_service.get_all_solutions()
         elif quantity == 'one':

@@ -1,3 +1,8 @@
+from typing import Any, List, Optional, Union
+
+from data.trace.Input import Input
+
+
 class Solution:
     """
     Represents a symbolic solution. 
@@ -7,7 +12,7 @@ class Solution:
         inputs (any): The concrete inputs that were used to reach the new branching points
     """
 
-    def __init__(self, sol=None, inputs=None, endpoint_id=None):
+    def __init__(self, sol: Any = None, inputs: Optional[List[Input]] = None, endpoint_id: Optional[Union[str, int]] = None):
         """
         Initializes a new instance of the Solution class.
 

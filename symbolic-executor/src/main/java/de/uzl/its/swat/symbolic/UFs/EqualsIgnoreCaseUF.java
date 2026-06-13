@@ -1,15 +1,11 @@
 package de.uzl.its.swat.symbolic.UFs;
 
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
-import de.uzl.its.swat.common.exceptions.SWATAssert;
-import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
-import de.uzl.its.swat.thread.ThreadHandler;
 import org.sosy_lab.java_smt.api.*;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static java.lang.Thread.currentThread;
 public class EqualsIgnoreCaseUF {
     private final FunctionDeclaration<BooleanFormula> equalsIgnoreCaseUF;
     private final SolverContext ctx;
@@ -35,8 +31,7 @@ public class EqualsIgnoreCaseUF {
                 "equalsIgnoreCase",
                 FormulaType.BooleanType,
                 FormulaType.StringType,
-                FormulaType.StringType
-        );
+                FormulaType.StringType);
     }
 
     public BooleanFormula getUFCall(StringFormula s1, StringFormula s2) {
@@ -57,8 +52,7 @@ public class EqualsIgnoreCaseUF {
     public BooleanFormula createEqualsIgnoreCaseConstraints(
             StringFormula s1, StringFormula s2,
             String concrete1, String concrete2,
-            boolean s1Symbolic, boolean s2Symbolic
-    ) throws NoThreadContextException {
+            boolean s1Symbolic, boolean s2Symbolic) throws NoThreadContextException {
         // UF call and lengths
         BooleanFormula uf = getUFCall(s1, s2);
         NumeralFormula.IntegerFormula len1 = smgr.length(s1);
@@ -82,8 +76,7 @@ public class EqualsIgnoreCaseUF {
             NumeralFormula.IntegerFormula iF = imgr.makeNumber(i);
             BooleanFormula inBoth = bmgr.and(
                     imgr.lessThan(iF, len1),
-                    imgr.lessThan(iF, len2)
-            );
+                    imgr.lessThan(iF, len2));
             StringFormula c1 = smgr.charAt(s1, iF);
             StringFormula c2 = smgr.charAt(s2, iF);
             NumeralFormula.IntegerFormula code1 = smgr.toCodePoint(c1); // -1 if out-of-range
@@ -95,14 +88,12 @@ public class EqualsIgnoreCaseUF {
 
         BooleanFormula body = bmgr.and(
                 imgr.equal(len1, len2),
-                bmgr.and(perIndex)
-        );
+                bmgr.and(perIndex));
 
         // Algebraic axioms (safe & useful)
-        BooleanFormula reflexive = getUFCall(s1, s1);                                // equalsIgnoreCase(s,s)
-        BooleanFormula symmetric = bmgr.equivalence(uf, getUFCall(s2, s1));          // symmetry
-        BooleanFormula lenMismatchImpliesFalse =
-                bmgr.implication(bmgr.not(imgr.equal(len1, len2)), bmgr.not(uf));    // different lengths → false
+        BooleanFormula reflexive = getUFCall(s1, s1); // equalsIgnoreCase(s,s)
+        BooleanFormula symmetric = bmgr.equivalence(uf, getUFCall(s2, s1)); // symmetry
+        BooleanFormula lenMismatchImpliesFalse = bmgr.implication(bmgr.not(imgr.equal(len1, len2)), bmgr.not(uf)); // different lengths → false
 
         // Always safe direction: if equal ignoring case, then the first K positions must match
         BooleanFormula ufImpliesBody = bmgr.implication(uf, body);
@@ -114,20 +105,17 @@ public class EqualsIgnoreCaseUF {
             int L = concrete1.length();
             reverseGuard = bmgr.and(
                     imgr.equal(len1, imgr.makeNumber(L)),
-                    imgr.equal(len2, imgr.makeNumber(L))
-            );
+                    imgr.equal(len2, imgr.makeNumber(L)));
         } else if (s1Symbolic && !s2Symbolic) {
             int L = concrete2.length();
             reverseGuard = bmgr.and(
                     imgr.equal(len1, imgr.makeNumber(L)),
-                    imgr.equal(len2, imgr.makeNumber(L))
-            );
+                    imgr.equal(len2, imgr.makeNumber(L)));
         } else {
             // both symbolic (or both concrete path kept) → guard by len≤K
             reverseGuard = bmgr.and(
                     imgr.equal(len1, len2),
-                    imgr.lessOrEquals(len1, imgr.makeNumber(K))
-            );
+                    imgr.lessOrEquals(len1, imgr.makeNumber(K)));
         }
         BooleanFormula bodyImpliesUf = bmgr.implication(bmgr.and(reverseGuard, body), uf);
 

@@ -1,8 +1,7 @@
 import glob
-import re
 import signal
 import subprocess
-import os, sys
+import os
 import time
 from contextlib import contextmanager
 from typing import List, Tuple
@@ -12,6 +11,7 @@ from pathlib import Path
 from solver.SolverHandler import SATResult
 
 from data.Database import Database
+from data.BinaryExecutionTree.Node import Node
 
 from strategy.StrategyService import StrategyService
 
@@ -24,6 +24,7 @@ import log
 logger = log.get_logger()
 verdict_logger = log.get_verdict_logger()
 import platform
+
 
 # The (unique) endpoint ID for the SV-COMP target. As each target is handled separately, this ID is always 0.
 ENDPOINT_ID = 0 
@@ -60,6 +61,7 @@ class VerificationCategory(Enum):
 class State:
     def __init__(self):
         self.verdict = Verdict.UNKNOWN
+        self.branch_to_explore: Node | None = None
     
     
 class SVCompDriver:
@@ -205,6 +207,17 @@ class SVCompDriver:
             executor_duration = time.perf_counter() - executor_start
             TimingManager.instance().record_executor_time(executor_duration)
 
+            # check if the target explored the branch as expected
+            if self.state.branch_to_explore:
+                for branch in Database.instance().get_trace(-1): # most recent trace
+                    if branch.id == self.state.branch_to_explore.id:
+                        if branch.has_branched == (self.state.branch_to_explore.branched is not None):
+                            logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {branch.id} as expected! Branch unexpectedly taken/skipped.')
+                        break
+                else:
+                    logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {self.state.branch_to_explore.id} as expected! Branch does not appear in trace.')
+            self.state.branch_to_explore = None
+
             self.log_output(output)
             logger.info(f'[STATUS] {status}')
             next_step: Action = self.determine_next_step(status, output)
@@ -232,7 +245,7 @@ class SVCompDriver:
             
 
     def retrieve_solution(self):
-        possible_branches = StrategyService.select_branch(endpoint_id=0)
+        possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID)
         logger.info(f'[SYMBOLIC EXPLORATION] Found {len(possible_branches)} possible branches')
         logger.info(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
         symbolic_vars = None
@@ -250,6 +263,8 @@ class SVCompDriver:
             if sat == SATResult.SAT:
                 logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
                 symbolic_vars = branch.inputs
+                # remember which branch we want to explore
+                self.state.branch_to_explore = branch
                 break
             logger.debug(f'[SYMBOLIC EXPLORATION] No solution ({sat}) found for branch {branch.id}')
        
