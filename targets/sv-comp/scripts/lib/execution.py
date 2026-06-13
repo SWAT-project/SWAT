@@ -160,7 +160,7 @@ def determine_result(output: List[str], category: VerificationCategory, expected
     # Shouldn't reach here, but handle gracefully
     return 0, 'unknown'
 
-def target_execution(ver_task: VerificationTask) -> tuple[Path, str, int, ExecutionStatus, bool, Optional[bool], float, dict]:
+def target_execution(ver_task: VerificationTask, create_witness: bool = True) -> tuple[Path, str, int, ExecutionStatus, bool, Optional[bool], float, dict]:
     """
     Execute a verification task and return results including execution time.
 
@@ -195,7 +195,7 @@ def target_execution(ver_task: VerificationTask) -> tuple[Path, str, int, Execut
         }
 
         # Generate and validate witness (with timing)
-        if 'violation' in case:
+        if 'violation' in case and create_witness:
             validated, witness_generation_time, witness_validation_time = generate_and_validate_witness(ver_task, output)
 
     elapsed_time = time.perf_counter() - start_time
@@ -283,7 +283,7 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[Execut
 
  
 
-def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50):
+def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_witness: bool = True):
     max_workers = min(max_workers, len(ver_tasks))
 
     logger.info(f"Running parallel target execution with {max_workers} workers...")
@@ -298,7 +298,7 @@ def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50):
         # Create a mapping from futures to their corresponding tasks
         future_to_task = {}
         for ver_task in ver_tasks:
-            future = executor.submit(target_execution, ver_task)
+            future = executor.submit(target_execution, ver_task, create_witness)
             future_to_task[future] = ver_task
 
         for future in concurrent.futures.as_completed(future_to_task): # type: ignore
@@ -780,7 +780,7 @@ def select_target(ver_tasks: list[VerificationTask], target_name: str) -> Option
     return None
 
 
-def run_single_target(ver_tasks: list[VerificationTask]):
+def run_single_target(ver_tasks: list[VerificationTask], create_witness: bool = True):
     target = "autostub/Boolean_public_static_int_java_lang_Boolean_compare_boolean_boolean"
 
     ver_task = select_target(ver_tasks, target)
@@ -789,7 +789,7 @@ def run_single_target(ver_tasks: list[VerificationTask]):
         return
     logger.info(f"Running single target: {target}")
     # Log directory is already set correctly by generate_commands based on config file
-    result = target_execution(ver_task)
+    result = target_execution(ver_task, create_witness)
 
     # Print timing breakdown for single target execution
     if result and len(result) >= 8:

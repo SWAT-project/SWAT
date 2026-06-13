@@ -60,8 +60,9 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--config-file', default='sv-comp.cfg', help='Configuration file name')
 @click.option('--categories', multiple=True, help='Verification categories to run (e.g., valid-assert.prp)')
 @click.option('--target', help='Single target to run (only for single mode)')
+@click.option('--no-witness', 'no_witness', is_flag=True, default=False, help='Skip witness creation and validation')
 @click.pass_context
-def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target: str):
+def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target: str, no_witness: bool):
     """Run verification tests."""
     from lib import (
         extract_testcases,
@@ -137,12 +138,12 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
                     ctx.exit(1)
 
                 click.echo(f"Running single target: {target}")
-                target_execution(ver_task)
+                target_execution(ver_task, create_witness=not no_witness)
             else:
                 # Run default single target
-                run_single_target(ver_tasks_with_commands)
+                run_single_target(ver_tasks_with_commands, create_witness=not no_witness)
         else:
-            run_parallel(ver_tasks_with_commands, max_workers=workers)
+            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness)
 
         click.secho("✓ Test execution complete", fg='green')
 
