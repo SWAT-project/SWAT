@@ -4,7 +4,6 @@ import ch.qos.logback.classic.Logger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import de.uzl.its.swat.common.exceptions.*;
 import de.uzl.its.swat.common.logging.GlobalLogger;
-import de.uzl.its.swat.common.logging.records.ErrorRecord;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.coverage.CoverageRequest;
@@ -18,7 +17,6 @@ import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
 import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.Value;
-import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.LogRecord;
@@ -139,6 +137,15 @@ public final class ThreadHandler {
         }
     }
 
+    public static de.uzl.its.swat.common.logging.StatsStorage getStatsStorage(long id) throws NoThreadContextException {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            return context.getStatsStorage();
+        } else {
+            throw new NoThreadContextException(id);
+        }
+    }
+
     public static void sendData(long id) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
@@ -156,7 +163,7 @@ public final class ThreadHandler {
             }
             if(!config.isCoverageOnly()) {
                 ConstraintRequest.sendConstraints(
-                        symbolicStateHandler.getTraceDTO(), endpointID, traceID);
+                        symbolicStateHandler.getTraceDTO(context.getStatsStorage()), endpointID, traceID);
             }
 
         } else {
@@ -273,25 +280,12 @@ public final class ThreadHandler {
         }
     }
 
-    public static void recordException(long id, ErrorRecord er) throws NoThreadContextException  {
-        ThreadContext context = threadContextHashMap.get(id);
-        if (context != null) {
-            context.recordException(er);
-        } else {
-            throw new NoThreadContextException(id);
-        }
-    }
-
-    public static void logStats(long id) throws NoThreadContextException  {
+    public static void recordContextLossInvocation(
+            long id, InvocationEntry entry) throws NoThreadContextException  {
         if (!config.isLoggingStats()) return;
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
-            PrintStream ps = context.getStatsStream();
-            try {
-                ps.println(context.getStatsStorage().convertToJson());
-            } catch (JsonProcessingException e) {
-                logger.warn("Error logging missing invocation context.");
-            }
+            context.recordContextLossInvocation(entry);
         } else {
             throw new NoThreadContextException(id);
         }

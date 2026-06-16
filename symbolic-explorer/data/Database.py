@@ -114,7 +114,7 @@ class Database:
 
     def add_trace(self, endpoint_id: Union[str, int], trace_id: str, trace: list[Branch | Special], inputs: List[Input], ufs: List[UF],
                   symbolic_context_loss: bool, symbolic_precision_loss: bool,
-                  reference_semantic_change: bool = False):
+                  reference_semantic_change: bool = False, missing_invocations: list = None):
         endpoint_id = str(endpoint_id)
 
         lock.acquire()
@@ -124,6 +124,7 @@ class Database:
         self.tree[endpoint_id].add(trace, inputs, ufs)
         self.tree[endpoint_id].record_inputs(inputs)
         self.tree[endpoint_id].record_ufs(ufs)
+        self.tree[endpoint_id].record_missing_invocations(missing_invocations)
         self.tree[endpoint_id].record_context_loss() if symbolic_context_loss else None
         self.tree[endpoint_id].record_precision_loss() if symbolic_precision_loss else None
         self.tree[endpoint_id].record_reference_semantic_change() if reference_semantic_change else None
@@ -153,6 +154,12 @@ class Database:
         endpoint_id = str(endpoint_id)
         lock.acquire()
         self.tree[endpoint_id].uncaught_exceptions += 1
+        lock.release()
+
+    def record_execution_error(self, endpoint_id: Union[str, int], kind: str, message: str):
+        endpoint_id = str(endpoint_id)
+        lock.acquire()
+        self.tree[endpoint_id].record_execution_error(kind, message)
         lock.release()
 
     def add_solution(self, branch_id: int, sol: Any, inputs: List[Input], endpoint_id: Union[str, int]):

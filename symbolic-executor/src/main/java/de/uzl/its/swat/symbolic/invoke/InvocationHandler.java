@@ -96,13 +96,15 @@ public class InvocationHandler {
             }
 
 
-            ThreadHandler.recordMissingInvocation(Thread.currentThread().getId(),  new InvocationEntry(
+            long threadId = Thread.currentThread().getId();
+            InvocationEntry entry = new InvocationEntry(
                     owner,
                     name,
                     desc,
                     isInstance,
                     invokeId,
-                    containsSymbolicArgument));
+                    containsSymbolicArgument);
+            ThreadHandler.recordMissingInvocation(threadId, entry);
 
             if(
                     (retValue.equals(PlaceHolder.instance) // To detect a missing implementation
@@ -114,6 +116,9 @@ public class InvocationHandler {
                         owner,
                         desc);
                 symbolicTraceHandler.recordSymbolicContextLoss();
+                // Record the culprit so the explorer can compute the context-loss subset of the
+                // missing invocations without scraping logs.
+                ThreadHandler.recordContextLossInvocation(threadId, entry);
             }
 
         }

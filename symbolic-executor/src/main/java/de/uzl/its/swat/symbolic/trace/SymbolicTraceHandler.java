@@ -6,6 +6,7 @@ import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
+import de.uzl.its.swat.common.logging.StatsStorage;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
@@ -108,8 +109,8 @@ public class SymbolicTraceHandler {
      *
      * @return The symbolic trace encoded as a JSON string.
      */
-    public String getTraceDTO() throws NoThreadContextException, JsonProcessingException, NotImplementedException {
-        return DTOBuilder.encodeTrace(symbolicTrace);
+    public String getTraceDTO(StatsStorage statsStorage) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
+        return DTOBuilder.encodeTrace(symbolicTrace, statsStorage);
     }
 
     /**
