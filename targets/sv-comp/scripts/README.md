@@ -27,7 +27,7 @@ scripts/
 ├── svcomp.py           # Main CLI entry point
 ├── lib/                # Library modules (refactored from original scripts)
 │   ├── __init__.py
-│   ├── analysis.py     # (was analyse_ctx_loss.py)
+│   ├── analysis/       # context_loss.py (was analyse_ctx_loss.py) + timing/failures/performance
 │   ├── command_gen.py  # (was command_generation.py)
 │   ├── comparison.py   # (was compare_results.py)
 │   ├── dtypes.py       # (unchanged)
@@ -86,18 +86,34 @@ scripts/
 ### Analysis Commands
 
 ```bash
-# Analyze latest results for context losses
+# Analyze the latest run: scoring summary (Correct/Failed/Unk/Error/Timeout) plus
+# the missing-invocation superset and its context-loss subset, read from each
+# testcase's stats.json (no log scraping)
 ./svcomp analyze results
 
-# Analyze specific results file
-./svcomp analyze results path/to/results.json
+# Analyze a specific run directory
+./svcomp analyze results runs/run_20260101_120000
 
 # Compare two result files
-./svcomp analyze compare results/old.json results/new.json
+./svcomp analyze compare runs/run_A/results/results_valid-assert.prp_*.json \
+                         runs/run_B/results/results_valid-assert.prp_*.json
 
 # Show test case statistics
 ./svcomp analyze stats
 ```
+
+### Run output
+
+Each `./svcomp test run` writes everything for that run under one timestamped directory,
+so previous runs are preserved:
+
+```
+runs/run_<timestamp>/
+├── logs/<folder>/<testcase>_<property>/   # explorer.log, stats.json, timing_data.json, ...
+└── results/                               # results_<category>_<timestamp>.json, stage_timing.csv, histograms
+```
+
+Debug runs (a `*-debug.cfg`) are grouped per target instead: `runs-debug/<folder>/<testcase>/run_<timestamp>/logs/`.
 
 ### Utility Commands
 
@@ -127,17 +143,18 @@ scripts/
 
 ## Migration Notes
 
-### Old Scripts (Still Available)
+### Old Scripts (Removed)
 
-The original Python scripts are still in the `scripts/` directory and can be used directly if needed:
-- `target_selection.py`
-- `command_generation.py`
-- `target_execution.py`
-- `witness_validation.py`
-- `analyse_ctx_loss.py`
-- `compare_results.py`
+The original top-level scripts have been removed; their functionality lives in `lib/` and is driven through the `./svcomp` CLI:
+- `target_selection.py` → `lib/selection.py`
+- `command_generation.py` → `lib/command_gen.py`
+- `target_execution.py` → `lib/execution.py`
+- `witness_validation.py` → `lib/witness.py`
+- `analyse_ctx_loss.py` → `lib/analysis/context_loss.py`
+- `compare_results.py` → `lib/comparison.py`
+- `util.py` → `lib/utils.py`, `dtypes.py` → `lib/dtypes.py`
 
-However, **it's recommended to use the new CLI** for better user experience.
+`run_locally.sh` and `ci_run.sh` now invoke `./svcomp test run`.
 
 ### Key Changes
 
@@ -147,11 +164,9 @@ However, **it's recommended to use the new CLI** for better user experience.
 4. **Relative Imports**: Library modules use relative imports for better packaging
 5. **Wrapper Script**: `svcomp` wrapper automatically uses the venv Python
 
-### Backwards Compatibility
+### Programmatic Use
 
-- Old scripts still work as before
-- Library functions are exposed through `lib/__init__.py`
-- Can import and use functions programmatically:
+- Library functions are exposed through `lib/__init__.py`:
   ```python
   from lib import extract_testcases, generate_commands, run_parallel
   ```
@@ -171,10 +186,10 @@ However, **it's recommended to use the new CLI** for better user experience.
 - [ ] Improve error messages and validation
 - [ ] Add shell completion support
 
-**Phase 3: 🔜 Future**
-- [ ] Add deprecation warnings to old scripts
-- [ ] Update documentation
-- [ ] Consider removing old scripts
+**Phase 3: ✅ Complete**
+- ✅ Removed the legacy top-level scripts (consolidated into `lib/`)
+- ✅ `run_locally.sh` / `ci_run.sh` use the `./svcomp` CLI
+- ✅ `runs/run_<timestamp>/{logs,results}` output layout; analysis reads per-testcase `stats.json`
 
 ## Examples
 
@@ -190,11 +205,8 @@ However, **it's recommended to use the new CLI** for better user experience.
 # Run tests for specific category
 ./svcomp test run --categories valid-assert.prp --workers 30
 
-# Analyze results
+# Analyze the latest run
 ./svcomp analyze results
-
-# Compare with previous run
-./svcomp analyze compare results/old.json results/new.json
 ```
 
 ### Development Workflow
