@@ -3,12 +3,17 @@ name: Java CI with Gradle
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+env:
+  SVCOMP_REFERENCE_URL: https://zenodo.org/api/records/17748741/files/swat-verify.zip/content
+  SVCOMP_REFERENCE_MD5: 8c776d19ac33ecf5c1c7441d16cc18a6
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
     - uses: actions/checkout@v5
     - name: Set up JDK 17
@@ -20,6 +25,60 @@ jobs:
       uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
     - name: Build
       run: ./gradlew build -x test
+    - name: Build SV-COMP JAR artifacts
+      if: github.event_name != 'pull_request'
+      run: ./gradlew --no-daemon :symbolic-executor:copyJar :targets:sv-comp:WitnessCreator:shadowJar
+    - name: Set SV-COMP package metadata
+      id: svcomp_metadata
+      if: github.event_name != 'pull_request'
+      run: |
+        if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+          version="${GITHUB_REF_NAME}"
+        else
+          version="${GITHUB_SHA::7}"
+        fi
+
+        artifact_name="swat-svcomp-${version}"
+        zip_name="${artifact_name}.zip"
+
+        echo "artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
+        echo "version=${version}" >> "${GITHUB_OUTPUT}"
+        echo "zip-name=${zip_name}" >> "${GITHUB_OUTPUT}"
+    - name: Download SV-COMP reference runtime
+      if: github.event_name != 'pull_request'
+      run: |
+        curl --fail --location --retry 3 --output "${RUNNER_TEMP}/swat-verify.zip" "${SVCOMP_REFERENCE_URL}"
+        echo "${SVCOMP_REFERENCE_MD5}  ${RUNNER_TEMP}/swat-verify.zip" | md5sum --check -
+        unzip -q "${RUNNER_TEMP}/swat-verify.zip" -d "${RUNNER_TEMP}/swat-reference"
+    - name: Pack SV-COMP ZIP
+      if: github.event_name != 'pull_request'
+      env:
+        SWAT_SVCOMP_VERSION: ${{ steps.svcomp_metadata.outputs.version }}
+        SWAT_SVCOMP_REFERENCE_DIR: ${{ runner.temp }}/swat-reference/swat-verify
+      run: scripts/package-svcomp.sh
+    - name: Upload SV-COMP ZIP artifact
+      if: github.event_name != 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.svcomp_metadata.outputs.artifact-name }}
+        path: build/distributions/${{ steps.svcomp_metadata.outputs.zip-name }}
+        if-no-files-found: error
+    - name: Create or update GitHub release
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ZIP_NAME: ${{ steps.svcomp_metadata.outputs.zip-name }}
+      run: |
+        tag="${GITHUB_REF_NAME}"
+        zip_path="build/distributions/${ZIP_NAME}"
+
+        if gh release view "${tag}" > /dev/null 2>&1; then
+          gh release upload "${tag}" "${zip_path}" --clobber
+        else
+          gh release create "${tag}" "${zip_path}" \
+            --title "SWAT ${tag}" \
+            --notes "Automated SWAT SV-COMP package."
+        fi
 
   test:
     needs: build
