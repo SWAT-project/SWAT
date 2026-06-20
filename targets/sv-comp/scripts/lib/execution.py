@@ -8,7 +8,7 @@ from typing import List, Optional
 from pprint import pformat
 from .dtypes import Verdict, ExpectedVerdict, VerificationCategory, VerificationTask, Command
 from .utils import ci_print
-from .command_gen import extract_testcases, generate_commands
+from .command_gen import extract_testcases, generate_commands, new_run_timestamp, run_dir as make_run_dir
 from .witness import generate_and_validate_witness
 from collections import Counter
 from pathlib import Path
@@ -283,7 +283,15 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[Execut
 
  
 
-def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_witness: bool = True):
+def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_witness: bool = True, run_dir: Optional[Path] = None, run_timestamp: Optional[str] = None):
+    # Resolve the run context so all outputs (per-testcase logs + aggregated results) share one dir.
+    if run_timestamp is None:
+        run_timestamp = run_dir.name.replace('run_', '') if run_dir is not None else new_run_timestamp()
+    if run_dir is None:
+        run_dir = make_run_dir(run_timestamp)
+    run_dir = Path(run_dir)
+    results_dir = run_dir / 'results'
+
     max_workers = min(max_workers, len(ver_tasks))
 
     logger.info(f"Running parallel target execution with {max_workers} workers...")
@@ -315,13 +323,13 @@ def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_
     total_elapsed_time = time.perf_counter() - total_start_time
     logger.info(f"Total parallel execution time: {total_elapsed_time:.2f}s")
 
-    evaluate_results(results)
+    evaluate_results(results, results_dir, run_timestamp)
 
     # Run aggregate analysis from timing files
     from .analysis.timing import TimingAnalysis
-    TimingAnalysis.print_timing_statistics()
+    TimingAnalysis.print_timing_statistics(run_dir / 'logs')
 
-def evaluate_results(results):
+def evaluate_results(results, results_dir: Path, run_timestamp: str):
     """Evaluate results with per-category statistics including timing."""
     total_points = 0
     category_stats = {}
@@ -473,13 +481,13 @@ def evaluate_results(results):
         all_elapsed = [t[2] for t in all_times]
         logger.info(f"Overall timing: min={min(all_elapsed):.2f}s, max={max(all_elapsed):.2f}s, mean={sum(all_elapsed)/len(all_elapsed):.2f}s")
 
-    save_results(category_stats, results)
+    save_results(category_stats, results, results_dir, run_timestamp)
 
     # Save aggregate stage timing to CSV
-    save_aggregate_stage_timing(category_stats)
+    save_aggregate_stage_timing(category_stats, results_dir, run_timestamp)
 
     # Generate timing histogram
-    generate_timing_histogram(category_stats, results)
+    generate_timing_histogram(category_stats, results, results_dir, run_timestamp)
 
     summary_path = os.getenv("GITHUB_STEP_SUMMARY")
     if summary_path is not None:
@@ -488,17 +496,17 @@ def evaluate_results(results):
     return total_points
 
 
-def generate_timing_histogram(category_stats, results, folder='results'):
+def generate_timing_histogram(category_stats, results, results_dir: Path, run_timestamp: str):
     """Generate histogram(s) of execution times using matplotlib."""
     if not MATPLOTLIB_AVAILABLE:
         logger.warning("matplotlib not available, skipping histogram generation. Install with: pip install matplotlib numpy")
         return
 
-    folder = os.path.join(SCRIPT_DIR, '..', folder)
+    folder = str(results_dir)
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = run_timestamp
 
     # Collect all times across categories
     all_times = []
@@ -610,14 +618,14 @@ def generate_timing_histogram(category_stats, results, folder='results'):
         logger.info(f"Timing boxplot saved to: {boxplot_path}")
 
 
-def save_results(category_stats, results, folder='results'):
+def save_results(category_stats, results, results_dir: Path, run_timestamp: str):
     """Save results with one JSON file per category, including timing data."""
-    folder = os.path.join(SCRIPT_DIR, '..', folder)
+    folder = str(results_dir)
 
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = run_timestamp
 
     # Save one file per category
     for category_name, stats in category_stats.items():
@@ -656,14 +664,14 @@ def save_results(category_stats, results, folder='results'):
         logger.info(f"[{category_name}] Results saved to {filepath}")
 
 
-def save_aggregate_stage_timing(category_stats, folder='results'):
+def save_aggregate_stage_timing(category_stats, results_dir: Path, run_timestamp: str):
     """Save aggregate stage timing data to CSV file for easy analysis."""
-    folder = os.path.join(SCRIPT_DIR, '..', folder)
+    folder = str(results_dir)
 
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = run_timestamp
     filename = f"stage_timing_{timestamp}.csv"
     filepath = os.path.join(folder, filename)
 
@@ -834,7 +842,8 @@ if __name__ == "__main__":
         config_file = "sv-comp.cfg"
     else:
         raise ValueError(f"Invalid mode: {mode}")
-    ver_tasks_with_commands = generate_commands(ver_tasks, config_file)#[:10]
+    run_timestamp = new_run_timestamp()
+    ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp)#[:10]
     logger.info(f"Generated {len(ver_tasks_with_commands)} commands.")
 
     # Check port availability before starting tests (sanity check)
@@ -848,7 +857,7 @@ if __name__ == "__main__":
     if mode == Mode.SINGLE_TARGET: # type: ignore
         run_single_target(ver_tasks_with_commands)
     elif mode == Mode.PARALLEL:
-        run_parallel(ver_tasks_with_commands)
+        run_parallel(ver_tasks_with_commands, run_timestamp=run_timestamp)
     else:
         raise ValueError(f"Invalid mode: {mode}")
 

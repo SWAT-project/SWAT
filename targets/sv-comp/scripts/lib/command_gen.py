@@ -1,8 +1,10 @@
 from .selection import extract_testcases
+import datetime
 import logging
 import socket
 from pathlib import Path
 from pprint import pformat
+from typing import Optional
 from .dtypes import Command, VerificationTask
 
 logging.basicConfig(level=logging.INFO)
@@ -59,13 +61,27 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
 
 
 
-def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg') -> list[VerificationTask]:
+def new_run_timestamp() -> str:
+    """Returns a timestamp identifying a single run, shared across all its outputs."""
+    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def run_dir(run_timestamp: str) -> Path:
+    """The directory holding a non-debug run's logs/ and results/."""
+    return SCRIPT_DIR / '..' / 'runs' / f"run_{run_timestamp}"
+
+
+def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None) -> list[VerificationTask]:
 
     port = 9000
     skipped_ports = []
 
-    # Determine log directory base based on config file
-    log_dir_base = 'logs-debug' if 'debug' in config_file.lower() else 'logs'
+    # A single timestamp ties a run's per-testcase logs to its results.
+    if run_timestamp is None:
+        run_timestamp = new_run_timestamp()
+
+    # Debug runs keep a timestamped history per target; normal runs share one run dir.
+    is_debug = 'debug' in config_file.lower()
 
     for ver_task in ver_tasks:
         # Find next available port
@@ -89,7 +105,14 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
 
         # Include category in log dir to avoid collisions when same file has multiple properties
         category_suffix = ver_task['category'].value.replace('.prp', '')
-        logging_dir = SCRIPT_DIR / '..' / log_dir_base / rel_target_path / f"{target_name}_{category_suffix}"
+        testcase = f"{target_name}_{category_suffix}"
+        if is_debug:
+            # runs-debug/<rel>/<testcase>/run_<ts>/logs — grouped per target so a debug
+            # session keeps the history of its runs together.
+            logging_dir = SCRIPT_DIR / '..' / 'runs-debug' / rel_target_path / testcase / f"run_{run_timestamp}" / 'logs'
+        else:
+            # runs/run_<ts>/logs/<rel>/<testcase> — all testcases of a run share one run dir.
+            logging_dir = run_dir(run_timestamp) / 'logs' / rel_target_path / testcase
         command: Command = {
             'target_dir': target_dir,
             'target': target,

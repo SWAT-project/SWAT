@@ -1,394 +1,226 @@
 #!/usr/bin/env python3
 """
-Analyze SV-Comp results to identify context loss methods that need implementation.
-Run this script in the directory containing the results JSON file.
+Analyze a SV-COMP run from its consolidated per-testcase ``stats.json`` files.
 
-Usage: python3 analyse_ctx_loss.py results_valid-assert.prp_XXXXXX.json
+A run lives under ``runs/run_<timestamp>/`` with:
+  - ``results/results_<category>_<ts>.json`` : per-target verdict / points / timing
+  - ``logs/<rel>/<name>_<cat>/stats.json``   : per-testcase missing invocations,
+                                               context-loss subset, execution errors
+
+This reads that structured data directly — no log scraping — and prints a scoring
+summary (Correct / Failed / Unk / Error / Timeout) plus the missing-invocation
+superset and its authoritative context-loss subset (issue #25).
 """
 
 import json
 import sys
-import re
 from collections import defaultdict
 from pathlib import Path
+from typing import Optional
+
+# lib/analysis/context_loss.py -> scripts/
+SCRIPT_DIR = Path(__file__).resolve().parents[2]
+
+SCORE_BUCKETS = ['Correct', 'Failed', 'Unk', 'Error', 'Timeout']
 
 
-def extract_context_loss_methods(log_content: str) -> list[str]:
-    """Extract all method names causing context loss from log content."""
-    methods = set()  # Use set to dedupe
-    if not log_content:
-        return list(methods)
-
-    # Match: "Invocation of method {name} in class {owner} with arguments {desc} causes context loss"
-    for match in re.finditer(
-        r'Invocation of method (\S+) in class (\S+) with arguments (\S+) causes context loss',
-        log_content
-    ):
-        name, owner, desc = match.group(1), match.group(2), match.group(3)
-        methods.add(f"{owner}/{name}:{desc}")
-
-    return list(methods)
+def find_latest_run(runs_root: Path) -> Optional[Path]:
+    """Return the most recently modified runs/run_* directory, or None."""
+    if not runs_root.exists():
+        return None
+    run_dirs = [p for p in runs_root.glob('run_*') if p.is_dir()]
+    if not run_dirs:
+        return None
+    return max(run_dirs, key=lambda p: p.stat().st_mtime)
 
 
-def extract_missing_invocations(log_content: str) -> list[str]:
-    """Extract missing/unimplemented method invocations from log content."""
-    methods = set()  # Use set to dedupe
-    if not log_content:
-        return list(methods)
+def classify(case: str, points, exec_status, error) -> str:
+    """Bucket a single result into Correct / Failed / Unk / Error / Timeout.
 
-    # Pattern: "Error visiting Instruction INVOKE* owner/class/method:desc"
-    # Example: "Error visiting Instruction INVOKEVIRTUAL java/lang/Double/byteValue:()B"
-    for match in re.finditer(
-        r'Error visiting Instruction (INVOKE\w+)\s+(\S+?)(?:\s*\(|$)',
-        log_content
-    ):
-        invoke_type = match.group(1)
-        method_sig = match.group(2)
-        # Clean up the method signature (remove id info if present)
-        method_sig = re.sub(r'\s*\(id:.*', '', method_sig)
-        methods.add(f"{invoke_type} {method_sig}")
-
-    # Pattern: "Not implemented: <method> in <class>"
-    for match in re.finditer(r'Not implemented:\s*(.+?)\s+in\s+(\S+)', log_content):
-        method = match.group(1).strip()
-        cls = match.group(2).strip()
-        methods.add(f"NOT_IMPLEMENTED {cls}/{method}")
-
-    return list(methods)
-
-
-def extract_symbolic_invocations_from_stats(stats_path: Path) -> list[str]:
+    Precedence: a timeout or a crash/error is reported as such regardless of points;
+    otherwise positive points are Correct, negative points are Failed (wrong verdict),
+    and zero points are Unknown (unknown / non-symbolic).
     """
-    Extract symbolic method invocations from stats JSON files.
-
-    Stats files contain entries like:
-    {"owner":"java/lang/Character","isSymbolic":true,"name":"isUnicodeIdentifierStart","desc":"(I)Z"}
-
-    Returns list of method signatures that have isSymbolic=true (missing implementations).
-    """
-    methods = set()
-
-    # Check both stats_1.json and stats_-1.json
-    for stats_file in ['stats_1.json', 'stats_-1.json']:
-        file_path = stats_path / stats_file
-        if not file_path.exists():
-            continue
-
-        try:
-            with open(file_path) as f:
-                data = json.load(f)
-
-            if isinstance(data, list):
-                for entry in data:
-                    if isinstance(entry, dict) and entry.get('isSymbolic', False):
-                        owner = entry.get('owner', '')
-                        name = entry.get('name', '')
-                        desc = entry.get('desc', '')
-                        is_instance = entry.get('isInstance', False)
-                        invoke_type = 'INVOKEVIRTUAL' if is_instance else 'INVOKESTATIC'
-                        if owner and name:
-                            methods.add(f"{invoke_type} {owner}/{name}:{desc}")
-        except (json.JSONDecodeError, IOError):
-            pass
-
-    return list(methods)
+    s = str(exec_status).lower()
+    if 'timeout' in s:
+        return 'Timeout'
+    if 'error' in s or error or 'crash' in str(case).lower():
+        return 'Error'
+    if points and points > 0:
+        return 'Correct'
+    if points and points < 0:
+        return 'Failed'
+    return 'Unk'
 
 
-def extract_errors(log_content: str) -> list[str]:
-    """Extract error messages from log content."""
-    errors = []
-    if not log_content:
-        return errors
-
-    # Look for SWAT Exception patterns
-    for match in re.finditer(r'\[SWAT Exception\]:\s*(.+?)(?:\n|$)', log_content):
-        errors.append(match.group(1).strip())
-
-    # Look for general exceptions
-    for match in re.finditer(r'Exception.*?:\s*(.+?)(?:\n|$)', log_content):
-        msg = match.group(1).strip()
-        if msg and len(msg) < 200:
-            errors.append(msg)
-
-    return errors
-
-
-def get_log_dir(logs_dir: Path, task_name: str, property_name: str) -> Path:
-    """
-    Construct the path to the log directory for a given task.
-
-    Task name format: folder/testname (e.g., "objects/objects03")
-    Log dir format: logs/<folder>/<testname>_<property>/
-    """
-    parts = task_name.split('/')
-    if len(parts) >= 2:
-        folder = parts[0]
-        testname = parts[1]
-    else:
-        folder = ""
-        testname = parts[0]
-
-    # Property name like "valid-assert.prp" -> "valid-assert"
-    prop_short = property_name.replace('.prp', '')
-
-    return logs_dir / folder / f"{testname}_{prop_short}"
-
-
-def get_log_path(logs_dir: Path, task_name: str, property_name: str) -> Path:
-    """
-    Construct the path to the explorer.log for a given task.
-    """
-    return get_log_dir(logs_dir, task_name, property_name) / "explorer.log"
-
-
-def get_stats_dir(logs_dir: Path, task_name: str, property_name: str) -> Path:
-    """
-    Construct the path to the stats directory (logs/ subdirectory) for a given task.
-    """
-    return get_log_dir(logs_dir, task_name, property_name) / "logs"
-
-
-def read_log_file(log_path: Path) -> str:
-    """Read log file content, return empty string if not found."""
+def load_json(path: Path):
+    """Load a JSON file, returning None if it is missing or unreadable."""
     try:
-        if log_path.exists():
-            return log_path.read_text(errors='replace')
-    except Exception:
-        pass
-    return ""
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def stats_path_for(logs_dir: Path, target: str, category: str) -> Path:
+    """Path to a testcase's stats.json, derived from its target and property."""
+    cat_short = category.replace('.prp', '')
+    return logs_dir / f"{target}_{cat_short}" / 'stats.json'
+
+
+def signature(inv: dict) -> str:
+    """Render a missing invocation as a stable owner/name:desc signature."""
+    return f"{inv['owner']}/{inv['name']}:{inv['desc']}"
+
+
+def analyze_run(run_dir: Path):
+    """Aggregate and print the analysis for a single run directory."""
+    run_dir = Path(run_dir)
+    results_dir = run_dir / 'results'
+    logs_dir = run_dir / 'logs'
+
+    results_files = sorted(results_dir.glob('results_*.json'))
+    if not results_files:
+        print(f"No results files found in {results_dir}")
+        return
+
+    print(f"Analyzing run: {run_dir.name}")
+    print(f"  results: {results_dir}")
+    print(f"  logs:    {logs_dir}\n")
+
+    # Scoring buckets per category, and total points per category.
+    score: dict = {}
+    points_by_cat: dict = {}
+
+    # Missing-invocation aggregation across all testcases of the run.
+    # signature -> {tasks: set, count: int, context_loss: bool, isSymbolic: bool}
+    missing: dict = {}
+    exec_errors: dict = defaultdict(list)  # message -> [tasks]
+
+    total_tasks = 0
+    stats_missing = 0  # testcases with no stats.json on disk
+
+    for rf in results_files:
+        data = load_json(rf)
+        if not data:
+            continue
+        category = data.get('category', rf.stem)
+        cat_buckets: dict = defaultdict(int)
+
+        for target, tup in data.get('results', {}).items():
+            total_tasks += 1
+            case = tup[0] if len(tup) > 0 else ''
+            points = tup[1] if len(tup) > 1 else 0
+            exec_status = tup[2] if len(tup) > 2 else ''
+            error = tup[3] if len(tup) > 3 else False
+            cat_buckets[classify(case, points, exec_status, error)] += 1
+
+            stats = load_json(stats_path_for(logs_dir, target, category))
+            if stats is None:
+                stats_missing += 1
+                continue
+            for inv in stats.get('missing_invocations', []):
+                sig = signature(inv)
+                m = missing.setdefault(
+                    sig, {'tasks': set(), 'count': 0, 'context_loss': False, 'isSymbolic': False})
+                m['tasks'].add(target)
+                m['count'] += inv.get('count', 1)
+                m['context_loss'] = m['context_loss'] or inv.get('context_loss', False)
+                m['isSymbolic'] = m['isSymbolic'] or inv.get('isSymbolic', False)
+            for e in stats.get('execution_errors', []):
+                exec_errors[e.get('message', '')].append(target)
+
+        score[category] = dict(cat_buckets)
+        points_by_cat[category] = data.get('points')
+
+    _print_scoring_summary(score, points_by_cat, total_tasks)
+    _print_missing_invocations(missing)
+    _print_execution_errors(exec_errors)
+
+    if stats_missing:
+        print(f"\nNote: {stats_missing} testcase(s) had no stats.json "
+              f"(crash before the explorer wrote one, or an older run).")
+
+
+def _print_scoring_summary(score: dict, points_by_cat: dict, total_tasks: int):
+    print("=" * 78)
+    print("SCORING SUMMARY")
+    print("=" * 78)
+    header = f"{'Category':<26}" + "".join(f"{b:>9}" for b in SCORE_BUCKETS) + f"{'Total':>8}{'Points':>9}"
+    print(header)
+    print("-" * len(header))
+
+    totals = {b: 0 for b in SCORE_BUCKETS}
+    total_points = 0
+    for category in sorted(score):
+        buckets = score[category]
+        row_total = sum(buckets.get(b, 0) for b in SCORE_BUCKETS)
+        pts = points_by_cat.get(category) or 0
+        total_points += pts
+        for b in SCORE_BUCKETS:
+            totals[b] += buckets.get(b, 0)
+        if row_total == 0:
+            continue  # don't clutter the table with categories that had no testcases
+        cells = "".join(f"{buckets.get(b, 0):>9}" for b in SCORE_BUCKETS)
+        print(f"{category:<26}{cells}{row_total:>8}{pts:>9}")
+
+    print("-" * len(header))
+    grand_total = sum(totals.values())
+    cells = "".join(f"{totals[b]:>9}" for b in SCORE_BUCKETS)
+    print(f"{'TOTAL':<26}{cells}{grand_total:>8}{total_points:>9}")
+    print()
+
+
+def _print_missing_invocations(missing: dict):
+    print("=" * 78)
+    cl = {sig: m for sig, m in missing.items() if m['context_loss']}
+    print(f"MISSING INVOCATIONS  (superset: {len(missing)} signatures; "
+          f"context-loss subset: {len(cl)})")
+    print("=" * 78)
+    if not missing:
+        print("None.")
+        print()
+        return
+
+    # Most-impactful first: by number of testcases, then total count.
+    for sig, m in sorted(missing.items(), key=lambda kv: (-len(kv[1]['tasks']), -kv[1]['count'])):
+        marker = "CL " if m['context_loss'] else "   "
+        print(f"  {marker}{len(m['tasks']):>4} tasks  (count={m['count']:<5}) {sig}")
+    print()
+
+    if cl:
+        print("-" * 78)
+        print(f"CONTEXT-LOSS METHODS (subset that caused symbolic context loss):")
+        for sig in sorted(cl):
+            print(f"    {sig}")
+        print()
+
+
+def _print_execution_errors(exec_errors: dict):
+    if not exec_errors:
+        return
+    print("=" * 78)
+    print(f"EXECUTION ERRORS  ({len(exec_errors)} distinct)")
+    print("=" * 78)
+    for msg, tasks in sorted(exec_errors.items(), key=lambda kv: -len(kv[1])):
+        unique = list(dict.fromkeys(tasks))
+        print(f"  {len(unique):>4} tasks  {msg[:90]}")
+        print(f"           e.g. {', '.join(unique[:3])}")
+    print()
 
 
 def main():
-    if len(sys.argv) < 2:
-        # Find the latest results file
-        results_dir = Path('.')
-        json_files = list(results_dir.glob('results_*.json'))
-        if not json_files:
-            json_files = list(Path('results').glob('results_*.json'))
-        if not json_files:
-            print("Usage: python3 analyse_ctx_loss.py <results_file.json>")
-            print("No results files found in current directory")
+    """Standalone entry point: analyze a run dir argument or the latest run."""
+    if len(sys.argv) >= 2:
+        run_dir = Path(sys.argv[1])
+    else:
+        run_dir = find_latest_run(SCRIPT_DIR / '..' / 'runs')
+        if run_dir is None:
+            print("Usage: python3 -m lib.analysis.context_loss <run_dir>")
+            print("No runs found under runs/")
             sys.exit(1)
-        results_file = max(json_files, key=lambda p: p.stat().st_mtime)
-        print(f"Using latest results file: {results_file}")
-    else:
-        results_file = Path(sys.argv[1])
-
-    # Determine logs directory (sibling to results file or parent's logs/)
-    if results_file.parent.name == 'results':
-        logs_dir = results_file.parent.parent / 'logs'
-    else:
-        logs_dir = results_file.parent / 'logs'
-
-    print(f"Looking for logs in: {logs_dir}")
-
-    with open(results_file) as f:
-        data = json.load(f)
-
-    results = data['results']
-    category = data.get('category', 'valid-assert.prp')
-
-    # Analyze all 0-point tasks
-    zero_points_by_folder = defaultdict(list)
-    context_loss_methods = defaultdict(list)
-    missing_invocations = defaultdict(list)
-    all_errors = defaultdict(list)
-
-    for name, task in results.items():
-        # task format: [status_change, points, execution_status, error_bool, validated, time]
-        points = task[1]
-        if points == 0:
-            folder = name.split('/')[0]
-            status = task[0]
-            exec_status = task[2]
-
-            # Read the actual log file from disk
-            log_path = get_log_path(logs_dir, name, category)
-            log_content = read_log_file(log_path)
-
-            # Get stats directory for symbolic invocations
-            stats_dir = get_stats_dir(logs_dir, name, category)
-
-            zero_points_by_folder[folder].append({
-                'name': name,
-                'status': status,
-                'exec_status': exec_status,
-                'log_path': str(log_path),
-                'log_content': log_content,
-                'log_exists': log_path.exists(),
-                'stats_dir': str(stats_dir)
-            })
-
-            # Extract context loss methods
-            methods = extract_context_loss_methods(log_content)
-            for method in methods:
-                context_loss_methods[method].append(name)
-
-            # Extract missing invocations from error logs
-            invocations = extract_missing_invocations(log_content)
-            for inv in invocations:
-                missing_invocations[inv].append(name)
-
-            # Extract symbolic invocations from stats JSON files
-            symbolic_invocations = extract_symbolic_invocations_from_stats(stats_dir)
-            for inv in symbolic_invocations:
-                missing_invocations[inv].append(name)
-
-            # Extract errors
-            errors = extract_errors(log_content)
-            for error in errors:
-                all_errors[error].append(name)
-
-    # Print summary by folder
-    print("\n" + "=" * 80)
-    print("TASKS WITH 0 POINTS BY FOLDER")
-    print("=" * 80)
-    total_zero = 0
-    logs_found = 0
-    for folder, tasks in sorted(zero_points_by_folder.items(), key=lambda x: -len(x[1])):
-        folder_logs_found = sum(1 for t in tasks if t['log_exists'])
-        print(f"{folder}: {len(tasks)} tasks ({folder_logs_found} logs found)")
-        total_zero += len(tasks)
-        logs_found += folder_logs_found
-    print(f"\nTotal: {total_zero} tasks with 0 points ({logs_found} logs found)")
-
-    # Print context loss methods sorted by frequency
-    print("\n" + "=" * 80)
-    print("CONTEXT LOSS METHODS (sorted by frequency)")
-    print("=" * 80)
-
-    if not context_loss_methods:
-        print("No context loss methods found in logs.")
-    else:
-        for method, tasks in sorted(context_loss_methods.items(), key=lambda x: -len(x[1])):
-            print(f"\n{len(tasks):3d} tasks - {method}")
-            print(f"    Examples: {', '.join(tasks[:3])}")
-
-    # Print missing invocations sorted by frequency
-    print("\n" + "=" * 80)
-    print("MISSING/UNIMPLEMENTED INVOCATIONS (sorted by frequency)")
-    print("=" * 80)
-
-    if not missing_invocations:
-        print("No missing invocations found in logs.")
-    else:
-        for inv, tasks in sorted(missing_invocations.items(), key=lambda x: -len(x[1])):
-            # Dedupe task list (same task may appear multiple times)
-            unique_tasks = list(dict.fromkeys(tasks))
-            print(f"\n{len(unique_tasks):3d} tasks - {inv}")
-            print(f"    Examples: {', '.join(unique_tasks[:3])}")
-
-    # Print errors sorted by frequency
-    print("\n" + "=" * 80)
-    print("ERRORS (sorted by frequency)")
-    print("=" * 80)
-
-    if not all_errors:
-        print("No specific errors found in logs.")
-    else:
-        for error, tasks in sorted(all_errors.items(), key=lambda x: -len(x[1]))[:20]:
-            print(f"\n{len(tasks):3d} tasks - {error[:100]}")
-            print(f"    Examples: {', '.join(tasks[:3])}")
-
-    # Detailed breakdown for each folder
-    print("\n" + "=" * 80)
-    print("DETAILED BREAKDOWN BY FOLDER")
-    print("=" * 80)
-
-    for folder in ['autostub', 'jbmc-regression', 'java-ranger-regression', 'algorithms', 'argv-tasks', 'float-nonlinear-calculation', 'securibench', 'objects']:
-        if folder not in zero_points_by_folder:
-            continue
-
-        print(f"\n--- {folder} ({len(zero_points_by_folder[folder])} tasks) ---")
-
-        folder_context_loss = defaultdict(list)
-        folder_missing_invocations = defaultdict(list)
-        folder_errors = defaultdict(list)
-        other_issues = defaultdict(list)
-        tasks_with_missing_invocations = set()
-
-        for task in zero_points_by_folder[folder]:
-            log_content = task['log_content']
-            stats_dir = Path(task['stats_dir'])
-            methods = extract_context_loss_methods(log_content)
-            invocations = extract_missing_invocations(log_content)
-            symbolic_invocations = extract_symbolic_invocations_from_stats(stats_dir)
-            errors = extract_errors(log_content)
-
-            if methods:
-                for method in methods:
-                    folder_context_loss[method].append(task['name'])
-
-            all_invocations = invocations + symbolic_invocations
-            if all_invocations:
-                tasks_with_missing_invocations.add(task['name'])
-                for inv in all_invocations:
-                    folder_missing_invocations[inv].append(task['name'])
-
-            # Always categorize by verdict/status (not just when no missing invocations)
-            if errors:
-                for error in errors:
-                    folder_errors[error[:80]].append(task['name'])
-
-            if 'timeout' in task['exec_status'].lower():
-                other_issues['timeout'].append(task['name'])
-            elif not task['log_exists']:
-                other_issues['log file not found'].append(task['name'])
-            elif not log_content.strip():
-                other_issues['log file empty'].append(task['name'])
-            elif 'DONT-KNOW' in log_content:
-                other_issues['verdict: DONT-KNOW'].append(task['name'])
-            elif 'NoThreadContextException' in log_content:
-                other_issues['NoThreadContextException'].append(task['name'])
-            elif not methods and not all_invocations:
-                other_issues['unknown (check log)'].append(task['name'])
-
-        if folder_context_loss:
-            print("  Context loss methods:")
-            for method, tasks in sorted(folder_context_loss.items(), key=lambda x: -len(x[1]))[:10]:
-                unique_tasks = list(dict.fromkeys(tasks))
-                print(f"    {len(unique_tasks):3d} - {method[:80]}")
-
-        if folder_missing_invocations:
-            print(f"  Missing invocations ({len(tasks_with_missing_invocations)} unique tasks):")
-            for inv, tasks in sorted(folder_missing_invocations.items(), key=lambda x: -len(x[1]))[:10]:
-                unique_tasks = list(dict.fromkeys(tasks))
-                print(f"    {len(unique_tasks):3d} - {inv[:80]}")
-
-        if folder_errors:
-            print("  Errors:")
-            for error, tasks in sorted(folder_errors.items(), key=lambda x: -len(x[1]))[:10]:
-                unique_tasks = list(dict.fromkeys(tasks))
-                print(f"    {len(unique_tasks):3d} - {error[:80]}")
-
-        if other_issues:
-            print("  Other issues:")
-            for issue, tasks in sorted(other_issues.items(), key=lambda x: -len(x[1])):
-                unique_tasks = list(dict.fromkeys(tasks))
-                print(f"    {len(unique_tasks):3d} - {issue[:80]}")
-
-    # Print sample logs for debugging
-    print("\n" + "=" * 80)
-    print("SAMPLE LOGS (first 5 tasks with 0 points)")
-    print("=" * 80)
-
-    count = 0
-    for name, task in results.items():
-        if task[1] == 0 and count < 5:
-            log_path = get_log_path(logs_dir, name, category)
-            log_content = read_log_file(log_path)
-
-            print(f"\n{name}:")
-            print(f"  Status: {task[0]}")
-            print(f"  Exec status: {task[2]}")
-            print(f"  Log path: {log_path}")
-            print(f"  Log exists: {log_path.exists()}")
-            if log_content:
-                # Show last 500 chars which usually has the verdict
-                print(f"  Log tail: ...{log_content[-500:]}")
-            else:
-                print(f"  Log: (empty or not found)")
-            count += 1
+        print(f"Using latest run: {run_dir}")
+    analyze_run(run_dir)
 
 
 if __name__ == '__main__':

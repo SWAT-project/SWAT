@@ -13,6 +13,8 @@ targets/applications/openolat/libs/z3/
 **/logs/
 **/logs-debug/
 **/results/
+**/runs/
+**/runs-debug/
 **/*.class
 /build/
 **/build/

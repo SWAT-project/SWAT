@@ -108,8 +108,6 @@ public class Intrinsics {
         try {
             Transformer.logMissedClasses();
             ThreadHandler.disableThreadContext(currentThread().getId());
-            ThreadHandler.logStats(currentThread().getId());
-            ThreadHandler.logStats(-1);
             logger.info(
                     new PrintBox(
                             60,
@@ -140,7 +138,7 @@ public class Intrinsics {
                     break;
                 case PRINT:
                     if (!ThreadHandler.isThreadContextAborted(currentThread().getId())) {
-                        System.out.println(ThreadHandler.getSymbolicVisitor(currentThread().getId()).getSymbolicTraceHandler().getTraceDTO());
+                        System.out.println(ThreadHandler.getSymbolicVisitor(currentThread().getId()).getSymbolicTraceHandler().getTraceDTO(ThreadHandler.getStatsStorage(currentThread().getId())));
                     }
                     break;
                 case NONE:

@@ -8,7 +8,6 @@ import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.ThreadAlreadyDisabledException;
 import de.uzl.its.swat.common.exceptions.ThreadAlreadyEnabledException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
-import de.uzl.its.swat.common.logging.records.ErrorRecord;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.common.logging.LoggerUtils;
 import de.uzl.its.swat.common.logging.StatsStorage;
@@ -23,9 +22,6 @@ import de.uzl.its.swat.symbolic.trace.CoverageTraceHandler;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -53,7 +49,6 @@ public class ThreadContext {
     @Getter @Setter private Instruction current;
     @Getter @Setter private Long instCnt = 0L;
     @Getter private Instruction next;
-    @Getter private PrintStream statsStream;
     @Getter private boolean disabled;
     @Getter private boolean aborted;
     Config config = Config.instance();
@@ -136,17 +131,6 @@ public class ThreadContext {
 
 
         this.coverageTraceHandler = new CoverageTraceHandler();
-
-        try {
-
-            this.statsStream =
-                    new PrintStream(
-                            new FileOutputStream(
-                                    config.getLoggingDirectory() + "/stats_" + id + ".json",
-                                    true));
-        } catch (FileNotFoundException e) {
-            this.statsStream = System.out;
-        }
     }
 
     void checkAbortTimerExpiration() {
@@ -236,6 +220,10 @@ public class ThreadContext {
         statsStorage.getInvocations().merge(entry, 1, Integer::sum);
     }
 
+    public void recordContextLossInvocation(InvocationEntry entry) {
+        statsStorage.recordContextLossInvocation(entry);
+    }
+
 
     public long getNextSubUid(String symbolicVar) {
         long next = SubUid.getOrDefault(symbolicVar, 0L);
@@ -244,13 +232,4 @@ public class ThreadContext {
         return next;
     }
 
-    /**
-     * Records an exception that occurred during the execution of the symbolic execution. This includes swallowed
-     * assertions.
-     *
-     * @param record The error record
-     */
-    public void recordException(ErrorRecord record) {
-        statsStorage.getErrors().add(record);
-    }
 }
