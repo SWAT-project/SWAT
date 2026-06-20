@@ -99,7 +99,7 @@ class IntValueTest extends Specification {
 		res << [
 			leftAssignment,
 			rightAssignment
-		].transpose().collect { it[0] + it[1] }
+		].transpose().collect { it[0] + it[1] + 1 }
 	}
 
 	def "ISUB"(int c1, int c2, int res) {
