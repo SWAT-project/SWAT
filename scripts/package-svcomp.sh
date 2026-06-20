@@ -12,8 +12,8 @@ set -euo pipefail
 # - targets/sv-comp/WitnessCreator/build/libs/WitnessCreator.jar
 #
 # Set SWAT_SVCOMP_REFERENCE_DIR to the extracted Zenodo reference package root
-# from https://zenodo.org/records/17748741. The reference root is used only for
-# the pinned SV-COMP Python environment:
+# from https://zenodo.org/records/17748741. The reference root is used for the
+# pinned SV-COMP Python environment and JavaSMT compatibility JAR:
 #
 # - .venv_ubuntu_24_04_1__x86_64/
 #
@@ -50,10 +50,12 @@ artifact_file() {
   printf '%s\n' "$path"
 }
 
-repo_file() {
+reference_file() {
   local rel="$1"
-  local path="${ROOT_DIR}/${rel}"
-  [[ -f "$path" ]] || fail "missing repository file: ${path}"
+  [[ -n "$REFERENCE_DIR" ]] || fail "SWAT_SVCOMP_REFERENCE_DIR is required for ${rel}"
+
+  local path="${REFERENCE_DIR}/${rel}"
+  [[ -f "$path" ]] || fail "missing Zenodo reference file: ${path}"
   printf '%s\n' "$path"
 }
 
@@ -146,9 +148,8 @@ install_z3_runtime_file libz3.so
 install_z3_runtime_file libz3java.so
 install_z3_runtime_file com.microsoft.z3.jar
 install_z3_runtime_file libz3.a
-copy_artifact_file \
-  "$(repo_file libs/java-library-path/java-smt-latest.jar)" \
-  "$PACKAGE_DIR/libs/java-library-path/java-smt-latest.jar"
+JAVA_SMT_JAR="$(reference_file libs/java-library-path/java-smt-latest.jar)"
+copy_artifact_file "$JAVA_SMT_JAR" "$PACKAGE_DIR/libs/java-library-path/java-smt-latest.jar"
 
 copy_tree_files "$SUPPORT_DIR/smoketest" "$PACKAGE_DIR/smoketest"
 
