@@ -6,7 +6,8 @@ import static java.lang.Thread.currentThread;
 
 public class UFHandler {
     private EqualsIgnoreCaseUF equalsIgnoreCaseUF;
-    private ToLowerCaseUF toLowerCaseUF;
+    private CharToLowerCaseUF charToLowerCaseUF;
+    private StringToLowerCaseUF stringToLowerCaseUF;
     private SinCosUF sinCosUF;
 
     public EqualsIgnoreCaseUF getEqualsIgnoreCaseUF() throws NoThreadContextException {
@@ -16,11 +17,18 @@ public class UFHandler {
         return equalsIgnoreCaseUF;
     }
 
-    public ToLowerCaseUF getToLowerCaseUF() throws NoThreadContextException {
-        if (toLowerCaseUF == null) {
-            toLowerCaseUF = new ToLowerCaseUF(ThreadHandler.getSolverContext(currentThread().getId()));
+    public CharToLowerCaseUF getCharToLowerCaseUF() throws NoThreadContextException {
+        if (charToLowerCaseUF == null) {
+            charToLowerCaseUF = new CharToLowerCaseUF(ThreadHandler.getSolverContext(currentThread().getId()));
         }
-        return toLowerCaseUF;
+        return charToLowerCaseUF;
+    }
+
+    public StringToLowerCaseUF getStringToLowerCaseUF() throws NoThreadContextException {
+        if (stringToLowerCaseUF == null) {
+            stringToLowerCaseUF = new StringToLowerCaseUF(ThreadHandler.getSolverContext(currentThread().getId()));
+        }
+        return stringToLowerCaseUF;
     }
 
     public SinCosUF getSinCosUF() throws NoThreadContextException {

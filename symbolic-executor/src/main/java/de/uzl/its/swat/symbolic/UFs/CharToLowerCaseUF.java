@@ -6,20 +6,20 @@ import de.uzl.its.swat.thread.ThreadHandler;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import org.sosy_lab.java_smt.api.*;
 
-public class ToLowerCaseUF {
+public class CharToLowerCaseUF {
     private final FunctionDeclaration<NumeralFormula.IntegerFormula> toLowerUF;
     private final UFManager ufmgr;
     private final IntegerFormulaManager imgr;
     private final BooleanFormulaManager bmgr;
 
-    public ToLowerCaseUF(SolverContext ctx) throws NoThreadContextException {
+    public CharToLowerCaseUF(SolverContext ctx) throws NoThreadContextException {
         SymbolicTraceHandler sth = ThreadHandler.getSymbolicTraceHandler(Thread.currentThread().getId());
         FormulaManager fmgr = ctx.getFormulaManager();
         ufmgr = fmgr.getUFManager();
         imgr = fmgr.getIntegerFormulaManager();
         bmgr = fmgr.getBooleanFormulaManager();
 
-        toLowerUF = ufmgr.declareUF("toLowerCase", FormulaType.IntegerType, FormulaType.IntegerType);
+        toLowerUF = ufmgr.declareUF("char_toLowerCase", FormulaType.IntegerType, FormulaType.IntegerType);
 
         // A..Z -> a..z
         for (int c = 'A'; c <= 'Z'; c++) {

@@ -1,6 +1,8 @@
 package de.uzl.its.swat.symbolic.UFs;
 
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.thread.ThreadHandler;
+
 import org.sosy_lab.java_smt.api.*;
 
 import java.util.ArrayList;
@@ -8,24 +10,22 @@ import java.util.List;
 
 public class EqualsIgnoreCaseUF {
     private final FunctionDeclaration<BooleanFormula> equalsIgnoreCaseUF;
-    private final SolverContext ctx;
     private final UFManager ufmgr;
     private final StringFormulaManager smgr;
     private final BooleanFormulaManager bmgr;
     private final IntegerFormulaManager imgr;
-    private final ToLowerCaseUF toLowerUF;
+    private final CharToLowerCaseUF toLowerUF;
 
     // Global cap for unrolling; tune as needed.
     private static final int MAX_K = 50;
 
     public EqualsIgnoreCaseUF(SolverContext ctx) throws NoThreadContextException {
-        this.ctx = ctx;
         FormulaManager fmgr = ctx.getFormulaManager();
         this.ufmgr = fmgr.getUFManager();
         this.smgr = fmgr.getStringFormulaManager();
         this.bmgr = fmgr.getBooleanFormulaManager();
         this.imgr = fmgr.getIntegerFormulaManager();
-        this.toLowerUF = new ToLowerCaseUF(ctx);
+        this.toLowerUF = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getCharToLowerCaseUF();
 
         this.equalsIgnoreCaseUF = ufmgr.declareUF(
                 "equalsIgnoreCase",
