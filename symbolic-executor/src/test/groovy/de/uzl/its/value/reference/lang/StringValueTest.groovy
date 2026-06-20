@@ -8,7 +8,7 @@ import org.objectweb.asm.Type
 import org.sosy_lab.java_smt.api.*
 import spock.lang.Specification
 import spock.lang.Unroll
-
+import spock.lang.Tag
 
 import static java.lang.Thread.currentThread
 
@@ -157,6 +157,7 @@ class StringValueTest extends Specification {
         "Case"   | "case"   | true
     }
 
+    @Tag("slow")
     @Unroll
     def "equalsIgnoreCase(String anotherString) - Two symbolic strings" (String s1, String s2, boolean expected) {
         setup:
