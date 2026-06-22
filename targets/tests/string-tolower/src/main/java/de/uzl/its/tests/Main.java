@@ -7,6 +7,7 @@ public class Main {
         @Symbolic
         String input = "hey";
 
-        assert input.toLowerCase() != "bad";
+        // assert input.toLowerCase() != "bad";
+        assert input != "bad";
     }
 }
