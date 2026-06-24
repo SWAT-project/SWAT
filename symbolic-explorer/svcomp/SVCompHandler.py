@@ -192,7 +192,7 @@ class SVCompHandler:
             if not StrategyService.is_symbolic_branch(branch):
                 continue
             branch_found = True
-            sat, sol = StrategyService.solve_branch(branch)
+            sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None)
              
             if sat == SATResult.SAT:
                 symbolic_vars = branch.inputs

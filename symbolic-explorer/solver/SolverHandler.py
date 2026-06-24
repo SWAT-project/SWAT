@@ -358,7 +358,7 @@ class Z3Handler:
         return filepath
 
     @staticmethod
-    def solve(node: Any, path_constraints: list) -> Tuple[SATResult, Dict[str, Any]]:
+    def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000) -> Tuple[SATResult, Dict[str, Any]]:
         """
         Solve for the given node and path constraints using ConstraintCache (modern approach).
 
@@ -432,7 +432,8 @@ class Z3Handler:
             except Exception as e:
                 logger.warning(f"[SOLVER] Failed to save SMT formula: {e}")
 
-        solver.set("timeout", 60 * 1000)
+        if timeout_ms is not None:
+            solver.set("timeout", timeout_ms)
         t_start = time.time()
         res = solver.check()
         t_check = time.time() - t_start
