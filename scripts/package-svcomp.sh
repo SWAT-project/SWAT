@@ -23,6 +23,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 VERSION="${SWAT_SVCOMP_VERSION:-$(git rev-parse --short HEAD)}"
+COMMIT="${SWAT_SVCOMP_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
+REF="${SWAT_SVCOMP_REF:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)}"
+CHANNEL="${SWAT_SVCOMP_CHANNEL:-}"
 PACKAGE_NAME="swat-svcomp-${VERSION}"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/swat-svcomp-package.XXXXXX")"
 PACKAGE_DIR="${WORK_DIR}/${PACKAGE_NAME}"
@@ -120,6 +123,12 @@ echo "Packaging built artifacts from: ${ARTIFACT_DIR}"
 
 echo "Creating package staging directory: ${PACKAGE_DIR}"
 mkdir -p "$PACKAGE_DIR"
+{
+  echo "version=${VERSION}"
+  echo "channel=${CHANNEL}"
+  echo "ref=${REF}"
+  echo "commit=${COMMIT}"
+} > "$PACKAGE_DIR/BUILD_INFO.txt"
 
 install -m 0644 LICENSE "$PACKAGE_DIR/LICENSE"
 install -m 0644 Third-Party-Licenses.html "$PACKAGE_DIR/Third-Party-Licenses.html"

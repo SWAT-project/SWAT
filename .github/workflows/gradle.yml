@@ -26,42 +26,82 @@ jobs:
     - name: Prepare Solver Dependencies
       run: ./gradlew copyNativeLibs
     - name: Build
-      run: ./gradlew build -x test
+      run: ./gradlew --no-daemon build -x test
+    - name: Build WitnessCreator JAR
+      run: ./gradlew --no-daemon :targets:sv-comp:WitnessCreator:shadowJar
+    - name: Upload JARs
+      if: github.event_name != 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-jars-${{ github.sha }}
+        path: |
+          symbolic-executor/lib/symbolic-executor.jar
+          targets/sv-comp/WitnessCreator/build/libs/WitnessCreator.jar
+        if-no-files-found: error
+        retention-days: 1
 
   package:
     needs: build
-    if: github.event_name != 'pull_request'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && (
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/dev' ||
+        startsWith(github.ref, 'refs/tags/')
+      ))
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
     - uses: actions/checkout@v5
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
+    - name: Download JARs
+      uses: actions/download-artifact@v4
       with:
-        java-version: '17'
-        distribution: 'temurin'
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
-    - name: Prepare Solver Dependencies
-      run: ./gradlew copyNativeLibs
-    - name: Build SV-COMP JAR artifacts
-      run: ./gradlew --no-daemon :symbolic-executor:copyJar :targets:sv-comp:WitnessCreator:shadowJar
-    - name: Set SV-COMP package metadata
-      id: svcomp_metadata
+        name: release-jars-${{ github.sha }}
+        path: ${{ runner.temp }}/release-jars
+    - name: Determine release channel
+      id: meta
       run: |
-        if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-          version="${GITHUB_REF_NAME}"
-        else
-          version="${GITHUB_SHA::7}"
+        ref_type="${GITHUB_REF_TYPE}"
+        ref_name="${GITHUB_REF_NAME}"
+        sha_short="${GITHUB_SHA::7}"
+
+        channel=""          # release/tag name; empty -> build artifact only, no release
+        release="false"
+        rolling="false"     # rolling channels move their tag to the current commit
+        prerelease="false"
+
+        if [[ "$ref_type" == "tag" ]]; then
+          channel="$ref_name"
+          release="true"
+        elif [[ "$ref_name" == "main" ]]; then
+          channel="latest"
+          release="true"
+          rolling="true"
+        elif [[ "$ref_name" == "dev" ]]; then
+          channel="latest-dev"
+          release="true"
+          rolling="true"
+          prerelease="true"
         fi
 
-        artifact_name="swat-svcomp-${version}"
-        zip_name="${artifact_name}.zip"
+        # Channel-stable asset name gives the nightly cron a fixed download URL;
+        # the exact commit is recorded in the release notes and BUILD_INFO.txt.
+        if [[ -n "$channel" ]]; then
+          version="$channel"
+        else
+          version="$sha_short"
+        fi
+        zip_name="swat-svcomp-${version}.zip"
 
-        echo "artifact-name=${artifact_name}" >> "${GITHUB_OUTPUT}"
-        echo "version=${version}" >> "${GITHUB_OUTPUT}"
-        echo "zip-name=${zip_name}" >> "${GITHUB_OUTPUT}"
+        {
+          echo "channel=${channel}"
+          echo "version=${version}"
+          echo "zip-name=${zip_name}"
+          echo "release=${release}"
+          echo "rolling=${rolling}"
+          echo "prerelease=${prerelease}"
+        } >> "${GITHUB_OUTPUT}"
     - name: Download SV-COMP reference runtime
       run: |
         curl --fail --location --retry 3 --output "${RUNNER_TEMP}/swat-verify.zip" "${SVCOMP_REFERENCE_URL}"
@@ -69,30 +109,55 @@ jobs:
         unzip -q "${RUNNER_TEMP}/swat-verify.zip" -d "${RUNNER_TEMP}/swat-reference"
     - name: Pack SV-COMP ZIP
       env:
-        SWAT_SVCOMP_VERSION: ${{ steps.svcomp_metadata.outputs.version }}
+        SWAT_SVCOMP_VERSION: ${{ steps.meta.outputs.version }}
+        SWAT_SVCOMP_ARTIFACT_DIR: ${{ runner.temp }}/release-jars
         SWAT_SVCOMP_REFERENCE_DIR: ${{ runner.temp }}/swat-reference/swat-verify
+        SWAT_SVCOMP_COMMIT: ${{ github.sha }}
+        SWAT_SVCOMP_REF: ${{ github.ref_name }}
+        SWAT_SVCOMP_CHANNEL: ${{ steps.meta.outputs.channel }}
       run: scripts/package-svcomp.sh
     - name: Upload SV-COMP ZIP artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ steps.svcomp_metadata.outputs.artifact-name }}
-        path: build/distributions/${{ steps.svcomp_metadata.outputs.zip-name }}
+        name: swat-svcomp-${{ steps.meta.outputs.version }}
+        path: build/distributions/${{ steps.meta.outputs.zip-name }}
         if-no-files-found: error
-    - name: Create or update GitHub release
-      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    - name: Publish release
+      if: steps.meta.outputs.release == 'true'
       env:
         GH_TOKEN: ${{ github.token }}
-        ZIP_NAME: ${{ steps.svcomp_metadata.outputs.zip-name }}
+        CHANNEL: ${{ steps.meta.outputs.channel }}
+        ZIP_NAME: ${{ steps.meta.outputs.zip-name }}
+        ROLLING: ${{ steps.meta.outputs.rolling }}
+        PRERELEASE: ${{ steps.meta.outputs.prerelease }}
       run: |
-        tag="${GITHUB_REF_NAME}"
         zip_path="build/distributions/${ZIP_NAME}"
+        notes="$(printf 'Automated SWAT SV-COMP package.\n\nRef: %s\nCommit: %s\nRun: %s/%s/actions/runs/%s\n' \
+          "$GITHUB_REF_NAME" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
 
-        if gh release view "${tag}" > /dev/null 2>&1; then
-          gh release upload "${tag}" "${zip_path}" --clobber
+        prerelease_flag=()
+        [[ "$PRERELEASE" == "true" ]] && prerelease_flag=(--prerelease)
+
+        if [[ "$ROLLING" == "true" ]]; then
+          # Refresh the rolling channel: drop the old release + tag, then recreate
+          # it at the current commit so the tag always tracks the channel head.
+          # Uses the default GITHUB_TOKEN, so the new tag does not retrigger CI.
+          gh release delete "$CHANNEL" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$CHANNEL" "$zip_path" \
+            --target "$GITHUB_SHA" \
+            --title "SWAT ${CHANNEL} (${GITHUB_SHA::7})" \
+            --notes "$notes" \
+            "${prerelease_flag[@]}"
         else
-          gh release create "${tag}" "${zip_path}" \
-            --title "SWAT ${tag}" \
-            --notes "Automated SWAT SV-COMP package."
+          # Permanent, version-tagged release (the tag already points at this commit).
+          if gh release view "$CHANNEL" >/dev/null 2>&1; then
+            gh release upload "$CHANNEL" "$zip_path" --clobber
+          else
+            gh release create "$CHANNEL" "$zip_path" \
+              --title "SWAT ${CHANNEL}" \
+              --notes "$notes" \
+              "${prerelease_flag[@]}"
+          fi
         fi
 
   test:
