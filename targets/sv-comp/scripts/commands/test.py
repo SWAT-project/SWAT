@@ -107,7 +107,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
                 click.echo(f"Filtered to {len(ver_tasks)} test cases for categories: {[c.value for c in selected_categories]}")
 
         # Generate commands
-        if mode == 'single' and target is None:
+        if mode == 'single':
             # Use default target from original script
             config = 'swat-debug.cfg'
         else:
