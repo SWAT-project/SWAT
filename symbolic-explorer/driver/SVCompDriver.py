@@ -258,7 +258,7 @@ class SVCompDriver:
                 continue
             branch_found = True
             #logger.info(f'[SYMBOLIC EXPLORATION] Solving for branch {branch.id}')
-            sat, sol = StrategyService.solve_branch(branch)
+            sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None)
              
             if sat == SATResult.SAT:
                 logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
