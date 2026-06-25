@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.heap
 
+import de.uzl.its.swat.symbolic.shadow.ShadowContext
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue
 import spock.lang.PendingFeature
@@ -40,5 +41,32 @@ class ObjectIdentitySpec extends BaseValueSpec {
 
         expect: "reference equality must hold for the same identity (RED until G1)"
         isValid(a.IF_ACMPEQ(b))
+    }
+
+    @See("docs/heap-redesign-tests.md")
+    def "O-5: distinct objects with a colliding identity hash compare reference-unequal"() {
+        given: "two distinct objects whose identity hash (address) collides"
+        ObjectValue a = objectAt(0x5000)
+        ObjectValue b = objectAt(0x5000)
+
+        expect: "they are still distinct references"
+        isUnsatisfiable(a.IF_ACMPEQ(b))
+    }
+
+    @See("docs/heap-redesign-tests.md")
+    @PendingFeature(reason = "G1 faithful key not implemented; the identity-hash-keyed heap merges distinct objects that share an identity hash")
+    def "O-5: the heap stores colliding-hash objects without merging them"() {
+        given: "two distinct objects whose identity hash (address) collides"
+        int collidingHash = 0x5000
+        ObjectValue a = objectAt(collidingHash)
+        ObjectValue b = objectAt(collidingHash)
+
+        when: "both are registered on the recovery heap"
+        ShadowContext shadow = new ShadowContext()
+        shadow.putToHeap(collidingHash, a)
+        shadow.putToHeap(collidingHash, b)
+
+        then: "both survive distinctly (RED until G1: the hash key collapses them to one)"
+        shadow.heapSize() == 2
     }
 }
