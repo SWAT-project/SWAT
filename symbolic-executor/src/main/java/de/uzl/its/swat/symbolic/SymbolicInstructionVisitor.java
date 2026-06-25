@@ -6,6 +6,7 @@ import static java.lang.Thread.currentThread;
 
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.*;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.coverage.BranchCoverage;
@@ -1266,6 +1267,21 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
                 // remove the placeholder value
                 stack.popOperand();
+
+                // G2: the result of an unmodeled value-returning method must NOT be identity-recovered
+                // (that would re-bind the receiver's symbolic value, e.g. toLowerCase() returning
+                // `this`). Concretize the value type instead, and do NOT consult or mutate the heap, so
+                // the receiver's own entry (and its V-3 round-trip) is preserved. Context loss was
+                // already flagged in InvocationHandler. Non-value results fall through to G1 recovery.
+                if (placeHolder.origin == PlaceHolder.ValueOrigin.UNMODELED_RETURN
+                        && Util.isValueType(inst.val)) {
+                    tmp = ValueFactory.createObjectValue(inst.val, inst.address);
+                    Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
+                    shadowStateLogger.info("Concretized unmodeled value-typed result (no identity recovery): {}", tmp);
+                    stack.pushOperand(tmp);
+                    return;
+                }
+
                 // try to get object
                 tmp = stack.getFromHeap(inst.val);
                 // check if the object was created earlier and then reuse it

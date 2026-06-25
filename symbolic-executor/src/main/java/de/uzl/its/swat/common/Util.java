@@ -429,4 +429,22 @@ public class Util {
         return deInternedClasses.contains(clazz.getName());
     }
 
+    /**
+     * Whether a concrete object is an immutable value type (String / boxed primitive).
+     * Used by recovery to concretize an unmodeled value-returning method's result instead of
+     * identity-recovering it (G2). Independent of {@link #deInternedClasses} (the de-intern /
+     * reference-equality concern, which omits the uncached Float/Double): this covers String and all
+     * eight boxed wrappers ({@link Number} = Byte/Short/Integer/Long/Float/Double, plus Boolean and
+     * Character).
+     *
+     * @param o the concrete object (may be null)
+     * @return true if {@code o} is a value type
+     */
+    public static boolean isValueType(Object o) {
+        return o instanceof String
+                || o instanceof Number
+                || o instanceof Boolean
+                || o instanceof Character;
+    }
+
 }

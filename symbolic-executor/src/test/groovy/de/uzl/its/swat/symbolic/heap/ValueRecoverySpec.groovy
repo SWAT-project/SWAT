@@ -4,7 +4,6 @@ import de.uzl.its.swat.common.Util
 import de.uzl.its.swat.symbolic.processor.BaseSymbolicInstructionProcessorSpec
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
 import org.sosy_lab.java_smt.api.Formula
-import spock.lang.PendingFeature
 import spock.lang.See
 
 /**
@@ -24,7 +23,6 @@ class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
     }
 
     @See("docs/heap-redesign-tests.md")
-    @PendingFeature(reason = "G2 value-type boundary recovery not yet implemented; result still aliases the receiver's formula")
     def "V-1: toLowerCase this-return must not alias the receiver's symbolic formula"() {
         given: "a symbolic, already-lowercase String receiver registered on the heap"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")

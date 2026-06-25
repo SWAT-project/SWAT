@@ -34,7 +34,10 @@ public class PlaceHolder extends Value {
         UNSPECIFIED,
         DATABASE,
         GETFIELD,
-        GETSTATIC
+        GETSTATIC,
+        // The return value of an unmodeled method (tagged in InvocationHandler). At recovery, a
+        // value-typed result with this origin is concretized rather than identity-recovered (G2).
+        UNMODELED_RETURN
     }
 
     public final boolean isSymbolic;

@@ -2,7 +2,6 @@ package de.uzl.its.swat.symbolic.heap
 
 import de.uzl.its.swat.testsupport.agent.AgentRun
 import de.uzl.its.swat.testsupport.agent.TraceObservation
-import spock.lang.PendingFeature
 import spock.lang.See
 import spock.lang.Specification
 
@@ -28,7 +27,6 @@ class HeapRecoveryV1AgentSpec extends Specification {
     }
 
     @See("docs/heap-redesign-tests.md")
-    @PendingFeature(reason = "G2 not implemented; toLowerCase this-return aliases the receiver, so the branch on the result references the symbolic input")
     def "V-1 (L2): a branch after unmodeled toLowerCase must not reference the symbolic input"() {
         when:
         TraceObservation obs = AgentRun.run("targets/ToLowerCaseTarget.java", "ToLowerCaseTarget")

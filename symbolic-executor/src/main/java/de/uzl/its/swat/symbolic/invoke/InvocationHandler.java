@@ -117,6 +117,14 @@ public class InvocationHandler {
             }
 
         }
+
+        // G2: tag an unmodeled placeholder return so visitGETVALUE_Object can concretize a value-typed
+        // result instead of identity-recovering it (which would re-bind the receiver's symbolic value,
+        // e.g. String.toLowerCase() returning `this`). This MUST stay after the context-loss check
+        // above, which compares retValue against PlaceHolder.instance by identity.
+        if (retValue == PlaceHolder.instance) {
+            retValue = new PlaceHolder(PlaceHolder.ValueOrigin.UNMODELED_RETURN, null, null);
+        }
         return retValue;
     }
 
