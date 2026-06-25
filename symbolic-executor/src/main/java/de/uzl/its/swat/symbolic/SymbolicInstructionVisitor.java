@@ -9,6 +9,7 @@ import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.*;
 import de.uzl.its.swat.common.logging.GlobalLogger;
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.coverage.BranchCoverage;
 import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
 import de.uzl.its.swat.instrument.Intrinsics;
@@ -20,6 +21,7 @@ import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
 import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
 import de.uzl.its.swat.symbolic.shadow.Frame;
 import de.uzl.its.swat.symbolic.shadow.ShadowContext;
+import de.uzl.its.swat.symbolic.shadow.ShadowDivergence;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -3630,8 +3632,23 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 }
             } else if ((peek instanceof BoxedValue<?> && !checkEquality(((BoxedValue<?>)peek).getVal().concrete, inst.v))
                     || (!(peek instanceof BoxedValue<?>) && !checkEquality(peek.concrete, inst.v))) {
-                SWATAssert.check(false, "[GETVALUE_primitive]: Value on stack does not match expected value! Expected: {}, Actual: {}",
-                        inst.v, peek.concrete);
+                // The shadow's concrete diverges from the value the real JVM produced - an out-of-band
+                // change (e.g. a tracked object mutated inside unmodeled code) or an executor desync.
+                // CRASH preserves the original hard-fail (dev/CI bug catching); FLAG records a soundness
+                // flag (context loss -> SAFE downgraded to UNKNOWN) and adopts the observed concrete
+                // (sound, graceful). Escape-aware differentiation (crash only on genuine desync) is G4a.
+                if (Config.instance().getShadowDivergence() == ShadowDivergence.CRASH) {
+                    SWATAssert.check(false, "[GETVALUE_primitive]: Value on stack does not match expected value! Expected: {}, Actual: {}",
+                            inst.v, peek.concrete);
+                } else {
+                    symbolicTraceHandler.recordSymbolicContextLoss();
+                    Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
+                    shadowStateLogger.info(
+                            "Out-of-band change detected (shadow {} != observed {}); adopting observed concrete",
+                            peek.concrete, inst.v);
+                }
+                // Adopt the observed concrete (re-ground): always under FLAG; under CRASH only if the
+                // assert is soft (useAssertions=false), preserving the prior behavior.
                 if (cat2) {
                     stack.popWideOperand();
                     stack.pushWideOperand(ValueFactory.createNumericalValue(type, inst.v));

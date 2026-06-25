@@ -6,6 +6,7 @@ import de.uzl.its.swat.common.logging.LoggerUtils;
 import de.uzl.its.swat.coverage.CoverageType;
 import de.uzl.its.swat.instrument.TransformerType;
 import de.uzl.its.swat.solver.SolverMode;
+import de.uzl.its.swat.symbolic.shadow.ShadowDivergence;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.*;
@@ -183,6 +184,10 @@ public class Config {
     /** Determines which solver mode should be used. */
     @Getter private SolverMode solverMode;
     private static final SolverMode DEFAULT_SOLVER_MODE = SolverMode.LOCAL;
+
+    /** How to handle a shadow/concrete divergence at a GETVALUE sync point (out-of-band change). */
+    @Getter @Setter private ShadowDivergence shadowDivergence;
+    private static final ShadowDivergence DEFAULT_SHADOW_DIVERGENCE = ShadowDivergence.CRASH;
 
     // ------------------------------------
     // General options
@@ -431,6 +436,7 @@ public class Config {
         // Solver options
         // ------------------------------------
         solverMode = SolverMode.valueOf(readString("solver.mode", DEFAULT_SOLVER_MODE.toString()));
+        shadowDivergence = ShadowDivergence.valueOf(readString("shadow.divergence", DEFAULT_SHADOW_DIVERGENCE.toString()));
 
         // ------------------------------------
         // SV-Comp options
