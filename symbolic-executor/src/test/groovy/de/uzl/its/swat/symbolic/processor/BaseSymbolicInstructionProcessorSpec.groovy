@@ -7,8 +7,10 @@ import de.uzl.its.swat.instrument.GlobalStateForInstrumentation
 import de.uzl.its.swat.instrument.Intrinsics
 import de.uzl.its.swat.metadata.ClassDepot
 import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor
+import de.uzl.its.swat.symbolic.instruction.GETVALUE_Object
 import de.uzl.its.swat.symbolic.instruction.INVOKEMETHOD_END
 import de.uzl.its.swat.symbolic.instruction.INVOKESTATIC
+import de.uzl.its.swat.symbolic.instruction.INVOKEVIRTUAL
 import de.uzl.its.swat.symbolic.instruction.Instruction
 import de.uzl.its.swat.symbolic.instruction.LDC_long
 import de.uzl.its.swat.symbolic.instruction.NOP
@@ -272,5 +274,56 @@ abstract class BaseSymbolicInstructionProcessorSpec extends Specification {
             result = resultFrame.peek()
         }
         return result
+    }
+
+    /**
+     * L1 boundary-recovery fixture. Drives the real unmodeled-invoke -> recovery path:
+     *
+     *   register {@code receiver} on the heap at its address; push it as the invoke instance; then
+     *   process  INVOKEVIRTUAL(owner,name,desc) -> INVOKEMETHOD_END -> GETVALUE_Object(resultAddress, concreteResult).
+     *
+     * An unmodeled method returns a PlaceHolder (InvocationHandler), INVOKEMETHOD_END pushes it, and
+     * GETVALUE_Object reconciles it against the identity-keyed heap. Passing
+     * {@code resultAddress == receiver.address} reproduces a this-return (the toLowerCase aliasing
+     * defect); a fresh {@code resultAddress} reproduces a new-object return.
+     *
+     * NOTE (honest limit): this fixture *fabricates* the result/receiver address relationship that a
+     * real JVM would produce, so it pins the interpreter's recovery logic, not the
+     * instrumentation->processor contract. Pair flagship cases with an L2 agent run.
+     *
+     * @return a map [recovered: Value, contextLoss: boolean, referenceSemanticChange: boolean]
+     */
+    def executeBoundaryRecovery(ObjectValue receiver, String owner, String name, String desc,
+                                Object concreteResult, int resultAddress) {
+        SymbolicInstructionVisitor visitor = ThreadHandler.getSymbolicVisitor(threadId)
+        ShadowContext context = visitor.getStack()
+        // Register the receiver so a placeholder result can be recovered from the heap by identity.
+        context.putToHeap(receiver.getAddress(), receiver)
+        // Push the receiver as the invoke instance (consumed by newStackFrame in INVOKEVIRTUAL).
+        pushOperand(receiver)
+
+        List<Instruction> instructions = new ArrayList<>()
+        long invokeId = GlobalStateForInstrumentation.instance.incAndGetInvokeId()
+        // INVOKEVIRTUAL and its INVOKEMETHOD_END must share the invokeId so the open-invoke stack
+        // closes (closeOpenInvoke) and METHOD_END is visited despite the frame's class differing.
+        instructions.add(new INVOKEVIRTUAL(GlobalStateForInstrumentation.instance.incAndGetId(), invokeId, owner, name, desc))
+        instructions.add(new INVOKEMETHOD_END(GlobalStateForInstrumentation.instance.incAndGetId(), invokeId))
+        instructions.add(new GETVALUE_Object(GlobalStateForInstrumentation.instance.incAndGetId(), resultAddress, concreteResult, 0))
+        instructions.add(new NOP(GlobalStateForInstrumentation.instance.incAndGetId()))
+
+        // Drive: setCurrent(first); each processInstruction(next) visits the *current* and advances.
+        // The trailing NOP exists only to flush the GETVALUE_Object visit (execution is one behind).
+        ThreadHandler.setCurrentInstruction(threadId, instructions.remove(0))
+        SymbolicInstructionProcessor processor = new SymbolicInstructionProcessor()
+        while (!instructions.isEmpty()) {
+            processor.processInstruction(instructions.remove(0))
+        }
+
+        def traceHandler = ThreadHandler.getSymbolicTraceHandler(threadId)
+        return [
+                recovered              : visitor.getStack().getActiveFrame().peek(),
+                contextLoss            : traceHandler.isSymbolicContextLoss(),
+                referenceSemanticChange: traceHandler.isReferenceSemanticChange()
+        ]
     }
 }

@@ -217,4 +217,24 @@ public class SymbolicTraceHandler {
         logger.warn("Reference semantic change detected: user-de-interned strings compared via Objects.equals");
         symbolicTrace.setReferenceSemanticChange(true);
     }
+
+    /**
+     * Whether a symbolic context loss was recorded on this trace. Read-only accessor for the
+     * package-private trace flag; used by tests to observe soundness without parsing the TraceDTO.
+     *
+     * @return true if a symbolic context loss occurred.
+     */
+    public boolean isSymbolicContextLoss() {
+        return symbolicTrace.isSymbolicContextLoss();
+    }
+
+    /**
+     * Whether a reference-semantic change was recorded on this trace. Read-only accessor for the
+     * package-private trace flag; used by tests to observe soundness without parsing the TraceDTO.
+     *
+     * @return true if a reference-semantic change occurred.
+     */
+    public boolean isReferenceSemanticChange() {
+        return symbolicTrace.isReferenceSemanticChange();
+    }
 }

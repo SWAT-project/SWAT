@@ -52,6 +52,33 @@ public class ShadowContext {
     public Value<?, ?> getFromHeap(int hashCode) {
         return heap.get(hashCode);
     }
+    /**
+     * Number of registered recovery-cache cells. See {@link JVMHeap#size()}.
+     *
+     * @return the number of entries currently on the heap.
+     */
+    public int heapSize() {
+        return heap.size();
+    }
+
+    /**
+     * Looks up a registered shadow value by its identity key (address), without mutating state.
+     *
+     * @param address The identity key (object address / identity hash).
+     * @return The registered value, or null if none.
+     */
+    public Value<?, ?> heapLookup(int address) {
+        return heap.get(address);
+    }
+
+    /**
+     * All registered shadow values, for "one wrapper per identity" inspection.
+     *
+     * @return the registered values.
+     */
+    public Collection<Value<?, ?>> heapEntries() {
+        return heap.values();
+    }
 
     /**
      * Pushes a new frame onto the stack and makes it the active frame. A new frame on this stack
