@@ -45,12 +45,12 @@ public class ShadowContext {
         // lambdaFrameStore = new HashMap<>();
     }
 
-    public void putToHeap(int hashCode, Value<?, ?> value) {
-        heap.put(hashCode, value);
+    public void putToHeap(Object ref, Value<?, ?> value) {
+        heap.put(ref, value);
     }
 
-    public Value<?, ?> getFromHeap(int hashCode) {
-        return heap.get(hashCode);
+    public Value<?, ?> getFromHeap(Object ref) {
+        return heap.get(ref);
     }
     /**
      * Number of registered recovery-cache cells. See {@link JVMHeap#size()}.
@@ -62,13 +62,13 @@ public class ShadowContext {
     }
 
     /**
-     * Looks up a registered shadow value by its identity key (address), without mutating state.
+     * Looks up a registered shadow value by its concrete object reference, without mutating state.
      *
-     * @param address The identity key (object address / identity hash).
+     * @param ref The concrete object (identity key).
      * @return The registered value, or null if none.
      */
-    public Value<?, ?> heapLookup(int address) {
-        return heap.get(address);
+    public Value<?, ?> heapLookup(Object ref) {
+        return heap.get(ref);
     }
 
     /**

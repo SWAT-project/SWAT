@@ -9,10 +9,10 @@ import spock.lang.See
 
 /**
  * Value-typed boundary recovery at Level L1 (the workhorse fixture). An unmodeled value-returning
- * call must not let its result alias the receiver's symbolic value — whether the call returns
+ * call must not let its result alias the receiver's symbolic value - whether the call returns
  * {@code this} (V-1) or a fresh object (V-2). The only difference between the two below is the
- * result's address, which isolates the identity-keyed recovery as the defect. See
- * docs/heap-redesign-tests.md.
+ * result's object identity (the receiver's own object for a this-return vs a distinct object),
+ * which isolates the reference-keyed recovery as the defect. See docs/heap-redesign-tests.md.
  */
 class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
 
@@ -39,7 +39,7 @@ class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
 
         when: "toLowerCase() is invoked (unmodeled) and the this-return is recovered"
         def result = executeBoundaryRecovery(receiver, STRING, "toLowerCase", TO_LOWER,
-                concrete, receiverAddress) // this-return: result address == receiver address
+                concrete) // this-return: the result object IS the receiver's concrete object
 
         then: "preconditions that hold today: context loss flagged, concrete correct"
         result.contextLoss
@@ -60,7 +60,7 @@ class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
 
         when: "the result returns at a fresh address (a distinct object), not the receiver's"
         def result = executeBoundaryRecovery(receiver, STRING, "toLowerCase", TO_LOWER,
-                "abc", 0x2000) // fresh address => new object, not a this-return
+                new String("abc")) // distinct object => new-object return, not a this-return
 
         then: "context loss is flagged, the concrete is the real result, and there is no aliasing"
         result.contextLoss

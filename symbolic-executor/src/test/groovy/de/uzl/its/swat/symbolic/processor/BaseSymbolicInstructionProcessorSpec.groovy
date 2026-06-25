@@ -279,26 +279,29 @@ abstract class BaseSymbolicInstructionProcessorSpec extends Specification {
     /**
      * L1 boundary-recovery fixture. Drives the real unmodeled-invoke -> recovery path:
      *
-     *   register {@code receiver} on the heap at its address; push it as the invoke instance; then
-     *   process  INVOKEVIRTUAL(owner,name,desc) -> INVOKEMETHOD_END -> GETVALUE_Object(resultAddress, concreteResult).
+     *   register {@code receiver} under its concrete object; push it as the invoke instance; then
+     *   process  INVOKEVIRTUAL(owner,name,desc) -> INVOKEMETHOD_END -> GETVALUE_Object(resultObject).
      *
      * An unmodeled method returns a PlaceHolder (InvocationHandler), INVOKEMETHOD_END pushes it, and
-     * GETVALUE_Object reconciles it against the identity-keyed heap. Passing
-     * {@code resultAddress == receiver.address} reproduces a this-return (the toLowerCase aliasing
-     * defect); a fresh {@code resultAddress} reproduces a new-object return.
+     * GETVALUE_Object reconciles it against the reference-keyed heap. Passing {@code resultObject}
+     * identical to the receiver's concrete object reproduces a this-return (the toLowerCase aliasing
+     * defect); a distinct {@code resultObject} reproduces a new-object return.
      *
-     * NOTE (honest limit): this fixture *fabricates* the result/receiver address relationship that a
+     * NOTE (honest limit): this fixture *fabricates* the result/receiver identity relationship that a
      * real JVM would produce, so it pins the interpreter's recovery logic, not the
-     * instrumentation->processor contract. Pair flagship cases with an L2 agent run.
+     * instrumentation->processor contract. Pair flagship cases with an L2 agent run. It also relies
+     * on a value-type {@code getConcrete()} (a StringValue returns its String, so registration keys on
+     * that String); a plain ObjectValue receiver would key on its address and never recover.
      *
      * @return a map [recovered: Value, contextLoss: boolean, referenceSemanticChange: boolean]
      */
     def executeBoundaryRecovery(ObjectValue receiver, String owner, String name, String desc,
-                                Object concreteResult, int resultAddress) {
+                                Object resultObject) {
         SymbolicInstructionVisitor visitor = ThreadHandler.getSymbolicVisitor(threadId)
         ShadowContext context = visitor.getStack()
-        // Register the receiver so a placeholder result can be recovered from the heap by identity.
-        context.putToHeap(receiver.getAddress(), receiver)
+        // Register the receiver under its concrete object, so a this-return (resultObject identical to
+        // the receiver's concrete) is recovered by reference identity; a distinct resultObject misses.
+        context.putToHeap(receiver.getConcrete(), receiver)
         // Push the receiver as the invoke instance (consumed by newStackFrame in INVOKEVIRTUAL).
         pushOperand(receiver)
 
@@ -308,7 +311,7 @@ abstract class BaseSymbolicInstructionProcessorSpec extends Specification {
         // closes (closeOpenInvoke) and METHOD_END is visited despite the frame's class differing.
         instructions.add(new INVOKEVIRTUAL(GlobalStateForInstrumentation.instance.incAndGetId(), invokeId, owner, name, desc))
         instructions.add(new INVOKEMETHOD_END(GlobalStateForInstrumentation.instance.incAndGetId(), invokeId))
-        instructions.add(new GETVALUE_Object(GlobalStateForInstrumentation.instance.incAndGetId(), resultAddress, concreteResult, 0))
+        instructions.add(new GETVALUE_Object(GlobalStateForInstrumentation.instance.incAndGetId(), System.identityHashCode(resultObject), resultObject, 0))
         instructions.add(new NOP(GlobalStateForInstrumentation.instance.incAndGetId()))
 
         // Drive: setCurrent(first); each processInstruction(next) visits the *current* and advances.

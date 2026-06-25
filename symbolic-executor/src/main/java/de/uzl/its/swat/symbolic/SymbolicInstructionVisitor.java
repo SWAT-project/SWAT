@@ -1267,7 +1267,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 // remove the placeholder value
                 stack.popOperand();
                 // try to get object
-                tmp = stack.getFromHeap(inst.address);
+                tmp = stack.getFromHeap(inst.val);
                 // check if the object was created earlier and then reuse it
                 if (tmp != null) {
                     if (isSymbolic) {
@@ -1291,7 +1291,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         tmp.MAKE_SYMBOLIC();
                     }
                     stack.pushOperand(tmp);
-                    stack.putToHeap(inst.address, tmp); // save the object for future use
+                    stack.putToHeap(inst.val, tmp); // save the object for future use (keyed by concrete ref)
                     if (placeHolder.origin == PlaceHolder.ValueOrigin.GETFIELD) {
                         ObjectValue<?, ?> ref = placeHolder.referenceValue;
                         GETFIELD gfInst = (GETFIELD) placeHolder.inst;
@@ -1323,20 +1323,20 @@ public class SymbolicInstructionVisitor implements IVisitor {
                             stack.popOperand();
                             StringValue val = ValueFactory.createStringValue(s, inst.address);
                             stack.pushOperand(val);
-                            stack.putToHeap(inst.address, val);
+                            stack.putToHeap(inst.val, val);
                         } else {
                             (peek.asObjectValue()).setAddress(inst.address);
-                            stack.putToHeap(inst.address, peek);
+                            stack.putToHeap(inst.val, peek);
                         }
 
                     } else {
                         (peek.asObjectValue()).setAddress(inst.address);
-                        stack.putToHeap(inst.address, peek);
+                        stack.putToHeap(inst.val, peek);
                     }
                 } else {
                     // Need to obtain the Object address
                     (peek.asObjectValue()).setAddress(inst.address);
-                    stack.putToHeap(inst.address, peek);
+                    stack.putToHeap(inst.val, peek);
                 }
             } else if ((peek.asObjectValue()).getAddress() == ADDRESS_NULL) {
                 SWATAssert.check(inst.val == null,
@@ -1371,7 +1371,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                             stack.popOperand();
 
                             // Fetch the delegated object from the heap (e.g., IntReader)
-                            Object heapObj = stack.getFromHeap(inst.address);
+                            Object heapObj = stack.getFromHeap(inst.val);
                             if (heapObj instanceof Value<?, ?>) {
                                 Value<?, ?> delegatedObject = (Value<?, ?>) heapObj;
                                 // Push the delegated object onto the stack
@@ -1382,7 +1382,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 try {
                                     Value<?, ?> delegatedObject = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(inst.val, inst.address);
                                     stack.pushOperand(delegatedObject);
-                                    stack.putToHeap(inst.address, delegatedObject);
+                                    stack.putToHeap(inst.val, delegatedObject);
                                     logger.debug("Created new delegated object from instruction: {}", delegatedObject);
                                 } catch (Exception e) {
                                     logger.error("Failed to create delegated object from instruction value", e);
@@ -2706,14 +2706,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitLDC_Object(LDC_Object inst) throws SymbolicInstructionException{
         try{
-            Value<?, ?> tmp = stack.getFromHeap(inst.c);
+            Value<?, ?> tmp = stack.getFromHeap(inst.object);
             if (tmp != null) {
                 stack.pushOperand(tmp);
-            } else if (inst.c == 0) {
+            } else if (inst.object == null) {
                 stack.pushOperand(ValueFactory.createNULLValue());
             } else {
                 stack.pushOperand(tmp = ValueFactory.createObjectValue(null, inst.c));
-                stack.putToHeap(inst.c, tmp);
+                stack.putToHeap(inst.object, tmp);
             }
             checkAndSetException(inst);
         } catch (Throwable t) {

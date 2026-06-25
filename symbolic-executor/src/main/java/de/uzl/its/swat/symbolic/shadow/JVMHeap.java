@@ -1,32 +1,52 @@
 package de.uzl.its.swat.symbolic.shadow;
 
+import com.google.common.collect.MapMaker;
 import de.uzl.its.swat.symbolic.value.Value;
-import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
-import de.uzl.its.swat.symbolic.value.reference.lang.IntegerObjectValue;
-import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Canonical shadow registry: maps a concrete object reference to its shadow {@link Value}.
+ *
+ * <p>The key is the concrete object itself, compared by reference identity ({@code ==}), not by
+ * {@code System.identityHashCode}. This is collision-free (distinct objects are distinct keys even
+ * when their identity hash collides) and gives exactly one shadow per concrete object.
+ *
+ * <p>Keys are held weakly ({@link MapMaker#weakKeys()}). For plain objects and boxed primitives the
+ * shadow value holds no strong reference to its concrete key, so an entry is evicted once the
+ * concrete object becomes unreachable. NOTE: a {@code StringValue} stores its own concrete
+ * {@code String}, which is also the key, so String-keyed entries are self-pinned and do not evict
+ * until the thread's context is discarded - no worse than the previous never-evicting map, and
+ * reference keying still removes the identity-hash collision/reuse hazard. (A unique-id key would
+ * also evict Strings; deferred.)
+ */
 public class JVMHeap {
 
-    private final Map<Integer, Value<?, ?>> objects;
+    private final Map<Object, Value<?, ?>> objects;
 
     public JVMHeap() {
-        objects = new HashMap<>();
+        // weakKeys() => identity (==) key comparison + weak references.
+        objects = new MapMaker().weakKeys().makeMap();
     }
 
-    public void put(int hashCode, Value<?, ?> value) {
-        objects.put(hashCode, value);
+    public void put(Object ref, Value<?, ?> value) {
+        if (ref == null) {
+            return;
+        }
+        objects.put(ref, value);
     }
 
-    public Value<?, ?> get(int hashCode) {
-        return objects.get(hashCode);
+    public Value<?, ?> get(Object ref) {
+        if (ref == null) {
+            return null;
+        }
+        return objects.get(ref);
     }
+
     /**
-     * Number of registered cells. On the legacy identity-hash-keyed heap this also equals the
-     * number of distinct keys, so colliding identities are undercounted (a known defect).
+     * Number of registered cells. With reference keying this is the number of distinct concrete
+     * objects currently held (collision-free).
      *
      * @return the number of entries currently held.
      */

@@ -22,7 +22,7 @@ class FlagPolicySpec extends BaseSymbolicInstructionProcessorSpec {
         StringValue receiver = new StringValue(solverContext, "abc", 0x1000) // concrete (not made symbolic)
 
         when:
-        def result = executeBoundaryRecovery(receiver, STRING, "toLowerCase", TO_LOWER, "abc", 0x1000)
+        def result = executeBoundaryRecovery(receiver, STRING, "toLowerCase", TO_LOWER, "abc")
 
         then: "no symbolic data flowed into the black box, so no context loss"
         !result.contextLoss
@@ -36,7 +36,7 @@ class FlagPolicySpec extends BaseSymbolicInstructionProcessorSpec {
         receiver.MAKE_SYMBOLIC()
 
         when:
-        def result = executeBoundaryRecovery(receiver, STRING, "toLowerCase", TO_LOWER, "abc", 0x1000)
+        def result = executeBoundaryRecovery(receiver, STRING, "toLowerCase", TO_LOWER, "abc")
 
         then: "symbolic data reached the unmodeled method, so context loss is flagged"
         result.contextLoss

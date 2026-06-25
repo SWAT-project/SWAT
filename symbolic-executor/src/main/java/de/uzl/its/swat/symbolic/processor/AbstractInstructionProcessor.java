@@ -32,7 +32,7 @@ public abstract class AbstractInstructionProcessor implements InstructionProcess
     }
 
     public void LDC(long iid, Object c) {
-        processInstruction(new LDC_Object(iid, System.identityHashCode(c)));
+        processInstruction(new LDC_Object(iid, System.identityHashCode(c), c));
     }
 
     public void IINC(long iid, int var, int increment) {

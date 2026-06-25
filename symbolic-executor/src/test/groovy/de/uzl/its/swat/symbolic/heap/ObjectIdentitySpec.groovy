@@ -3,18 +3,17 @@ package de.uzl.its.swat.symbolic.heap
 import de.uzl.its.swat.symbolic.shadow.ShadowContext
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue
-import spock.lang.PendingFeature
 import spock.lang.See
 
 /**
- * O-4 — reference-equality correctness. Level L0, Phase 1 (G1 canonical heap).
+ * O-4 / O-5 — object reference-equality and the canonical registry. Level L0, Phase 1 (G1).
  *
- * Two shadow wrappers for the SAME concrete object (a duplicate registration) must compare
- * reference-equal. {@code ObjectValue.IF_ACMPEQ} currently uses {@code this == o2} on the wrapper,
- * so duplicate wrappers wrongly compare unequal — a correctness defect the canonical registry fixes.
- *
- * Convention: the "already holds" feature has no {@code @PendingFeature} and guards against
- * infra breakage; the desired-but-unimplemented behavior is marked {@code @PendingFeature} (red).
+ * The G1 registry keys the heap by the concrete object reference (identity), so it returns one
+ * canonical wrapper per concrete object and keeps distinct objects distinct even when their identity
+ * hashes collide. {@code ObjectValue.IF_ACMPEQ} stays {@code this == o2}, which is correct under that
+ * one-wrapper-per-identity guarantee. These specs assert both: same object → same wrapper → equal
+ * (O-4); distinct objects → distinct wrappers / two entries → unequal (O-5). The faithful end-to-end
+ * recovery is additionally anchored at L2 (see HeapRecoveryV1AgentSpec).
  */
 class ObjectIdentitySpec extends BaseValueSpec {
 
@@ -33,14 +32,20 @@ class ObjectIdentitySpec extends BaseValueSpec {
     }
 
     @See("docs/heap-redesign-tests.md")
-    @PendingFeature(reason = "G1 canonical registry not yet implemented; IF_ACMPEQ uses this==o2, so duplicate wrappers for one identity compare unequal")
-    def "O-4: two wrappers for the same identity compare reference-equal"() {
-        given: "two distinct wrappers sharing one identity (the duplicate-registration bug)"
-        ObjectValue a = objectAt(0x2000)
-        ObjectValue b = objectAt(0x2000)
+    def "O-4: the same concrete object recovers the same canonical wrapper (reference-equal)"() {
+        given: "a shadow registered under a concrete object"
+        Object obj = new Object()
+        ObjectValue shadow = objectAt(0x2000)
+        ShadowContext ctx = new ShadowContext()
+        ctx.putToHeap(obj, shadow)
 
-        expect: "reference equality must hold for the same identity (RED until G1)"
-        isValid(a.IF_ACMPEQ(b))
+        when: "the same concrete object is looked up twice"
+        def a = ctx.getFromHeap(obj)
+        def b = ctx.getFromHeap(obj)
+
+        then: "both recover the same wrapper, so they compare reference-equal"
+        a.is(b)
+        isValid((a as ObjectValue).IF_ACMPEQ(b as ObjectValue))
     }
 
     @See("docs/heap-redesign-tests.md")
@@ -54,19 +59,21 @@ class ObjectIdentitySpec extends BaseValueSpec {
     }
 
     @See("docs/heap-redesign-tests.md")
-    @PendingFeature(reason = "G1 faithful key not implemented; the identity-hash-keyed heap merges distinct objects that share an identity hash")
-    def "O-5: the heap stores colliding-hash objects without merging them"() {
-        given: "two distinct objects whose identity hash (address) collides"
-        int collidingHash = 0x5000
-        ObjectValue a = objectAt(collidingHash)
-        ObjectValue b = objectAt(collidingHash)
+    def "O-5: distinct concrete objects are stored without merging (reference keying)"() {
+        given: "two distinct concrete objects, with shadows that happen to share an address"
+        Object o1 = new Object()
+        Object o2 = new Object()
+        ObjectValue a = objectAt(0x5000)
+        ObjectValue b = objectAt(0x5000)
 
-        when: "both are registered on the recovery heap"
+        when: "both are registered under their concrete references"
         ShadowContext shadow = new ShadowContext()
-        shadow.putToHeap(collidingHash, a)
-        shadow.putToHeap(collidingHash, b)
+        shadow.putToHeap(o1, a)
+        shadow.putToHeap(o2, b)
 
-        then: "both survive distinctly (RED until G1: the hash key collapses them to one)"
+        then: "the reference-keyed registry keeps distinct objects as distinct entries"
+        // (Structural contract of reference keying; the behavioral collision/recovery coverage is at
+        // L1 (ValueRecoverySpec) and the L2 anchor.)
         shadow.heapSize() == 2
     }
 }

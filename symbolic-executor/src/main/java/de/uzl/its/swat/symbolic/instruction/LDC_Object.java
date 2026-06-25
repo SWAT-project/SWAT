@@ -10,18 +10,23 @@ import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
  */
 public class LDC_Object extends Instruction {
 
-    // The address of the object that's loaded (?)
+    // The identity hash of the loaded object (kept for address, NULL, and debug)
     public int c;
 
+    // The loaded constant object (the canonical-registry key, by reference identity)
+    public Object object;
+
     /**
-     * Creates a new LDC_long instruction.
+     * Creates a new LDC_Object instruction.
      *
      * @param iid instruction id.
-     * @param c the address of the object that's loaded
+     * @param c the identity hash of the loaded object
+     * @param object the loaded constant object (the registry key)
      */
-    public LDC_Object(long iid, int c) {
+    public LDC_Object(long iid, int c, Object object) {
         super(iid);
         this.c = c;
+        this.object = object;
     }
 
     /**
