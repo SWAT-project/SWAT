@@ -19,11 +19,25 @@ import org.objectweb.asm.Type;
 public final class PureMethods {
     private PureMethods() {}
 
-    /** Keys are {@code owner + "/" + name + desc} (descriptor included to disambiguate overloads). */
+    /**
+     * Keys are {@code owner + "/" + name + desc} (descriptor included to disambiguate overloads).
+     * Entries are pure, deterministic, side-effect-free, String-RETURNING, and UNMODELED by SWAT (so
+     * the generic UF actually fires). Curated from the java.lang purity survey
+     * (docs/heap-redesign-g4-whitelist-survey.md); the boxed types' toString-family is intentionally
+     * absent (already modeled -> a UF would never fire), and cross-class static String methods
+     * (Float/Double/Character.toString) are a documented backlog pending static-invoke test support.
+     */
     private static final Set<String> WHITELIST =
             Set.of(
                     "java/lang/String/trim()Ljava/lang/String;",
-                    "java/lang/String/strip()Ljava/lang/String;");
+                    "java/lang/String/strip()Ljava/lang/String;",
+                    "java/lang/String/stripLeading()Ljava/lang/String;",
+                    "java/lang/String/stripTrailing()Ljava/lang/String;",
+                    "java/lang/String/substring(I)Ljava/lang/String;",
+                    "java/lang/String/substring(II)Ljava/lang/String;",
+                    "java/lang/String/repeat(I)Ljava/lang/String;",
+                    "java/lang/String/replace(CC)Ljava/lang/String;",
+                    "java/lang/String/indent(I)Ljava/lang/String;");
 
     public static boolean isWhitelisted(String owner, String name, String desc) {
         return WHITELIST.contains(owner + "/" + name + desc);

@@ -34,4 +34,21 @@ class PureFunctionUFAgentSpec extends Specification {
         !obs.symbolicContextLoss
         !obs.symbolicPrecisionLoss
     }
+
+    @See("docs/heap-redesign-g4-whitelist-survey.md")
+    def "G4 (L2): a whitelisted pure substring (arg-taking, mixed-sort UF) into a branch preserves SAFE"() {
+        when:
+        TraceObservation obs = AgentRun.run("targets/SubstringTarget.java", "SubstringTarget")
+        String inputVar = obs.inputNames.find { it.startsWith("java/lang/String") }
+
+        then: "the symbolic input is designated"
+        inputVar != null
+
+        and: "the branch references the input through the mixed-sort UF pure_String_substring_int"
+        obs.anyBranchReferences(inputVar)
+
+        and: "neither SAFE downgrade fires (whitelist expansion to an arg-taking method stays sound)"
+        !obs.symbolicContextLoss
+        !obs.symbolicPrecisionLoss
+    }
 }
