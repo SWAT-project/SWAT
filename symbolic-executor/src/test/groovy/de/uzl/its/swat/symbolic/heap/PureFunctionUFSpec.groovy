@@ -3,6 +3,7 @@ package de.uzl.its.swat.symbolic.heap
 import de.uzl.its.swat.common.Util
 import de.uzl.its.swat.symbolic.processor.BaseSymbolicInstructionProcessorSpec
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
+import de.uzl.its.swat.thread.ThreadHandler
 import org.sosy_lab.java_smt.api.BooleanFormula
 import org.sosy_lab.java_smt.api.Formula
 import org.sosy_lab.java_smt.api.StringFormula
@@ -94,6 +95,26 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         then: "no hidden axiom forces the result - it may take an arbitrary value (SAT)"
         def smgr = solverContext.getFormulaManager().getStringFormulaManager()
         isSat(smgr.equal(result.recovered.formula as StringFormula, smgr.makeString("a totally different value")))
+    }
+
+    @See("docs/heap-redesign-g4-design.md")
+    def "U-7: a whitelisted pure call emits its observed (input->output) pair as a ground UF constraint"() {
+        given: "a symbolic String receiver with a known concrete value"
+        setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
+        StringValue receiver = new StringValue(solverContext, "abc", 0x1000)
+        receiver.MAKE_SYMBOLIC()
+
+        when: "trim() is invoked (whitelisted) and recovered, observing output 'abc'"
+        executeBoundaryRecovery(receiver, STRING, "trim", TRIM, "abc")
+
+        then: "an observed-pair constraint over the pure_String_trim UF was recorded for this run"
+        def fm = solverContext.getFormulaManager()
+        def constraints = ThreadHandler.getSymbolicTraceHandler(threadId).getConstraints()
+        def pair = constraints.find { fm.extractVariablesAndUFs(it).keySet().contains("pure_String_trim") }
+        pair != null
+
+        and: "the pair is GROUND (over the constant input, not the symbolic variable)"
+        fm.extractVariables(pair).isEmpty()
     }
 
     @See("docs/heap-redesign-tests.md")

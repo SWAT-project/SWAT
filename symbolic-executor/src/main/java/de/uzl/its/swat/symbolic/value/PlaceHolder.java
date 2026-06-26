@@ -50,6 +50,13 @@ public class PlaceHolder extends Value {
      * {@code pure_<sig>(inputs)} modeling the result. Null otherwise (then recovery concretizes, G2).
      */
     public final Formula recoveredFormula;
+    /**
+     * G4 step 2: the same generic UF applied to the CONSTANT (observed) inputs, e.g.
+     * {@code pure_<sig>(makeString(concreteInput))}. At recovery this is asserted equal to the
+     * observed concrete output to record a ground (input -> output) pair. Null when no pair is
+     * emitted (non-String inputs / not a whitelisted pure call).
+     */
+    public final Formula observedApplication;
     public static final PlaceHolder instance = new PlaceHolder(false);
     public static final PlaceHolder symbolicInstance = new PlaceHolder(true);
 
@@ -59,6 +66,7 @@ public class PlaceHolder extends Value {
         this.inst = null;
         this.referenceValue = null;
         this.recoveredFormula = null;
+        this.observedApplication = null;
     }
 
     public PlaceHolder(ValueOrigin origin, Instruction inst, ObjectValue<?, ?> referenceValue) {
@@ -67,6 +75,7 @@ public class PlaceHolder extends Value {
         this.inst = inst;
         this.referenceValue = referenceValue;
         this.recoveredFormula = null;
+        this.observedApplication = null;
     }
 
     public PlaceHolder(boolean isSymbolic, ValueOrigin origin) {
@@ -75,15 +84,22 @@ public class PlaceHolder extends Value {
         this.inst = null;
         this.referenceValue = null;
         this.recoveredFormula = null;
+        this.observedApplication = null;
     }
 
-    /** UNMODELED_RETURN placeholder carrying a generic-UF formula for a whitelisted pure method (G4). */
-    public PlaceHolder(ValueOrigin origin, Formula recoveredFormula) {
+    /**
+     * UNMODELED_RETURN placeholder carrying, for a whitelisted pure method (G4): the generic UF over
+     * the symbolic inputs ({@code recoveredFormula}, modeling the result) and the same UF over the
+     * constant observed inputs ({@code observedApplication}, used to record the observed pair). Either
+     * may be null.
+     */
+    public PlaceHolder(ValueOrigin origin, Formula recoveredFormula, Formula observedApplication) {
         this.origin = origin;
         this.isSymbolic = false;
         this.inst = null;
         this.referenceValue = null;
         this.recoveredFormula = recoveredFormula;
+        this.observedApplication = observedApplication;
     }
 
     public ObjectValue<?, ?> asObjectValue() throws ValueConversionException {

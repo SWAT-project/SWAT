@@ -1285,6 +1285,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         SolverContext context = ThreadHandler.getSolverContext(currentThread().getId());
                         tmp = new StringValue(context, s, (StringFormula) placeHolder.recoveredFormula, inst.address);
                         shadowStateLogger.info("Modeled unmodeled pure result as a generic UF: {}", tmp);
+                        // G4 step 2: record this run's observed (input -> output) ground pair -
+                        // pure_<sig>(constant inputs) == observed output. Sound: a true fact about the
+                        // real function only tightens the axiom-free UF. Cross-run accumulation +
+                        // solve-time injection are the explorer's job - see
+                        // docs/heap-redesign-g4-step2-explorer-handoff.md.
+                        if (placeHolder.observedApplication != null) {
+                            StringFormulaManager smgr = context.getFormulaManager().getStringFormulaManager();
+                            symbolicTraceHandler.addConstraint(
+                                    smgr.equal((StringFormula) placeHolder.observedApplication, smgr.makeString(s)));
+                        }
                     } else {
                         tmp = ValueFactory.createObjectValue(inst.val, inst.address);
                         shadowStateLogger.info("Concretized unmodeled value-typed result (no identity recovery): {}", tmp);

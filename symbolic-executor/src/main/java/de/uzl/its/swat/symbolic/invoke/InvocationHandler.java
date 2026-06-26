@@ -7,6 +7,7 @@ import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
+import de.uzl.its.swat.symbolic.UFs.PureFunctionUF;
 import de.uzl.its.swat.symbolic.UFs.PureMethods;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
@@ -22,6 +23,7 @@ import java.util.stream.Collectors;
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.Formula;
 import org.sosy_lab.java_smt.api.FormulaType;
+import org.sosy_lab.java_smt.api.StringFormulaManager;
 
 public class InvocationHandler {
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
@@ -77,8 +79,9 @@ public class InvocationHandler {
                             symbolicTraceHandler);
         }
 
-        // G4: generic UF for a whitelisted pure return; stays null -> recovery concretizes (G2).
-        Formula pureUF = null;
+        // G4: model of a whitelisted pure return (result UF over symbolic inputs + the same UF over
+        // constant observed inputs, for the step-2 observed pair); stays null -> recovery concretizes (G2).
+        PureUFModel pureUF = null;
         // When the method is not implemented and its not on the ignore list, we record it
         if (retValue instanceof PlaceHolder &&
                 !(IGNORED_INVOCATIONS.contains(owner + "/" + name)
@@ -143,33 +146,58 @@ public class InvocationHandler {
         // after the context-loss check above, which compares retValue against PlaceHolder.instance by
         // identity.
         if (retValue == PlaceHolder.instance) {
-            retValue = new PlaceHolder(PlaceHolder.ValueOrigin.UNMODELED_RETURN, pureUF);
+            retValue = new PlaceHolder(
+                    PlaceHolder.ValueOrigin.UNMODELED_RETURN,
+                    pureUF == null ? null : pureUF.result(),
+                    pureUF == null ? null : pureUF.observedApplication());
         }
         return retValue;
     }
+
+    /** A whitelisted pure call modeled as a generic UF: the result over symbolic inputs, and (G4
+     * step 2) the same UF over the constant observed inputs for the observed (input -> output) pair. */
+    private record PureUFModel(Formula result, Formula observedApplication) {}
 
     /**
      * Build the generic UF {@code pure_<sig>(inputs)} for a whitelisted pure call, or null to fall
      * back to G2 concretization. v1 handles String returns only; the inputs (receiver + args) must
      * all be value-typed so their formula fully captures the input (sound; no stateful receivers).
+     * Also builds the same UF applied to the CONSTANT inputs (step 2's observed-pair application),
+     * using the SAME cached declaration; that is null unless every input is a String (v1: only String
+     * concretes can be turned into constant formulas here).
      */
-    private static Formula buildPureUF(
+    private static PureUFModel buildPureUF(
             String owner, String name, String desc, List<Value<?, ?>> inputs)
             throws NoThreadContextException {
         // v1 scope: only String-returning methods are materialized as UFs.
         if (!"java.lang.String".equals(Type.getReturnType(desc).getClassName())) {
             return null;
         }
-        List<Formula> argFormulas = new ArrayList<>();
+        StringFormulaManager smgr =
+                ThreadHandler.getSolverContext(Thread.currentThread().getId())
+                        .getFormulaManager()
+                        .getStringFormulaManager();
+        List<Formula> symbolicArgs = new ArrayList<>();
+        List<Formula> constArgs = new ArrayList<>();
+        boolean observable = true; // an observed pair needs constant-buildable (v1: String) inputs
         for (Value<?, ?> v : inputs) {
             if (v.formula == null || !Util.isValueType(v.concrete)) {
                 return null; // non-value-typed or formula-less input: defer to G2 concretize.
             }
-            argFormulas.add((Formula) v.formula);
+            symbolicArgs.add((Formula) v.formula);
+            if (v.concrete instanceof String s) {
+                constArgs.add(smgr.makeString(s));
+            } else {
+                observable = false; // v1: only String inputs become constant formulas here.
+            }
         }
-        return ThreadHandler.getUFHandler(Thread.currentThread().getId())
-                .getPureFunctionUF()
-                .apply(PureMethods.ufName(owner, name, desc), FormulaType.StringType, argFormulas);
+        PureFunctionUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getPureFunctionUF();
+        String ufName = PureMethods.ufName(owner, name, desc);
+        Formula result = uf.apply(ufName, FormulaType.StringType, symbolicArgs);
+        // Same cached declaration applied to the constant inputs, so the observed pair constrains the
+        // very symbol used in `result`.
+        Formula observed = observable ? uf.apply(ufName, FormulaType.StringType, constArgs) : null;
+        return new PureUFModel(result, observed);
     }
 
 }

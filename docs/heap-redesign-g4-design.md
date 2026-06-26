@@ -108,6 +108,52 @@ Decision: **G4-full** — the generic UF *and* a `precision_loss` exemption so S
 
 Each step runs the loop: implement → 3 independent reviews → commit.
 
+## Step 2 — implementation design (for review)
+
+**Status: G4 step 1 committed (48763bc) + L2 anchor (252ec5d). Step 2 EXECUTOR side implemented + committed; explorer side documented for the upcoming rework in `docs/heap-redesign-g4-step2-explorer-handoff.md` (user decision: prepare the executor, document the explorer work, move on to the whitelist survey).**
+
+Goal: give the free generic UF teeth by accumulating observed `(input -> output)` ground facts across a testcase's runs. A run that calls `String.trim()` on concrete `"abc "` observing `"abc"` is ground truth: `pure_String_trim("abc ") == "abc"`. Asserting it only *tightens* the axiom-free UF (a true fact about the real function), so it stays sound (UNSAT-under-tightened => real UNSAT => SAFE holds; concrete-grounded => no false VIOLATION) while making the UF informative for input generation + reasoning.
+
+**Emission (executor).** The concrete inputs are known at `InvocationHandler` but the concrete output only arrives at `GETVALUE`. So:
+- At `InvocationHandler.buildPureUF`, in addition to the result UF `pure_sig(symbolic inputs)`, build a second application over the **constant** inputs `pure_sig(makeString(input.concrete), ...)` using the SAME cached declaration (so it's the same UF symbol). Carry it on the `UNMODELED_RETURN` placeholder (new field, e.g. `observedApplication`).
+- At the `GETVALUE` materialization, emit `symbolicTraceHandler.addConstraint(equal(observedApplication, makeConstant(inst.val)))`.
+
+**Accumulation (explorer) — reuses existing plumbing.** `addConstraint`-ed constraints travel via `symbolicTrace.getConstraints() -> UFDTO` (DTOBuilder:68-71), and the explorer accumulates UF definitions per-testcase in a `Set` (`Tree.ufs` + `Tree.record_ufs`, dedup by definition string). So each run's observed pair accrues across runs for that testcase, with no new accumulation infra.
+
+v1 scope: String returns + String inputs only (constant building = `makeString`); other arg/return types arrive with the whitelist survey.
+
+### Round-1 review (BLOCKER) — the accumulation path doesn't exist; step 2 must build it
+
+The reviewer verified that the "rides existing accumulation, no new infra" premise is **false**:
+- **`Tree.ufs` is dead code.** It is written by `Tree.record_ufs` (Tree.py:60) and **read nowhere** — it is never injected into the solver.
+- **The live injection uses `Node.ufs`, which is frozen per-node.** `StrategyService.collect_uf_definitions` (StrategyService.py:78-82) injects `node.ufs` into `path_constraints` → `Z3Handler.solve` (SolverHandler.py:407-409). But `Node.ufs` is set only in the `Node` ctor (Node.py:51); `Tree.add_recursive` never merges incoming ufs into an EXISTING node. So a run's observed pair is injected only onto branches THAT run first created — flipping a pre-existing branch sees only the pairs frozen at its creation, NOT the accumulated table. The cross-run accumulation (step 2's whole point) does not happen.
+
+**Revised design (the rework):** step 2 must ADD explorer-side injection of the accumulated per-testcase set. Chosen fix: in `StrategyService.collect_uf_definitions`/`solve_branch`, also union the live tree's accumulated `Tree.ufs` into `path_constraints` (this finally gives `Tree.ufs` a consumer; `get_tree` returns a deepcopy, so read the set that reflects all `add_trace` calls before this solve). The executor emission half (carry const-application, emit `addConstraint(equal(...))` at GETVALUE) is unchanged and was confirmed sound.
+
+**C1 soundness wrinkle (must handle):** at solve time, if the injected UF-constraint set is UNSAT, `SVCompDriver` treats "no SAT branch" as **SAFE** (SVCompDriver.py:271-273) → a contradictory set yields a **false SAFE** for the whole testcase. All-true (deterministic) observed pairs can never be contradictory, so the whitelist's determinism bar prevents it — but step 2 elevates a bad whitelist entry from "imprecision" to "potential false SAFE." Mitigation: a contradiction guard at the dedup/accumulation point (same UF+inputs, different output ⇒ drop/skip, don't poison) + document the elevated stakes. (Confirmed clean by review: #2 getConstraints→UFDTO, #3 same cached decl for symbolic+constant applications, #4 ground-fact-only-tightens, #6 carry one const-application Formula on PlaceHolder, #7 emit at GETVALUE / inst.val faithful.)
+
+**Tests:** executor-side emission at L1 (assert the pair is in `getConstraints()`); plus an explorer/L3 test that an accumulated pair from an EARLIER run actually constrains a LATER flip — the current L2 anchor would pass even if injection were inert, so it does not cover this.
+
+### Round-2 review — design converged; step 2 is materially bigger than "ride existing plumbing"
+
+Round-2 validated the revised injection approach (no staleness: the `select_branch` deepcopy reflects all prior `record_ufs`; format/idempotence clean; `collect_uf_definitions` is the universal chokepoint) but surfaced an implementation hole + sharpened the guard. Net: step 2 now spans the executor AND the explorer solve path AND verdict soundness. Four must-fixes:
+1. **Injection wiring.** `collect_uf_definitions(node)` cannot reach `Tree.ufs` (Node has no tree ref; `endpoint_id` is None for 4/5 drivers). Thread the accumulated set through `select_branch` → `solve_branch` → `collect_uf_definitions` (select_branch already holds the post-`add_trace` deepcopy). NOT via `get_tree(endpoint_id)`. (StrategyService.py:16-23,78-96)
+2. **C1 contradiction guard (structural, not string-Set identity).** In `Tree.record_ufs`, parse each `pure_*` observed pair, key on `(uf-name, args) → rhs`, drop on conflicting rhs. New code in the accumulation path; narrow to `pure_` names. (Tree.py:52-60)
+3. **C1 solve-time backstop (verdict soundness).** Before any UNSAT→SAFE conclusion (SVCompDriver.py:271-273), if the accumulated `pure_` facts ALONE are UNSAT, downgrade SAFE→UNKNOWN. Converts a worst-case false SAFE (bad whitelist entry) into a conservative UNKNOWN. ~3 lines, gated on `pure_` ufs present.
+4. **L3 explorer test.** Drive the explorer directly (`Database.add_trace` + `select_branch` + `solve_branch`), assert an accumulated pair from an EARLIER run flips a LATER solve SAT→UNSAT (reset Database + `clear_constraint_cache` between cases). The L2 anchor would pass even if injection were inert.
+
+Confirmed clean: executor emission half (carry const-application, emit at GETVALUE, same cached decl); format match; idempotent double-add. Nit: the per-node `node.ufs` walk becomes redundant once the union lands.
+
+**Scope observation (for the user):** must-fixes 1 + 3 are explorer **solve-path / verdict-logic** changes — they overlap the explorer rework (static CFG + explorer-side decisions) you said is coming soon, and #3 changes the SAFE/UNKNOWN logic. Step 1 already delivers G4's core (SAFE preserved through pure calls); cross-run accumulation is a precision/input-generation enhancement on top, not core soundness. So there's a real choice about whether to build the explorer machinery now or coordinate it with that rework.
+
+Original open questions (now answered):
+1. **Injection (critical) — ANSWERED: does NOT exist for accumulated facts; must be built (must-fix 1 above).**
+2. **Carry design.** Is carrying the pre-built const-application (one `Formula`) cleaner/sounder than carrying the concrete inputs + decl and building at GETVALUE? Any hazard adding a second `Formula` field to `PlaceHolder`?
+3. **Same-symbol sharing.** The result UF (over symbolic inputs) and the observed-pair UF (over constants) must be the SAME declaration/symbol (else the observed facts don't constrain the symbolic result). Confirm `PureFunctionUF.apply` returns the cached decl for both calls.
+4. **Soundness.** Re-confirm asserting `pure_sig(const_in) == const_out` only tightens (never excludes a real behavior), and that a wrong/duplicate emission can't cause a false verdict. Dedup correctness across runs (definition-string identity).
+5. **Determinism caveat.** If a whitelisted method were non-deterministic across runs, two runs could assert `f(x)==a` and `f(x)==b` with a!=b -> UNSAT (poisoning the whole testcase). The whitelist's determinism bar prevents this; flag that step 2 raises the stakes on it (a non-deterministic entry now corrupts solving, not just precision).
+6. **Testing.** Executor-side: assert the observed-pair constraint is emitted (in `symbolicTrace.getConstraints()`); the cross-run accumulation itself is explorer/L3. Right altitude?
+
 ## Round 5 — step-1 post-implementation review fixes (two real blockers)
 
 The first 3-review pass found step 1, as first implemented, did NOT actually deliver SAFE precision, for two reasons (both fixed):
