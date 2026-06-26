@@ -1,11 +1,13 @@
 package de.uzl.its.swat.symbolic.invoke;
 
 import ch.qos.logback.classic.Logger;
+import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
+import de.uzl.its.swat.symbolic.UFs.PureMethods;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -14,9 +16,12 @@ import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 
 import org.objectweb.asm.Type;
+import org.sosy_lab.java_smt.api.Formula;
+import org.sosy_lab.java_smt.api.FormulaType;
 
 public class InvocationHandler {
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
@@ -72,6 +77,8 @@ public class InvocationHandler {
                             symbolicTraceHandler);
         }
 
+        // G4: generic UF for a whitelisted pure return; stays null -> recovery concretizes (G2).
+        Formula pureUF = null;
         // When the method is not implemented and its not on the ignore list, we record it
         if (retValue instanceof PlaceHolder &&
                 !(IGNORED_INVOCATIONS.contains(owner + "/" + name)
@@ -104,8 +111,20 @@ public class InvocationHandler {
                     invokeId,
                     containsSymbolicArgument));
 
+            // G4: model a whitelisted pure, value-returning call as a generic UF over its inputs
+            // (instead of concretizing at recovery). Sound by construction: an axiom-free UF
+            // over-approximates any deterministic function. Only when an input is symbolic;
+            // `arguments` here already includes the receiver (prepended above).
+            if (containsSymbolicArgument && PureMethods.isWhitelisted(owner, name, desc)) {
+                pureUF = buildPureUF(owner, name, desc, arguments);
+            }
+
             if(
-                    (retValue.equals(PlaceHolder.instance) // To detect a missing implementation
+                    // G4: a successfully UF-modeled pure call loses no context - the whitelist
+                    // guarantees no side effects and the return is captured by the UF - so it must NOT
+                    // downgrade SAFE; only flag context loss when we did not model the call.
+                    pureUF == null
+                    && (retValue.equals(PlaceHolder.instance) // To detect a missing implementation
                     || retValue instanceof VoidValue vv && !vv.isSymbolic())  // To detect a missing implementation that returns nothing
                             && containsSymbolicArgument) {
                 // Too strict? What about void methods that always have return value PlaceHolder.instance?
@@ -115,17 +134,42 @@ public class InvocationHandler {
                         desc);
                 symbolicTraceHandler.recordSymbolicContextLoss();
             }
-
         }
 
-        // G2: tag an unmodeled placeholder return so visitGETVALUE_Object can concretize a value-typed
+        // G2/G4: tag an unmodeled placeholder return so visitGETVALUE_Object recovers a value-typed
         // result instead of identity-recovering it (which would re-bind the receiver's symbolic value,
-        // e.g. String.toLowerCase() returning `this`). This MUST stay after the context-loss check
-        // above, which compares retValue against PlaceHolder.instance by identity.
+        // e.g. String.toLowerCase() returning `this`). If a generic UF was built (G4), it rides along
+        // and the result is modeled as that UF; otherwise recovery concretizes (G2). This MUST stay
+        // after the context-loss check above, which compares retValue against PlaceHolder.instance by
+        // identity.
         if (retValue == PlaceHolder.instance) {
-            retValue = new PlaceHolder(PlaceHolder.ValueOrigin.UNMODELED_RETURN, null, null);
+            retValue = new PlaceHolder(PlaceHolder.ValueOrigin.UNMODELED_RETURN, pureUF);
         }
         return retValue;
+    }
+
+    /**
+     * Build the generic UF {@code pure_<sig>(inputs)} for a whitelisted pure call, or null to fall
+     * back to G2 concretization. v1 handles String returns only; the inputs (receiver + args) must
+     * all be value-typed so their formula fully captures the input (sound; no stateful receivers).
+     */
+    private static Formula buildPureUF(
+            String owner, String name, String desc, List<Value<?, ?>> inputs)
+            throws NoThreadContextException {
+        // v1 scope: only String-returning methods are materialized as UFs.
+        if (!"java.lang.String".equals(Type.getReturnType(desc).getClassName())) {
+            return null;
+        }
+        List<Formula> argFormulas = new ArrayList<>();
+        for (Value<?, ?> v : inputs) {
+            if (v.formula == null || !Util.isValueType(v.concrete)) {
+                return null; // non-value-typed or formula-less input: defer to G2 concretize.
+            }
+            argFormulas.add((Formula) v.formula);
+        }
+        return ThreadHandler.getUFHandler(Thread.currentThread().getId())
+                .getPureFunctionUF()
+                .apply(PureMethods.ufName(owner, name, desc), FormulaType.StringType, argFormulas);
     }
 
 }

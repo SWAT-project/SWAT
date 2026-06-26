@@ -1277,9 +1277,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 // already flagged in InvocationHandler. Non-value results fall through to G1 recovery.
                 if (placeHolder.origin == PlaceHolder.ValueOrigin.UNMODELED_RETURN
                         && Util.isValueType(inst.val)) {
-                    tmp = ValueFactory.createObjectValue(inst.val, inst.address);
                     Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
-                    shadowStateLogger.info("Concretized unmodeled value-typed result (no identity recovery): {}", tmp);
+                    if (placeHolder.recoveredFormula != null && inst.val instanceof String s) {
+                        // G4: a whitelisted pure method - model the result as the carried generic UF
+                        // over the inputs (concrete = observed). Preserves the relational fact
+                        // (equal inputs => equal outputs) instead of concretizing.
+                        SolverContext context = ThreadHandler.getSolverContext(currentThread().getId());
+                        tmp = new StringValue(context, s, (StringFormula) placeHolder.recoveredFormula, inst.address);
+                        shadowStateLogger.info("Modeled unmodeled pure result as a generic UF: {}", tmp);
+                    } else {
+                        tmp = ValueFactory.createObjectValue(inst.val, inst.address);
+                        shadowStateLogger.info("Concretized unmodeled value-typed result (no identity recovery): {}", tmp);
+                    }
                     stack.pushOperand(tmp);
                     return;
                 }

@@ -17,10 +17,16 @@ import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.Formula;
 import org.sosy_lab.java_smt.api.FormulaManager;
+import org.sosy_lab.java_smt.api.FunctionDeclaration;
+import org.sosy_lab.java_smt.api.FunctionDeclarationKind;
+import org.sosy_lab.java_smt.api.visitors.DefaultFormulaVisitor;
+import org.sosy_lab.java_smt.api.visitors.TraversalProcess;
 
 /**
  * Builds a data transfer object (DTO) from the {@link SymbolicTrace SuymbolicState} for
@@ -50,10 +56,14 @@ class DTOBuilder {
         ArrayList<InputDTO> inputs = new ArrayList<>();
         ArrayList<UFDTO> ufs = new ArrayList<>();
         ArrayList<BranchDTO> trace = new ArrayList<>();
+        // G4: the terms of the designated symbolic inputs, used to classify precision loss - a branch
+        // variable is "grounded" iff its term is one of these (exact + type-aware, no name pattern).
+        Set<Formula> inputTerms = new HashSet<>();
 
         FormulaManager fmgr =
                 ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
         for (InputElement ie : symbolicTrace.getInputs()) {
+            inputTerms.add((Formula) ie.getValue().formula);
             String lowerBound = String.valueOf(fmgr.dumpFormula(ie.getValue().getBounds(false)));
             String upperBound = String.valueOf(fmgr.dumpFormula(ie.getValue().getBounds(true)));
             InputDTO iDto =
@@ -74,39 +84,92 @@ class DTOBuilder {
         for (Element el : symbolicTrace.getTrace()) {
             if (el instanceof BranchElement be) {
                 String constraint;
+                boolean branchPrecisionLoss = false;
                 try {
                     BooleanFormula f = fmgr.simplify(be.getConstraint());
-                    // Todo or go back to extracting variables and UFs?
                     if(fmgr.getBooleanFormulaManager().isTrue(f) || fmgr.getBooleanFormulaManager().isFalse(f)){
                         constraint = "(assert true)";
                     } else {
                         constraint = String.valueOf(fmgr.dumpFormula(f));
-                        if (!fmgr.extractVariablesAndUFs(f).isEmpty() &&
-                            !fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(s -> s.matches("[A-Z].*_[0-9].*"))) {
-                            symbolicPrecisionLoss = true;
-                        }
+                        branchPrecisionLoss = isPrecisionLoss(f, fmgr, inputTerms);
                     }
-                    //fmgr.extractVariablesAndUFs(f).keySet().forEach(System.out::println);
-                    // assert fmgr.extractVariablesAndUFs(f).keySet().stream()
-                    //         .allMatch(s -> s.matches("[A-Z].*_[0-9].*")): "[SWAT] UF introduced in: " + constraint;
-
                 } catch (InterruptedException e) {
                     BooleanFormula f = be.getConstraint();
                     logger.warn("Error while simplifying formula", e);
                     constraint = String.valueOf(fmgr.dumpFormula(f));
-                    //fmgr.extractVariablesAndUFs(f).keySet().forEach(System.out::println);
-                    // assert fmgr.extractVariablesAndUFs(f).keySet().stream()
-                    //         .allMatch(s -> s.matches("[A-Z].*_[0-9].*")): "[SWAT] UF introduced in: " + constraint;
-                    if (!fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(s -> s.matches("[A-Z].*_[0-9].*"))) {
-                        symbolicPrecisionLoss = true;
-                    }
+                    branchPrecisionLoss = isPrecisionLoss(f, fmgr, inputTerms);
                 }
-                trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched()));
+                // Executor-side decision (unchanged): aggregate = OR of the per-branch flags. The
+                // per-branch flag also travels on the BranchDTO so a future explorer-side,
+                // CFG-reachability-aware precision-loss decision can take over with no trace change (G4).
+                symbolicPrecisionLoss |= branchPrecisionLoss;
+                trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), branchPrecisionLoss));
             } else if (el instanceof SpecialElement se) {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }
         }
         return new TraceDTO(inputs, trace, ufs, symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange());
+    }
+
+    /**
+     * A symbolic-variable name produced by the input-naming convention (primitive prefixes like
+     * {@code I_0}). Kept as a backstop for symbolic variables that are NOT designated inputs but are
+     * still grounded - notably values re-materialized by GETVALUE heap recovery (which call
+     * MAKE_SYMBOLIC with a fresh name, without re-registering an input). Dropping it would
+     * conservatively (but soundly) downgrade such cases; keeping it avoids that regression.
+     */
+    private static final String INPUT_VAR_PATTERN = "[A-Z].*_[0-9].*";
+
+    /**
+     * Whether a branch constraint loses symbolic precision, given the terms of the designated symbolic
+     * inputs. It does iff it contains a symbol that is neither (a) a grounded variable - a designated
+     * input (its term is in {@code inputTerms}) or a recovery-named variable matching
+     * {@link #INPUT_VAR_PATTERN} - nor (b) a whitelisted generic pure UF (name starts with
+     * {@code pure_}). Case (b) is precision-preserving: an axiom-free UF over real inputs is a sound
+     * over-approximation of any deterministic function, so UNSAT under the free UF implies UNSAT for
+     * the real function (SAFE stays sound). Bespoke (axiomatized) UFs and any non-grounded variable
+     * do lose precision.
+     *
+     * <p>The primary input check is exact term identity against the designated inputs (JavaSMT
+     * formulas have value-based equals/hashCode), so it is correct for String/array inputs as well as
+     * primitives - which a name pattern alone is not. Uses a {@link DefaultFormulaVisitor} so UF
+     * symbols and variables are distinguished; it descends into UF arguments so a {@code pure_} UF
+     * applied to a non-input variable still loses precision (the nested variable is caught).
+     */
+    public static boolean isPrecisionLoss(
+            BooleanFormula f, FormulaManager fmgr, Set<Formula> inputTerms) {
+        AtomicBoolean lossy = new AtomicBoolean(false);
+        fmgr.visitRecursively(
+                f,
+                new DefaultFormulaVisitor<TraversalProcess>() {
+                    @Override
+                    protected TraversalProcess visitDefault(Formula formula) {
+                        return TraversalProcess.CONTINUE;
+                    }
+
+                    @Override
+                    public TraversalProcess visitFreeVariable(Formula formula, String name) {
+                        if (!inputTerms.contains(formula) && !name.matches(INPUT_VAR_PATTERN)) {
+                            lossy.set(true);
+                            return TraversalProcess.ABORT;
+                        }
+                        return TraversalProcess.CONTINUE;
+                    }
+
+                    @Override
+                    public TraversalProcess visitFunction(
+                            Formula formula, List<Formula> args, FunctionDeclaration<?> decl) {
+                        // Descend into args regardless so nested non-input variables are caught; only a
+                        // bespoke (non-pure_) UF taints the branch by itself.
+                        if (decl.getKind() == FunctionDeclarationKind.UF
+                                && !decl.getName().startsWith("pure_")) {
+                            lossy.set(true);
+                            return TraversalProcess.ABORT;
+                        }
+                        return TraversalProcess.CONTINUE;
+                    }
+                });
+        return lossy.get();
     }
 
     protected static String encodeCoverage(InstrCoverage instrCoverage) throws JsonProcessingException {

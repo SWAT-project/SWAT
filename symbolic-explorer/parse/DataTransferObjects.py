@@ -10,6 +10,10 @@ class TraceItem(BaseModel):
     branched: bool
     type: str
     inst: Optional[str] = None
+    # G4: executor's per-branch precision-loss verdict. Parsed for forward compatibility; the current
+    # verdict still uses the aggregate symbolicPrecisionLoss. A future explorer-side, CFG-reachability
+    # -aware decision keys this by iid to a CFG node. Default keeps older traces parseable.
+    precisionLoss: bool = False
 class UFItem(BaseModel):
     definition: str 
 

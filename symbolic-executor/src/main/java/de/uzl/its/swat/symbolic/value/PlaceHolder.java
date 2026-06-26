@@ -8,6 +8,7 @@ import de.uzl.its.swat.symbolic.instruction.Instruction;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.LongValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import java.util.Map;
+import org.sosy_lab.java_smt.api.Formula;
 
 /** Author: Koushik Sen (ksen@cs.berkeley.edu) Date: 6/17/12 Time: 6:05 PM */
 public class PlaceHolder extends Value {
@@ -44,6 +45,11 @@ public class PlaceHolder extends Value {
     public final ValueOrigin origin;
     public final Instruction inst;
     public final ObjectValue<?, ?> referenceValue;
+    /**
+     * For an UNMODELED_RETURN placeholder of a whitelisted pure method (G4): the generic UF formula
+     * {@code pure_<sig>(inputs)} modeling the result. Null otherwise (then recovery concretizes, G2).
+     */
+    public final Formula recoveredFormula;
     public static final PlaceHolder instance = new PlaceHolder(false);
     public static final PlaceHolder symbolicInstance = new PlaceHolder(true);
 
@@ -52,6 +58,7 @@ public class PlaceHolder extends Value {
         this.origin = ValueOrigin.UNSPECIFIED;
         this.inst = null;
         this.referenceValue = null;
+        this.recoveredFormula = null;
     }
 
     public PlaceHolder(ValueOrigin origin, Instruction inst, ObjectValue<?, ?> referenceValue) {
@@ -59,6 +66,7 @@ public class PlaceHolder extends Value {
         this.isSymbolic = false;
         this.inst = inst;
         this.referenceValue = referenceValue;
+        this.recoveredFormula = null;
     }
 
     public PlaceHolder(boolean isSymbolic, ValueOrigin origin) {
@@ -66,6 +74,16 @@ public class PlaceHolder extends Value {
         this.origin = origin;
         this.inst = null;
         this.referenceValue = null;
+        this.recoveredFormula = null;
+    }
+
+    /** UNMODELED_RETURN placeholder carrying a generic-UF formula for a whitelisted pure method (G4). */
+    public PlaceHolder(ValueOrigin origin, Formula recoveredFormula) {
+        this.origin = origin;
+        this.isSymbolic = false;
+        this.inst = null;
+        this.referenceValue = null;
+        this.recoveredFormula = recoveredFormula;
     }
 
     public ObjectValue<?, ?> asObjectValue() throws ValueConversionException {
