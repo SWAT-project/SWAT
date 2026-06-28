@@ -391,6 +391,8 @@ class Z3Handler:
         for i, path_constraint_str in enumerate(path_constraints):
             path_cached = cache.get_smt_constraint(path_constraint_str, source=f"path_{i}")
             all_exprs.extend(path_cached['exprs'])
+        
+        # logger.debug(f"[SOLVER] all_exprs: {all_exprs}")
 
 
         # Create solver with shared context from cache

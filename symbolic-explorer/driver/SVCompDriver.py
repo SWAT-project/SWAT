@@ -222,6 +222,9 @@ class SVCompDriver:
             logger.info(f'[STATUS] {status}')
             next_step: Action = self.determine_next_step(status, output)
 
+            # Visualize DB tree
+            # print("Plotting DB Tree...", flush=True)
+            # Database.instance().get_tree(0).plot_tree(round_idx)
             round_idx += 1
 
             if next_step == Action.REPORTVERDICT:
