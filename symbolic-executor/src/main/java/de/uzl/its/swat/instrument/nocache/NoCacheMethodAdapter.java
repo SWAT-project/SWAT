@@ -137,17 +137,27 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
         // For all other method calls, proceed normally.
         mv.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
 
-        // G3: output-boundary de-interning (v1: String). De-intern a value-typed return from an
-        // UN-instrumented callee - the boundary where interned/shared values (literals, constants,
-        // this-returns, interned objects) enter shadow space. A fresh `new String(result)` gives the
-        // produced value a distinct identity, so the reference-keyed heap stays sound for value types.
-        // Null-guarded (`new String((String) null)` would NPE). Skip the SWAT / sv-benchmarks
-        // intrinsics (the symbolic-input designation / witness seam). Gated on the existing de-intern
-        // switch. (Boxed types are G3-A2.)
+        // G3: output-boundary de-interning. De-intern a value-typed return from an UN-instrumented
+        // callee - the boundary where interned/shared values (literals, constants, this-returns,
+        // cached boxes) enter shadow space. A fresh copy gives the produced value a distinct identity,
+        // so the reference-keyed heap stays sound for value types. Skip the SWAT / sv-benchmarks
+        // intrinsics (the symbolic-input designation / witness seam). Gated on the de-intern switch.
         if (Config.instance().isUseStringInterning()
-                && "Ljava/lang/String;".equals(Type.getReturnType(descriptor).getDescriptor())
                 && !Util.shouldInstrument(owner)
                 && !isDeInternSkippedOwner(owner)) {
+            deInternReturn(Type.getReturnType(descriptor));
+        }
+    }
+
+    /**
+     * Emit a fresh, distinctly-identified copy of the value just returned (now on the stack), if its
+     * type is an interning value type. Null-guarded - the wrap would NPE on a null return. String and
+     * the six cached boxed wrappers are covered; Float/Double are intentionally excluded (uncached,
+     * reference equality - see {@link Util#isDeInternedClass(Object)}).
+     */
+    private void deInternReturn(Type returnType) {
+        if ("Ljava/lang/String;".equals(returnType.getDescriptor())) {
+            // String has a copy constructor: reorder the on-stack reference into new String(ref).
             Label done = new Label();
             mv.visitInsn(Opcodes.DUP);
             mv.visitJumpInsn(Opcodes.IFNULL, done); // null result: leave it, skip the wrap
@@ -157,6 +167,63 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/String", "<init>",
                     "(Ljava/lang/String;)V", false);
             mv.visitLabel(done);
+            return;
+        }
+        Boxed boxed = Boxed.forDescriptor(returnType.getDescriptor());
+        if (boxed != null) {
+            // Boxed wrappers have no copy constructor: unbox to the primitive, then rebox into a fresh
+            // instance (same shape as the valueOf de-interning above). A local holds the primitive
+            // across the NEW (required for the category-2 long; harmless for the others).
+            Label done = new Label();
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitJumpInsn(Opcodes.IFNULL, done); // null result: leave it, skip the wrap
+            mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, boxed.owner, boxed.unboxMethod,
+                    boxed.unboxDescriptor, false);
+            int local = newLocal(boxed.primType);
+            mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ISTORE), local);
+            mv.visitTypeInsn(Opcodes.NEW, boxed.owner);
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ILOAD), local);
+            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, boxed.owner, "<init>",
+                    boxed.ctorDescriptor, false);
+            mv.visitLabel(done);
+        }
+    }
+
+    /** The six cached boxed wrappers G3 de-interns, with their unbox method and primitive constructor. */
+    private enum Boxed {
+        INTEGER("java/lang/Integer", "intValue", "()I", "(I)V", Type.INT_TYPE),
+        LONG("java/lang/Long", "longValue", "()J", "(J)V", Type.LONG_TYPE),
+        SHORT("java/lang/Short", "shortValue", "()S", "(S)V", Type.INT_TYPE),
+        BYTE("java/lang/Byte", "byteValue", "()B", "(B)V", Type.INT_TYPE),
+        CHARACTER("java/lang/Character", "charValue", "()C", "(C)V", Type.INT_TYPE),
+        BOOLEAN("java/lang/Boolean", "booleanValue", "()Z", "(Z)V", Type.INT_TYPE);
+
+        final String owner;
+        final String unboxMethod;
+        final String unboxDescriptor;
+        final String ctorDescriptor;
+        final Type primType;
+
+        Boxed(String owner, String unboxMethod, String unboxDescriptor, String ctorDescriptor,
+                Type primType) {
+            this.owner = owner;
+            this.unboxMethod = unboxMethod;
+            this.unboxDescriptor = unboxDescriptor;
+            this.ctorDescriptor = ctorDescriptor;
+            this.primType = primType;
+        }
+
+        static Boxed forDescriptor(String descriptor) {
+            return switch (descriptor) {
+                case "Ljava/lang/Integer;" -> INTEGER;
+                case "Ljava/lang/Long;" -> LONG;
+                case "Ljava/lang/Short;" -> SHORT;
+                case "Ljava/lang/Byte;" -> BYTE;
+                case "Ljava/lang/Character;" -> CHARACTER;
+                case "Ljava/lang/Boolean;" -> BOOLEAN;
+                default -> null;
+            };
         }
     }
 

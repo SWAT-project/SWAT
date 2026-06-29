@@ -1,6 +1,16 @@
 # G3 — Output-boundary de-interning: Problem & Proposed Solution
 
-Phase G3. Draft for review (not yet implemented). Builds on G1 (`67505c4`) + G2 (`e84b46e`) + G_oob (`5b35699`) + G4 (`48763bc`/`6d39904`/`58c3932`).
+Phase G3. Builds on G1 (`67505c4`) + G2 (`e84b46e`) + G_oob (`5b35699`) + G4 (`48763bc`/`6d39904`/`58c3932`).
+
+## Implementation status
+
+- **A1 (String): committed `994e642`.** Boundary de-intern of un-instrumented String returns + register-only-non-constant at the String recovery path. 2 design-audit rounds + 3 post-impl reviews.
+- **A2 (boxed): implemented (this branch).** Extends de-interning to the six cached boxed wrappers in `Util.deInternedClasses` (Integer/Long/Short/Byte/Character/Boolean; **not** Float/Double — uncached, reference-equality). Two parts:
+  - *Bytecode* (`NoCacheMethodAdapter.deInternReturn` + the `Boxed` table): boxed wrappers have no copy constructor, so the return is **unbox+rebox**ed (`new Integer(result.intValue())`, etc.), null-guarded. A local holds the unboxed primitive across the `NEW` — required for `long` (category-2, where `DUP_X1`/`SWAP` can't reorder a wide value) and uniform via `Type.getOpcode(ISTORE/ILOAD)`. Mirrors the existing `valueOf(primitive)` rewrites.
+  - *Executor* (`visitGETVALUE_Object` non-String branch + `isConstantDeInternedValue`): register-only-non-constant, **scoped to `Util.isDeInternedClass(inst.val)`** so it touches only the de-interned boxed types. Mutable objects and Float/Double on this shared recovery path keep unconditional registration. A boxed wrapper carries its formula in the inner `BoxedValue.getVal()`, not the wrapper's own field — the predicate reads the right one.
+  - *Tests*: `OutputDeInternSpec` (L1) — symbolic boxed → registered, constant boxed → not, **mutable object → always registered** (shared-path regression guard); `BoxedDeInternAgentSpec` (L2) — Integer (cat-1) + Long (cat-2 wide) returns load, verify, and run under the real agent (`AgentRun` asserts `exit==0`, so a malformed wrap would fail). 48 heap+processor + 5 L2 green.
+  - *Note on the round-trip win*: boxed UF materialization is not yet active (the whitelist survey's "Future tier"), so today boxed shadows reaching recovery are constants or symbolic-input-derived; the soundness win (fresh identity → no aliasing collision) holds regardless, and register-only-non-constant is forward-ready for when boxed UFs land.
+- **B (equality review): pending** — review `refEquals` / `==`→value-equality + the `reference_semantic_change` flag asymmetry for the de-interned cases.
 
 ## Problem (recap)
 

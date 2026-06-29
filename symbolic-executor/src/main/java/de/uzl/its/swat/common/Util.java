@@ -430,6 +430,16 @@ public class Util {
     }
 
     /**
+     * Whether {@code o}'s runtime class is one G3 de-interns: String and the cached boxed wrappers
+     * (Boolean/Byte/Short/Character/Integer/Long), but NOT the uncached Float/Double (which use
+     * reference equality). Used by recovery to scope register-only-non-constant to exactly the
+     * de-interned value types, leaving mutable objects and Float/Double unconditionally registered.
+     */
+    public static boolean isDeInternedClass(Object o) {
+        return o != null && isDeInternedClass(o.getClass());
+    }
+
+    /**
      * Whether a concrete object is an immutable value type (String / boxed primitive).
      * Used by recovery to concretize an unmodeled value-returning method's result instead of
      * identity-recovering it (G2). Independent of {@link #deInternedClasses} (the de-intern /

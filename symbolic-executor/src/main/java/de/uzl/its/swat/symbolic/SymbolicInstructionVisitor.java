@@ -1378,7 +1378,13 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
                     } else {
                         (peek.asObjectValue()).setAddress(inst.address);
-                        stack.putToHeap(inst.val, peek);
+                        // G3-A2 register-only-non-constant for de-interned boxed value types (same
+                        // policy as the String branch above): a constant boxed value is reconstructible
+                        // from inst.val, so skip registering it; symbolic boxed values, mutable objects,
+                        // and uncached Float/Double keep unconditional registration.
+                        if (!isConstantDeInternedValue(inst.val, peek)) {
+                            stack.putToHeap(inst.val, peek);
+                        }
                     }
                 } else {
                     // Need to obtain the Object address
@@ -1451,6 +1457,28 @@ public class SymbolicInstructionVisitor implements IVisitor {
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
+    }
+
+    /**
+     * Whether {@code ref} is a de-interned value type (String / cached boxed wrapper) whose shadow is a
+     * pure constant - i.e. carries no symbolic variable or UF. Such a value is reconstructible from the
+     * observed concrete on round-trip, so G3 (register-only-non-constant) skips heap-registering it to
+     * bound the heap; only the symbolic/UF shadows that cannot be reconstructed are registered. A boxed
+     * value carries its formula in the inner {@link BoxedValue#getVal()}, not the wrapper's own field.
+     */
+    private boolean isConstantDeInternedValue(Object ref, Value<?, ?> shadow)
+            throws NoThreadContextException {
+        if (!Util.isDeInternedClass(ref)) {
+            return false;
+        }
+        Formula formula = (shadow instanceof BoxedValue<?> boxed)
+                ? (Formula) boxed.getVal().formula
+                : (Formula) shadow.formula;
+        if (formula == null) {
+            return true;
+        }
+        FormulaManager fmgr = ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+        return fmgr.extractVariablesAndUFs(formula).isEmpty();
     }
 
     /**
