@@ -1356,14 +1356,24 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 "Concrete value of the object does not match the value in the stack: {} | {}",
                                 inst.val, peek.concrete);
                         if(peek.formula == null) {
-                            // TODO This needs to be cleaned up!
+                            // A constant String: reconstruct from the observed concrete. G3
+                            // register-only-non-constant: a constant is recoverable from inst.val on
+                            // round-trip, so it is NOT heap-registered (registering it only grows the
+                            // self-pinning heap leak - a String is its own weak key).
                             stack.popOperand();
                             StringValue val = ValueFactory.createStringValue(s, inst.address);
                             stack.pushOperand(val);
-                            stack.putToHeap(inst.val, val);
                         } else {
                             (peek.asObjectValue()).setAddress(inst.address);
-                            stack.putToHeap(inst.val, peek);
+                            // G3 register-only-non-constant: register iff the shadow carries symbolic
+                            // content (a variable/UF) - those can't be reconstructed from the concrete
+                            // and must round-trip via the heap (e.g. a whitelisted pure method's UF);
+                            // pure constants are skipped to bound the leak.
+                            FormulaManager fmgr =
+                                    ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+                            if (!fmgr.extractVariablesAndUFs((Formula) peek.formula).isEmpty()) {
+                                stack.putToHeap(inst.val, peek);
+                            }
                         }
 
                     } else {

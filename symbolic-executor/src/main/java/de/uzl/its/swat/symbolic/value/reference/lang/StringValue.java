@@ -219,8 +219,9 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             this.concrete = s.concrete;
             this.formula = s.formula;
         }
-        // Mark this string as user-de-interned since it was created via new String()
-        // in user code (as opposed to SWAT's NoCacheMethodAdapter de-interning)
+        // Mark this string as de-interned: it was created via a `new String(...)` constructor, which
+        // gives it a fresh identity. This covers both user `new String()` and SWAT's own de-interning
+        // (NoCacheMethodAdapter: LDC literals and G3 output-boundary return wrapping).
         this.userDeInterned = true;
         return VoidValue.instance;
     }

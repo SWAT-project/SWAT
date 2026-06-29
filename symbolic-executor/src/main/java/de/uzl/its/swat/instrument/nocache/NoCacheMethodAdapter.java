@@ -1,5 +1,6 @@
 package de.uzl.its.swat.instrument.nocache;
 
+import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.config.Config;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
@@ -135,6 +136,39 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
         }
         // For all other method calls, proceed normally.
         mv.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+
+        // G3: output-boundary de-interning (v1: String). De-intern a value-typed return from an
+        // UN-instrumented callee - the boundary where interned/shared values (literals, constants,
+        // this-returns, interned objects) enter shadow space. A fresh `new String(result)` gives the
+        // produced value a distinct identity, so the reference-keyed heap stays sound for value types.
+        // Null-guarded (`new String((String) null)` would NPE). Skip the SWAT / sv-benchmarks
+        // intrinsics (the symbolic-input designation / witness seam). Gated on the existing de-intern
+        // switch. (Boxed types are G3-A2.)
+        if (Config.instance().isUseStringInterning()
+                && "Ljava/lang/String;".equals(Type.getReturnType(descriptor).getDescriptor())
+                && !Util.shouldInstrument(owner)
+                && !isDeInternSkippedOwner(owner)) {
+            Label done = new Label();
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitJumpInsn(Opcodes.IFNULL, done); // null result: leave it, skip the wrap
+            mv.visitTypeInsn(Opcodes.NEW, "java/lang/String");
+            mv.visitInsn(Opcodes.DUP_X1);
+            mv.visitInsn(Opcodes.SWAP);
+            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/String", "<init>",
+                    "(Ljava/lang/String;)V", false);
+            mv.visitLabel(done);
+        }
+    }
+
+    /**
+     * Owners whose value-typed returns must NOT be de-interned even though they are un-instrumented:
+     * the symbolic-input designation / witness intrinsics. {@code shouldInstrument} already returns
+     * false for these (they're excluded), so this explicit check is the load-bearing exclusion, not a
+     * delegation to it.
+     */
+    private static boolean isDeInternSkippedOwner(String owner) {
+        return owner.startsWith("de/uzl/its/swat/")
+                || owner.equals("org/sosy_lab/sv_benchmarks/Verifier");
     }
 
     /*
