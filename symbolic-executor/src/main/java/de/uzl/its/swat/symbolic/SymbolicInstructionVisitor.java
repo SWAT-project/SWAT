@@ -3653,9 +3653,22 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 } else {
                     stack.popOperand();
                 }
-                Value<?, ?> v = ValueFactory.createNumericalValue(type, inst.v);
-                if (isSymbolic) {
-                    v.MAKE_SYMBOLIC();
+                Value<?, ?> v;
+                if (placeHolder.origin == PlaceHolder.ValueOrigin.UNMODELED_RETURN
+                        && placeHolder.recoveredFormula != null) {
+                    // G4: a whitelisted pure method with a primitive return - model the result as the
+                    // carried generic UF over the inputs (concrete = observed), preserving the relational
+                    // fact (equal inputs => equal outputs) instead of concretizing. Mirrors the String
+                    // path in visitGETVALUE_Object. No MAKE_SYMBOLIC: the UF formula already carries the
+                    // symbolic inputs (isSymbolic() is true iff the formula has free variables).
+                    v = ValueFactory.createNumericalValue(type, inst.v, placeHolder.recoveredFormula);
+                    ThreadHandler.getShadowStateLogger(currentThread().getId())
+                            .info("Modeled unmodeled pure primitive result as a generic UF: {}", v);
+                } else {
+                    v = ValueFactory.createNumericalValue(type, inst.v);
+                    if (isSymbolic) {
+                        v.MAKE_SYMBOLIC();
+                    }
                 }
 
                 if (cat2) {

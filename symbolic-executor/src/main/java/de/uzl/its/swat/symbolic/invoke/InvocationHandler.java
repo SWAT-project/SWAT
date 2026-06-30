@@ -166,17 +166,20 @@ public class InvocationHandler {
 
     /**
      * Build the generic UF {@code pure_<sig>(inputs)} for a whitelisted pure call, or null to fall
-     * back to G2 concretization. v1 handles String returns only; the inputs (receiver + args) must
-     * all be value-typed so their formula fully captures the input (sound; no stateful receivers).
-     * Also builds the same UF applied to the CONSTANT inputs (step 2's observed-pair application),
-     * using the SAME cached declaration; that is null unless every input is a String (v1: only String
-     * concretes can be turned into constant formulas here).
+     * back to G2 concretization. Handles String and all primitive returns (the return sort is
+     * {@link #pureUFReturnType}); the inputs (receiver + args) must all be value-typed so their
+     * formula fully captures the input (sound; no stateful receivers). Also builds the same UF applied
+     * to the CONSTANT inputs (step 2's observed-pair application) using the SAME cached declaration;
+     * that is null unless the return is a String and every input is a String (the only case whose
+     * recovery side asserts the observed pair, and where String concretes become constant formulas).
      */
     private static PureUFModel buildPureUF(
             String owner, String name, String desc, List<Value<?, ?>> inputs)
             throws NoThreadContextException {
-        // v1 scope: only String-returning methods are materialized as UFs.
-        if (!"java.lang.String".equals(Type.getReturnType(desc).getClassName())) {
+        // The UF's return sort is the method's return type - String or any primitive. Unsupported
+        // returns (void, arrays, non-String objects) yield null and fall back to G2 concretization.
+        FormulaType<?> returnType = pureUFReturnType(desc);
+        if (returnType == null) {
             return null;
         }
         StringFormulaManager smgr =
@@ -199,11 +202,45 @@ public class InvocationHandler {
         }
         PureFunctionUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getPureFunctionUF();
         String ufName = PureMethods.ufName(owner, name, desc);
-        Formula result = uf.apply(ufName, FormulaType.StringType, symbolicArgs);
-        // Same cached declaration applied to the constant inputs, so the observed pair constrains the
-        // very symbol used in `result`.
-        Formula observed = observable ? uf.apply(ufName, FormulaType.StringType, constArgs) : null;
+        Formula result = uf.apply(ufName, returnType, symbolicArgs);
+        // G4 step 2 observed pair: built only for String returns, the sole case whose recovery side
+        // (visitGETVALUE_Object) asserts the (constant inputs -> observed output) equality. The same
+        // cached declaration is applied to the constant inputs so the pair constrains the very symbol
+        // used in `result`. Primitive observed pairs are future work (with the explorer step-2 side).
+        Formula observed = (observable && FormulaType.StringType.equals(returnType))
+                ? uf.apply(ufName, returnType, constArgs) : null;
         return new PureUFModel(result, observed);
+    }
+
+    /**
+     * The SMT return sort for a whitelisted pure method, matching the shadow value sorts exactly:
+     * String; boolean; bitvectors of width 8/16/16/32/64 for byte/short/char/int/long; and
+     * floating-point (single for float, double for double). Returns null for unsupported returns
+     * (void, arrays, non-String objects), which fall back to G2 concretization.
+     */
+    private static FormulaType<?> pureUFReturnType(String desc) {
+        Type ret = Type.getReturnType(desc);
+        switch (ret.getSort()) {
+            case Type.BOOLEAN:
+                return FormulaType.BooleanType;
+            case Type.BYTE:
+                return FormulaType.getBitvectorTypeWithSize(8);
+            case Type.SHORT:
+            case Type.CHAR:
+                return FormulaType.getBitvectorTypeWithSize(16);
+            case Type.INT:
+                return FormulaType.getBitvectorTypeWithSize(32);
+            case Type.LONG:
+                return FormulaType.getBitvectorTypeWithSize(64);
+            case Type.FLOAT:
+                return FormulaType.getSinglePrecisionFloatingPointType();
+            case Type.DOUBLE:
+                return FormulaType.getDoublePrecisionFloatingPointType();
+            case Type.OBJECT:
+                return "java.lang.String".equals(ret.getClassName()) ? FormulaType.StringType : null;
+            default:
+                return null; // void, array, other reference types
+        }
     }
 
 }

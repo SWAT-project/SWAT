@@ -36,8 +36,10 @@ public class PlaceHolder extends Value {
         DATABASE,
         GETFIELD,
         GETSTATIC,
-        // The return value of an unmodeled method (tagged in InvocationHandler). At recovery, a
-        // value-typed result with this origin is concretized rather than identity-recovered (G2).
+        // The return value of an unmodeled method (tagged in InvocationHandler). At recovery, a result
+        // with this origin is NOT identity-recovered (which would re-bind the receiver). If it carries a
+        // pure_<sig> UF (recoveredFormula, whitelisted pure method - String or primitive) it is modeled
+        // as that UF (G4); otherwise a value-typed result is concretized (G2).
         UNMODELED_RETURN
     }
 

@@ -13,22 +13,27 @@ import org.objectweb.asm.Type;
  * <p>Membership is the soundness precondition: only genuinely pure + deterministic methods may
  * appear here. Exclude locale-dependent (no-arg {@code toLowerCase}/{@code toUpperCase}),
  * environment/property readers, argument-mutating, identity/{@code intern}, and nondeterministic
- * (random/time) methods. v1 starter set is tiny and hand-audited (String returns only); it is later
- * scaled by a per-class survey of {@code java.lang}.
+ * (random/time) methods. The starter set is tiny and hand-audited; it is later scaled by a per-class
+ * survey of {@code java.lang}. String and all primitive return types are supported (the UF's return
+ * sort is the method's return type); the method must also be UNMODELED by SWAT, else the UF never
+ * fires.
  */
 public final class PureMethods {
     private PureMethods() {}
 
     /**
      * Keys are {@code owner + "/" + name + desc} (descriptor included to disambiguate overloads).
-     * Entries are pure, deterministic, side-effect-free, String-RETURNING, and UNMODELED by SWAT (so
-     * the generic UF actually fires). Curated from the java.lang purity survey
+     * Entries are pure, deterministic, side-effect-free, and UNMODELED by SWAT (so the generic UF
+     * actually fires). Curated from the java.lang purity survey
      * (docs/heap-redesign-g4-whitelist-survey.md); the boxed types' toString-family is intentionally
-     * absent (already modeled -> a UF would never fire), and cross-class static String methods
-     * (Float/Double/Character.toString) are a documented backlog pending static-invoke test support.
+     * absent (already modeled -> a UF would never fire). String and primitive returns are both
+     * supported; the primitive block is the hand-audited starter set that doubles as the regression
+     * set for the primitive-return engine support (each is verified absent from its Invocation
+     * handler, so the UF fires). The broad agent-driven survey scales this set later.
      */
     private static final Set<String> WHITELIST =
             Set.of(
+                    // String returns (instance methods on String):
                     "java/lang/String/trim()Ljava/lang/String;",
                     "java/lang/String/strip()Ljava/lang/String;",
                     "java/lang/String/stripLeading()Ljava/lang/String;",
@@ -37,7 +42,15 @@ public final class PureMethods {
                     "java/lang/String/substring(II)Ljava/lang/String;",
                     "java/lang/String/repeat(I)Ljava/lang/String;",
                     "java/lang/String/replace(CC)Ljava/lang/String;",
-                    "java/lang/String/indent(I)Ljava/lang/String;");
+                    "java/lang/String/indent(I)Ljava/lang/String;",
+                    // Primitive returns (static, value-typed inputs; all unmodeled + side-effect-free):
+                    "java/lang/Math/floorDiv(II)I",
+                    "java/lang/Math/floorMod(II)I",
+                    "java/lang/Math/floorDiv(JJ)J",
+                    "java/lang/Math/cbrt(D)D",
+                    "java/lang/Float/intBitsToFloat(I)F",
+                    "java/lang/Character/toLowerCase(C)C",
+                    "java/lang/Character/isDigit(C)Z");
 
     public static boolean isWhitelisted(String owner, String name, String desc) {
         return WHITELIST.contains(owner + "/" + name + desc);
