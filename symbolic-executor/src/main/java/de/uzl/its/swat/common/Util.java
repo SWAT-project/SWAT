@@ -238,9 +238,8 @@ public class Util {
             return; // array class, skip check for now
         }
         SWATAssert.check(
-                !className.contains(";") && !className.contains("(") && !className.contains(")")
-                        && !className.startsWith("L"),
-                "Class name '{}' should not contain ';' or brackets", className);
+                !className.contains(";") && !className.contains("(") && !className.contains(")"),
+                "Class name '{}' should not be a type descriptor (contains ';' or brackets)", className);
     }
 
     /**
