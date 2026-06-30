@@ -306,3 +306,153 @@ An adversarial review (verified against code) recommends **not doing G3 now**:
   String only (matches G2/G4 v1 scope).
 - **Testing altitude.** D-1/D-3 likely L2 (real instrumentation + real identities); D-2 is L3 (verdict
   with/without). What's feasible?
+
+---
+
+# G3-B — Exact reference-equality via provenance (replaces the conservative flag)
+
+Phase G3-B. Design for review (after A1 `994e642` + A2 `791ce41`). Converged with the user before audit.
+
+## Problem
+De-interning gives value-type objects fresh identities, which breaks reference-`==`. The current mitigation
+(pre-G3) rewrites every `==`/`!=` to `UtilInstrumented.refEquals`, which uses **value-equality** for
+de-interned classes, and a flag (`recordReferenceSemanticChange`) that downgrades VIOLATION->UNKNOWN when
+value-equality might diverge from real reference-`==`. `UtilInstrumented` is instrumented, so the `==` path's
+inner `Objects.equals` converges at `ObjectsInvocation`, which is where the flag lives. The flag is sound but:
+1. **String-only** (`instanceof StringValue`) -> A2's de-interned **boxed** `==` divergence is unflagged
+   (e.g. `Integer.valueOf(200) == Integer.valueOf(200)`: real false, de-intern+value-eq true) -> a real
+   soundness gap.
+2. **Over-fires** -> it flags comparisons that do NOT actually diverge (operands sharing the same original but
+   de-interned to distinct copies: `"x" == "x"`, a this-return `r == s`, and any `s == "literal"`), producing
+   spurious UNKNOWN and **losing SAFEs the user confirms cost us**.
+
+Root cause: `==` is **reference identity** (a concrete, per-path fact), but de-intern + value-equality models
+it as a **value comparison**, which diverges exactly for equal-value / distinct-original-identity operands.
+
+## Design — model `==` by ORIGINAL identity (exact), drop the flag
+1. **Stop de-interning constants.** `NoCacheMethodAdapter.visitLdcInsn` no longer de-interns String literals.
+   Literals are constants -> A1 `register-only-non-constant` never heap-registers them -> they cause no
+   reference-key collision -> they never needed distinct identities. Left interned, their `==` is real
+   reference identity (exact, no map). This removes the largest source of `==` divergence (`"x"=="x"`,
+   `s=="literal"`) for free and shrinks the provenance map to the genuinely-needed residual.
+2. **Provenance map** for the remaining de-interned objects (non-constant un-instrumented returns -
+   this-returns etc.): a process-wide identity-keyed, weak-keyed map `copy -> root(original)` (guava
+   `MapMaker().weakKeys()`, the same primitive `JVMHeap` uses), populated at the de-intern step
+   (`NoCacheMethodAdapter` records `(copy, original)` when wrapping a return; `root` collapses chains so a
+   copy-of-a-copy resolves to the ultimate original).
+3. **`refEquals`** (concrete branch decider): `shouldUseValueEquality(a,b) ? root(a) == root(b) : a == b` -
+   **reference on the originals**, NOT `Objects.equals`. Exact original `==`.
+4. **Symbolic `==` becomes a per-path concrete constant.** Reference identity is not solver-controllable
+   (distinct allocations are never `==` regardless of input values; value comparison is `.equals`), so the
+   `refEquals` result is concretized. **Delete** `recordReferenceSemanticChange` and the `instanceof
+   StringValue` divergence block in `ObjectsInvocation`. Explicit `Objects.equals` / instance `.equals` stay
+   value-equality (correct - those are value comparisons and are de-intern-invariant).
+
+Result: `==` exact in every case (interned literal, this-return, distinct objects, alias, boxed cache) for
+String AND boxed; no flag; no spurious UNKNOWN.
+
+## Why each case is now exact
+| Operands | real `==` | provenance model | how |
+|---|---|---|---|
+| alias (`b = a`) | true | true | same object / same root |
+| different values | false | false | distinct roots |
+| two interned literals `"x"`,`"x"` | true | true | not de-interned -> same interned object |
+| `s == "literal"` (input vs literal) | false | false | distinct roots (s not de-interned, literal interned) |
+| `new String("x") == "x"` | false | false | distinct roots |
+| this-return `s.toLowerCase() == s` | true | true | copy's root **is** s |
+| boxed `valueOf(200) == valueOf(200)` | false | false | distinct roots |
+
+## Open questions for the auditors
+- **Soundness:** does provenance + concretized `==` reproduce real reference-`==` in EVERY case above (and any
+  missed), for String AND boxed? Does concretizing lose any constraint the solver actually needs (claim: no -
+  identity is concrete/per-path)? Any path where a wrong verdict could result?
+- **Literal-handling safety:** is leaving literals interned safe - does anything rely on the original LDC
+  de-intern (why was it there)? Interaction with `register-only-non-constant`, the heap, G2 concretize, G4 UFs?
+  Do literals ever need distinct identities for a reason we're missing?
+- **Feasibility & cost:** the de-intern bytecode restructure to keep the original accessible (String: an extra
+  DUP; boxed: reuse the local); the map reachable consistently from concrete `refEquals` (raw object) and the
+  symbolic side (`shadow.concrete`); weak-key GC behavior; per-`==` lookup cost; the interaction with
+  `UtilInstrumented` being instrumented (do we still need that special-case once `refEquals` is reference-only
+  and concretized?).
+- **Scope:** does the de-intern step record provenance for ALL de-interned returns (incl. constant returns it
+  can't distinguish at bytecode), and does that matter for map size / correctness?
+
+---
+
+## G3-B REVISED (after round-1 of 3 design auditors + a characterization experiment)
+
+Round-1 outcome: the design is sound + buildable but the framing had two errors, one "blocker" was a mis-analysis, and a characterization experiment changed the mechanism. Revised design below; this is what round-2 reviews.
+
+### Experiment (settles the auditor contradiction)
+Ran a symbolic `s`, `if (s == "abc")` under the real agent. Result: branch constraint = `(assert true)` (NOT a flippable value-equality constraint), AND `symbolicContextLoss=true` AND `referenceSemanticChange=true`. Conclusions:
+- `==` is **concretized** today (the value-equality computed inside `refEquals`'s instrumented body is discarded; the call's boolean is concretized). The feasibility auditor was right; the "solver-controllable value-equality" framing was wrong.
+- **Context-loss is a SECOND flag** firing in this area (because `refEquals(s,…)` concretizes a symbolic operand). Fixing only `referenceSemanticChange` would NOT recover the SAFE — context-loss would still fire.
+
+### Corrected mechanism — MODEL `refEquals` as a reference comparison (not "concretize")
+G3-B must make `refEquals` a **modeled** reference comparison so that BOTH flags correctly do not fire and the result is exact:
+- Route `refEquals` to a model that returns `root(a) == root(b)` as a **concrete identity boolean** for de-interned classes (`a == b` otherwise). Because the result depends only on object identity, not on `s`'s symbolic value, it must NOT trigger context-loss, and (provenance being exact) needs no `reference_semantic_change` downgrade.
+- This supersedes the earlier "concretize the result" wording. The point is to model `==` as the (concrete, per-path) reference fact it is, sourced from `root`.
+
+### Soundness (corrected) — the round-1 "blocker" was a mis-analysis
+The soundness auditor's claimed VIOLATION->SAFE (un-instrumented callee returns a JVM-shared object, SWAT de-interns it, `root(b)!=a` -> missed violation) does NOT hold: we record `root(copy) = the genuine pre-wrap returned object`, which carries the **real JVM identity**. So `root(a)==root(b)` reproduces real `==` exactly, including canonical-cache hits. The auditor assumed `root` points to a fresh copy; it points to the genuine original. **Hard requirement that makes this true:** record the genuine pre-wrap reference at EVERY de-intern site.
+
+Corrected justification (replaces "identity isn't solver-controllable"): concretizing `==` is sound because real reference-`==` is a **per-path concrete fact** and VIOLATION is **concretely witnessed** on the transformed program. Removing the discarded value-equality loses nothing real — a `==`-true path that only value-equality reached is infeasible in real Java (distinct objects are never `==` regardless of value).
+
+### Scope (decided): `==`/`!=` only; identity-hash is a documented residual (option A)
+Provenance makes `==`/`!=` exact. `System.identityHashCode` / `IdentityHashMap` / identity-keyed logic in **un-instrumented** code on a de-interned value is an **irreducible, pre-existing, rare residual** (nocache has de-interned literals/boxed since before G3): reinjecting the original at the boundary would break the round-trip recovery (the de-interned identity must persist across the boundary for `getFromHeap`), and a redirect can't reach un-instrumented calls. Decision (user): document it; do NOT build a redirect or reinjection. The exactness claim is scoped to `==`/`!=`.
+
+### Implementation obligations (from all three round-1 auditors)
+- **Atomic package:** stop-de-interning-literals (point 1) + model-refEquals-via-root (point 3) + delete-the-flag (point 4) must land together (the only consumer of `userDeInterned` is the flag block). Point 1 is **String-literal-only** (no boxed-literal analogue; boxed exactness comes from provenance).
+- **Record provenance at EVERY de-intern site** with the genuine pre-wrap reference - LDC (if any de-intern remains there - but point 1 removes it), the 6 `valueOf` rewrites, and `deInternReturn`. A missed site breaks a `root` chain -> divergence. No single choke point today.
+- **Map:** `MapMaker().weakKeys().weakValues()` (identity keys, like `JVMHeap`); `root(x)` returns `x` on a miss (collected or never-recorded) and collapses chains. Weak keys alone strongly pin the originals (leak); weak values + root-on-miss=self is leak-safe AND correct.
+- **Bytecode:** restructure `deInternReturn` to keep the original across the wrap (String: extra DUP / a local; boxed: store the boxed original, not just the primitive), null-guard-correct, and tested with `checkClassAdapter=true` (sv-comp.cfg has it off). Compounds the 64KB method-size watch-item.
+- **Deletions span 3 languages:** Java (`recordReferenceSemanticChange` + `userDeInterned` + the `ObjectsInvocation` block + the TraceDTO/SymbolicTrace field), the explorer (`SVCompDriver.py` VIOLATION->UNKNOWN downgrade + DTO parse), and Groovy tests (`TraceObservation`, `BaseSymbolicInstructionProcessorSpec`). Coordinate, or leave the explorer field inert with a comment - don't leave a silently-dead downgrade.
+- **Leave alone:** `UtilInstrumented`'s instrumented status + the RefEquality skip-set (entangled with `liftClass` + the regress guard).
+- **Re-verify A1** "a constant String is never `putToHeap`'d" under the no-literal-de-intern assumption (it's what makes leaving literals interned safe), and add a regression test that two occurrences of the same literal don't merge in the heap.
+
+### Round-2 questions
+- Is "model `refEquals` as `root`-reference" the right mechanism, and does it actually avoid BOTH context-loss and `reference_semantic_change` (verify the executor doesn't flag a modeled reference comparison with a symbolic operand)?
+- Is the corrected soundness argument airtight (genuine-pre-wrap-reference recording at all sites => `root` == real JVM identity => exact `==`; no VIOLATION->SAFE)?
+- Is the atomic-package + record-at-all-sites + weakValues + 3-language-deletion plan complete and correctly sequenced?
+
+---
+
+## G3-B round-2 outcome (all 3 auditors): String converged + sound; mechanism corrected; boxed fork
+
+- **Blocker RESOLVED.** Soundness auditor withdrew round-1 Finding C: recording `root(copy)=genuine pre-wrap object` => `root` carries real JVM identity => `root(a)==root(b)` is exact reference-`==` (incl. canonical hits). No VIOLATION->SAFE for String.
+- **MECHANISM CORRECTED (decisive, feasibility auditor).** The design's "route `refEquals` in the invoke dispatch" is **DEAD CODE**: `UtilInstrumented` is force-instrumented, so the engine STEPS INTO `refEquals`'s body (the `getNextInst() instanceof INVOKEMETHOD_END` discriminator is false for instrumented callees) and never models the call -> `StaticInvocation` routing is never consulted. The two flags fire from INSIDE the stepped body: `symbolicContextLoss` from `Util.shouldUseValueEquality(s,..)` (un-instrumented `common/Util`, NOT in IGNORED, symbolic arg) and `referenceSemanticChange` from the inner `Objects.equals`. **Correct mechanism:** rewrite `refEquals`'s BODY to `shouldUseValueEquality(a,b) ? Provenance.root(a)==Provenance.root(b) : a==b`, and add `Provenance.root` + `Util.shouldUseValueEquality` to `IGNORED_INVOCATIONS` (so those inner calls concretize without firing context-loss). Keeps `UtilInstrumented` instrumented (no contradiction with leaving its status alone). Then `root(a)==root(b)` is an IF_ACMPEQ on concretized root objects -> a constant identity boolean -> no flags, exact.
+- **HARD requirement:** collapse provenance chains at INSERTION (store the fully-resolved root at `record`), NOT lazy lookup -> eliminates the GC'd-intermediate-link VIOLATION->SAFE that `weakValues()`+lazy-walk would introduce.
+- **BOXED FORK (real, new).** The Integer cache makes boxed `==` harder than String: `Integer.valueOf(100)==Integer.valueOf(100)` is TRUE in real Java (cache), and today's value-equality `refEquals` gets it right. But the existing `valueOf` de-intern turns both into distinct `new Integer(100)`, so `root`=self -> FALSE -> with the flag deleted that is a **false SAFE (regression)**. We CANNOT "stop de-interning boxed like literals" because `valueOf` can take a symbolic value (cache-range collisions), unlike always-constant String literals. Two sound options:
+  - **(X) Exact boxed:** at each `valueOf` de-intern site, also call the real `valueOf` to get the cached canonical and `record(freshBox, canonical)`. Then `root(a)==root(b)` is exact for boxed too (cache-hit -> same canonical -> TRUE; non-cache -> distinct -> FALSE). Cost: one extra `valueOf` call per de-intern site. Flag fully deleted; consistent with String.
+  - **(Z) Hybrid:** String exact via provenance (no String flag); boxed keeps value-equality + a conservative flag (the original A2-gap fix) -> sound, boxed `==`-divergence -> UNKNOWN. Keeps a flag for the rare boxed case.
+- **Doc corrections:** the identityHashCode/IdentityHashMap/argument-identity residual is **unsound w.r.t. real Java** (accepted, no backstop) - not merely "rare/precision."
+
+---
+
+## G3-B CORRECTION — literals DO turn symbolic; de-intern ALL (no "stop de-interning literals")
+
+Empirically confirmed (ran a `@Symbolic String s = "seed"` target under the agent): the literal `"seed"`
+becomes a **symbolic String input** (`inputNames=[java/lang/String_0]`, a branch references it). So a literal
+is NOT "always a constant" - it can be made symbolic (the designated input is a literal; more generally any
+string may acquire a symbolic shadow). Therefore it needs a **distinct identity** so that (a) it is registered
+and recoverable through untracked space, and (b) it does not collide with a same-valued *plain* literal that
+shares the interned object. **=> "Stop de-interning literals" (REVISED point 1) is WITHDRAWN as unsound.**
+
+**Corrected model = UNIFORM (the user's original assumption): de-intern ALL value types + provenance everywhere.**
+- Keep the existing de-intern at ALL sites (LDC literals + boxed `valueOf` + un-instrumented returns). No
+  special-casing.
+- Record provenance `copy -> root(genuine canonical/original)` at EVERY de-intern site, collapsed-at-insert:
+  - **LDC literal:** the interned literal (the LDC value, on the stack before the wrap; DUP it). Two `"abc"`
+    literals -> same interned canonical -> `root` equal -> `==` true (exact). A literal-that-turns-symbolic ->
+    distinct de-interned identity, registered, recoverable; `==` vs a plain same-value literal -> both root to
+    the interned canonical -> true (exact, matches real JVM).
+  - **boxed `valueOf`:** the cached canonical (extra real `valueOf` call - the rewrite replaces valueOf before
+    it runs). Cache-hit -> same canonical -> true; non-cache -> distinct -> false (exact).
+  - **un-instrumented return:** the genuine pre-wrap returned object.
+- `refEquals` body -> `shouldUseValueEquality(a,b) ? root(a)==root(b) : a==b`; `Provenance.root` +
+  `Util.shouldUseValueEquality` in IGNORED_INVOCATIONS (suppress context-loss); delete the flag.
+
+This is simpler (no literal special-casing, no "is it safe to stop de-interning literals" analysis, no
+heap-isolation-for-interned-literals concern) and is exactly uniform across String + boxed: every value type is
+de-interned and carries provenance to its canonical/original. Cost: a `record` call per de-intern site (incl.
+per literal - bytecode/64KB watch), plus the extra `valueOf` at boxed sites.

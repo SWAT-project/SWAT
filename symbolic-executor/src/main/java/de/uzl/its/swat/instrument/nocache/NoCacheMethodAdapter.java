@@ -24,11 +24,41 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitLdcInsn(value);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/String", "<init>",
                     "(Ljava/lang/String;)V", false);
-            //NoCacheTransformer.getPrintBox()
-            //        .addMsg("Replacing LDC with new String");
+            // G3-B: record provenance (de-interned copy -> the interned literal canonical). The
+            // interned literal is a compile-time constant, so re-LDC'ing it pushes the SAME canonical
+            // object that every other occurrence of this literal shares; never null (no guard needed).
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitLdcInsn(value);
+            emitProvenanceRecord();
         } else {
             mv.visitLdcInsn(value);
         }
+    }
+
+    /**
+     * Emit {@code Provenance.record(copy, canonical)} consuming the top two stack entries
+     * {@code [..., copy, canonical]} and leaving {@code [...]}. Callers DUP the copy first so the copy
+     * survives. Emitted via the raw delegate so it is not re-processed by this adapter.
+     */
+    private void emitProvenanceRecord() {
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "de/uzl/its/swat/common/Provenance", "record",
+                "(Ljava/lang/Object;Ljava/lang/Object;)V", false);
+    }
+
+    /**
+     * After a de-interned boxed copy is on top of the stack and its primitive is in {@code primLocal},
+     * record provenance to the box's REAL cached canonical. The valueOf rewrite replaced the original
+     * call before it ran, so the canonical is not on the stack - we materialize it by calling the
+     * genuine {@code valueOf} via the raw delegate (so it is NOT itself re-rewritten). Without this,
+     * {@code root} of two cached boxes (e.g. valueOf(100)) would be self -> distinct -> {@code ==}
+     * false, regressing real Java (cache hit -> true). Stack: {@code [copy] -> [copy]}.
+     */
+    private void recordBoxedProvenance(String owner, String valueOfDescriptor, int primLoadOpcode,
+            int primLocal) {
+        mv.visitInsn(Opcodes.DUP);
+        mv.visitVarInsn(primLoadOpcode, primLocal);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, owner, "valueOf", valueOfDescriptor, false);
+        emitProvenanceRecord();
     }
 
     // Intercept method calls to disable interning and caching.
@@ -55,6 +85,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Integer", "<init>", "(I)V", false);
+            recordBoxedProvenance("java/lang/Integer", "(I)Ljava/lang/Integer;", Opcodes.ILOAD, localVarIndex);
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Integer.valueOf with new Integer");
             return;
@@ -70,6 +101,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.LLOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Long", "<init>", "(J)V", false);
+            recordBoxedProvenance("java/lang/Long", "(J)Ljava/lang/Long;", Opcodes.LLOAD, localVarIndex);
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Long.valueOf with new Long");
             return;
@@ -85,6 +117,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Short", "<init>", "(S)V", false);
+            recordBoxedProvenance("java/lang/Short", "(S)Ljava/lang/Short;", Opcodes.ILOAD, localVarIndex);
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Short.valueOf with new Short");
             return;
@@ -100,6 +133,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Byte", "<init>", "(B)V", false);
+            recordBoxedProvenance("java/lang/Byte", "(B)Ljava/lang/Byte;", Opcodes.ILOAD, localVarIndex);
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Byte.valueOf with new Byte");
             return;
@@ -115,6 +149,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Character", "<init>", "(C)V", false);
+            recordBoxedProvenance("java/lang/Character", "(C)Ljava/lang/Character;", Opcodes.ILOAD, localVarIndex);
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Character.valueOf with new Character");
             return;
@@ -130,6 +165,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Boolean", "<init>", "(Z)V", false);
+            recordBoxedProvenance("java/lang/Boolean", "(Z)Ljava/lang/Boolean;", Opcodes.ILOAD, localVarIndex);
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Boolean.valueOf with new Boolean");
             return;
@@ -157,35 +193,47 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
      */
     private void deInternReturn(Type returnType) {
         if ("Ljava/lang/String;".equals(returnType.getDescriptor())) {
-            // String has a copy constructor: reorder the on-stack reference into new String(ref).
+            // String has a copy constructor. Keep the original in a local so we can both build
+            // new String(original) AND record provenance (copy -> original) afterward.
             Label done = new Label();
             mv.visitInsn(Opcodes.DUP);
             mv.visitJumpInsn(Opcodes.IFNULL, done); // null result: leave it, skip the wrap
+            int origLocal = newLocal(Type.getObjectType("java/lang/String"));
+            mv.visitVarInsn(Opcodes.ASTORE, origLocal);
             mv.visitTypeInsn(Opcodes.NEW, "java/lang/String");
-            mv.visitInsn(Opcodes.DUP_X1);
-            mv.visitInsn(Opcodes.SWAP);
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitVarInsn(Opcodes.ALOAD, origLocal);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/String", "<init>",
-                    "(Ljava/lang/String;)V", false);
+                    "(Ljava/lang/String;)V", false); // [copy]
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitVarInsn(Opcodes.ALOAD, origLocal);
+            emitProvenanceRecord(); // record(copy, original) -> [copy]
             mv.visitLabel(done);
             return;
         }
         Boxed boxed = Boxed.forDescriptor(returnType.getDescriptor());
         if (boxed != null) {
-            // Boxed wrappers have no copy constructor: unbox to the primitive, then rebox into a fresh
-            // instance (same shape as the valueOf de-interning above). A local holds the primitive
-            // across the NEW (required for the category-2 long; harmless for the others).
+            // Boxed wrappers have no copy constructor: keep the original boxed in a local, unbox it to
+            // the primitive, rebox into a fresh instance, then record provenance (copy -> original).
+            // The primitive local across the NEW is required for the category-2 long.
             Label done = new Label();
             mv.visitInsn(Opcodes.DUP);
             mv.visitJumpInsn(Opcodes.IFNULL, done); // null result: leave it, skip the wrap
+            int origLocal = newLocal(Type.getObjectType(boxed.owner));
+            mv.visitVarInsn(Opcodes.ASTORE, origLocal);
+            mv.visitVarInsn(Opcodes.ALOAD, origLocal);
             mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, boxed.owner, boxed.unboxMethod,
                     boxed.unboxDescriptor, false);
-            int local = newLocal(boxed.primType);
-            mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ISTORE), local);
+            int primLocal = newLocal(boxed.primType);
+            mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ISTORE), primLocal);
             mv.visitTypeInsn(Opcodes.NEW, boxed.owner);
             mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ILOAD), local);
+            mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ILOAD), primLocal);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, boxed.owner, "<init>",
-                    boxed.ctorDescriptor, false);
+                    boxed.ctorDescriptor, false); // [copy]
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitVarInsn(Opcodes.ALOAD, origLocal);
+            emitProvenanceRecord(); // record(copy, original) -> [copy]
             mv.visitLabel(done);
         }
     }

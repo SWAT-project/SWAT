@@ -34,6 +34,12 @@ public class InvocationHandler {
                             "java/io/PrintStream/println",
                             "de/uzl/its/swat/instrument/Intrinsics",
                             "de/uzl/its/swat/common/UtilInstrumented",
+                            // G3-B: refEquals's body (stepped, since UtilInstrumented is instrumented)
+                            // calls these with a possibly-symbolic operand; ignore them so a reference
+                            // comparison does not record spurious context loss. Both are pure/identity
+                            // and their concretized results are all refEquals needs.
+                            "de/uzl/its/swat/common/Util/shouldUseValueEquality",
+                            "de/uzl/its/swat/common/Provenance",
                             "de/uzl/its/swat/witness/Witness",
                             "de/uzl/its/swat/instrument/svcomp/Verifier",
                             "java/io/PrintStream",
