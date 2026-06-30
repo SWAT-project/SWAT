@@ -61,6 +61,36 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
         emitProvenanceRecord();
     }
 
+    /**
+     * Consume the primitive on top of the stack and leave a fresh, distinctly-identified boxed instance
+     * in its place ({@code [prim] -> [new <Boxed>(prim)]}). The primitive is parked in a fresh local
+     * (returned) because it is needed again after the {@code NEW} - both to feed the constructor and,
+     * for {@link #rewriteValueOf}, to materialize the cached canonical. The local is required for the
+     * category-2 {@code long}. Shared by the {@code valueOf} rewrite and {@link #deInternReturn}.
+     */
+    private int reboxFreshFromPrimitive(Boxed boxed) {
+        int primLocal = newLocal(boxed.primType);
+        mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ISTORE), primLocal);
+        mv.visitTypeInsn(Opcodes.NEW, boxed.owner);
+        mv.visitInsn(Opcodes.DUP);
+        mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ILOAD), primLocal);
+        mv.visitMethodInsn(Opcodes.INVOKESPECIAL, boxed.owner, "<init>", boxed.ctorDescriptor(), false);
+        return primLocal;
+    }
+
+    /**
+     * Replace {@code <Boxed>.valueOf(prim)} (the primitive is on top of the stack) with
+     * {@code new <Boxed>(prim)}, giving the produced box a distinct identity, and record provenance to
+     * the real cached canonical so reference {@code ==} on cache hits still models real Java.
+     */
+    private void rewriteValueOf(Boxed boxed) {
+        int primLocal = reboxFreshFromPrimitive(boxed);
+        recordBoxedProvenance(boxed.owner, boxed.valueOfDescriptor(),
+                boxed.primType.getOpcode(Opcodes.ILOAD), primLocal);
+        NoCacheTransformer.getPrintBox()
+                .addMsg("Replacing " + boxed.simpleName() + ".valueOf with new " + boxed.simpleName());
+    }
+
     // Intercept method calls to disable interning and caching.
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
@@ -74,101 +104,13 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
                     .addMsg("Removing String.intern() call");
             return;
         }
-        // Replace Integer.valueOf(int) with new Integer(int)
-        if (opcode == Opcodes.INVOKESTATIC &&
-                owner.equals("java/lang/Integer") &&
-                name.equals("valueOf") &&
-                descriptor.equals("(I)Ljava/lang/Integer;")) {
-            int localVarIndex = newLocal(Type.INT_TYPE);
-            mv.visitVarInsn(Opcodes.ISTORE, localVarIndex);
-            mv.visitTypeInsn(Opcodes.NEW, "java/lang/Integer");
-            mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Integer", "<init>", "(I)V", false);
-            recordBoxedProvenance("java/lang/Integer", "(I)Ljava/lang/Integer;", Opcodes.ILOAD, localVarIndex);
-            NoCacheTransformer.getPrintBox()
-                    .addMsg("Replacing Integer.valueOf with new Integer");
-            return;
-        }
-        // Replace Long.valueOf(long) with new Long(long)
-        if (opcode == Opcodes.INVOKESTATIC &&
-                owner.equals("java/lang/Long") &&
-                name.equals("valueOf") &&
-                descriptor.equals("(J)Ljava/lang/Long;")) {
-            int localVarIndex = newLocal(Type.LONG_TYPE);
-            mv.visitVarInsn(Opcodes.LSTORE, localVarIndex);
-            mv.visitTypeInsn(Opcodes.NEW, "java/lang/Long");
-            mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(Opcodes.LLOAD, localVarIndex);
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Long", "<init>", "(J)V", false);
-            recordBoxedProvenance("java/lang/Long", "(J)Ljava/lang/Long;", Opcodes.LLOAD, localVarIndex);
-            NoCacheTransformer.getPrintBox()
-                    .addMsg("Replacing Long.valueOf with new Long");
-            return;
-        }
-        // Replace Short.valueOf(short) with new Short(short)
-        if (opcode == Opcodes.INVOKESTATIC &&
-                owner.equals("java/lang/Short") &&
-                name.equals("valueOf") &&
-                descriptor.equals("(S)Ljava/lang/Short;")) {
-            int localVarIndex = newLocal(Type.INT_TYPE);
-            mv.visitVarInsn(Opcodes.ISTORE, localVarIndex);
-            mv.visitTypeInsn(Opcodes.NEW, "java/lang/Short");
-            mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Short", "<init>", "(S)V", false);
-            recordBoxedProvenance("java/lang/Short", "(S)Ljava/lang/Short;", Opcodes.ILOAD, localVarIndex);
-            NoCacheTransformer.getPrintBox()
-                    .addMsg("Replacing Short.valueOf with new Short");
-            return;
-        }
-        // Replace Byte.valueOf(byte) with new Byte(byte)
-        if (opcode == Opcodes.INVOKESTATIC &&
-                owner.equals("java/lang/Byte") &&
-                name.equals("valueOf") &&
-                descriptor.equals("(B)Ljava/lang/Byte;")) {
-            int localVarIndex = newLocal(Type.INT_TYPE);
-            mv.visitVarInsn(Opcodes.ISTORE, localVarIndex);
-            mv.visitTypeInsn(Opcodes.NEW, "java/lang/Byte");
-            mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Byte", "<init>", "(B)V", false);
-            recordBoxedProvenance("java/lang/Byte", "(B)Ljava/lang/Byte;", Opcodes.ILOAD, localVarIndex);
-            NoCacheTransformer.getPrintBox()
-                    .addMsg("Replacing Byte.valueOf with new Byte");
-            return;
-        }
-        // Replace Character.valueOf(char) with new Character(char)
-        if (opcode == Opcodes.INVOKESTATIC &&
-                owner.equals("java/lang/Character") &&
-                name.equals("valueOf") &&
-                descriptor.equals("(C)Ljava/lang/Character;")) {
-            int localVarIndex = newLocal(Type.INT_TYPE);
-            mv.visitVarInsn(Opcodes.ISTORE, localVarIndex);
-            mv.visitTypeInsn(Opcodes.NEW, "java/lang/Character");
-            mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Character", "<init>", "(C)V", false);
-            recordBoxedProvenance("java/lang/Character", "(C)Ljava/lang/Character;", Opcodes.ILOAD, localVarIndex);
-            NoCacheTransformer.getPrintBox()
-                    .addMsg("Replacing Character.valueOf with new Character");
-            return;
-        }
-        // Replace Boolean.valueOf(boolean) with new Boolean(boolean)
-        if (opcode == Opcodes.INVOKESTATIC &&
-                owner.equals("java/lang/Boolean") &&
-                name.equals("valueOf") &&
-                descriptor.equals("(Z)Ljava/lang/Boolean;")) {
-            int localVarIndex = newLocal(Type.INT_TYPE);
-            mv.visitVarInsn(Opcodes.ISTORE, localVarIndex);
-            mv.visitTypeInsn(Opcodes.NEW, "java/lang/Boolean");
-            mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Boolean", "<init>", "(Z)V", false);
-            recordBoxedProvenance("java/lang/Boolean", "(Z)Ljava/lang/Boolean;", Opcodes.ILOAD, localVarIndex);
-            NoCacheTransformer.getPrintBox()
-                    .addMsg("Replacing Boolean.valueOf with new Boolean");
-            return;
+        // Replace <Boxed>.valueOf(prim) with new <Boxed>(prim) to defeat the wrapper cache (see Boxed).
+        if (opcode == Opcodes.INVOKESTATIC && name.equals("valueOf")) {
+            Boxed boxed = Boxed.forValueOf(owner, descriptor);
+            if (boxed != null) {
+                rewriteValueOf(boxed);
+                return;
+            }
         }
         // For all other method calls, proceed normally.
         mv.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
@@ -211,11 +153,10 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitLabel(done);
             return;
         }
-        Boxed boxed = Boxed.forDescriptor(returnType.getDescriptor());
+        Boxed boxed = Boxed.forReturnDescriptor(returnType.getDescriptor());
         if (boxed != null) {
             // Boxed wrappers have no copy constructor: keep the original boxed in a local, unbox it to
             // the primitive, rebox into a fresh instance, then record provenance (copy -> original).
-            // The primitive local across the NEW is required for the category-2 long.
             Label done = new Label();
             mv.visitInsn(Opcodes.DUP);
             mv.visitJumpInsn(Opcodes.IFNULL, done); // null result: leave it, skip the wrap
@@ -223,14 +164,8 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitVarInsn(Opcodes.ASTORE, origLocal);
             mv.visitVarInsn(Opcodes.ALOAD, origLocal);
             mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, boxed.owner, boxed.unboxMethod,
-                    boxed.unboxDescriptor, false);
-            int primLocal = newLocal(boxed.primType);
-            mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ISTORE), primLocal);
-            mv.visitTypeInsn(Opcodes.NEW, boxed.owner);
-            mv.visitInsn(Opcodes.DUP);
-            mv.visitVarInsn(boxed.primType.getOpcode(Opcodes.ILOAD), primLocal);
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, boxed.owner, "<init>",
-                    boxed.ctorDescriptor, false); // [copy]
+                    boxed.unboxDescriptor(), false); // [prim]
+            reboxFreshFromPrimitive(boxed); // [copy]
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ALOAD, origLocal);
             emitProvenanceRecord(); // record(copy, original) -> [copy]
@@ -238,40 +173,78 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
         }
     }
 
-    /** The six cached boxed wrappers G3 de-interns, with their unbox method and primitive constructor. */
+    /**
+     * The six cached boxed wrappers G3 de-interns. Each carries the JVM primitive type descriptor
+     * ({@code primDescriptor}, e.g. {@code "I"}, {@code "J"}, {@code "S"}) from which all method
+     * descriptors are derived, so this enum is the single source of truth for both the {@code valueOf}
+     * rewrite and the return de-intern. {@code primType} is the stack type used for the load/store
+     * opcodes and {@code newLocal}: {@code short}/{@code byte}/{@code char} live on the operand stack
+     * as {@code int}, hence {@link Type#INT_TYPE} for all of them and {@link Type#LONG_TYPE} only for
+     * {@code long}.
+     */
     private enum Boxed {
-        INTEGER("java/lang/Integer", "intValue", "()I", "(I)V", Type.INT_TYPE),
-        LONG("java/lang/Long", "longValue", "()J", "(J)V", Type.LONG_TYPE),
-        SHORT("java/lang/Short", "shortValue", "()S", "(S)V", Type.INT_TYPE),
-        BYTE("java/lang/Byte", "byteValue", "()B", "(B)V", Type.INT_TYPE),
-        CHARACTER("java/lang/Character", "charValue", "()C", "(C)V", Type.INT_TYPE),
-        BOOLEAN("java/lang/Boolean", "booleanValue", "()Z", "(Z)V", Type.INT_TYPE);
+        INTEGER("java/lang/Integer", "intValue", "I", Type.INT_TYPE),
+        LONG("java/lang/Long", "longValue", "J", Type.LONG_TYPE),
+        SHORT("java/lang/Short", "shortValue", "S", Type.INT_TYPE),
+        BYTE("java/lang/Byte", "byteValue", "B", Type.INT_TYPE),
+        CHARACTER("java/lang/Character", "charValue", "C", Type.INT_TYPE),
+        BOOLEAN("java/lang/Boolean", "booleanValue", "Z", Type.INT_TYPE);
 
         final String owner;
         final String unboxMethod;
-        final String unboxDescriptor;
-        final String ctorDescriptor;
+        final String primDescriptor;
         final Type primType;
 
-        Boxed(String owner, String unboxMethod, String unboxDescriptor, String ctorDescriptor,
-                Type primType) {
+        Boxed(String owner, String unboxMethod, String primDescriptor, Type primType) {
             this.owner = owner;
             this.unboxMethod = unboxMethod;
-            this.unboxDescriptor = unboxDescriptor;
-            this.ctorDescriptor = ctorDescriptor;
+            this.primDescriptor = primDescriptor;
             this.primType = primType;
         }
 
-        static Boxed forDescriptor(String descriptor) {
-            return switch (descriptor) {
-                case "Ljava/lang/Integer;" -> INTEGER;
-                case "Ljava/lang/Long;" -> LONG;
-                case "Ljava/lang/Short;" -> SHORT;
-                case "Ljava/lang/Byte;" -> BYTE;
-                case "Ljava/lang/Character;" -> CHARACTER;
-                case "Ljava/lang/Boolean;" -> BOOLEAN;
-                default -> null;
-            };
+        /** The wrapper's own type descriptor, e.g. {@code Ljava/lang/Integer;}. */
+        String boxedDescriptor() {
+            return "L" + owner + ";";
+        }
+
+        /** {@code valueOf} factory descriptor, e.g. {@code (I)Ljava/lang/Integer;}. */
+        String valueOfDescriptor() {
+            return "(" + primDescriptor + ")" + boxedDescriptor();
+        }
+
+        /** Primitive constructor descriptor, e.g. {@code (I)V}. */
+        String ctorDescriptor() {
+            return "(" + primDescriptor + ")V";
+        }
+
+        /** Unbox accessor descriptor, e.g. {@code ()I} for {@code intValue}. */
+        String unboxDescriptor() {
+            return "()" + primDescriptor;
+        }
+
+        /** Simple class name for log messages, e.g. {@code Integer}. */
+        String simpleName() {
+            return owner.substring(owner.lastIndexOf('/') + 1);
+        }
+
+        /** The wrapper whose {@code valueOf(prim)} this call site invokes, or {@code null}. */
+        static Boxed forValueOf(String owner, String descriptor) {
+            for (Boxed b : values()) {
+                if (b.owner.equals(owner) && b.valueOfDescriptor().equals(descriptor)) {
+                    return b;
+                }
+            }
+            return null;
+        }
+
+        /** The wrapper matching a value-typed return descriptor, or {@code null}. */
+        static Boxed forReturnDescriptor(String descriptor) {
+            for (Boxed b : values()) {
+                if (b.boxedDescriptor().equals(descriptor)) {
+                    return b;
+                }
+            }
+            return null;
         }
     }
 
