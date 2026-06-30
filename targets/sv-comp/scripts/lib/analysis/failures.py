@@ -71,7 +71,6 @@ class FailureAnalysis:
             'symbolic_context_loss': [],
             'symbolic_precision_loss': [],
             'uncaught_exceptions': [],
-            'reference_semantic_change': [],
             'internal_errors': [],
             'total_analyzed': 0
         }
@@ -98,9 +97,6 @@ class FailureAnalysis:
                         if 'Found uncaught exceptions' in content:
                             failure_stats['uncaught_exceptions'].append(testcase_name)
 
-                        if 'Found reference semantic change' in content:
-                            failure_stats['reference_semantic_change'].append(testcase_name)
-
                         if '[SWAT Assertion failed]' in content or 'java.lang.AssertionError: [SWAT]' in content:
                             failure_stats['internal_errors'].append(testcase_name)
 
@@ -124,7 +120,6 @@ class FailureAnalysis:
             ('Symbolic Context Loss', 'symbolic_context_loss'),
             ('Symbolic Precision Loss', 'symbolic_precision_loss'),
             ('Uncaught Exceptions', 'uncaught_exceptions'),
-            ('Reference Semantic Change', 'reference_semantic_change'),
             ('Internal SWAT Errors', 'internal_errors')
         ]
 

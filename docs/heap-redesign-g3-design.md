@@ -456,3 +456,81 @@ This is simpler (no literal special-casing, no "is it safe to stop de-interning 
 heap-isolation-for-interned-literals concern) and is exactly uniform across String + boxed: every value type is
 de-interned and carries provenance to its canonical/original. Cost: a `record` call per de-intern site (incl.
 per literal - bytecode/64KB watch), plus the extra `valueOf` at boxed sites.
+
+---
+
+# G3-B2 — Delete the superseded reference_semantic_change flag (proposal for audit)
+
+The G3-B core (committed 59ed40d) makes `==` exact via provenance, and `refEquals` no longer routes
+through `Objects.equals`, so the `==` path can no longer reach the `reference_semantic_change` flag. The
+flag now fires ONLY on explicit user `Objects.equals(deInternedString, ...)` in `ObjectsInvocation` -
+and there it is **spurious**: `Objects.equals` is value-equality (`a==b || a.equals(b)`; the `.equals`
+dominates), which is de-intern-invariant, so de-interning never changes its outcome. So the flag (and
+its `userDeInterned` marker) is now dead weight that only ever downgrades VIOLATION->UNKNOWN
+unnecessarily. G3-B2 removes it. Soundness: removing a conservative downgrade is sound IFF the case it
+guarded is now handled exactly (it is - `==` via provenance) or never diverged (explicit Objects.equals).
+
+## Proposed deletions (complete map, current line numbers)
+
+**Java (symbolic-executor):**
+1. `invoke/java/util/ObjectsInvocation.java:42-49` - delete the `instanceof StringValue` block that calls
+   `recordReferenceSemanticChange`. invokeEquals keeps: arg check, NULL guard, `a.invokeMethod("equals",
+   ..., [b])`. KEEP the ObjectsInvocation class (explicit Objects.equals stays value-equality - correct).
+2. `value/reference/lang/StringValue.java:40` (`userDeInterned` field + its `@Getter`) + `:225`
+   (`this.userDeInterned = true` in invokeInit). Update the invokeInit comment (no longer sets a flag).
+   `isUserDeInterned()`'s only caller was #1.
+3. `trace/SymbolicTraceHandler.java:216-219` (`recordReferenceSemanticChange()`) + `:237-239`
+   (`isReferenceSemanticChange()`). Only callers: #1 and #6.
+4. `trace/SymbolicTrace.java:29` - the `referenceSemanticChange` field (+ lombok-generated get/set:
+   `setReferenceSemanticChange` was used only by #3; `isReferenceSemanticChange` by #3/#6).
+5. `trace/dto/TraceDTO.java:20` (field), `:22` (ctor param), `:28` (assignment). Update the ctor.
+6. `trace/DTOBuilder.java:111` - drop the `symbolicTrace.isReferenceSemanticChange()` argument from the
+   TraceDTO ctor call.
+
+**Explorer (symbolic-explorer, Python) - full chain delete (no silently-dead downgrade left behind):**
+7. `driver/SVCompDriver.py:316-318` - the `VIOLATION -> UNKNOWN` downgrade gated on
+   `...reference_semantic_change`. This is the actual verdict effect.
+8. `parse/DataTransferObjects.py:35` - the `referenceSemanticChange: bool = False` DTO field.
+9. `constraint/ConstraintController.py:43,54` - parse `request.referenceSemanticChange` + pass it on.
+10. `constraint/ConstraintService.py:26,42,54` - the `reference_semantic_change` param + docstring + the
+    `Database.add_trace(...)` argument.
+11. `data/Database.py:117,129` - the `reference_semantic_change` param + the
+    `tree[...].record_reference_semantic_change()` call.
+12. `data/BinaryExecutionTree/Tree.py:36` (field init) + `:71-73` (`record_reference_semantic_change`).
+
+**Groovy tests:**
+13. `testsupport/agent/TraceObservation.groovy:14` (field) + `:22` (parse). Once the Java DTO drops the
+    field, the JSON no longer carries it.
+14. `processor/BaseSymbolicInstructionProcessorSpec.groovy:296` (doc) + `:329`
+    (`referenceSemanticChange: traceHandler.isReferenceSemanticChange()` in the executeBoundaryRecovery
+    result map). Verify no spec reads `result.referenceSemanticChange`.
+15. `heap/StringRefEqAgentSpec.groovy:28` - drop the `!obs.referenceSemanticChange` assertion (the flag no
+    longer exists); KEEP `!obs.symbolicContextLoss` (context-loss is NOT deleted and still validates the
+    round-2 IGNORED suppression).
+
+## Open questions for the audit
+- **Completeness:** are there any references the grep missed (reflective/string-keyed access, the
+  explorer's JSON contract, other tests reading `referenceSemanticChange`/`userDeInterned`)?
+- **Soundness:** confirm deleting the flag cannot turn a real VIOLATION into SAFE: the `==` path is now
+  exact (provenance), and explicit `Objects.equals` never diverged under de-interning. Any third path?
+- **Explorer correctness (untestable here - no runnable explorer test in this env):** does removing the
+  chain (param threading through Controller/Service/Database/Tree + the SVCompDriver downgrade) leave the
+  remaining call sites consistent (arity, kwargs)? Is full deletion safer than leaving it inert+commented?
+- **Test impact:** does removing `referenceSemanticChange` from the executeBoundaryRecovery result map
+  break any L1 spec? Does the JSON-field removal break TraceObservation parsing (it uses `.path(...)`
+  which tolerates a missing field -> false, so order matters: ok)?
+
+## G3-B2 audit outcome — CONVERGED (3 auditors): sound, verdict-safe, green; 2 additions
+
+- **Soundness CONFIRMED (all 3).** After G3-B core, `refEquals` is `root(a)==root(b)` (no `Objects.equals`), so the `==` path never reaches `ObjectsInvocation`; the flag's sole remaining firing site is explicit `Objects.equals(deInterned,...)`, which is value-equality (de-intern-invariant) and so spurious. No third firing path. The deleted `SVCompDriver` block is a VIOLATION->UNKNOWN downgrade (never creates a verdict), so removal can only reduce conservatism -> cannot turn a real VIOLATION into SAFE. Sound.
+- **Java #1-#6 complete + dangling-free.** Lombok: `SymbolicTrace` is class-level `@Getter@Setter`, so removing the field removes both accessors cleanly. `new TraceDTO(...)` has EXACTLY ONE call site (DTOBuilder:111) -> arity change consistent.
+- **Explorer #7-#12: full delete, complete + verdict-safe.** Grep surface == the 12 sites; trailing-param/kwarg/single-call drops, no arity skew. pydantic v2 default `extra='ignore'` -> the DTO-field removal is tolerant of BOTH sequencings (Java-first or Python-first) -> no cross-language ordering hazard. Full-delete recommended over inert (inert leaves a permanently-False downgrade = the silently-dead code we want gone).
+- **Groovy #13-#15: green.** Only `StringRefEqAgentSpec` asserts the flag; no spec reads `result.referenceSemanticChange` (the 5 executeBoundaryRecovery callers read only `.contextLoss`/`.recovered`); `TraceObservation.parse` uses `.path(...)` (tolerates missing). The `StringRefEqAgentSpec` reduction (keep `!symbolicContextLoss`) still validates the round-2 mechanism (context-loss is the load-bearing flag).
+
+### ADDITIONS to the deletion list (from the audit)
+- **#1b — drop 3 now-unused imports in `ObjectsInvocation.java`** after removing the block: `StringValue` (:13), `ThreadHandler` (:14), and the static `currentThread` (:17). (`SymbolicTraceHandler` import stays — it's the `invokeStaticMethod` param type.)
+- **#16 — `targets/sv-comp/scripts/lib/analysis/failures.py:74,102,127`** (MISSED by the original map): the `'reference_semantic_change'` stat bucket + the `'Found reference semantic change'` log-grep (that exact string is emitted only by the deleted `SVCompDriver:317` log) + the print category. Delete these or the analysis category goes permanently dead (the "no silently-dead reference" principle applies here too).
+
+### EXPLICIT GUARD
+- **Preserve `symbolicPrecisionLoss`** — it sits adjacent to `referenceSemanticChange` in the `TraceDTO` ctor (`TraceDTO.java:18,22,27`) and is NOT part of this deletion. The reduced ctor keeps `symbolicContextLoss` + `symbolicPrecisionLoss`, drops only `referenceSemanticChange`.
+- Cosmetic: reword `StringRefEqAgentSpec`'s "old refEquals fired both" comment (only one flag remains).

@@ -208,17 +208,6 @@ public class SymbolicTraceHandler {
     }
 
     /**
-     * Records that reference equality semantics may have changed. This happens when Objects.equals
-     * is called (via refEquals transformation) on strings where at least one was explicitly created
-     * with new String() in user code. In such cases, the original reference equality check would
-     * return false for different objects, but value equality returns true for equal content.
-     */
-    public void recordReferenceSemanticChange() {
-        logger.warn("Reference semantic change detected: user-de-interned strings compared via Objects.equals");
-        symbolicTrace.setReferenceSemanticChange(true);
-    }
-
-    /**
      * Whether a symbolic context loss was recorded on this trace. Read-only accessor for the
      * package-private trace flag; used by tests to observe soundness without parsing the TraceDTO.
      *
@@ -226,15 +215,5 @@ public class SymbolicTraceHandler {
      */
     public boolean isSymbolicContextLoss() {
         return symbolicTrace.isSymbolicContextLoss();
-    }
-
-    /**
-     * Whether a reference-semantic change was recorded on this trace. Read-only accessor for the
-     * package-private trace flag; used by tests to observe soundness without parsing the TraceDTO.
-     *
-     * @return true if a reference-semantic change occurred.
-     */
-    public boolean isReferenceSemanticChange() {
-        return symbolicTrace.isReferenceSemanticChange();
     }
 }

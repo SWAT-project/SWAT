@@ -293,7 +293,7 @@ abstract class BaseSymbolicInstructionProcessorSpec extends Specification {
      * on a value-type {@code getConcrete()} (a StringValue returns its String, so registration keys on
      * that String); a plain ObjectValue receiver would key on its address and never recover.
      *
-     * @return a map [recovered: Value, contextLoss: boolean, referenceSemanticChange: boolean]
+     * @return a map [recovered: Value, contextLoss: boolean]
      */
     def executeBoundaryRecovery(ObjectValue receiver, String owner, String name, String desc,
                                 Object resultObject) {
@@ -324,9 +324,8 @@ abstract class BaseSymbolicInstructionProcessorSpec extends Specification {
 
         def traceHandler = ThreadHandler.getSymbolicTraceHandler(threadId)
         return [
-                recovered              : visitor.getStack().getActiveFrame().peek(),
-                contextLoss            : traceHandler.isSymbolicContextLoss(),
-                referenceSemanticChange: traceHandler.isReferenceSemanticChange()
+                recovered  : visitor.getStack().getActiveFrame().peek(),
+                contextLoss: traceHandler.isSymbolicContextLoss()
         ]
     }
 }

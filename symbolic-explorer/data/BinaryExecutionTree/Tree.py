@@ -33,7 +33,6 @@ class Tree:
         self.endpoint_id = endpoint_id
         self.symbolic_context_loss = False
         self.symbolic_precision_loss = False
-        self.reference_semantic_change = False
         self.uncaught_exceptions: int = 0
         self.symbolic_vars: Set = set()
         self.ufs: Set = set()
@@ -68,10 +67,6 @@ class Tree:
         logger.warning("Precision loss recorded!")
         self.symbolic_precision_loss = True
 
-    def record_reference_semantic_change(self):
-        logger.warning("Reference semantic change recorded: user-de-interned strings compared via Objects.equals")
-        self.reference_semantic_change = True
-        
     def add(self, trace: list[Branch | Special], inputs: List[Input], ufs: List[UF]):
         """
         Adds a branch to the tree based on the provided trace and inputs.

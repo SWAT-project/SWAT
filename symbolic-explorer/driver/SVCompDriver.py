@@ -313,10 +313,6 @@ class SVCompDriver:
             logger.warning(f'[SVCOMP] Found uncaught exceptions during symbolic execution')
             verdict = Verdict.UNKNOWN
 
-        if (verdict == Verdict.VIOLATION) and Database.instance().get_tree(ENDPOINT_ID).reference_semantic_change:
-            logger.warning(f'[SVCOMP] Found reference semantic change (user-de-interned strings compared via Objects.equals) - downgrading VIOLATION to UNKNOWN')
-            verdict = Verdict.UNKNOWN
-
         if verdict == Verdict.NO_SYMBOLIC_VARS:
             verdict = Verdict.SAFE
         verdict_logger.info(f'[VERDICT {self.verification_category.value}] {verdict.value}')

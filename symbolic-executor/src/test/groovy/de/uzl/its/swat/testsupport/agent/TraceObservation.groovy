@@ -11,7 +11,6 @@ class TraceObservation {
 
     boolean symbolicContextLoss
     boolean symbolicPrecisionLoss
-    boolean referenceSemanticChange
     List<String> inputNames = []
     List<String> branchConstraints = []
 
@@ -19,7 +18,6 @@ class TraceObservation {
         TraceObservation o = new TraceObservation()
         o.symbolicContextLoss = root.path("symbolicContextLoss").asBoolean()
         o.symbolicPrecisionLoss = root.path("symbolicPrecisionLoss").asBoolean()
-        o.referenceSemanticChange = root.path("referenceSemanticChange").asBoolean()
         root.path("inputs").each { o.inputNames << it.path("name").asText() }
         root.path("trace").each {
             JsonNode c = it.path("constraint")

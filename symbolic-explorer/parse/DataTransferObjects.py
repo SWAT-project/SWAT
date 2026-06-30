@@ -32,7 +32,6 @@ class ConstraintRequest(BaseModel):
     ufs: List[UFItem]
     symbolicContextLoss: bool
     symbolicPrecisionLoss: bool
-    referenceSemanticChange: bool = False
 
 
 class CoverageRequest(BaseModel):

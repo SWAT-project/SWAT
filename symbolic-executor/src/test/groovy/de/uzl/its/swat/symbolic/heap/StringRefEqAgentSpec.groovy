@@ -23,8 +23,7 @@ class StringRefEqAgentSpec extends Specification {
         then: "the symbolic input is designated"
         obs.inputNames.any { it.startsWith("java/lang/String") }
 
-        and: "modeling == via root fires NEITHER flag (the over-firing fix; old refEquals fired both)"
+        and: "modeling == via root suppresses context-loss (IGNORED Provenance.root + shouldUseValueEquality)"
         !obs.symbolicContextLoss
-        !obs.referenceSemanticChange
     }
 }

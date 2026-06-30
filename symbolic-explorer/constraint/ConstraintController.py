@@ -40,7 +40,6 @@ class ConstraintController:
         ufs = request.ufs
         symbolicContextLoss = request.symbolicContextLoss
         symbolicPrecisionLoss = request.symbolicPrecisionLoss
-        referenceSemanticChange = request.referenceSemanticChange
 
         # Start a new thread to add constraints
         thread = threading.Thread(target=ConstraintService.add_constraints, kwargs={
@@ -50,8 +49,7 @@ class ConstraintController:
             'inputs': inputs,
             'ufs': ufs,
             'symbolic_context_loss': symbolicContextLoss,
-            'symbolic_precision_loss': symbolicPrecisionLoss,
-            'reference_semantic_change': referenceSemanticChange})
+            'symbolic_precision_loss': symbolicPrecisionLoss})
         thread.start()
         thread.join() # To ensure trace is added in SV-Comp mode
         # Return a response indicating that the request has been accepted

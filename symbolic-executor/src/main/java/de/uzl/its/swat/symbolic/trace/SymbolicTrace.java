@@ -25,9 +25,6 @@ class SymbolicTrace {
     // If true, an invocation occurred that was not instrumented but received symbolic arguments.
     private boolean symbolicContextLoss = false;
 
-    // If true, reference equality semantics may have changed due to comparing user-de-interned strings.
-    private boolean referenceSemanticChange = false;
-
     /** Creates a new SymbolicTrace. */
     public SymbolicTrace() {
         this.inputs = new ArrayList<>();

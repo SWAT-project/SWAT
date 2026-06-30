@@ -113,8 +113,7 @@ class Database:
         return endpoints
 
     def add_trace(self, endpoint_id: Union[str, int], trace_id: str, trace: list[Branch | Special], inputs: List[Input], ufs: List[UF],
-                  symbolic_context_loss: bool, symbolic_precision_loss: bool,
-                  reference_semantic_change: bool = False):
+                  symbolic_context_loss: bool, symbolic_precision_loss: bool):
         endpoint_id = str(endpoint_id)
 
         lock.acquire()
@@ -126,7 +125,6 @@ class Database:
         self.tree[endpoint_id].record_ufs(ufs)
         self.tree[endpoint_id].record_context_loss() if symbolic_context_loss else None
         self.tree[endpoint_id].record_precision_loss() if symbolic_precision_loss else None
-        self.tree[endpoint_id].record_reference_semantic_change() if reference_semantic_change else None
 
         lock.release()
 

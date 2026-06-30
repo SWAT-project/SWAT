@@ -108,7 +108,7 @@ class DTOBuilder {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }
         }
-        return new TraceDTO(inputs, trace, ufs, symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange());
+        return new TraceDTO(inputs, trace, ufs, symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss);
     }
 
     /**
