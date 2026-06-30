@@ -8,7 +8,7 @@ from data.trace.UF import UF
 
 import log
 logger = log.get_logger()
-import pygraphviz as pgv
+# import pygraphviz as pgv
 
 class Tree:
     """
