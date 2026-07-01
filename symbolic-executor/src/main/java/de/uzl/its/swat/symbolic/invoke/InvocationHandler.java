@@ -154,6 +154,7 @@ public class InvocationHandler {
         if (retValue == PlaceHolder.instance) {
             retValue = new PlaceHolder(
                     PlaceHolder.ValueOrigin.UNMODELED_RETURN,
+                    isInstance ? instance : null,
                     pureUF == null ? null : pureUF.result(),
                     pureUF == null ? null : pureUF.observedApplication());
         }

@@ -90,16 +90,19 @@ public class PlaceHolder extends Value {
     }
 
     /**
-     * UNMODELED_RETURN placeholder carrying, for a whitelisted pure method: the generic UF over
-     * the symbolic inputs ({@code recoveredFormula}, modeling the result) and the same UF over the
-     * constant observed inputs ({@code observedApplication}, used to record the observed pair). Either
+     * UNMODELED_RETURN placeholder. {@code referenceValue} is the receiver of the unmodeled call
+     * (null for static calls); recovery uses it to tell a returned distinct tracked value from a
+     * this-return. For a whitelisted pure method it also carries the generic UF over the symbolic
+     * inputs ({@code recoveredFormula}, modeling the result) and the same UF over the constant
+     * observed inputs ({@code observedApplication}, used to record the observed pair). Any of these
      * may be null.
      */
-    public PlaceHolder(ValueOrigin origin, Formula recoveredFormula, Formula observedApplication) {
+    public PlaceHolder(ValueOrigin origin, ObjectValue<?, ?> referenceValue,
+            Formula recoveredFormula, Formula observedApplication) {
         this.origin = origin;
         this.isSymbolic = false;
         this.inst = null;
-        this.referenceValue = null;
+        this.referenceValue = referenceValue;
         this.recoveredFormula = recoveredFormula;
         this.observedApplication = observedApplication;
     }

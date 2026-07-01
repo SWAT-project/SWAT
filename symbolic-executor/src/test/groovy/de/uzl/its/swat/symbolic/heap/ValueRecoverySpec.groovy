@@ -3,6 +3,7 @@ package de.uzl.its.swat.symbolic.heap
 import de.uzl.its.swat.common.Util
 import de.uzl.its.swat.symbolic.processor.BaseSymbolicInstructionProcessorSpec
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
+import de.uzl.its.swat.thread.ThreadHandler
 import org.sosy_lab.java_smt.api.Formula
 
 /**
@@ -59,6 +60,35 @@ class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
         then: "context loss is flagged, the concrete is the real result, and there is no aliasing"
         result.contextLoss
         result.recovered.concrete == "abc"
+        varsOf(result.recovered).disjoint(receiverVars)
+    }
+
+    def "an unmodeled call returning a distinct tracked value recovers that value's shadow"() {
+        given: "a symbolic receiver, and a DISTINCT symbolic value registered on the heap under its own concrete"
+        setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
+        StringValue receiver = new StringValue(solverContext, "receiver", 0x1000)
+        receiver.MAKE_SYMBOLIC()
+        def receiverVars = varsOf(receiver)
+
+        String storedConcrete = "stored"
+        StringValue stored = new StringValue(solverContext, storedConcrete, 0x2000)
+        stored.MAKE_SYMBOLIC()
+        def storedVars = varsOf(stored)
+        ThreadHandler.getSymbolicVisitor(threadId).getStack().putToHeap(storedConcrete, stored)
+
+        and: "receiver and stored carry different symbolic variables"
+        assert !receiverVars.isEmpty() && !storedVars.isEmpty()
+        assert receiverVars.disjoint(storedVars)
+
+        when: "an unmodeled instance call returns the distinct stored object, not the receiver"
+        // The fixture fabricates the returned identity (see its NOTE); a real example is map.get(k).
+        def result = executeBoundaryRecovery(receiver, STRING, "toLowerCase", TO_LOWER, storedConcrete)
+
+        then: "the stored value's shadow is recovered - it keeps its own symbolic formula"
+        varsOf(result.recovered) == storedVars
+
+        and: "so the result is neither concretized nor aliased to the receiver"
+        !varsOf(result.recovered).isEmpty()
         varsOf(result.recovered).disjoint(receiverVars)
     }
 }

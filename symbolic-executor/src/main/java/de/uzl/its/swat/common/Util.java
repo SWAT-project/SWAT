@@ -456,4 +456,26 @@ public class Util {
                 || o instanceof Character;
     }
 
+    /**
+     * The closed set of genuinely-immutable value types whose stored shadow recovery may safely
+     * reuse: String and the eight boxed primitive wrappers. Narrower than {@link #isValueType}, which
+     * admits mutable {@link Number} subtypes ({@code AtomicInteger}, {@code LongAdder}, ...) — reusing
+     * a stored shadow for those could be stale. An immutable value cannot have drifted since it was
+     * registered, so reusing its shadow is sound.
+     *
+     * @param o the concrete object (may be null)
+     * @return true if {@code o} is a String or a boxed primitive wrapper
+     */
+    public static boolean isImmutableValueType(Object o) {
+        return o instanceof String
+                || o instanceof Integer
+                || o instanceof Long
+                || o instanceof Short
+                || o instanceof Byte
+                || o instanceof Character
+                || o instanceof Boolean
+                || o instanceof Float
+                || o instanceof Double;
+    }
+
 }

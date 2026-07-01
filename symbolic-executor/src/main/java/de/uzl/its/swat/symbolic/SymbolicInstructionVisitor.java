@@ -1294,6 +1294,19 @@ public class SymbolicInstructionVisitor implements IVisitor {
                             symbolicTraceHandler.addConstraint(
                                     smgr.equal((StringFormula) placeHolder.observedApplication, smgr.makeString(s)));
                         }
+                    } else if (Util.isImmutableValueType(inst.val)
+                            && placeHolder.referenceValue != null
+                            && (tmp = stack.getFromHeap(inst.val)) != null
+                            && tmp != placeHolder.referenceValue
+                            && inst.val.equals(tmp.getConcrete())) {
+                        // The unmodeled method returned a distinct, already-tracked immutable value
+                        // (e.g. a String or boxed primitive retrieved from a container), not the
+                        // receiver. Recover its shadow so the value keeps its symbolic formula instead
+                        // of being concretized. An immutable value cannot have drifted since it was
+                        // registered, so the stored shadow is still exact (the concrete-equality check
+                        // is a defensive guard). A method returning `this` (e.g. toLowerCase) is
+                        // excluded by `tmp != referenceValue` and still concretizes.
+                        shadowStateLogger.info("Recovered distinct registered shadow for unmodeled value-typed result: {}", tmp);
                     } else {
                         tmp = ValueFactory.createObjectValue(inst.val, inst.address);
                         shadowStateLogger.info("Concretized unmodeled value-typed result (no identity recovery): {}", tmp);
