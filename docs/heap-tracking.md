@@ -165,8 +165,8 @@ De-interning would then break `==`, so each fresh copy records the genuine origi
   canonical)` (stores the fully-resolved root, keeping chains depth-1); `root(x)` returns the
   canonical or `x` itself.
 - `common/UtilInstrumented.java` — `refEquals`: uses value equality
-  (`Provenance.root(a) == Provenance.root(b)`) when both operands are de-interned value types, else
-  plain `a == b`.
+  (`Provenance.root(a) == Provenance.root(b)`) when **either** operand is a de-interned value type
+  (the other operand's `root()` is itself), else plain `a == b`.
 - `common/Util.java` — `shouldUseValueEquality`, `isDeInternedClass`, and the `deInternedClasses`
   set: **String + Boolean/Byte/Short/Character/Integer/Long**. Float and Double are **not**
   de-interned (they are uncached in real Java, so plain reference equality is already correct).
@@ -185,9 +185,10 @@ De-interning would then break `==`, so each fresh copy records the genuine origi
 - `==` on de-interned value types matches real-Java `==`.
 - Float/Double keep plain reference equality.
 
-**Known residual approximation** — `new String("x") == new String("x")` is modeled as `true` while
-the real JVM yields `false`, and this is not flagged. It is a deliberate limitation of routing `==`
-through value equality.
+**User-constructed value types compare correctly.** A `new String("x")` (or `new Integer(...)`) is
+never given a provenance root — only literals, boxed `valueOf`, and returns from un-instrumented code
+are — so it roots to itself and compares unequal to any other instance, matching the real JVM (e.g.
+`new String("x") == new String("x")` is `false`, and `new String("x") == "x"` is `false`).
 
 ### 6. Pure-function model — keeping precision through side-effect-free calls
 
