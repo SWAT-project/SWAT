@@ -62,6 +62,11 @@ class State:
     def __init__(self):
         self.verdict = Verdict.UNKNOWN
         self.branch_to_explore: Node | None = None
+        # Branches we solved and intended to explore, but the concrete re-run diverged from (the
+        # predicted branch was never actually taken - e.g. a branch guarded by an uninterpreted
+        # pure_ UF the solver cannot drive to the required value). While any remain unverified a
+        # SAFE verdict is unsound: that branch was not actually explored.
+        self.unverified_branches: set = set()
     
     
 class SVCompDriver:
@@ -213,9 +218,11 @@ class SVCompDriver:
                     if branch.id == self.state.branch_to_explore.id:
                         if branch.has_branched == (self.state.branch_to_explore.branched is not None):
                             logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {branch.id} as expected! Branch unexpectedly taken/skipped.')
+                            self.state.unverified_branches.add(self.state.branch_to_explore.id)
                         break
                 else:
                     logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {self.state.branch_to_explore.id} as expected! Branch does not appear in trace.')
+                    self.state.unverified_branches.add(self.state.branch_to_explore.id)
             self.state.branch_to_explore = None
 
             self.log_output(output)
@@ -311,6 +318,10 @@ class SVCompDriver:
 
         if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).uncaught_exceptions > 0:
             logger.warning(f'[SVCOMP] Found uncaught exceptions during symbolic execution')
+            verdict = Verdict.UNKNOWN
+
+        if (verdict == Verdict.SAFE) and self.state.unverified_branches:
+            logger.warning(f'[SVCOMP] Cannot conclude SAFE: {len(self.state.unverified_branches)} branch(es) diverged and were never verified (downgrading to UNKNOWN)')
             verdict = Verdict.UNKNOWN
 
         if verdict == Verdict.NO_SYMBOLIC_VARS:
