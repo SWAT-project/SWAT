@@ -1,12 +1,10 @@
 import de.uzl.its.swat.annotations.Symbolic;
 
 /**
- * Level-2 target for G4 primitive-return UF support: an instrumented method calls un-instrumented,
- * pure, UNMODELED java.lang methods whose return type is a PRIMITIVE, on symbolic inputs, and branches
- * on each result. Under the real agent each result is modeled as a generic {@code pure_<sig>} UF over
- * its inputs (not concretized), so the branches stay symbolic with NO context loss and NO precision
- * loss. Covers int, long, double, float, char and boolean returns (short/byte have no pure unmodeled
- * JDK method and are pinned at L0 by PureUFPrimitiveRecoverySpec). See docs/heap-redesign-g4-* .
+ * Calls pure, unmodeled java.lang methods with primitive return types on symbolic inputs and branches
+ * on each result. Each result is modeled as a generic {@code pure_<sig>} uninterpreted function over
+ * its inputs rather than concretized, so the branches stay symbolic. Covers int, long, double, float,
+ * char and boolean returns (short and byte have no suitable pure unmodeled JDK method).
  */
 public class PurePrimReturnTarget {
 

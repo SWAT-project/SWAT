@@ -5,23 +5,22 @@ import de.uzl.its.swat.testsupport.agent.TraceObservation
 import spock.lang.Specification
 
 /**
- * G3-B end-to-end acceptance (Level L2): a de-interned {@code ==} (symbolic String vs a literal) is
- * modeled via Provenance.root as a reference comparison, and must fire NEITHER soundness flag. This
- * pins the round-2 mechanism correction: the stepped {@code refEquals} body's {@code root}/
- * {@code shouldUseValueEquality} calls are IGNORED (no context loss), and {@code refEquals} no longer
- * routes through {@code Objects.equals} (no reference-semantic-change). The old value-equality
- * {@code refEquals} fired both flags here. Mirrors PureFunctionUFAgentSpec.
+ * End-to-end check that a de-interned {@code ==} (symbolic String versus a literal) is modeled via
+ * {@code Provenance.root} as a reference comparison and fires neither soundness flag. The
+ * {@code refEquals} body's {@code root}/{@code shouldUseValueEquality} calls are ignored (no context
+ * loss), and {@code refEquals} does not route through {@code Objects.equals} (no reference-semantic
+ * change).
  */
 class StringRefEqAgentSpec extends Specification {
 
-    def "G3-B (L2): de-interned == is modeled by provenance root and fires neither soundness flag"() {
+    def "de-interned == is modeled by provenance root and fires neither soundness flag"() {
         when:
         TraceObservation obs = AgentRun.run("targets/StringRefEqTarget.java", "StringRefEqTarget")
 
         then: "the symbolic input is designated"
         obs.inputNames.any { it.startsWith("java/lang/String") }
 
-        and: "modeling == via root suppresses context-loss (IGNORED Provenance.root + shouldUseValueEquality)"
+        and: "modeling == via root suppresses context loss (ignored Provenance.root and shouldUseValueEquality)"
         !obs.symbolicContextLoss
     }
 }

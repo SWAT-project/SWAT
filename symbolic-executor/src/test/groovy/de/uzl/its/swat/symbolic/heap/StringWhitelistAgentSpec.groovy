@@ -5,18 +5,15 @@ import de.uzl.its.swat.testsupport.agent.TraceObservation
 import spock.lang.Specification
 
 /**
- * G4 String-whitelist anchor (Level L2): the REAL agent runs a program calling pure String methods that
- * the purity audit confirmed are UNMODELED stubs in StringValue (so the generic pure_<sig> UF fires) -
- * across String, int and boolean returns - on a symbolic String receiver. Each must be modeled as a UF,
- * preserving SAFE (no context loss, no precision loss) with the UFs in the branch constraints. The
- * modeled String methods (substring, charAt, length, ...) are intentionally NOT whitelisted; they stay
- * precise and are exercised by PureFunctionUFAgentSpec.
- *
- * Naming: {@code *AgentSpec} -> run by the opt-in {@code agentTest} task. See docs/test-architecture.md.
+ * End-to-end check that pure String methods which are unmodeled stubs in StringValue (so the generic
+ * pure_&lt;sig&gt; UF fires), across String, int and boolean returns, are each modeled as a UF on a
+ * symbolic String receiver. The run preserves SAFE (no context loss, no precision loss) with the UFs
+ * in the branch constraints. The modeled String methods (substring, charAt, length, ...) are not
+ * whitelisted; they stay precise and are exercised elsewhere.
  */
 class StringWhitelistAgentSpec extends Specification {
 
-    def "G4 (L2): unmodeled pure String methods are modeled as UFs (no context/precision loss)"() {
+    def "unmodeled pure String methods are modeled as UFs (no context or precision loss)"() {
         when: "the agent runs a program calling pure unmodeled String stubs on a symbolic receiver"
         TraceObservation obs = AgentRun.run("targets/StringWhitelistTarget.java", "StringWhitelistTarget")
 

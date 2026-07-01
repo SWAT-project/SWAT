@@ -14,14 +14,12 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue
 import de.uzl.its.swat.thread.ThreadHandler
 
 /**
- * E-1 / E-2 (Level L1): out-of-band change detection at a primitive GETVALUE sync. When the value the
- * real JVM produced diverges from the tracked shadow's concrete (e.g. a field mutated inside unmodeled
- * code), the {@code shadowDivergence=FLAG} policy detects it gracefully — record context loss, adopt
- * the observed concrete, and do NOT throw — instead of the CRASH policy's hard assert. The
- * escape-aware "crash only on genuine desync" differentiation is deferred to G4a. See
- * docs/heap-redesign-tests.md and docs/heap-redesign-goob-design.md.
+ * Out-of-band change detection at a primitive GETVALUE sync. When the value the real JVM produced
+ * diverges from the tracked shadow's concrete (for example, a field mutated inside unmodeled code), the
+ * {@code shadowDivergence=FLAG} policy handles it gracefully: it records context loss, adopts the
+ * observed concrete, and does not throw, unlike the CRASH policy's hard assert.
  */
-class GoobDetectionSpec extends BaseSymbolicInstructionProcessorSpec {
+class OutOfBandDetectionSpec extends BaseSymbolicInstructionProcessorSpec {
 
     private ShadowDivergence savedPolicy
 
@@ -46,7 +44,7 @@ class GoobDetectionSpec extends BaseSymbolicInstructionProcessorSpec {
         }
     }
 
-    def "E-1: under FLAG a diverging primitive GETVALUE is detected (flag + re-ground), not crashed"() {
+    def "under FLAG a diverging primitive GETVALUE is flagged and re-grounded, not crashed"() {
         given: "a tracked int shadow with concrete 10, under the FLAG policy"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         Config.instance().setShadowDivergence(ShadowDivergence.FLAG)
@@ -61,7 +59,7 @@ class GoobDetectionSpec extends BaseSymbolicInstructionProcessorSpec {
         visitor.getStack().getActiveFrame().peek().concrete == 20
     }
 
-    def "E-2: under FLAG a matching primitive GETVALUE records no flag (no false positive)"() {
+    def "under FLAG a matching primitive GETVALUE records no context-loss flag"() {
         given:
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         Config.instance().setShadowDivergence(ShadowDivergence.FLAG)

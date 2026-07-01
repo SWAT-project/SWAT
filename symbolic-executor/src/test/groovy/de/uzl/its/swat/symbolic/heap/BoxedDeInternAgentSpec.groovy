@@ -5,21 +5,16 @@ import de.uzl.its.swat.testsupport.agent.TraceObservation
 import spock.lang.Specification
 
 /**
- * G3-A2 end-to-end anchor (Level L2): the REAL agent runs a program that drives the boxed de-intern
- * instrumentation through both emitted-bytecode paths - the unbox+rebox de-intern wrap on
- * un-instrumented valueOf(String) returns for Integer (category-1) and Long (category-2 wide-local),
- * and the valueOf(primitive)->new rewrite via autoboxing for ALL SIX wrappers (Integer/Long/Short/Byte/
- * Character/Boolean), the path whose per-wrapper descriptors are DERIVED from the Boxed enum. The run
- * completing (AgentRun asserts exit == 0 plus a parsed TraceDTO) is the bytecode-validity oracle: a
- * malformed wrap or rewrite would VerifyError. Object-identity (the actual de-intern effect) is pinned
- * at L1 by OutputDeInternSpec, the boxed-cache == semantics at L0 by ProvenanceRefEqualsSpec; this
- * anchors that the boxed bytecode is real-JVM-valid for every wrapper. Mirrors PureFunctionUFAgentSpec.
- *
- * Naming: {@code *AgentSpec} -> run by the opt-in {@code agentTest} task. See docs/test-architecture.md.
+ * End-to-end check that the boxed de-intern instrumentation produces JVM-valid bytecode. The real agent
+ * runs a program driving both emitted paths: the unbox+rebox wrap on un-instrumented valueOf(String)
+ * returns for Integer and Long, and the valueOf(primitive)->new rewrite via autoboxing for all six
+ * wrappers (Integer, Long, Short, Byte, Character, Boolean). The run completing (exit 0 plus a parsed
+ * trace) is the oracle: a malformed wrap or rewrite would raise a VerifyError. Object-identity effects
+ * are covered by OutputDeInternSpec and the boxed-cache equality semantics by ProvenanceRefEqualsSpec.
  */
 class BoxedDeInternAgentSpec extends Specification {
 
-    def "G3-A2 (L2): all six wrappers' valueOf-rewrite (+ Integer/Long de-intern) load, verify, and run"() {
+    def "all six wrappers' valueOf-rewrite and Integer/Long de-intern load, verify, and run"() {
         when: "the agent runs a program driving the boxed de-intern bytecode paths"
         TraceObservation obs = AgentRun.run("targets/BoxedReturnTarget.java", "BoxedReturnTarget")
 

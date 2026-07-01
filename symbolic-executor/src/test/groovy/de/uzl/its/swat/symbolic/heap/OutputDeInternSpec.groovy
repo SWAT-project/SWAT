@@ -16,14 +16,11 @@ import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
 import de.uzl.its.swat.thread.ThreadHandler
 
 /**
- * G3 register-only-non-constant (Level L1). At the value-typed GETVALUE recovery, a de-interned value
- * type (String or a cached boxed wrapper) whose shadow carries symbolic content (a variable/UF) IS
- * heap-registered so it round-trips through untracked space (the whitelisted-pure-UF win), while a
- * pure-constant shadow is NOT registered — it is reconstructible from the observed concrete, so
- * registering it would only grow the heap. G3 de-interning (bytecode) makes the registered reference
- * sound; this spec pins the executor-side registration policy for String (A1) and boxed (A2), and that
- * mutable objects on the shared boxed/mutable recovery path keep unconditional registration. See
- * docs/heap-redesign-g3-design.md.
+ * Registration policy at value-typed GETVALUE recovery. A de-interned value type (String or a cached
+ * boxed wrapper) whose shadow carries symbolic content is heap-registered so it round-trips through
+ * untracked space, while a pure-constant shadow is not registered because it is reconstructible from
+ * the observed concrete. Mutable (non-value-type) objects on the shared recovery path stay
+ * unconditionally registered.
  */
 class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
 
@@ -43,7 +40,7 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         }
     }
 
-    def "G3: a symbolic String shadow IS heap-registered (round-trip enabled)"() {
+    def "a symbolic String shadow is heap-registered so it can round-trip"() {
         given: "a symbolic String shadow awaiting its address (ADDRESS_UNKNOWN)"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         String obj = "symbolic-abc"
@@ -57,7 +54,7 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         ThreadHandler.getSymbolicVisitor(threadId).getStack().getFromHeap(obj) != null
     }
 
-    def "G3: a constant String shadow is NOT heap-registered (reconstructible; no leak)"() {
+    def "a constant String shadow is not heap-registered since it is reconstructible"() {
         given: "a pure-constant String shadow (formula = makeString) awaiting its address"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         String obj = "constant-xyz"
@@ -70,7 +67,7 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         ThreadHandler.getSymbolicVisitor(threadId).getStack().getFromHeap(obj) == null
     }
 
-    def "G3-A2: a symbolic boxed shadow IS heap-registered (round-trip enabled)"() {
+    def "a symbolic boxed shadow is heap-registered so it can round-trip"() {
         given: "a symbolic Integer shadow awaiting its address (formula carried by the inner IntValue)"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         Integer obj = 7
@@ -85,7 +82,7 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         ThreadHandler.getSymbolicVisitor(threadId).getStack().getFromHeap(obj) != null
     }
 
-    def "G3-A2: a constant boxed shadow is NOT heap-registered (reconstructible; no leak)"() {
+    def "a constant boxed shadow is not heap-registered since it is reconstructible"() {
         given: "a pure-constant Integer shadow awaiting its address"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         Integer obj = 7
@@ -99,7 +96,7 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         ThreadHandler.getSymbolicVisitor(threadId).getStack().getFromHeap(obj) == null
     }
 
-    def "G3-A2: a mutable (non-value-type) object is ALWAYS registered (shared path unaffected)"() {
+    def "a mutable non-value-type object is always heap-registered"() {
         given: "a plain mutable object whose class is not de-interned"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         Object obj = new Object()
@@ -108,7 +105,7 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         when: "the value is recovered"
         recover(shadow, obj)
 
-        then: "register-only-non-constant must NOT touch mutable objects - sound identity key, must track"
+        then: "a mutable object is still heap-registered - it has a sound identity key and must be tracked"
         ThreadHandler.getSymbolicVisitor(threadId).getStack().getFromHeap(obj) != null
     }
 }

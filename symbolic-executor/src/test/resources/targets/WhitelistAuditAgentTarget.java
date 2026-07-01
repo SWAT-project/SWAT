@@ -1,12 +1,11 @@
 import de.uzl.its.swat.annotations.Symbolic;
 
 /**
- * Level-2 regression target for the broadened G4 purity whitelist (the java.lang/util audit additions).
- * Each method drives a few pure, unmodeled, value-typed JDK methods - across all eight audited owners
- * and every return sort, including the String->float parse bridge - on a symbolic input into a branch.
- * Under the real agent every result must be modeled as a generic pure_<sig> UF, so the run preserves
- * SAFE (no context loss, no precision loss). Methods are kept small/separate to avoid an unrelated
- * frame-analysis fragility in the instrumenter on large mixed-type method bodies.
+ * Drives pure, unmodeled, value-typed JDK methods from the purity whitelist on symbolic inputs into
+ * branches. The methods span several owners and every return sort, including the String-to-float parse
+ * bridge. Each result is modeled as a generic pure_<sig> uninterpreted function. The methods are kept
+ * small and separate because large mixed-type method bodies trip a frame-analysis limitation in the
+ * instrumenter.
  */
 public class WhitelistAuditAgentTarget {
 

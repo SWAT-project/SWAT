@@ -7,13 +7,12 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue
 import spock.lang.Unroll
 
 /**
- * G4 primitive-return recovery unit (Level L0): {@link ValueFactory#createNumericalValue(ValueType,
- * Object, org.sosy_lab.java_smt.api.Formula)} builds a primitive value carrying an explicit symbolic
- * formula (concrete = observed), for EVERY primitive sort. This is the construction the primitive
- * GETVALUE recovery uses to install a {@code pure_<sig>} UF result. It pins the per-sort cast and that
- * a carried symbolic formula makes the value symbolic - including short and byte, which have no pure
- * unmodeled JDK method to exercise at L2. The sort matching of int/long/double/float/char/boolean is
- * additionally anchored end-to-end by PureFunctionPrimitiveAgentSpec.
+ * Primitive-return recovery: {@link ValueFactory#createNumericalValue(ValueType, Object,
+ * org.sosy_lab.java_smt.api.Formula)} builds a primitive value carrying an explicit symbolic formula
+ * (concrete = observed), for every primitive sort. This is the construction that installs a
+ * {@code pure_<sig>} UF result during primitive recovery. It pins the per-sort cast and that a
+ * carried symbolic formula makes the value symbolic, including short and byte, which have no pure
+ * unmodeled JDK method to exercise against a running agent.
  */
 class PureUFPrimitiveRecoverySpec extends BaseValueSpec {
 

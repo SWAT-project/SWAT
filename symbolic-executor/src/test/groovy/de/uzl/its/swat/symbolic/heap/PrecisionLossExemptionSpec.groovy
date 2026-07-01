@@ -7,17 +7,16 @@ import org.sosy_lab.java_smt.api.FormulaType
 import org.sosy_lab.java_smt.api.StringFormula
 
 /**
- * G4 exemption controls (Level L0): {@link DTOBuilder#isPrecisionLoss} must treat a whitelisted
- * generic {@code pure_} UF over real inputs as precision-PRESERVING (sound: an axiom-free UF over
- * inputs over-approximates any deterministic function, so UNSAT-under-free-UF =&gt; real UNSAT =&gt;
- * SAFE holds), while a non-input variable or a bespoke (non-{@code pure_}) UF still loses precision.
- * Input-ness is decided by exact term identity against the designated inputs (NOT a name pattern), so
- * it works for String inputs (named {@code java/lang/String_0}, which the old regex wrongly rejected).
- * See docs/heap-redesign-g4-design.md.
+ * Precision-loss exemption for pure uninterpreted functions. {@link DTOBuilder#isPrecisionLoss}
+ * treats a whitelisted generic {@code pure_} UF over designated inputs as precision-preserving (an
+ * axiom-free UF over inputs over-approximates any deterministic function, so UNSAT under the free UF
+ * implies real UNSAT and SAFE holds), while a non-input variable or a bespoke (non-{@code pure_}) UF
+ * still loses precision. Input-ness is decided by exact term identity against the designated inputs
+ * rather than a name pattern, so it also holds for String inputs named {@code java/lang/String_0}.
  */
 class PrecisionLossExemptionSpec extends BaseValueSpec {
 
-    // A realistic String input variable name - lowercase + slashes, which the old [A-Z].*_[0-9].* regex rejected.
+    // A realistic String input variable name: lowercase plus slashes.
     private StringFormula inputVar() { fmgr.getStringFormulaManager().makeVariable("java/lang/String_0") }
     private StringFormula otherVar() { fmgr.getStringFormulaManager().makeVariable("intermediate") }
 
@@ -32,7 +31,7 @@ class PrecisionLossExemptionSpec extends BaseValueSpec {
         return fmgr.getStringFormulaManager().equal(s, fmgr.getStringFormulaManager().makeString("abc"))
     }
 
-    def "a designated input variable alone is not precision loss (incl. a String input the regex rejected)"() {
+    def "a designated input variable alone is not precision loss, including a String input"() {
         given:
         def v = inputVar()
         expect:

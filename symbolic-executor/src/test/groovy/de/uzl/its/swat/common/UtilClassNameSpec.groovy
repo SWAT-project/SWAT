@@ -12,12 +12,9 @@ import spock.lang.Unroll
  * ({@code a.b.C}) or internal/slashed ({@code a/b/C}). {@code formatClassName} canonicalizes to the
  * internal form.
  *
- * <p>A regression (commit a80dc60, incidental to an unrelated UF commit) added
- * {@code && !className.startsWith("L")} to the guard. Because the predicate keys on the first
- * character, it spuriously rejected every legitimate class name beginning with 'L' — notably
- * default-package targets/benchmarks named {@code L...} (e.g. {@code LitSymTarget}) — crashing
- * instrumentation through {@link SWATAssert}. Object descriptors are already caught by the {@code ';'}
- * clause, so the term was pure false-positive surface and was removed. This pins both halves of the
+ * <p>A class name beginning with 'L' (e.g. a default-package target named {@code LitSymTarget}) is a
+ * valid class name, not an object descriptor, so the guard must accept it: object descriptors are
+ * distinguished by their trailing {@code ';'}, not by a leading 'L'. This pins both halves of the
  * contract: L-prefixed class names round-trip, real descriptors still throw.
  */
 class UtilClassNameSpec extends Specification {

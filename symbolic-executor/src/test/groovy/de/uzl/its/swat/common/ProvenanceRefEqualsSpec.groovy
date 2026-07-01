@@ -3,19 +3,17 @@ package de.uzl.its.swat.common
 import spock.lang.Specification
 
 /**
- * G3-B unit test: {@link UtilInstrumented#refEquals} models reference equality by ORIGINAL identity via
- * the {@link Provenance} map. Two de-interned copies that root to the same canonical compare equal;
- * distinct canonicals compare unequal; non-de-interned classes fall back to plain reference equality.
- * This pins the executor-independent core of G3-B (the de-intern bytecode that populates the map is
- * exercised at L2). See docs/heap-redesign-g3-design.md.
+ * Reference equality modeled by original identity through the provenance map. Two de-interned copies
+ * that root to the same canonical compare equal; distinct canonicals compare unequal; non-de-interned
+ * classes fall back to plain reference equality.
  */
 class ProvenanceRefEqualsSpec extends Specification {
 
     def "de-interned Strings rooting to the same interned canonical compare equal"() {
         given: "two distinct de-interned copies of the same literal, both rooted to the interned canonical"
-        String canonical = "g3b-abc".intern()
-        String a = new String("g3b-abc")
-        String b = new String("g3b-abc")
+        String canonical = "shared-abc".intern()
+        String a = new String("shared-abc")
+        String b = new String("shared-abc")
         Provenance.record(a, canonical)
         Provenance.record(b, canonical)
 
@@ -27,9 +25,9 @@ class ProvenanceRefEqualsSpec extends Specification {
 
     def "a de-interned copy vs a same-valued object with a different root compares unequal"() {
         given: "a rooted to the interned canonical; b has no provenance entry (root(b)=b)"
-        String a = new String("g3b-x")
-        Provenance.record(a, "g3b-x".intern())
-        String b = new String("g3b-x")
+        String a = new String("shared-x")
+        Provenance.record(a, "shared-x".intern())
+        String b = new String("shared-x")
 
         expect: "distinct roots -> unequal (matches real new String(\"x\") == \"x\" -> false)"
         !UtilInstrumented.refEquals(a, b)
@@ -59,10 +57,10 @@ class ProvenanceRefEqualsSpec extends Specification {
 
     def "root collapses chains at insert"() {
         given: "c rooted to b, b rooted to canonical -> root(c) must resolve to canonical"
-        String canonical = "g3b-chain".intern()
-        String b = new String("g3b-chain")
+        String canonical = "shared-chain".intern()
+        String b = new String("shared-chain")
         Provenance.record(b, canonical)
-        String c = new String("g3b-chain")
+        String c = new String("shared-chain")
         Provenance.record(c, b)
 
         expect:

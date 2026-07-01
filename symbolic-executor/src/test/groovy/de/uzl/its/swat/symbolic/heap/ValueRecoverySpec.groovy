@@ -6,11 +6,10 @@ import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
 import org.sosy_lab.java_smt.api.Formula
 
 /**
- * Value-typed boundary recovery at Level L1 (the workhorse fixture). An unmodeled value-returning
- * call must not let its result alias the receiver's symbolic value - whether the call returns
- * {@code this} (V-1) or a fresh object (V-2). The only difference between the two below is the
- * result's object identity (the receiver's own object for a this-return vs a distinct object),
- * which isolates the reference-keyed recovery as the defect. See docs/heap-redesign-tests.md.
+ * Boundary recovery for value-returning calls. An unmodeled value-returning call must not let its
+ * result alias the receiver's symbolic value, whether the call returns {@code this} or a fresh
+ * object. The two cases differ only in the result's object identity (the receiver's own object for
+ * a this-return versus a distinct object), isolating the reference-keyed recovery.
  */
 class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
 
@@ -21,7 +20,7 @@ class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
         return solverContext.getFormulaManager().extractVariables(value.formula as Formula).keySet()
     }
 
-    def "V-1: toLowerCase this-return must not alias the receiver's symbolic formula"() {
+    def "a this-returning unmodeled call does not alias the receiver's symbolic formula"() {
         given: "a symbolic, already-lowercase String receiver registered on the heap"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         int receiverAddress = 0x1000
@@ -30,22 +29,22 @@ class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
         receiver.MAKE_SYMBOLIC()
         def receiverVars = varsOf(receiver)
 
-        and: "precondition: the receiver really is symbolic"
+        and: "the receiver really is symbolic"
         assert receiverVars.size() == 1
 
         when: "toLowerCase() is invoked (unmodeled) and the this-return is recovered"
         def result = executeBoundaryRecovery(receiver, STRING, "toLowerCase", TO_LOWER,
                 concrete) // this-return: the result object IS the receiver's concrete object
 
-        then: "preconditions that hold today: context loss flagged, concrete correct"
+        then: "context loss is flagged and the concrete result is correct"
         result.contextLoss
         result.recovered.concrete == concrete
 
-        and: "the recovered value must NOT carry the receiver's symbolic formula (RED until G2)"
+        and: "the recovered value does not carry the receiver's symbolic formula"
         varsOf(result.recovered).disjoint(receiverVars)
     }
 
-    def "V-2: a new-object transform return does not alias the receiver (consistent with V-1)"() {
+    def "a fresh-object unmodeled return does not alias the receiver's symbolic formula"() {
         given: "a symbolic, concretely upper-case String receiver (toLowerCase returns a NEW object)"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         int receiverAddress = 0x1000

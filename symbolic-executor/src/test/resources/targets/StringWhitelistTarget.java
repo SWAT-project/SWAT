@@ -1,11 +1,10 @@
 import de.uzl.its.swat.annotations.Symbolic;
 
 /**
- * Level-2 regression target for the String purity-audit additions (the StringValue stubs that the
- * audit confirmed are unmodeled, so the generic pure_<sig> UF fires). Drives a representative few -
- * String, int and boolean returns - on a symbolic String receiver into branches. Single String
- * parameter only (a category-2 double followed by a reference param trips an unrelated frame-analysis
- * fragility in the instrumenter). See docs/heap-redesign-g4-whitelist-survey.md (Level L2).
+ * Drives unmodeled pure String methods on a symbolic String receiver into branches, covering String,
+ * int and boolean returns. Each result is modeled as a generic pure_<sig> uninterpreted function.
+ * Uses a single String parameter: a category-2 parameter (double or long) followed by a reference
+ * parameter trips a frame-analysis limitation in the instrumenter.
  */
 public class StringWhitelistTarget {
 

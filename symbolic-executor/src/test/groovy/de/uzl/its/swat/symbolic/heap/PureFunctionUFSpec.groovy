@@ -9,11 +9,10 @@ import org.sosy_lab.java_smt.api.Formula
 import org.sosy_lab.java_smt.api.StringFormula
 
 /**
- * G4 generic-UF mechanism (Level L1). A whitelisted, pure, UNMODELED value-returning call
- * ({@code String.trim}) on a symbolic input is modeled as the generic UF {@code pure_String_trim}
- * over that input, instead of being concretized (G2). This preserves the relational fact (equal
- * inputs =&gt; equal outputs) while staying sound (the UF is axiom-free). See
- * docs/heap-redesign-g4-design.md and docs/heap-redesign-tests.md.
+ * Verifies that a whitelisted, pure, unmodeled value-returning call ({@code String.trim}) on a
+ * symbolic input is modeled as the uninterpreted function {@code pure_String_trim} over that input
+ * instead of being concretized. This preserves the relational fact (equal inputs imply equal
+ * outputs) while staying sound, because the UF is axiom-free.
  */
 class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
 
@@ -44,7 +43,7 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         } finally { p.close() }
     }
 
-    def "U-5: trim (whitelisted, unmodeled) models its result as a UF over the input"() {
+    def "a whitelisted unmodeled trim models its result as a UF over the input"() {
         given: "a symbolic String receiver"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         StringValue receiver = new StringValue(solverContext, "abc", 0x1000)
@@ -61,7 +60,7 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         result.recovered.concrete == "abc"
     }
 
-    def "U-4: equal inputs yield equal results (UF congruence / determinism)"() {
+    def "equal inputs yield equal results (UF congruence / determinism)"() {
         given: "two independently symbolic String receivers"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         StringValue s1 = new StringValue(solverContext, "abc", 0x1000); s1.MAKE_SYMBOLIC()
@@ -79,7 +78,7 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         isValid(bmgr.implication(premise, conclusion))
     }
 
-    def "U-soundness: the axiom-free UF excludes no real behavior (result can equal any value)"() {
+    def "the axiom-free UF excludes no real behavior (result can equal any value)"() {
         given:
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         StringValue receiver = new StringValue(solverContext, "abc", 0x1000)
@@ -93,7 +92,7 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         isSat(smgr.equal(result.recovered.formula as StringFormula, smgr.makeString("a totally different value")))
     }
 
-    def "U-7: a whitelisted pure call emits its observed (input->output) pair as a ground UF constraint"() {
+    def "a whitelisted pure call emits its observed input-output pair as a ground UF constraint"() {
         given: "a symbolic String receiver with a known concrete value"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         StringValue receiver = new StringValue(solverContext, "abc", 0x1000)
@@ -112,7 +111,7 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         fm.extractVariables(pair).isEmpty()
     }
 
-    def "U-6: a whitelisted pure call is modeled (UF), so it does NOT flag context loss"() {
+    def "a whitelisted pure call is modeled as a UF, so it does not flag context loss"() {
         given: "a symbolic String receiver"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         StringValue receiver = new StringValue(solverContext, "abc", 0x1000)
@@ -121,7 +120,7 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         when: "trim() (whitelisted, pure) is invoked and modeled as a UF"
         def result = executeBoundaryRecovery(receiver, STRING, "trim", TRIM, "abc")
 
-        then: "context loss is NOT flagged (it is the only remaining SAFE downgrade, and we modeled it)"
+        then: "context loss is not flagged, since the call is modeled"
         !result.contextLoss
     }
 }

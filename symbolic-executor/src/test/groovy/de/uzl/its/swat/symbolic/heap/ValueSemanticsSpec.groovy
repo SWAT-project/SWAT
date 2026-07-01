@@ -7,10 +7,8 @@ import org.objectweb.asm.Type
 import org.sosy_lab.java_smt.api.Formula
 
 /**
- * Value-typed semantics at Level L0 — String identity/value rules that hold by construction
- * (no instrumentation). V-5 (copy ctor), V-6 (interned-literal reuse), V-9 (concrete grounding).
- * These document currently-correct behavior and guard against regression. See
- * docs/heap-redesign-tests.md.
+ * String identity and value rules that hold by construction, without instrumentation: the copy
+ * constructor, reuse of an interned literal, and concrete grounding of a symbolic value.
  */
 class ValueSemanticsSpec extends BaseValueSpec {
 
@@ -18,7 +16,7 @@ class ValueSemanticsSpec extends BaseValueSpec {
         return fmgr.extractVariables(v.formula as Formula).keySet()
     }
 
-    def "V-5: new String(s) keeps the source's symbolic formula (committed copy-ctor model)"() {
+    def "new String(s) keeps the source's symbolic formula"() {
         given: "a symbolic source string and a fresh target"
         StringValue s = new StringValue(context, "abc", ObjectValue.ADDRESS_UNKNOWN)
         s.MAKE_SYMBOLIC()
@@ -33,7 +31,7 @@ class ValueSemanticsSpec extends BaseValueSpec {
         varsOf(t) == varsOf(s)
     }
 
-    def "V-6: reusing the same literal yields the same constant formula with no spurious vars"() {
+    def "reusing the same literal yields the same constant formula with no free variables"() {
         given:
         StringValue a = new StringValue(context, "lit", ObjectValue.ADDRESS_UNKNOWN)
         StringValue b = new StringValue(context, "lit", ObjectValue.ADDRESS_UNKNOWN)
@@ -44,7 +42,7 @@ class ValueSemanticsSpec extends BaseValueSpec {
         isValid(a.IF_ACMPEQ(b))
     }
 
-    def "V-9: making a value symbolic preserves its concrete grounding"() {
+    def "making a value symbolic preserves its concrete grounding"() {
         given:
         StringValue s = new StringValue(context, "seed", ObjectValue.ADDRESS_UNKNOWN)
         s.MAKE_SYMBOLIC()
