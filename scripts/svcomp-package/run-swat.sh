@@ -60,7 +60,13 @@ done
 
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/.venv_ubuntu_24_04_1__x86_64/bin/activate"
+VENV_PYTHON="$SCRIPT_DIR/.venv_ubuntu_24_04_1__x86_64/bin/python3"
+
+if [ ! -x "$VENV_PYTHON" ]; then
+    echo "Error: Python runtime not found at $VENV_PYTHON"
+    exit 1
+fi
+
 echo "Running SWAT with arguments: $@"
-python3 -u "$SCRIPT_DIR/run_swat.py" "$@" > out.log 2>&1
+"$VENV_PYTHON" -u "$SCRIPT_DIR/run_swat.py" "$@" > out.log 2>&1
 cat out.log

@@ -6,8 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  SVCOMP_REFERENCE_URL: https://zenodo.org/api/records/17748741/files/swat-verify.zip/content
-  SVCOMP_REFERENCE_MD5: 8c776d19ac33ecf5c1c7441d16cc18a6
+  SVCOMP_VENV_DIR_NAME: .venv_ubuntu_24_04_1__x86_64
 
 jobs:
   build:
@@ -49,7 +48,7 @@ jobs:
         github.ref == 'refs/heads/dev' ||
         startsWith(github.ref, 'refs/tags/')
       ))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -102,16 +101,21 @@ jobs:
           echo "rolling=${rolling}"
           echo "prerelease=${prerelease}"
         } >> "${GITHUB_OUTPUT}"
-    - name: Download SV-COMP reference runtime
+    - name: Build SV-COMP Python runtime
+      env:
+        VENV_DIR: ${{ runner.temp }}/svcomp-runtime/${{ env.SVCOMP_VENV_DIR_NAME }}
       run: |
-        curl --fail --location --retry 3 --output "${RUNNER_TEMP}/swat-verify.zip" "${SVCOMP_REFERENCE_URL}"
-        echo "${SVCOMP_REFERENCE_MD5}  ${RUNNER_TEMP}/swat-verify.zip" | md5sum --check -
-        unzip -q "${RUNNER_TEMP}/swat-verify.zip" -d "${RUNNER_TEMP}/swat-reference"
+        mkdir -p "$(dirname "${VENV_DIR}")"
+        /usr/bin/python3 -m venv --copies "${VENV_DIR}"
+        "${VENV_DIR}/bin/python3" -m pip install --no-deps -r scripts/svcomp-package/requirements.txt
+        "${VENV_DIR}/bin/python3" -m pip check
+        "${VENV_DIR}/bin/python3" -m pip freeze --all > "${VENV_DIR}/requirements.freeze.txt"
+        "${VENV_DIR}/bin/python3" -c "import fastapi, pydantic, z3"
     - name: Pack SV-COMP ZIP
       env:
         SWAT_SVCOMP_VERSION: ${{ steps.meta.outputs.version }}
         SWAT_SVCOMP_ARTIFACT_DIR: ${{ runner.temp }}/release-jars
-        SWAT_SVCOMP_REFERENCE_DIR: ${{ runner.temp }}/swat-reference/swat-verify
+        SWAT_SVCOMP_RUNTIME_DIR: ${{ runner.temp }}/svcomp-runtime
         SWAT_SVCOMP_COMMIT: ${{ github.sha }}
         SWAT_SVCOMP_REF: ${{ github.ref_name }}
         SWAT_SVCOMP_CHANNEL: ${{ steps.meta.outputs.channel }}
