@@ -5,7 +5,6 @@ Analyzes log files to identify root causes of test failures including:
 - Symbolic context loss
 - Symbolic precision loss
 - Uncaught exceptions
-- Reference semantic changes
 - Internal SWAT errors
 """
 
@@ -55,7 +54,6 @@ class FailureAnalysis:
         - Symbolic context loss
         - Symbolic precision loss
         - Uncaught exceptions
-        - Reference semantic changes
         - Other errors
 
         Args:

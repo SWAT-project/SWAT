@@ -45,7 +45,7 @@ with `context`. Example: `ObjectIdentitySpec` (O-4).
 `setupTestContext(className, method)` first. For an unmodeled-call recovery, use the fixture:
 ```groovy
 def result = executeBoundaryRecovery(receiver, owner, name, desc, concreteResult, resultAddress)
-// result.recovered (Value), result.contextLoss, result.referenceSemanticChange
+// result.recovered (Value), result.contextLoss
 // resultAddress == receiver.address  -> this-return;  fresh address -> new-object return
 ```
 Example: `HeapRecoveryV1Spec` (V-1).
@@ -55,7 +55,7 @@ Example: `HeapRecoveryV1Spec` (V-1).
 `*AgentSpec` and use the harness:
 ```groovy
 TraceObservation obs = AgentRun.run("targets/<Name>.java", "<MainClass>")
-// obs.symbolicContextLoss / symbolicPrecisionLoss / referenceSemanticChange
+// obs.symbolicContextLoss / symbolicPrecisionLoss
 // obs.inputNames ; obs.anyBranchReferences(inputVar)
 ```
 `AgentRun` compiles against the agent jar, forks a JVM with `solver.mode=PRINT`, and parses the

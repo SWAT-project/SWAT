@@ -31,7 +31,7 @@ changes. **Never do that.** Assert only on:
 - `Value.isSymbolic()`;
 - symbolic **variable names** via `solverContext.getFormulaManager().extractVariables(f).keySet()`;
 - boolean results of `IF_ACMPEQ` / `IF_ACMPNE` / `equals`;
-- soundness **flags** (`symbolicContextLoss`, `referenceSemanticChange`, `symbolicPrecisionLoss`);
+- soundness **flags** (`symbolicContextLoss`, `symbolicPrecisionLoss`);
 - `Frame.operandStack` / `locals` / `ret` contents;
 - structured `TraceDTO` fields (L2/L3);
 - for SMT/UF agreement only: feed the formula to a real `ProverEnvironment` and assert
@@ -98,7 +98,7 @@ executeBoundaryRecovery(receiver, owner, name, desc, concreteResult, resultAddre
   // 2. push receiver as the invoke operand
   // 3. process: INVOKEVIRTUAL(owner,name,desc) ; INVOKEMETHOD_END ;
   //             GETVALUE_Object(resultAddress, concreteResult, i)
-  // 4. return { recovered: peekOperand, contextLoss, referenceSemanticChange, heap snapshot }
+  // 4. return { recovered: peekOperand, contextLoss, heap snapshot }
 ```
 
 This drives the *real* bug path: an unmodeled invoke returns `PlaceHolder`
@@ -147,7 +147,7 @@ in-JVM with Z3 via `LocalSolver.solve()`. `SolverMode = {LOCAL, HTTP, PRINT, NON
    `exitOnError=false`). `swat.input.*` pins the concrete path so the run is deterministic.
 4. Capture stdout, parse the TraceDTO JSON (Jackson) into a typed
    `TraceObservation { inputs[], branches[], ufs[], symbolicContextLoss,
-   symbolicPrecisionLoss, referenceSemanticChange }`.
+   symbolicPrecisionLoss }`.
 
 **Why forked, not in-process:** the agent attaches at premain and `ThreadHandler`/`Config` are
 process-global singletons set at startup; resetting them mid-JVM is hacky and fragile. A forked
@@ -172,7 +172,7 @@ final SV-COMP verdict, including the downgrade rules (SAFE+contextLoss→UNKNOWN
 [`heap-redesign` soundness notes]). Tests the *verdict*, not just the trace.
 
 **Driver.** The existing sv-comp driver / `targets/` harness. Structured per-testcase observation
-(`{verdict, contextLoss, referenceSemanticChange}`) becomes clean once the **`stats.json`**
+(`{verdict, contextLoss}`) becomes clean once the **`stats.json`**
 work lands (branch `feat/svcomp-testcase-metadata`, PR #27) — until then it is STDOUT/log
 scraping (`[VERDICT <category>]`).
 
