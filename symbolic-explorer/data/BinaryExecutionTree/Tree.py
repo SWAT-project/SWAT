@@ -8,7 +8,7 @@ from data.trace.UF import UF
 
 import log
 logger = log.get_logger()
-#import pygraphviz as pgv
+# import pygraphviz as pgv
 
 class Tree:
     """
@@ -130,8 +130,10 @@ class Tree:
                 return Node(parent, trace, inputs, ufs) if len(trace) > 0 else Leaf(parent, inputs, ufs)
 
         return node
+    
+
+# VISUALIZATIONS
     def get_constraint_label(self, parent: Node, node: Union[Node, Leaf]):
-        return None
         """Get the constraint label for an edge."""
         if isinstance(node, Leaf):
             return ""
@@ -140,7 +142,6 @@ class Tree:
         return ""
 
     def add_to_dot(self, node: Optional[Union[Node, Leaf]], graph, parent: Optional[Node] = None):
-        return None
         """Recursively add nodes and edges to the DOT graph."""
         if node is not None:
             graph.add_node(node.gid, label=str(node.gid) + ':' + str(node.id))
@@ -153,11 +154,10 @@ class Tree:
                 self.add_to_dot(node.branched, graph, node)
                 self.add_to_dot(node.skipped, graph, node)
 
-#    def plot_tree(self, idx):
-#        return None
-#        """Plot the tree using Graphviz and save to a file."""
-#        #log.info(self.to_string())
-#        G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
-#        self.add_to_dot(self.root, G)
-#        G.layout(prog="dot")
-#        G.draw(f"tree_{idx}.png")
+    def plot_tree(self, idx):
+       """Plot the tree using Graphviz and save to a file."""
+       #log.info(self.to_string())
+       G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
+       self.add_to_dot(self.root, G)
+       G.layout(prog="dot")
+       G.draw(f"tree_{idx}.png")

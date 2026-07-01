@@ -53,8 +53,12 @@ def determine_result(output: List[str], property_file: str) -> Verdict:
 
 
 
-def run_command_with_timeout(cmd: list[str], timeout: int = 180) -> tuple[ExecutionStatus, list[str]]:
-    """Executes the given command and returns output from both STDOUT and STDERR."""
+def run_command_with_timeout(cmd: list[str], timeout: int | None = None) -> tuple[ExecutionStatus, list[str]]:
+    """Executes the given command and returns output from both STDOUT and STDERR.
+
+    timeout=None (the default) imposes no internal cutoff so SWAT can use the full
+    SV-COMP time budget; benchexec enforces the wall/CPU limit externally.
+    """
 
     logger.info(f'[TARGET EXECUTION]: Running command: {cmd}')
     output = []
