@@ -3,7 +3,6 @@ package de.uzl.its.swat.symbolic.heap
 import de.uzl.its.swat.symbolic.shadow.ShadowContext
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue
-import spock.lang.See
 
 /**
  * O-4 / O-5 — object reference-equality and the canonical registry. Level L0, Phase 1 (G1).
@@ -21,7 +20,6 @@ class ObjectIdentitySpec extends BaseValueSpec {
         return new ObjectValue(context, "de/uzl/its/swat/test/Obj", new IntValue(context, 1), address)
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "O-4: two references to distinct objects compare reference-unequal"() {
         given:
         ObjectValue a = objectAt(0x2000)
@@ -31,7 +29,6 @@ class ObjectIdentitySpec extends BaseValueSpec {
         isUnsatisfiable(a.IF_ACMPEQ(c))
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "O-4: the same concrete object recovers the same canonical wrapper (reference-equal)"() {
         given: "a shadow registered under a concrete object"
         Object obj = new Object()
@@ -48,7 +45,6 @@ class ObjectIdentitySpec extends BaseValueSpec {
         isValid((a as ObjectValue).IF_ACMPEQ(b as ObjectValue))
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "O-5: distinct objects with a colliding identity hash compare reference-unequal"() {
         given: "two distinct objects whose identity hash (address) collides"
         ObjectValue a = objectAt(0x5000)
@@ -58,7 +54,6 @@ class ObjectIdentitySpec extends BaseValueSpec {
         isUnsatisfiable(a.IF_ACMPEQ(b))
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "O-5: distinct concrete objects are stored without merging (reference keying)"() {
         given: "two distinct concrete objects, with shadows that happen to share an address"
         Object o1 = new Object()

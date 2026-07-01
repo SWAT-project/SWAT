@@ -5,7 +5,6 @@ import org.sosy_lab.java_smt.api.BooleanFormula
 import org.sosy_lab.java_smt.api.Formula
 import org.sosy_lab.java_smt.api.FormulaType
 import org.sosy_lab.java_smt.api.StringFormula
-import spock.lang.See
 
 /**
  * G4 exemption controls (Level L0): {@link DTOBuilder#isPrecisionLoss} must treat a whitelisted
@@ -33,7 +32,6 @@ class PrecisionLossExemptionSpec extends BaseValueSpec {
         return fmgr.getStringFormulaManager().equal(s, fmgr.getStringFormulaManager().makeString("abc"))
     }
 
-    @See("docs/heap-redesign-g4-design.md")
     def "a designated input variable alone is not precision loss (incl. a String input the regex rejected)"() {
         given:
         def v = inputVar()
@@ -41,13 +39,11 @@ class PrecisionLossExemptionSpec extends BaseValueSpec {
         !DTOBuilder.isPrecisionLoss(eqAbc(v), fmgr, inputs(v))
     }
 
-    @See("docs/heap-redesign-g4-design.md")
     def "a non-input variable is precision loss"() {
         expect:
         DTOBuilder.isPrecisionLoss(eqAbc(otherVar()), fmgr, inputs(inputVar()))
     }
 
-    @See("docs/heap-redesign-g4-design.md")
     def "a pure_ UF over an input variable is NOT precision loss (the exemption)"() {
         given:
         def v = inputVar()
@@ -55,13 +51,11 @@ class PrecisionLossExemptionSpec extends BaseValueSpec {
         !DTOBuilder.isPrecisionLoss(eqAbc(ufOver("pure_String_trim", v)), fmgr, inputs(v))
     }
 
-    @See("docs/heap-redesign-g4-design.md")
     def "a pure_ UF over a NON-input variable is still precision loss (transitivity)"() {
         expect:
         DTOBuilder.isPrecisionLoss(eqAbc(ufOver("pure_String_trim", otherVar())), fmgr, inputs(inputVar()))
     }
 
-    @See("docs/heap-redesign-g4-design.md")
     def "a bespoke (non-pure_) UF stays non-exempt (precision loss)"() {
         given:
         def v = inputVar()

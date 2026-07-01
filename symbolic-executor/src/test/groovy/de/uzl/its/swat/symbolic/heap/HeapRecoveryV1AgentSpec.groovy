@@ -2,7 +2,6 @@ package de.uzl.its.swat.symbolic.heap
 
 import de.uzl.its.swat.testsupport.agent.AgentRun
 import de.uzl.its.swat.testsupport.agent.TraceObservation
-import spock.lang.See
 import spock.lang.Specification
 
 /**
@@ -16,7 +15,6 @@ import spock.lang.Specification
  */
 class HeapRecoveryV1AgentSpec extends Specification {
 
-    @See("docs/test-architecture.md")
     def "L2 soundness anchor: real toLowerCase on a symbolic string flags context loss"() {
         when:
         TraceObservation obs = AgentRun.run("targets/ToLowerCaseTarget.java", "ToLowerCaseTarget")
@@ -26,7 +24,6 @@ class HeapRecoveryV1AgentSpec extends Specification {
         obs.symbolicContextLoss
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "V-1 (L2): a branch after unmodeled toLowerCase must not reference the symbolic input"() {
         when:
         TraceObservation obs = AgentRun.run("targets/ToLowerCaseTarget.java", "ToLowerCaseTarget")

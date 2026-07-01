@@ -14,7 +14,6 @@ import de.uzl.its.swat.symbolic.value.reference.ObjectValue
 import de.uzl.its.swat.symbolic.value.reference.lang.IntegerObjectValue
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
 import de.uzl.its.swat.thread.ThreadHandler
-import spock.lang.See
 
 /**
  * G3 register-only-non-constant (Level L1). At the value-typed GETVALUE recovery, a de-interned value
@@ -44,7 +43,6 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         }
     }
 
-    @See("docs/heap-redesign-g3-design.md")
     def "G3: a symbolic String shadow IS heap-registered (round-trip enabled)"() {
         given: "a symbolic String shadow awaiting its address (ADDRESS_UNKNOWN)"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -59,7 +57,6 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         ThreadHandler.getSymbolicVisitor(threadId).getStack().getFromHeap(obj) != null
     }
 
-    @See("docs/heap-redesign-g3-design.md")
     def "G3: a constant String shadow is NOT heap-registered (reconstructible; no leak)"() {
         given: "a pure-constant String shadow (formula = makeString) awaiting its address"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -73,7 +70,6 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         ThreadHandler.getSymbolicVisitor(threadId).getStack().getFromHeap(obj) == null
     }
 
-    @See("docs/heap-redesign-g3-design.md")
     def "G3-A2: a symbolic boxed shadow IS heap-registered (round-trip enabled)"() {
         given: "a symbolic Integer shadow awaiting its address (formula carried by the inner IntValue)"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -89,7 +85,6 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         ThreadHandler.getSymbolicVisitor(threadId).getStack().getFromHeap(obj) != null
     }
 
-    @See("docs/heap-redesign-g3-design.md")
     def "G3-A2: a constant boxed shadow is NOT heap-registered (reconstructible; no leak)"() {
         given: "a pure-constant Integer shadow awaiting its address"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -104,7 +99,6 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
         ThreadHandler.getSymbolicVisitor(threadId).getStack().getFromHeap(obj) == null
     }
 
-    @See("docs/heap-redesign-g3-design.md")
     def "G3-A2: a mutable (non-value-type) object is ALWAYS registered (shared path unaffected)"() {
         given: "a plain mutable object whose class is not de-interned"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")

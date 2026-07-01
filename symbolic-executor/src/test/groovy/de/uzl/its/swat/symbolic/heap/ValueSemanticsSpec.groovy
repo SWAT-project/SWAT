@@ -5,7 +5,6 @@ import de.uzl.its.swat.symbolic.value.reference.ObjectValue
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
 import org.objectweb.asm.Type
 import org.sosy_lab.java_smt.api.Formula
-import spock.lang.See
 
 /**
  * Value-typed semantics at Level L0 — String identity/value rules that hold by construction
@@ -19,7 +18,6 @@ class ValueSemanticsSpec extends BaseValueSpec {
         return fmgr.extractVariables(v.formula as Formula).keySet()
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "V-5: new String(s) keeps the source's symbolic formula (committed copy-ctor model)"() {
         given: "a symbolic source string and a fresh target"
         StringValue s = new StringValue(context, "abc", ObjectValue.ADDRESS_UNKNOWN)
@@ -35,7 +33,6 @@ class ValueSemanticsSpec extends BaseValueSpec {
         varsOf(t) == varsOf(s)
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "V-6: reusing the same literal yields the same constant formula with no spurious vars"() {
         given:
         StringValue a = new StringValue(context, "lit", ObjectValue.ADDRESS_UNKNOWN)
@@ -47,7 +44,6 @@ class ValueSemanticsSpec extends BaseValueSpec {
         isValid(a.IF_ACMPEQ(b))
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "V-9: making a value symbolic preserves its concrete grounding"() {
         given:
         StringValue s = new StringValue(context, "seed", ObjectValue.ADDRESS_UNKNOWN)

@@ -4,7 +4,6 @@ import de.uzl.its.swat.common.Util
 import de.uzl.its.swat.symbolic.processor.BaseSymbolicInstructionProcessorSpec
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
 import org.sosy_lab.java_smt.api.Formula
-import spock.lang.See
 
 /**
  * Value-typed boundary recovery at Level L1 (the workhorse fixture). An unmodeled value-returning
@@ -22,7 +21,6 @@ class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
         return solverContext.getFormulaManager().extractVariables(value.formula as Formula).keySet()
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "V-1: toLowerCase this-return must not alias the receiver's symbolic formula"() {
         given: "a symbolic, already-lowercase String receiver registered on the heap"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -47,7 +45,6 @@ class ValueRecoverySpec extends BaseSymbolicInstructionProcessorSpec {
         varsOf(result.recovered).disjoint(receiverVars)
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "V-2: a new-object transform return does not alias the receiver (consistent with V-1)"() {
         given: "a symbolic, concretely upper-case String receiver (toLowerCase returns a NEW object)"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")

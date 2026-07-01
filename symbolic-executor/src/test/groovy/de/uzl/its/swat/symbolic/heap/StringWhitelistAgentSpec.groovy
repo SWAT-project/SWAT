@@ -2,7 +2,6 @@ package de.uzl.its.swat.symbolic.heap
 
 import de.uzl.its.swat.testsupport.agent.AgentRun
 import de.uzl.its.swat.testsupport.agent.TraceObservation
-import spock.lang.See
 import spock.lang.Specification
 
 /**
@@ -17,7 +16,6 @@ import spock.lang.Specification
  */
 class StringWhitelistAgentSpec extends Specification {
 
-    @See("docs/heap-redesign-g4-whitelist-survey.md")
     def "G4 (L2): unmodeled pure String methods are modeled as UFs (no context/precision loss)"() {
         when: "the agent runs a program calling pure unmodeled String stubs on a symbolic receiver"
         TraceObservation obs = AgentRun.run("targets/StringWhitelistTarget.java", "StringWhitelistTarget")

@@ -7,7 +7,6 @@ import de.uzl.its.swat.thread.ThreadHandler
 import org.sosy_lab.java_smt.api.BooleanFormula
 import org.sosy_lab.java_smt.api.Formula
 import org.sosy_lab.java_smt.api.StringFormula
-import spock.lang.See
 
 /**
  * G4 generic-UF mechanism (Level L1). A whitelisted, pure, UNMODELED value-returning call
@@ -45,7 +44,6 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         } finally { p.close() }
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "U-5: trim (whitelisted, unmodeled) models its result as a UF over the input"() {
         given: "a symbolic String receiver"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -63,7 +61,6 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         result.recovered.concrete == "abc"
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "U-4: equal inputs yield equal results (UF congruence / determinism)"() {
         given: "two independently symbolic String receivers"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -82,7 +79,6 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         isValid(bmgr.implication(premise, conclusion))
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "U-soundness: the axiom-free UF excludes no real behavior (result can equal any value)"() {
         given:
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -97,7 +93,6 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         isSat(smgr.equal(result.recovered.formula as StringFormula, smgr.makeString("a totally different value")))
     }
 
-    @See("docs/heap-redesign-g4-design.md")
     def "U-7: a whitelisted pure call emits its observed (input->output) pair as a ground UF constraint"() {
         given: "a symbolic String receiver with a known concrete value"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -117,7 +112,6 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         fm.extractVariables(pair).isEmpty()
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "U-6: a whitelisted pure call is modeled (UF), so it does NOT flag context loss"() {
         given: "a symbolic String receiver"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")

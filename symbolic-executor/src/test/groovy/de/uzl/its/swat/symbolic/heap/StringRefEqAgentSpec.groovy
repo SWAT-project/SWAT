@@ -2,7 +2,6 @@ package de.uzl.its.swat.symbolic.heap
 
 import de.uzl.its.swat.testsupport.agent.AgentRun
 import de.uzl.its.swat.testsupport.agent.TraceObservation
-import spock.lang.See
 import spock.lang.Specification
 
 /**
@@ -15,7 +14,6 @@ import spock.lang.Specification
  */
 class StringRefEqAgentSpec extends Specification {
 
-    @See("docs/heap-redesign-g3-design.md")
     def "G3-B (L2): de-interned == is modeled by provenance root and fires neither soundness flag"() {
         when:
         TraceObservation obs = AgentRun.run("targets/StringRefEqTarget.java", "StringRefEqTarget")

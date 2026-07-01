@@ -1,6 +1,5 @@
 package de.uzl.its.swat.common
 
-import spock.lang.See
 import spock.lang.Specification
 
 /**
@@ -12,7 +11,6 @@ import spock.lang.Specification
  */
 class ProvenanceRefEqualsSpec extends Specification {
 
-    @See("docs/heap-redesign-g3-design.md")
     def "de-interned Strings rooting to the same interned canonical compare equal"() {
         given: "two distinct de-interned copies of the same literal, both rooted to the interned canonical"
         String canonical = "g3b-abc".intern()
@@ -27,7 +25,6 @@ class ProvenanceRefEqualsSpec extends Specification {
         UtilInstrumented.refEquals(a, b)
     }
 
-    @See("docs/heap-redesign-g3-design.md")
     def "a de-interned copy vs a same-valued object with a different root compares unequal"() {
         given: "a rooted to the interned canonical; b has no provenance entry (root(b)=b)"
         String a = new String("g3b-x")
@@ -38,7 +35,6 @@ class ProvenanceRefEqualsSpec extends Specification {
         !UtilInstrumented.refEquals(a, b)
     }
 
-    @See("docs/heap-redesign-g3-design.md")
     def "boxed copies rooting to the cached canonical compare equal (cache range)"() {
         given:
         Integer a = new Integer(100)
@@ -51,7 +47,6 @@ class ProvenanceRefEqualsSpec extends Specification {
         UtilInstrumented.refEquals(a, b)
     }
 
-    @See("docs/heap-redesign-g3-design.md")
     def "non-de-interned classes use plain reference equality"() {
         given:
         Object a = new Object()
@@ -62,7 +57,6 @@ class ProvenanceRefEqualsSpec extends Specification {
         UtilInstrumented.refEquals(a, a)
     }
 
-    @See("docs/heap-redesign-g3-design.md")
     def "root collapses chains at insert"() {
         given: "c rooted to b, b rooted to canonical -> root(c) must resolve to canonical"
         String canonical = "g3b-chain".intern()

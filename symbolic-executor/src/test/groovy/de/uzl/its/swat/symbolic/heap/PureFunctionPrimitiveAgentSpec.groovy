@@ -2,7 +2,6 @@ package de.uzl.its.swat.symbolic.heap
 
 import de.uzl.its.swat.testsupport.agent.AgentRun
 import de.uzl.its.swat.testsupport.agent.TraceObservation
-import spock.lang.See
 import spock.lang.Specification
 
 /**
@@ -17,7 +16,6 @@ import spock.lang.Specification
  */
 class PureFunctionPrimitiveAgentSpec extends Specification {
 
-    @See("docs/heap-redesign-g4-whitelist-survey.md")
     def "G4 (L2): pure primitive-returning methods are modeled as UFs (no context/precision loss)"() {
         when: "the agent runs a program branching on pure unmodeled primitive returns over symbolic inputs"
         TraceObservation obs = AgentRun.run("targets/PurePrimReturnTarget.java", "PurePrimReturnTarget")

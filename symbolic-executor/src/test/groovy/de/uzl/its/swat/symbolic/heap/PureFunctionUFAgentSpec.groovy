@@ -2,7 +2,6 @@ package de.uzl.its.swat.symbolic.heap
 
 import de.uzl.its.swat.testsupport.agent.AgentRun
 import de.uzl.its.swat.testsupport.agent.TraceObservation
-import spock.lang.See
 import spock.lang.Specification
 
 /**
@@ -18,7 +17,6 @@ import spock.lang.Specification
  */
 class PureFunctionUFAgentSpec extends Specification {
 
-    @See("docs/heap-redesign-g4-design.md")
     def "G4 (L2): a whitelisted pure trim into a branch preserves SAFE (no context/precision loss)"() {
         when:
         TraceObservation obs = AgentRun.run("targets/TrimTarget.java", "TrimTarget")
@@ -35,7 +33,6 @@ class PureFunctionUFAgentSpec extends Specification {
         !obs.symbolicPrecisionLoss
     }
 
-    @See("docs/heap-redesign-g4-whitelist-survey.md")
     def "G4 (L2): a whitelisted pure substring (arg-taking, mixed-sort UF) into a branch preserves SAFE"() {
         when:
         TraceObservation obs = AgentRun.run("targets/SubstringTarget.java", "SubstringTarget")

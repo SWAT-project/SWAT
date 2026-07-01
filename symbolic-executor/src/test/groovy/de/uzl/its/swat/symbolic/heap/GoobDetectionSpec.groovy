@@ -12,7 +12,6 @@ import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor
 import de.uzl.its.swat.symbolic.shadow.ShadowDivergence
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue
 import de.uzl.its.swat.thread.ThreadHandler
-import spock.lang.See
 
 /**
  * E-1 / E-2 (Level L1): out-of-band change detection at a primitive GETVALUE sync. When the value the
@@ -47,7 +46,6 @@ class GoobDetectionSpec extends BaseSymbolicInstructionProcessorSpec {
         }
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "E-1: under FLAG a diverging primitive GETVALUE is detected (flag + re-ground), not crashed"() {
         given: "a tracked int shadow with concrete 10, under the FLAG policy"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -63,7 +61,6 @@ class GoobDetectionSpec extends BaseSymbolicInstructionProcessorSpec {
         visitor.getStack().getActiveFrame().peek().concrete == 20
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "E-2: under FLAG a matching primitive GETVALUE records no flag (no false positive)"() {
         given:
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")

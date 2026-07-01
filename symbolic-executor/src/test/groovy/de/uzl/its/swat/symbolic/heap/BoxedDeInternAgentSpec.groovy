@@ -2,7 +2,6 @@ package de.uzl.its.swat.symbolic.heap
 
 import de.uzl.its.swat.testsupport.agent.AgentRun
 import de.uzl.its.swat.testsupport.agent.TraceObservation
-import spock.lang.See
 import spock.lang.Specification
 
 /**
@@ -20,7 +19,6 @@ import spock.lang.Specification
  */
 class BoxedDeInternAgentSpec extends Specification {
 
-    @See("docs/heap-redesign-g3-design.md")
     def "G3-A2 (L2): all six wrappers' valueOf-rewrite (+ Integer/Long de-intern) load, verify, and run"() {
         when: "the agent runs a program driving the boxed de-intern bytecode paths"
         TraceObservation obs = AgentRun.run("targets/BoxedReturnTarget.java", "BoxedReturnTarget")

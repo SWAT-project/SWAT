@@ -3,7 +3,6 @@ package de.uzl.its.swat.symbolic.heap
 import de.uzl.its.swat.common.Util
 import de.uzl.its.swat.symbolic.processor.BaseSymbolicInstructionProcessorSpec
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
-import spock.lang.See
 
 /**
  * Context-loss flag policy at Level L1: the flag fires iff symbolic data flowed into the unmodeled
@@ -15,7 +14,6 @@ class FlagPolicySpec extends BaseSymbolicInstructionProcessorSpec {
     private static final String STRING = "java/lang/String"
     private static final String TO_LOWER = "()Ljava/lang/String;"
 
-    @See("docs/heap-redesign-tests.md")
     def "F-1: an unmodeled call with a concrete receiver raises no context-loss flag"() {
         given:
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
@@ -28,7 +26,6 @@ class FlagPolicySpec extends BaseSymbolicInstructionProcessorSpec {
         !result.contextLoss
     }
 
-    @See("docs/heap-redesign-tests.md")
     def "F-2: an unmodeled call with a symbolic receiver raises a context-loss flag"() {
         given:
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")

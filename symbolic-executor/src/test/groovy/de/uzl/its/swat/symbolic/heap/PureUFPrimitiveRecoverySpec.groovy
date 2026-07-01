@@ -4,7 +4,6 @@ import de.uzl.its.swat.symbolic.value.ValueFactory
 import de.uzl.its.swat.symbolic.value.ValueType
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue
-import spock.lang.See
 import spock.lang.Unroll
 
 /**
@@ -18,7 +17,6 @@ import spock.lang.Unroll
  */
 class PureUFPrimitiveRecoverySpec extends BaseValueSpec {
 
-    @See("docs/heap-redesign-g4-whitelist-survey.md")
     @Unroll
     def "createNumericalValue installs a symbolic #type formula (concrete=#concrete)"() {
         given: "a free variable formula of the matching sort (stands in for a pure_<sig> UF application)"

@@ -2,7 +2,6 @@ package de.uzl.its.swat.symbolic.heap
 
 import de.uzl.its.swat.testsupport.agent.AgentRun
 import de.uzl.its.swat.testsupport.agent.TraceObservation
-import spock.lang.See
 import spock.lang.Specification
 
 /**
@@ -16,7 +15,6 @@ import spock.lang.Specification
  */
 class WhitelistAuditAgentSpec extends Specification {
 
-    @See("docs/heap-redesign-g4-whitelist-survey.md")
     def "G4 (L2): audited whitelist additions are modeled as UFs across all classes (no context/precision loss)"() {
         when: "the agent runs a program calling pure unmodeled JDK methods from the audit on symbolic inputs"
         TraceObservation obs = AgentRun.run("targets/WhitelistAuditAgentTarget.java", "WhitelistAuditAgentTarget")
