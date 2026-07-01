@@ -108,10 +108,14 @@ When instrumented code calls a method SWAT does not model, the call runs for rea
 pushes a **placeholder** on its shadow stack. The real result is reconciled at the next `GETVALUE`
 synchronization point, where the executor learns the concrete value the JVM produced.
 
-The key rule: a **value-typed return (String or boxed primitive) is not identity-recovered from the
-registry** — it is turned into a fresh concrete value. Identity recovery would look up the
-*receiver's* own shadow (because e.g. `String.toLowerCase()` can return `this`) and wrongly re-bind
-the result to the receiver's formula. Concretizing instead breaks that aliasing.
+The subtle case is a **value-typed return (String or boxed primitive)**. Naively identity-recovering
+it is unsound when the method returns `this` (e.g. `String.toLowerCase()` on an already-lowercase
+string): the result would be re-bound to the *receiver's* formula. So the rule is: recover the
+registered shadow only when the returned object is a **distinct, already-tracked immutable value**
+(different from the receiver's own shadow) — e.g. a String retrieved from a `Map`/`List` — otherwise
+concretize. This keeps a container round-trip symbolic while still breaking the `this`-return
+aliasing. Recovery is limited to immutable value types (their value cannot have drifted since it was
+registered) and fires only for values already registered in the heap.
 
 - `symbolic/value/PlaceHolder.java` — the placeholder; `enum ValueOrigin` (notably
   `UNMODELED_RETURN`) tags where a placeholder came from; shared singletons `instance` /
@@ -120,12 +124,16 @@ the result to the receiver's formula. Concretizing instead breaks that aliasing.
   placeholder and the call is not on `IGNORED_INVOCATIONS`, records a missing invocation and
   re-wraps the result as an `UNMODELED_RETURN` placeholder.
 - `SymbolicInstructionVisitor.visitGETVALUE_Object` — the `UNMODELED_RETURN && Util.isValueType(...)`
-  branch concretizes via `ValueFactory.createObjectValue` **without touching the registry** (so the
-  receiver's entry is untouched); non-value results fall through to normal registry recovery.
+  branch: models a whitelisted pure result as a UF; else recovers the registered shadow when the
+  return is a distinct immutable value (`Util.isImmutableValueType`, the receiver carried on the
+  placeholder, a `getFromHeap` hit that is not the receiver's shadow, concrete matches); else
+  concretizes via `ValueFactory.createObjectValue`. Non-value results fall through to normal registry
+  recovery.
 - `SymbolicInstructionVisitor.visitGETVALUE_primitive` — the primitive mirror.
 
 **Invariants**
-- An unmodeled value-typed return never aliases the receiver's formula.
+- An unmodeled value-typed return never aliases the receiver's formula (a `this`-return concretizes).
+- A recovered value type is immutable, so its stored shadow still matches the observed value.
 - Concrete recovery always adopts the JVM-observed value.
 
 ### 4. Out-of-band change detection
