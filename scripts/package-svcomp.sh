@@ -9,7 +9,14 @@ set -euo pipefail
 # else. The artifact root must contain:
 #
 # - symbolic-executor/lib/symbolic-executor.jar
-# - targets/sv-comp/WitnessCreator/build/libs/WitnessCreator.jar
+#
+# Set SWAT_SVCOMP_WITNESS_CREATOR_DIR to the extracted WitnessCreator runtime
+# root from https://github.com/SWAT-project/WitnessCreator. The root must
+# contain:
+#
+# - build/libs/WitnessCreator.jar
+# - witnesses/default_violation.st
+# - witnesses/witness.st
 #
 # Set SWAT_SVCOMP_RUNTIME_DIR to a runtime package root that contains the
 # pinned SV-COMP Python environment:
@@ -32,6 +39,7 @@ DIST_DIR="${ROOT_DIR}/build/distributions"
 SUPPORT_DIR="${ROOT_DIR}/scripts/svcomp-package"
 ARTIFACT_DIR="$(cd "${SWAT_SVCOMP_ARTIFACT_DIR:-$ROOT_DIR}" && pwd)"
 RUNTIME_DIR="${SWAT_SVCOMP_RUNTIME_DIR:-${SWAT_SVCOMP_REFERENCE_DIR:-}}"
+WITNESS_CREATOR_DIR="${SWAT_SVCOMP_WITNESS_CREATOR_DIR:-}"
 VENV_DIR_NAME="${SWAT_SVCOMP_VENV_DIR_NAME:-.venv_ubuntu_24_04_1__x86_64}"
 LINUX_Z3_DIST="z3-4.15.4-x64-glibc-2.39"
 LINUX_Z3_ZIP="${ROOT_DIR}/libs/${LINUX_Z3_DIST}.zip"
@@ -41,16 +49,13 @@ if [[ -n "$RUNTIME_DIR" ]]; then
   RUNTIME_DIR="$(cd "$RUNTIME_DIR" && pwd)"
 fi
 
+if [[ -n "$WITNESS_CREATOR_DIR" ]]; then
+  WITNESS_CREATOR_DIR="$(cd "$WITNESS_CREATOR_DIR" && pwd)"
+fi
+
 fail() {
   echo "error: $*" >&2
   exit 1
-}
-
-artifact_file() {
-  local rel="$1"
-  local path="${ARTIFACT_DIR}/${rel}"
-  [[ -f "$path" ]] || fail "missing built artifact file: ${path}"
-  printf '%s\n' "$path"
 }
 
 first_artifact_file() {
@@ -138,11 +143,11 @@ copy_artifact_file "$EXECUTOR_JAR" "$PACKAGE_DIR/symbolic-executor/lib/symbolic-
 
 copy_tree_files symbolic-explorer "$PACKAGE_DIR/symbolic-explorer"
 
-WITNESS_CREATOR_JAR="$(artifact_file targets/sv-comp/WitnessCreator/build/libs/WitnessCreator.jar)"
-copy_artifact_file "$WITNESS_CREATOR_JAR" "$PACKAGE_DIR/WitnessCreator/build/libs/WitnessCreator.jar"
-mkdir -p "$PACKAGE_DIR/WitnessCreator/witnesses"
-install -m 0644 targets/sv-comp/WitnessCreator/witnesses/default_violation.st "$PACKAGE_DIR/WitnessCreator/witnesses/default_violation.st"
-install -m 0644 targets/sv-comp/WitnessCreator/witnesses/witness.st "$PACKAGE_DIR/WitnessCreator/witnesses/witness.st"
+[[ -n "$WITNESS_CREATOR_DIR" ]] || fail "SWAT_SVCOMP_WITNESS_CREATOR_DIR must point to the extracted WitnessCreator runtime root"
+[[ -f "$WITNESS_CREATOR_DIR/build/libs/WitnessCreator.jar" ]] || fail "missing WitnessCreator JAR: ${WITNESS_CREATOR_DIR}/build/libs/WitnessCreator.jar"
+[[ -f "$WITNESS_CREATOR_DIR/witnesses/default_violation.st" ]] || fail "missing WitnessCreator template: ${WITNESS_CREATOR_DIR}/witnesses/default_violation.st"
+[[ -f "$WITNESS_CREATOR_DIR/witnesses/witness.st" ]] || fail "missing WitnessCreator template: ${WITNESS_CREATOR_DIR}/witnesses/witness.st"
+copy_artifact_tree "$WITNESS_CREATOR_DIR" "$PACKAGE_DIR/WitnessCreator"
 
 install_z3_runtime_file z3 0755
 install_z3_runtime_file libz3.so

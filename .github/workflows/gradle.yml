@@ -7,6 +7,8 @@ on:
 
 env:
   SVCOMP_VENV_DIR_NAME: .venv_ubuntu_24_04_1__x86_64
+  WITNESS_CREATOR_VERSION: v0.1.1
+  WITNESS_CREATOR_SHA256: 8fc8810237c99bf7d709bdb8692142695e407b5681e818fcfe8b45f9c598d814
 
 jobs:
   build:
@@ -26,8 +28,6 @@ jobs:
       run: ./gradlew copyNativeLibs
     - name: Build
       run: ./gradlew --no-daemon build -x test
-    - name: Build WitnessCreator JAR
-      run: ./gradlew --no-daemon :targets:sv-comp:WitnessCreator:shadowJar
     - name: Collect JavaSMT JAR
       run: |
         java_smt_dir="${HOME}/.gradle/caches/modules-2/files-2.1/org.sosy-lab/java-smt"
@@ -50,7 +50,6 @@ jobs:
         name: release-jars-${{ github.sha }}
         path: |
           symbolic-executor/lib/symbolic-executor.jar
-          targets/sv-comp/WitnessCreator/build/libs/WitnessCreator.jar
           build/svcomp-runtime/java-smt-latest.jar
         if-no-files-found: error
         retention-days: 1
@@ -86,6 +85,23 @@ jobs:
         mkdir -p libs/java-library-path
         cp "${RUNNER_TEMP}/release-jars/build/svcomp-runtime/java-smt-latest.jar" \
           libs/java-library-path/java-smt-latest.jar
+    - name: Download WitnessCreator runtime
+      run: |
+        version="${WITNESS_CREATOR_VERSION}"
+        zip_name="witness-creator-${version#v}.zip"
+        zip_path="${RUNNER_TEMP}/${zip_name}"
+        runtime_dir="${RUNNER_TEMP}/witness-creator-runtime"
+
+        curl --fail --location --retry 3 \
+          --output "${zip_path}" \
+          "https://github.com/SWAT-project/WitnessCreator/releases/download/${version}/${zip_name}"
+        echo "${WITNESS_CREATOR_SHA256}  ${zip_path}" | sha256sum --check -
+
+        mkdir -p "${runtime_dir}"
+        unzip -q "${zip_path}" -d "${runtime_dir}"
+        test -f "${runtime_dir}/WitnessCreator/build/libs/WitnessCreator.jar"
+        test -f "${runtime_dir}/WitnessCreator/witnesses/default_violation.st"
+        test -f "${runtime_dir}/WitnessCreator/witnesses/witness.st"
     - name: Determine release channel
       id: meta
       run: |
@@ -145,6 +161,7 @@ jobs:
         SWAT_SVCOMP_VERSION: ${{ steps.meta.outputs.version }}
         SWAT_SVCOMP_ARTIFACT_DIR: ${{ runner.temp }}/release-jars
         SWAT_SVCOMP_RUNTIME_DIR: ${{ runner.temp }}/svcomp-runtime
+        SWAT_SVCOMP_WITNESS_CREATOR_DIR: ${{ runner.temp }}/witness-creator-runtime/WitnessCreator
         SWAT_SVCOMP_COMMIT: ${{ github.sha }}
         SWAT_SVCOMP_REF: ${{ github.ref_name }}
         SWAT_SVCOMP_CHANNEL: ${{ steps.meta.outputs.channel }}
