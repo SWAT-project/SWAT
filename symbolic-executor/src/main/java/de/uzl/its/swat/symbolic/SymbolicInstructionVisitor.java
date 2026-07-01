@@ -1270,26 +1270,25 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 // remove the placeholder value
                 stack.popOperand();
 
-                // G2: the result of an unmodeled value-returning method must NOT be identity-recovered
+                // The result of an unmodeled value-returning method must NOT be identity-recovered
                 // (that would re-bind the receiver's symbolic value, e.g. toLowerCase() returning
                 // `this`). Concretize the value type instead, and do NOT consult or mutate the heap, so
-                // the receiver's own entry (and its V-3 round-trip) is preserved. Context loss was
-                // already flagged in InvocationHandler. Non-value results fall through to G1 recovery.
+                // the receiver's own entry (and its round-trip) is preserved. Context loss was already
+                // flagged in InvocationHandler. Non-value results fall through to registry recovery.
                 if (placeHolder.origin == PlaceHolder.ValueOrigin.UNMODELED_RETURN
                         && Util.isValueType(inst.val)) {
                     Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
                     if (placeHolder.recoveredFormula != null && inst.val instanceof String s) {
-                        // G4: a whitelisted pure method - model the result as the carried generic UF
+                        // A whitelisted pure method - model the result as the carried generic UF
                         // over the inputs (concrete = observed). Preserves the relational fact
                         // (equal inputs => equal outputs) instead of concretizing.
                         SolverContext context = ThreadHandler.getSolverContext(currentThread().getId());
                         tmp = new StringValue(context, s, (StringFormula) placeHolder.recoveredFormula, inst.address);
                         shadowStateLogger.info("Modeled unmodeled pure result as a generic UF: {}", tmp);
-                        // G4 step 2: record this run's observed (input -> output) ground pair -
+                        // Record this run's observed (input -> output) ground pair -
                         // pure_<sig>(constant inputs) == observed output. Sound: a true fact about the
-                        // real function only tightens the axiom-free UF. Cross-run accumulation +
-                        // solve-time injection are the explorer's job - see
-                        // docs/heap-redesign-g4-step2-explorer-handoff.md.
+                        // real function only tightens the axiom-free UF. Cross-run accumulation and
+                        // solve-time injection are the explorer's job.
                         if (placeHolder.observedApplication != null) {
                             StringFormulaManager smgr = context.getFormulaManager().getStringFormulaManager();
                             symbolicTraceHandler.addConstraint(
@@ -1356,19 +1355,19 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 "Concrete value of the object does not match the value in the stack: {} | {}",
                                 inst.val, peek.concrete);
                         if(peek.formula == null) {
-                            // A constant String: reconstruct from the observed concrete. G3
-                            // register-only-non-constant: a constant is recoverable from inst.val on
-                            // round-trip, so it is NOT heap-registered (registering it only grows the
-                            // self-pinning heap leak - a String is its own weak key).
+                            // A constant String: reconstruct from the observed concrete. A constant is
+                            // recoverable from inst.val on round-trip, so it is NOT heap-registered
+                            // (registering it only grows the self-pinning heap leak - a String is its
+                            // own weak key).
                             stack.popOperand();
                             StringValue val = ValueFactory.createStringValue(s, inst.address);
                             stack.pushOperand(val);
                         } else {
                             (peek.asObjectValue()).setAddress(inst.address);
-                            // G3 register-only-non-constant: register iff the shadow carries symbolic
-                            // content (a variable/UF) - those can't be reconstructed from the concrete
-                            // and must round-trip via the heap (e.g. a whitelisted pure method's UF);
-                            // pure constants are skipped to bound the leak.
+                            // Register iff the shadow carries symbolic content (a variable/UF) - those
+                            // can't be reconstructed from the concrete and must round-trip via the heap
+                            // (e.g. a whitelisted pure method's UF); pure constants are skipped to bound
+                            // the leak.
                             FormulaManager fmgr =
                                     ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
                             if (!fmgr.extractVariablesAndUFs((Formula) peek.formula).isEmpty()) {
@@ -1378,10 +1377,10 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
                     } else {
                         (peek.asObjectValue()).setAddress(inst.address);
-                        // G3-A2 register-only-non-constant for de-interned boxed value types (same
-                        // policy as the String branch above): a constant boxed value is reconstructible
-                        // from inst.val, so skip registering it; symbolic boxed values, mutable objects,
-                        // and uncached Float/Double keep unconditional registration.
+                        // Same policy as the String branch above, for de-interned boxed value types: a
+                        // constant boxed value is reconstructible from inst.val, so skip registering it;
+                        // symbolic boxed values, mutable objects, and uncached Float/Double keep
+                        // unconditional registration.
                         if (!isConstantDeInternedValue(inst.val, peek)) {
                             stack.putToHeap(inst.val, peek);
                         }
@@ -1462,8 +1461,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
     /**
      * Whether {@code ref} is a de-interned value type (String / cached boxed wrapper) whose shadow is a
      * pure constant - i.e. carries no symbolic variable or UF. Such a value is reconstructible from the
-     * observed concrete on round-trip, so G3 (register-only-non-constant) skips heap-registering it to
-     * bound the heap; only the symbolic/UF shadows that cannot be reconstructed are registered. A boxed
+     * observed concrete on round-trip, so it is not heap-registered; this bounds the heap, and only the
+     * symbolic/UF shadows that cannot be reconstructed are registered. A boxed
      * value carries its formula in the inner {@link BoxedValue#getVal()}, not the wrapper's own field.
      */
     private boolean isConstantDeInternedValue(Object ref, Value<?, ?> shadow)
@@ -3656,7 +3655,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 Value<?, ?> v;
                 if (placeHolder.origin == PlaceHolder.ValueOrigin.UNMODELED_RETURN
                         && placeHolder.recoveredFormula != null) {
-                    // G4: a whitelisted pure method with a primitive return - model the result as the
+                    // A whitelisted pure method with a primitive return - model the result as the
                     // carried generic UF over the inputs (concrete = observed), preserving the relational
                     // fact (equal inputs => equal outputs) instead of concretizing. Mirrors the String
                     // path in visitGETVALUE_Object. No MAKE_SYMBOLIC: the UF formula already carries the
@@ -3704,9 +3703,10 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     || (!(peek instanceof BoxedValue<?>) && !checkEquality(peek.concrete, inst.v))) {
                 // The shadow's concrete diverges from the value the real JVM produced - an out-of-band
                 // change (e.g. a tracked object mutated inside unmodeled code) or an executor desync.
-                // CRASH preserves the original hard-fail (dev/CI bug catching); FLAG records a soundness
-                // flag (context loss -> SAFE downgraded to UNKNOWN) and adopts the observed concrete
-                // (sound, graceful). Escape-aware differentiation (crash only on genuine desync) is G4a.
+                // CRASH keeps the strict hard-fail (development/CI bug catching); FLAG records a
+                // soundness flag (context loss, which downgrades a SAFE verdict to UNKNOWN) and adopts
+                // the observed concrete (sound, graceful). Escape-aware differentiation (crash only on a
+                // genuine desync) is not yet implemented.
                 if (Config.instance().getShadowDivergence() == ShadowDivergence.CRASH) {
                     SWATAssert.check(false, "[GETVALUE_primitive]: Value on stack does not match expected value! Expected: {}, Actual: {}",
                             inst.v, peek.concrete);

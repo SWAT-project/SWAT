@@ -47,7 +47,7 @@ public class ValueFactory {
 
     /**
      * Build a primitive value of {@code type} carrying an explicit symbolic {@code formula} (its
-     * concrete is the observed result). Used by G4 to model a whitelisted pure primitive return as a
+     * concrete is the observed result). Used to model a whitelisted pure primitive return as a
      * generic UF over its inputs. The formula's sort MUST match the value's sort (see
      * {@code InvocationHandler#pureUFReturnType}): bitvector of width 8/16/16/32/64 for
      * byte/short/char/int/long, floating-point for float/double, boolean for boolean.

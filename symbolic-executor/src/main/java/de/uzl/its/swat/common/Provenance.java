@@ -5,9 +5,9 @@ import com.google.common.collect.MapMaker;
 import java.util.Map;
 
 /**
- * G3-B provenance for reference equality of de-interned value types.
+ * Provenance tracking for reference equality of de-interned value types.
  *
- * <p>De-interning (G3) gives every produced value type a fresh identity so the reference-keyed shadow
+ * <p>De-interning gives every produced value type a fresh identity so the reference-keyed shadow
  * heap stays sound. That fresh identity diverges from the real JVM identity, which would break
  * reference equality ({@code ==}). To model {@code ==} exactly, each de-interned copy records the
  * genuine original ("canonical") object it was made from, and {@code UtilInstrumented.refEquals}

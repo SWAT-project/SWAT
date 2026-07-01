@@ -38,8 +38,8 @@ public class PlaceHolder extends Value {
         GETSTATIC,
         // The return value of an unmodeled method (tagged in InvocationHandler). At recovery, a result
         // with this origin is NOT identity-recovered (which would re-bind the receiver). If it carries a
-        // pure_<sig> UF (recoveredFormula, whitelisted pure method - String or primitive) it is modeled
-        // as that UF (G4); otherwise a value-typed result is concretized (G2).
+        // pure_<sig> UF (recoveredFormula, a whitelisted pure method returning a String or primitive) it
+        // is modeled as that UF; otherwise a value-typed result is concretized.
         UNMODELED_RETURN
     }
 
@@ -48,15 +48,15 @@ public class PlaceHolder extends Value {
     public final Instruction inst;
     public final ObjectValue<?, ?> referenceValue;
     /**
-     * For an UNMODELED_RETURN placeholder of a whitelisted pure method (G4): the generic UF formula
-     * {@code pure_<sig>(inputs)} modeling the result. Null otherwise (then recovery concretizes, G2).
+     * For an UNMODELED_RETURN placeholder of a whitelisted pure method: the generic UF formula
+     * {@code pure_<sig>(inputs)} modeling the result. Null otherwise (recovery then concretizes).
      */
     public final Formula recoveredFormula;
     /**
-     * G4 step 2: the same generic UF applied to the CONSTANT (observed) inputs, e.g.
+     * The same generic UF applied to the CONSTANT (observed) inputs, e.g.
      * {@code pure_<sig>(makeString(concreteInput))}. At recovery this is asserted equal to the
      * observed concrete output to record a ground (input -> output) pair. Null when no pair is
-     * emitted (non-String inputs / not a whitelisted pure call).
+     * emitted (non-String inputs, or not a whitelisted pure call).
      */
     public final Formula observedApplication;
     public static final PlaceHolder instance = new PlaceHolder(false);
@@ -90,7 +90,7 @@ public class PlaceHolder extends Value {
     }
 
     /**
-     * UNMODELED_RETURN placeholder carrying, for a whitelisted pure method (G4): the generic UF over
+     * UNMODELED_RETURN placeholder carrying, for a whitelisted pure method: the generic UF over
      * the symbolic inputs ({@code recoveredFormula}, modeling the result) and the same UF over the
      * constant observed inputs ({@code observedApplication}, used to record the observed pair). Either
      * may be null.

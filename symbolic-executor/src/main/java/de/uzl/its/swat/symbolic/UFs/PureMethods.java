@@ -5,17 +5,16 @@ import org.objectweb.asm.Type;
 
 /**
  * Whitelist of pure, deterministic, side-effect-free JDK methods that SWAT does NOT model, plus the
- * descriptive naming scheme for the generic uninterpreted functions that model their unmodeled
- * returns (G4). A whitelisted method's result is modeled as {@code pure_<Class>_<method>[_<argTypes>]
- * (inputs)} instead of being concretized (G2) - preserving the relational fact (equal inputs =>
- * equal outputs) soundly, since an axiom-free UF over-approximates any deterministic function.
+ * descriptive naming scheme for the generic uninterpreted functions that model their returns. A
+ * whitelisted method's result is modeled as {@code pure_<Class>_<method>[_<argTypes>](inputs)}
+ * instead of being concretized - preserving the relational fact (equal inputs => equal outputs)
+ * soundly, since an axiom-free UF over-approximates any deterministic function.
  *
- * <p>Membership is the soundness precondition: only genuinely pure + deterministic methods may
+ * <p>Membership is a soundness precondition: only genuinely pure and deterministic methods may
  * appear here. Exclude locale-dependent (no-arg {@code toLowerCase}/{@code toUpperCase}),
  * environment/property readers, argument-mutating, identity/{@code intern}, and nondeterministic
- * (random/time) methods. The starter set is tiny and hand-audited; it is later scaled by a per-class
- * survey of {@code java.lang}. String and all primitive return types are supported (the UF's return
- * sort is the method's return type); the method must also be UNMODELED by SWAT, else the UF never
+ * (random/time) methods. String and all primitive return types are supported (the UF's return sort
+ * is the method's return type); the method must also be UNMODELED by SWAT, otherwise the UF never
  * fires.
  */
 public final class PureMethods {
@@ -23,14 +22,11 @@ public final class PureMethods {
 
     /**
      * Keys are {@code owner + "/" + name + desc} (descriptor included to disambiguate overloads).
-     * Entries are pure, deterministic, side-effect-free, and UNMODELED by SWAT (so the generic UF
-     * actually fires). Curated from the java.lang purity survey
-     * (docs/heap-redesign-g4-whitelist-survey.md); the boxed types' toString-family is intentionally
-     * absent (already modeled -> a UF would never fire). String and primitive returns are both
-     * supported. Membership combines the String-return starter set with the java.lang/util purity audit
-     * (per-class agents over Math/StrictMath/Character/Integer/Byte/Float/Double/Objects applying the
-     * jdk-source skill's rubric); every entry is pure, deterministic, side-effect-free, and UNMODELED
-     * (absent from its Invocation handler / a StringValue stub), so the generic UF actually fires.
+     * Every entry is pure, deterministic, side-effect-free, and UNMODELED by SWAT - absent from its
+     * Invocation handler, or present only as a StringValue stub - so the generic UF actually fires.
+     * The boxed types' toString-family is intentionally absent (already modeled, so a UF would never
+     * fire). Covers String and primitive returns across
+     * Math/StrictMath/Character/Integer/Byte/Float/Double/Objects and the String methods.
      */
     private static final Set<String> WHITELIST =
             Set.of(

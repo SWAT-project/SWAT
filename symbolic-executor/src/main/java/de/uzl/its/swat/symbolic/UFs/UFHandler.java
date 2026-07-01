@@ -31,7 +31,7 @@ public class UFHandler {
         return sinCosUF;
     }
 
-    /** Registry of generic uninterpreted functions for whitelisted pure JDK methods (G4). */
+    /** Registry of generic uninterpreted functions for whitelisted pure JDK methods. */
     public PureFunctionUF getPureFunctionUF() throws NoThreadContextException {
         if (pureFunctionUF == null) {
             pureFunctionUF = new PureFunctionUF(ThreadHandler.getSolverContext(currentThread().getId()));

@@ -7,16 +7,16 @@ package de.uzl.its.swat.symbolic.shadow;
  */
 public enum ShadowDivergence {
     /**
-     * Hard-fail on divergence (SWATAssert) - preserves the original behavior, which is useful for
-     * catching executor-internal desync bugs in dev/CI. Default.
+     * Hard-fail on divergence (SWATAssert). Useful for catching executor-internal desync bugs in
+     * development and CI. Default.
      */
     CRASH,
 
     /**
-     * Detect gracefully: record a soundness flag (context loss -> SAFE downgraded to UNKNOWN), adopt
-     * the observed concrete value, and continue. Fully sound; recommended for SV-COMP / production
-     * runs (no spurious crashes). Until escape-aware differentiation lands (G4a), this does not
-     * distinguish a legitimate out-of-band change from an executor desync - both are flagged.
+     * Detect gracefully: record a soundness flag (context loss, which downgrades a SAFE verdict to
+     * UNKNOWN), adopt the observed concrete value, and continue. Fully sound; recommended for SV-COMP
+     * and production runs (no spurious crashes). This policy does not distinguish a legitimate
+     * out-of-band change from an executor desync - both are flagged.
      */
     FLAG
 }

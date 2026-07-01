@@ -56,7 +56,7 @@ class DTOBuilder {
         ArrayList<InputDTO> inputs = new ArrayList<>();
         ArrayList<UFDTO> ufs = new ArrayList<>();
         ArrayList<BranchDTO> trace = new ArrayList<>();
-        // G4: the terms of the designated symbolic inputs, used to classify precision loss - a branch
+        // The terms of the designated symbolic inputs, used to classify precision loss: a branch
         // variable is "grounded" iff its term is one of these (exact + type-aware, no name pattern).
         Set<Formula> inputTerms = new HashSet<>();
 
@@ -99,9 +99,9 @@ class DTOBuilder {
                     constraint = String.valueOf(fmgr.dumpFormula(f));
                     branchPrecisionLoss = isPrecisionLoss(f, fmgr, inputTerms);
                 }
-                // Executor-side decision (unchanged): aggregate = OR of the per-branch flags. The
-                // per-branch flag also travels on the BranchDTO so a future explorer-side,
-                // CFG-reachability-aware precision-loss decision can take over with no trace change (G4).
+                // Aggregate precision loss = OR of the per-branch flags. The per-branch flag also
+                // travels on the BranchDTO so a future explorer-side, CFG-reachability-aware
+                // precision-loss decision can take over with no trace change.
                 symbolicPrecisionLoss |= branchPrecisionLoss;
                 trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), branchPrecisionLoss));
             } else if (el instanceof SpecialElement se) {

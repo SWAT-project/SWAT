@@ -34,10 +34,10 @@ public class InvocationHandler {
                             "java/io/PrintStream/println",
                             "de/uzl/its/swat/instrument/Intrinsics",
                             "de/uzl/its/swat/common/UtilInstrumented",
-                            // G3-B: refEquals's body (stepped, since UtilInstrumented is instrumented)
-                            // calls these with a possibly-symbolic operand; ignore them so a reference
-                            // comparison does not record spurious context loss. Both are pure/identity
-                            // and their concretized results are all refEquals needs.
+                            // refEquals's body (stepped through, since UtilInstrumented is
+                            // instrumented) calls these with a possibly-symbolic operand; ignore them
+                            // so a reference comparison does not record spurious context loss. Both are
+                            // pure/identity and their concretized results are all refEquals needs.
                             "de/uzl/its/swat/common/Util/shouldUseValueEquality",
                             "de/uzl/its/swat/common/Provenance",
                             "de/uzl/its/swat/witness/Witness",
@@ -85,8 +85,8 @@ public class InvocationHandler {
                             symbolicTraceHandler);
         }
 
-        // G4: model of a whitelisted pure return (result UF over symbolic inputs + the same UF over
-        // constant observed inputs, for the step-2 observed pair); stays null -> recovery concretizes (G2).
+        // Model of a whitelisted pure return (result UF over symbolic inputs + the same UF over
+        // constant observed inputs, for the observed pair); stays null -> recovery concretizes.
         PureUFModel pureUF = null;
         // When the method is not implemented and its not on the ignore list, we record it
         if (retValue instanceof PlaceHolder &&
@@ -120,7 +120,7 @@ public class InvocationHandler {
                     invokeId,
                     containsSymbolicArgument));
 
-            // G4: model a whitelisted pure, value-returning call as a generic UF over its inputs
+            // Model a whitelisted pure, value-returning call as a generic UF over its inputs
             // (instead of concretizing at recovery). Sound by construction: an axiom-free UF
             // over-approximates any deterministic function. Only when an input is symbolic;
             // `arguments` here already includes the receiver (prepended above).
@@ -129,9 +129,9 @@ public class InvocationHandler {
             }
 
             if(
-                    // G4: a successfully UF-modeled pure call loses no context - the whitelist
+                    // A successfully UF-modeled pure call loses no context - the whitelist
                     // guarantees no side effects and the return is captured by the UF - so it must NOT
-                    // downgrade SAFE; only flag context loss when we did not model the call.
+                    // downgrade SAFE; only flag context loss when the call was not modeled.
                     pureUF == null
                     && (retValue.equals(PlaceHolder.instance) // To detect a missing implementation
                     || retValue instanceof VoidValue vv && !vv.isSymbolic())  // To detect a missing implementation that returns nothing
@@ -145,10 +145,10 @@ public class InvocationHandler {
             }
         }
 
-        // G2/G4: tag an unmodeled placeholder return so visitGETVALUE_Object recovers a value-typed
+        // Tag an unmodeled placeholder return so visitGETVALUE_Object recovers a value-typed
         // result instead of identity-recovering it (which would re-bind the receiver's symbolic value,
-        // e.g. String.toLowerCase() returning `this`). If a generic UF was built (G4), it rides along
-        // and the result is modeled as that UF; otherwise recovery concretizes (G2). This MUST stay
+        // e.g. String.toLowerCase() returning `this`). If a generic UF was built, it rides along
+        // and the result is modeled as that UF; otherwise recovery concretizes. This MUST stay
         // after the context-loss check above, which compares retValue against PlaceHolder.instance by
         // identity.
         if (retValue == PlaceHolder.instance) {
@@ -160,16 +160,16 @@ public class InvocationHandler {
         return retValue;
     }
 
-    /** A whitelisted pure call modeled as a generic UF: the result over symbolic inputs, and (G4
-     * step 2) the same UF over the constant observed inputs for the observed (input -> output) pair. */
+    /** A whitelisted pure call modeled as a generic UF: the result over symbolic inputs, and the
+     * same UF over the constant observed inputs for the observed (input -> output) pair. */
     private record PureUFModel(Formula result, Formula observedApplication) {}
 
     /**
      * Build the generic UF {@code pure_<sig>(inputs)} for a whitelisted pure call, or null to fall
-     * back to G2 concretization. Handles String and all primitive returns (the return sort is
+     * back to concretization. Handles String and all primitive returns (the return sort is
      * {@link #pureUFReturnType}); the inputs (receiver + args) must all be value-typed so their
      * formula fully captures the input (sound; no stateful receivers). Also builds the same UF applied
-     * to the CONSTANT inputs (step 2's observed-pair application) using the SAME cached declaration;
+     * to the CONSTANT inputs (the observed-pair application) using the SAME cached declaration;
      * that is null unless the return is a String and every input is a String (the only case whose
      * recovery side asserts the observed pair, and where String concretes become constant formulas).
      */
@@ -177,7 +177,7 @@ public class InvocationHandler {
             String owner, String name, String desc, List<Value<?, ?>> inputs)
             throws NoThreadContextException {
         // The UF's return sort is the method's return type - String or any primitive. Unsupported
-        // returns (void, arrays, non-String objects) yield null and fall back to G2 concretization.
+        // returns (void, arrays, non-String objects) yield null and fall back to concretization.
         FormulaType<?> returnType = pureUFReturnType(desc);
         if (returnType == null) {
             return null;
@@ -188,25 +188,25 @@ public class InvocationHandler {
                         .getStringFormulaManager();
         List<Formula> symbolicArgs = new ArrayList<>();
         List<Formula> constArgs = new ArrayList<>();
-        boolean observable = true; // an observed pair needs constant-buildable (v1: String) inputs
+        boolean observable = true; // an observed pair needs constant-buildable (String) inputs
         for (Value<?, ?> v : inputs) {
             if (v.formula == null || !Util.isValueType(v.concrete)) {
-                return null; // non-value-typed or formula-less input: defer to G2 concretize.
+                return null; // non-value-typed or formula-less input: defer to concretization.
             }
             symbolicArgs.add((Formula) v.formula);
             if (v.concrete instanceof String s) {
                 constArgs.add(smgr.makeString(s));
             } else {
-                observable = false; // v1: only String inputs become constant formulas here.
+                observable = false; // only String inputs become constant formulas here.
             }
         }
         PureFunctionUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getPureFunctionUF();
         String ufName = PureMethods.ufName(owner, name, desc);
         Formula result = uf.apply(ufName, returnType, symbolicArgs);
-        // G4 step 2 observed pair: built only for String returns, the sole case whose recovery side
+        // Observed pair: built only for String returns, the sole case whose recovery side
         // (visitGETVALUE_Object) asserts the (constant inputs -> observed output) equality. The same
         // cached declaration is applied to the constant inputs so the pair constrains the very symbol
-        // used in `result`. Primitive observed pairs are future work (with the explorer step-2 side).
+        // used in `result`. Primitive observed pairs are future work (with the explorer side).
         Formula observed = (observable && FormulaType.StringType.equals(returnType))
                 ? uf.apply(ufName, returnType, constArgs) : null;
         return new PureUFModel(result, observed);
@@ -216,7 +216,7 @@ public class InvocationHandler {
      * The SMT return sort for a whitelisted pure method, matching the shadow value sorts exactly:
      * String; boolean; bitvectors of width 8/16/16/32/64 for byte/short/char/int/long; and
      * floating-point (single for float, double for double). Returns null for unsupported returns
-     * (void, arrays, non-String objects), which fall back to G2 concretization.
+     * (void, arrays, non-String objects), which fall back to concretization.
      */
     private static FormulaType<?> pureUFReturnType(String desc) {
         Type ret = Type.getReturnType(desc);

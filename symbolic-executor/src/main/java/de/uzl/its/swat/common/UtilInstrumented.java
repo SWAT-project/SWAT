@@ -24,7 +24,7 @@ public class UtilInstrumented {
     }
     /**
      * Models reference equality ({@code ==}) for de-interned value types by comparing the ORIGINAL
-     * identities (G3-B). De-interning gave {@code a}/{@code b} fresh identities that diverge from the
+     * identities. De-interning gave {@code a}/{@code b} fresh identities that diverge from the
      * real JVM; comparing {@link Provenance#root}s (the canonical object each was de-interned from)
      * reproduces the un-transformed program's {@code ==}: two copies of the same interned literal /
      * cached box / returned object share one canonical and so compare equal. Non-de-interned classes

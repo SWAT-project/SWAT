@@ -17,7 +17,7 @@ public class BranchDTO {
     private String inst;
 
     /**
-     * G4: the executor's per-branch precision-loss verdict. Carried so a future explorer-side,
+     * The executor's per-branch precision-loss verdict. Carried so a future explorer-side,
      * CFG-reachability-aware decision can key it by {@link #iid} to a CFG node. The current verdict
      * uses the aggregate {@code symbolicPrecisionLoss} on the TraceDTO (OR of these).
      */

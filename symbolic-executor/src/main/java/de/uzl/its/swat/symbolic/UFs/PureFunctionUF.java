@@ -12,8 +12,8 @@ import org.sosy_lab.java_smt.api.SolverContext;
 import org.sosy_lab.java_smt.api.UFManager;
 
 /**
- * Per-thread registry of the generic uninterpreted functions that model whitelisted pure JDK methods
- * (G4). One UF symbol per signature (named via {@link PureMethods#ufName}), declared lazily and
+ * Per-thread registry of the generic uninterpreted functions that model whitelisted pure JDK methods.
+ * One UF symbol per signature (named via {@link PureMethods#ufName}), declared lazily and
  * cached. The UF is <b>axiom-free</b>: applying it asserts only equal-inputs =&gt; equal-outputs
  * (referential transparency), a sound over-approximation of any deterministic function. Observed
  * concrete input-&gt;output pairs are added separately (as constraints) to tighten it across runs.

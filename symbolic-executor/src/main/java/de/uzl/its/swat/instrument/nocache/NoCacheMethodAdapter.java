@@ -24,9 +24,9 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitLdcInsn(value);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/String", "<init>",
                     "(Ljava/lang/String;)V", false);
-            // G3-B: record provenance (de-interned copy -> the interned literal canonical). The
-            // interned literal is a compile-time constant, so re-LDC'ing it pushes the SAME canonical
-            // object that every other occurrence of this literal shares; never null (no guard needed).
+            // Record provenance (de-interned copy -> the interned literal canonical). The interned
+            // literal is a compile-time constant, so re-LDC'ing it pushes the SAME canonical object
+            // that every other occurrence of this literal shares; never null (no guard needed).
             mv.visitInsn(Opcodes.DUP);
             mv.visitLdcInsn(value);
             emitProvenanceRecord();
@@ -115,7 +115,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
         // For all other method calls, proceed normally.
         mv.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
 
-        // G3: output-boundary de-interning. De-intern a value-typed return from an UN-instrumented
+        // Output-boundary de-interning: de-intern a value-typed return from an un-instrumented
         // callee - the boundary where interned/shared values (literals, constants, this-returns,
         // cached boxes) enter shadow space. A fresh copy gives the produced value a distinct identity,
         // so the reference-keyed heap stays sound for value types. Skip the SWAT / sv-benchmarks
@@ -174,7 +174,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
     }
 
     /**
-     * The six cached boxed wrappers G3 de-interns. Each carries the JVM primitive type descriptor
+     * The six cached boxed wrappers that are de-interned. Each carries the JVM primitive type descriptor
      * ({@code primDescriptor}, e.g. {@code "I"}, {@code "J"}, {@code "S"}) from which all method
      * descriptors are derived, so this enum is the single source of truth for both the {@code valueOf}
      * rewrite and the return de-intern. {@code primType} is the stack type used for the load/store

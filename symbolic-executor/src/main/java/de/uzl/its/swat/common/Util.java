@@ -235,7 +235,7 @@ public class Util {
 
     private static void checkClassName(String className) {
         if (className.startsWith("[")) {
-            return; // array class, skip check for now
+            return; // array class; the descriptor check does not apply
         }
         SWATAssert.check(
                 !className.contains(";") && !className.contains("(") && !className.contains(")"),
@@ -429,10 +429,10 @@ public class Util {
     }
 
     /**
-     * Whether {@code o}'s runtime class is one G3 de-interns: String and the cached boxed wrappers
+     * Whether {@code o}'s runtime class is one that is de-interned: String and the cached boxed wrappers
      * (Boolean/Byte/Short/Character/Integer/Long), but NOT the uncached Float/Double (which use
-     * reference equality). Used by recovery to scope register-only-non-constant to exactly the
-     * de-interned value types, leaving mutable objects and Float/Double unconditionally registered.
+     * reference equality). Used by recovery to limit the "skip registering pure constants" policy to
+     * exactly the de-interned value types, leaving mutable objects and Float/Double always registered.
      */
     public static boolean isDeInternedClass(Object o) {
         return o != null && isDeInternedClass(o.getClass());
@@ -441,7 +441,7 @@ public class Util {
     /**
      * Whether a concrete object is an immutable value type (String / boxed primitive).
      * Used by recovery to concretize an unmodeled value-returning method's result instead of
-     * identity-recovering it (G2). Independent of {@link #deInternedClasses} (the de-intern /
+     * identity-recovering it. Independent of {@link #deInternedClasses} (the de-intern /
      * reference-equality concern, which omits the uncached Float/Double): this covers String and all
      * eight boxed wrappers ({@link Number} = Byte/Short/Integer/Long/Float/Double, plus Boolean and
      * Character).
