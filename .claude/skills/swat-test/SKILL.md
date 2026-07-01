@@ -33,13 +33,12 @@ TDD), annotate the feature `@PendingFeature(reason = "…")`: it runs and assert
 behavior, is reported **pending (skipped), not a failure**, and **fails the build the moment it
 starts passing** (your "fix landed" signal). Put currently-true preconditions first, or as a
 *separate non-pending* feature, so an infra break is a real failure, not masked as pending.
-Add `@See("docs/heap-redesign-tests.md")` to link the behavioral case.
 
 ## How to add a test
 
 **L0** — extend `de.uzl.its.swat.symbolic.heap.BaseValueSpec` (gives `context`, `fmgr`, and the
 `isValid(BooleanFormula)` / `isUnsatisfiable(BooleanFormula)` boolean oracles). Construct values
-with `context`. Example: `ObjectIdentitySpec` (O-4).
+with `context`. Example: `ObjectIdentitySpec`.
 
 **L1** — extend `de.uzl.its.swat.symbolic.processor.BaseSymbolicInstructionProcessorSpec`. Call
 `setupTestContext(className, method)` first. For an unmodeled-call recovery, use the fixture:
@@ -48,7 +47,7 @@ def result = executeBoundaryRecovery(receiver, owner, name, desc, concreteResult
 // result.recovered (Value), result.contextLoss
 // resultAddress == receiver.address  -> this-return;  fresh address -> new-object return
 ```
-Example: `HeapRecoveryV1Spec` (V-1).
+Example: `ValueRecoverySpec`.
 
 **L2** — add a tiny target to `src/test/resources/targets/<Name>.java` using `@Symbolic` on a
 **method parameter** (a local needs `-g` and may crash the annotation transformer). Name the spec
@@ -59,7 +58,7 @@ TraceObservation obs = AgentRun.run("targets/<Name>.java", "<MainClass>")
 // obs.inputNames ; obs.anyBranchReferences(inputVar)
 ```
 `AgentRun` compiles against the agent jar, forks a JVM with `solver.mode=PRINT`, and parses the
-TraceDTO. Example: `HeapRecoveryV1AgentSpec`.
+TraceDTO. Example: `HeapRecoveryAgentSpec`.
 
 ## Run
 

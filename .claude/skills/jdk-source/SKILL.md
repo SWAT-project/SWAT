@@ -1,12 +1,13 @@
 ---
 name: jdk-source
-description: Fetch the exact source of a JDK method/class from the active JDK's lib/src.zip (version-exact, no network), and audit a java.lang method for SWAT purity-whitelist eligibility. Use when deciding whether a JDK method may be added to PureMethods.WHITELIST (G4 pure-function UF modeling), or when you need to read what a JDK method actually does.
+description: Fetch the exact source of a JDK method/class from the active JDK's lib/src.zip (version-exact, no network), and audit a java.lang method for SWAT purity-whitelist eligibility. Use when deciding whether a JDK method may be added to PureMethods.WHITELIST (pure-function UF modeling), or when you need to read what a JDK method actually does.
 ---
 
 # JDK source + purity-whitelist audit
 
 Two jobs: (1) cheaply read JDK source, (2) decide if a method may join `PureMethods.WHITELIST`
-(`symbolic-executor/.../symbolic/UFs/PureMethods.java`). Background: `docs/heap-redesign-g4-whitelist-survey.md`.
+(`symbolic-executor/.../symbolic/UFs/PureMethods.java`). Background: the pure-function whitelist
+section of `docs/heap-tracking.md`.
 
 ## Fetching source — `scripts/jmethod.py`
 
