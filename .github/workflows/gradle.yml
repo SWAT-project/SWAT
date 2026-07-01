@@ -28,6 +28,22 @@ jobs:
       run: ./gradlew --no-daemon build -x test
     - name: Build WitnessCreator JAR
       run: ./gradlew --no-daemon :targets:sv-comp:WitnessCreator:shadowJar
+    - name: Collect JavaSMT JAR
+      run: |
+        java_smt_dir="${HOME}/.gradle/caches/modules-2/files-2.1/org.sosy-lab/java-smt"
+        if [[ ! -d "$java_smt_dir" ]]; then
+          echo "JavaSMT Gradle cache directory not found: $java_smt_dir" >&2
+          exit 1
+        fi
+
+        java_smt_jar="$(find "$java_smt_dir" -type f -name 'java-smt-*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | sort | tail -n 1)"
+        if [[ -z "$java_smt_jar" ]]; then
+          echo "JavaSMT JAR not found in Gradle cache: $java_smt_dir" >&2
+          exit 1
+        fi
+
+        mkdir -p build/svcomp-runtime
+        cp "$java_smt_jar" build/svcomp-runtime/java-smt-latest.jar
     - name: Upload JARs
       uses: actions/upload-artifact@v4
       with:
@@ -35,6 +51,7 @@ jobs:
         path: |
           symbolic-executor/lib/symbolic-executor.jar
           targets/sv-comp/WitnessCreator/build/libs/WitnessCreator.jar
+          build/svcomp-runtime/java-smt-latest.jar
         if-no-files-found: error
         retention-days: 1
 
@@ -64,6 +81,11 @@ jobs:
       with:
         name: release-jars-${{ github.sha }}
         path: ${{ runner.temp }}/release-jars
+    - name: Install JavaSMT packaging artifact
+      run: |
+        mkdir -p libs/java-library-path
+        cp "${RUNNER_TEMP}/release-jars/build/svcomp-runtime/java-smt-latest.jar" \
+          libs/java-library-path/java-smt-latest.jar
     - name: Determine release channel
       id: meta
       run: |
