@@ -62,25 +62,6 @@ public class ShadowContext {
     }
 
     /**
-     * Looks up a registered shadow value by its concrete object reference, without mutating state.
-     *
-     * @param ref The concrete object (identity key).
-     * @return The registered value, or null if none.
-     */
-    public Value<?, ?> heapLookup(Object ref) {
-        return heap.get(ref);
-    }
-
-    /**
-     * All registered shadow values, for "one wrapper per identity" inspection.
-     *
-     * @return the registered values.
-     */
-    public Collection<Value<?, ?>> heapEntries() {
-        return heap.values();
-    }
-
-    /**
      * Pushes a new frame onto the stack and makes it the active frame. A new frame on this stack
      * represents a new method invocation.
      *

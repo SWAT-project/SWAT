@@ -3,7 +3,6 @@ package de.uzl.its.swat.symbolic.shadow;
 import com.google.common.collect.MapMaker;
 import de.uzl.its.swat.symbolic.value.Value;
 
-import java.util.Collection;
 import java.util.Map;
 
 /**
@@ -52,14 +51,5 @@ public class JVMHeap {
      */
     public int size() {
         return objects.size();
-    }
-
-    /**
-     * All registered shadow values, for "one wrapper per identity" inspection.
-     *
-     * @return the registered values.
-     */
-    public Collection<Value<?, ?>> values() {
-        return objects.values();
     }
 }
