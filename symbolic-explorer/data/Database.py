@@ -159,6 +159,15 @@ class Database:
         self.new_solutions.append(branch_id)
         lock.release()
 
+    def remove_solution(self, branch_id: int):
+        # Re-open a branch (e.g. after a concolic divergence): drop its stored solution so the
+        # selection walk (dfs) returns it again for another attempt.
+        lock.acquire()
+        self.solutions.pop(branch_id, None)
+        if branch_id in self.new_solutions:
+            self.new_solutions.remove(branch_id)
+        lock.release()
+
     def get_solutions(self):
         lock.acquire()
         ret = copy.deepcopy(self.solutions)

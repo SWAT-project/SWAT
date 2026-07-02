@@ -27,7 +27,13 @@ import platform
 
 
 # The (unique) endpoint ID for the SV-COMP target. As each target is handled separately, this ID is always 0.
-ENDPOINT_ID = 0 
+ENDPOINT_ID = 0
+
+# A branch guarded by an uninterpreted pure_ UF can diverge on concrete replay (the solver cannot
+# drive the UF to the required value). We re-open and retry such a branch - with a fresh solver input
+# once observed input->output pairs are injected - but only up to this many attempts, after which it
+# is abandoned as unverified (forcing UNKNOWN). This bounds exploration and guarantees termination.
+MAX_BRANCH_ATTEMPTS = 3
     
 
 class ExecutionStatus(Enum):
@@ -62,11 +68,14 @@ class State:
     def __init__(self):
         self.verdict = Verdict.UNKNOWN
         self.branch_to_explore: Node | None = None
-        # Branches we solved and intended to explore, but the concrete re-run diverged from (the
-        # predicted branch was never actually taken - e.g. a branch guarded by an uninterpreted
-        # pure_ UF the solver cannot drive to the required value). While any remain unverified a
+        # Node gids we solved and intended to explore, but abandoned after the concrete re-run kept
+        # diverging (the predicted branch was never actually taken - e.g. a branch guarded by an
+        # uninterpreted pure_ UF the solver cannot drive to the required value). While any remain, a
         # SAFE verdict is unsound: that branch was not actually explored.
         self.unverified_branches: set = set()
+        # Per-branch (node gid) count of solve+re-run attempts that diverged; drives attempt-based
+        # prioritization and the re-open/abandon bound.
+        self.branch_attempts: dict = {}
     
     
 class SVCompDriver:
@@ -214,15 +223,21 @@ class SVCompDriver:
 
             # check if the target explored the branch as expected
             if self.state.branch_to_explore:
+                diverged = False
                 for branch in Database.instance().get_trace(-1): # most recent trace
                     if branch.id == self.state.branch_to_explore.id:
+                        # We solved this branch to flip it; if the re-run took the same direction, the
+                        # predicted branch was not actually explored (an uninterpreted pure_ UF the
+                        # solver could not drive to the required value).
                         if branch.has_branched == (self.state.branch_to_explore.branched is not None):
-                            logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {branch.id} as expected! Branch unexpectedly taken/skipped.')
-                            self.state.unverified_branches.add(self.state.branch_to_explore.id)
+                            logger.warning(f'[SVCOMP] Branch {branch.id} diverged: predicted direction not taken.')
+                            diverged = True
                         break
                 else:
-                    logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {self.state.branch_to_explore.id} as expected! Branch does not appear in trace.')
-                    self.state.unverified_branches.add(self.state.branch_to_explore.id)
+                    logger.warning(f'[SVCOMP] Branch {self.state.branch_to_explore.id} diverged: does not appear in trace.')
+                    diverged = True
+                if diverged:
+                    self.handle_divergence(self.state.branch_to_explore)
             self.state.branch_to_explore = None
 
             self.log_output(output)
@@ -251,8 +266,28 @@ class SVCompDriver:
          
             
 
+    def handle_divergence(self, branch: Node):
+        """A solved branch diverged on concrete replay. Re-open it for another attempt (bounded), or
+        abandon it as unverified once the attempt cap is reached (forcing UNKNOWN)."""
+        gid = branch.gid
+        self.state.branch_attempts[gid] = self.state.branch_attempts.get(gid, 0) + 1
+        attempts = self.state.branch_attempts[gid]
+        if attempts < MAX_BRANCH_ATTEMPTS:
+            # Not actually explored - re-open so it is selectable again (yields a different solver
+            # input once observed input->output pairs are injected). Bounded by the attempt cap.
+            Database.instance().remove_solution(gid)
+            logger.info(f'[SVCOMP] Re-opening diverged branch {branch.id} (gid {gid}), attempt {attempts}/{MAX_BRANCH_ATTEMPTS}')
+        else:
+            self.state.unverified_branches.add(gid)
+            logger.warning(f'[SVCOMP] Abandoning diverged branch {branch.id} (gid {gid}) after {attempts} attempts; verdict cannot be SAFE.')
+
     def retrieve_solution(self):
         possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID)
+        # Prefer branches tried fewer times so a repeatedly-diverging branch does not starve the rest;
+        # exclude any that hit the attempt cap (abandoned -> unverified -> UNKNOWN).
+        possible_branches = [b for b in possible_branches
+                             if self.state.branch_attempts.get(b.gid, 0) < MAX_BRANCH_ATTEMPTS]
+        possible_branches.sort(key=lambda b: self.state.branch_attempts.get(b.gid, 0))
         logger.info(f'[SYMBOLIC EXPLORATION] Found {len(possible_branches)} possible branches')
         logger.info(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
         symbolic_vars = None
