@@ -20,6 +20,10 @@ import de.uzl.its.swat.thread.ThreadHandler;
 
 import java.util.*;
 
+import org.sosy_lab.java_smt.api.BitvectorFormula;
+import org.sosy_lab.java_smt.api.BooleanFormula;
+import org.sosy_lab.java_smt.api.FloatingPointFormula;
+import org.sosy_lab.java_smt.api.Formula;
 import org.sosy_lab.java_smt.api.SolverContext;
 
 public class ValueFactory {
@@ -37,6 +41,29 @@ public class ValueFactory {
             case booleanValue -> new BooleanValue(context, (boolean) concrete);
             case shortValue -> new ShortValue(context, (short) concrete);
             case byteValue -> new ByteValue(context, (byte) concrete);
+            default -> throw new TypeException(type);
+        };
+    }
+
+    /**
+     * Build a primitive value of {@code type} carrying an explicit symbolic {@code formula} (its
+     * concrete is the observed result). Used to model a whitelisted pure primitive return as a
+     * generic UF over its inputs. The formula's sort MUST match the value's sort (see
+     * {@code InvocationHandler#pureUFReturnType}): bitvector of width 8/16/16/32/64 for
+     * byte/short/char/int/long, floating-point for float/double, boolean for boolean.
+     */
+    public static NumericalValue<?, ?> createNumericalValue(ValueType type, Object concrete, Formula formula)
+            throws NoThreadContextException, TypeException {
+        SolverContext context = ThreadHandler.getSolverContext(Thread.currentThread().getId());
+        return switch (type) {
+            case intValue -> new IntValue(context, (int) concrete, (BitvectorFormula) formula);
+            case longValue -> new LongValue(context, (long) concrete, (BitvectorFormula) formula);
+            case shortValue -> new ShortValue(context, (short) concrete, (BitvectorFormula) formula);
+            case byteValue -> new ByteValue(context, (byte) concrete, (BitvectorFormula) formula);
+            case charValue -> new CharValue(context, (char) concrete, (BitvectorFormula) formula);
+            case booleanValue -> new BooleanValue(context, (boolean) concrete, (BooleanFormula) formula);
+            case floatValue -> new FloatValue(context, (float) concrete, (FloatingPointFormula) formula);
+            case doubleValue -> new DoubleValue(context, (double) concrete, (FloatingPointFormula) formula);
             default -> throw new TypeException(type);
         };
     }

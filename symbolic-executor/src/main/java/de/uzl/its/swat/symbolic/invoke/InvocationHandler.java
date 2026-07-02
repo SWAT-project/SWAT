@@ -1,11 +1,14 @@
 package de.uzl.its.swat.symbolic.invoke;
 
 import ch.qos.logback.classic.Logger;
+import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
+import de.uzl.its.swat.symbolic.UFs.PureFunctionUF;
+import de.uzl.its.swat.symbolic.UFs.PureMethods;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -14,9 +17,13 @@ import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 
 import org.objectweb.asm.Type;
+import org.sosy_lab.java_smt.api.Formula;
+import org.sosy_lab.java_smt.api.FormulaType;
+import org.sosy_lab.java_smt.api.FormulaManager;
 
 public class InvocationHandler {
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
@@ -27,6 +34,12 @@ public class InvocationHandler {
                             "java/io/PrintStream/println",
                             "de/uzl/its/swat/instrument/Intrinsics",
                             "de/uzl/its/swat/common/UtilInstrumented",
+                            // refEquals's body (stepped through, since UtilInstrumented is
+                            // instrumented) calls these with a possibly-symbolic operand; ignore them
+                            // so a reference comparison does not record spurious context loss. Both are
+                            // pure/identity and their concretized results are all refEquals needs.
+                            "de/uzl/its/swat/common/Util/shouldUseValueEquality",
+                            "de/uzl/its/swat/common/Provenance",
                             "de/uzl/its/swat/witness/Witness",
                             "de/uzl/its/swat/instrument/svcomp/Verifier",
                             "java/io/PrintStream",
@@ -72,6 +85,9 @@ public class InvocationHandler {
                             symbolicTraceHandler);
         }
 
+        // Model of a whitelisted pure return (result UF over symbolic inputs + the same UF over
+        // constant observed inputs, for the observed pair); stays null -> recovery concretizes.
+        PureUFModel pureUF = null;
         // When the method is not implemented and its not on the ignore list, we record it
         if (retValue instanceof PlaceHolder &&
                 !(IGNORED_INVOCATIONS.contains(owner + "/" + name)
@@ -104,8 +120,20 @@ public class InvocationHandler {
                     invokeId,
                     containsSymbolicArgument));
 
+            // Model a whitelisted pure, value-returning call as a generic UF over its inputs
+            // (instead of concretizing at recovery). Sound by construction: an axiom-free UF
+            // over-approximates any deterministic function. Only when an input is symbolic;
+            // `arguments` here already includes the receiver (prepended above).
+            if (containsSymbolicArgument && PureMethods.isWhitelisted(owner, name, desc)) {
+                pureUF = buildPureUF(owner, name, desc, arguments);
+            }
+
             if(
-                    (retValue.equals(PlaceHolder.instance) // To detect a missing implementation
+                    // A successfully UF-modeled pure call loses no context - the whitelist
+                    // guarantees no side effects and the return is captured by the UF - so it must NOT
+                    // downgrade SAFE; only flag context loss when the call was not modeled.
+                    pureUF == null
+                    && (retValue.equals(PlaceHolder.instance) // To detect a missing implementation
                     || retValue instanceof VoidValue vv && !vv.isSymbolic())  // To detect a missing implementation that returns nothing
                             && containsSymbolicArgument) {
                 // Too strict? What about void methods that always have return value PlaceHolder.instance?
@@ -115,9 +143,98 @@ public class InvocationHandler {
                         desc);
                 symbolicTraceHandler.recordSymbolicContextLoss();
             }
+        }
 
+        // Tag an unmodeled placeholder return so visitGETVALUE_Object recovers a value-typed
+        // result instead of identity-recovering it (which would re-bind the receiver's symbolic value,
+        // e.g. String.toLowerCase() returning `this`). If a generic UF was built, it rides along
+        // and the result is modeled as that UF; otherwise recovery concretizes. This MUST stay
+        // after the context-loss check above, which compares retValue against PlaceHolder.instance by
+        // identity.
+        if (retValue == PlaceHolder.instance) {
+            retValue = new PlaceHolder(
+                    PlaceHolder.ValueOrigin.UNMODELED_RETURN,
+                    isInstance ? instance : null,
+                    pureUF == null ? null : pureUF.result(),
+                    pureUF == null ? null : pureUF.observedApplication());
         }
         return retValue;
+    }
+
+    /** A whitelisted pure call modeled as a generic UF: the result over symbolic inputs, and the
+     * same UF over the constant observed inputs for the observed (input -> output) pair. */
+    private record PureUFModel(Formula result, Formula observedApplication) {}
+
+    /**
+     * Build the generic UF {@code pure_<sig>(inputs)} for a whitelisted pure call, or null to fall
+     * back to concretization. Handles String and all primitive returns (the return sort is
+     * {@link #pureUFReturnType}); the inputs (receiver + args) must all be value-typed so their
+     * formula fully captures the input (sound; no stateful receivers). Also builds the same UF applied
+     * to the CONSTANT (observed) inputs, over the SAME cached declaration, so recovery can assert the
+     * observed (inputs -&gt; output) ground pair.
+     */
+    private static PureUFModel buildPureUF(
+            String owner, String name, String desc, List<Value<?, ?>> inputs)
+            throws NoThreadContextException {
+        // The UF's return sort is the method's return type - String or any primitive. Unsupported
+        // returns (void, arrays, non-String objects) yield null and fall back to concretization.
+        FormulaType<?> returnType = pureUFReturnType(desc);
+        if (returnType == null) {
+            return null;
+        }
+        FormulaManager fmgr =
+                ThreadHandler.getSolverContext(Thread.currentThread().getId()).getFormulaManager();
+        List<Formula> symbolicArgs = new ArrayList<>();
+        List<Formula> constArgs = new ArrayList<>();
+        for (Value<?, ?> v : inputs) {
+            if (v.formula == null || !Util.isValueType(v.concrete)) {
+                return null; // non-value-typed or formula-less input: defer to concretization.
+            }
+            Formula sym = (Formula) v.formula;
+            symbolicArgs.add(sym);
+            // The ground input constant must match the symbolic argument's own sort, so the observed
+            // application reuses the same UF signature.
+            constArgs.add(PureFunctionUF.constant(fmgr, fmgr.getFormulaType(sym), v.concrete));
+        }
+        PureFunctionUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getPureFunctionUF();
+        String ufName = PureMethods.ufName(owner, name, desc);
+        Formula result = uf.apply(ufName, returnType, symbolicArgs);
+        // Observed pair: the same cached UF declaration applied to the CONSTANT (observed) inputs, so
+        // the ground pair asserted at recovery constrains the very symbol used in `result`. Built for
+        // every supported return sort - the recovery side asserts it == the observed concrete output.
+        Formula observed = uf.apply(ufName, returnType, constArgs);
+        return new PureUFModel(result, observed);
+    }
+
+    /**
+     * The SMT return sort for a whitelisted pure method, matching the shadow value sorts exactly:
+     * String; boolean; bitvectors of width 8/16/16/32/64 for byte/short/char/int/long; and
+     * floating-point (single for float, double for double). Returns null for unsupported returns
+     * (void, arrays, non-String objects), which fall back to concretization.
+     */
+    private static FormulaType<?> pureUFReturnType(String desc) {
+        Type ret = Type.getReturnType(desc);
+        switch (ret.getSort()) {
+            case Type.BOOLEAN:
+                return FormulaType.BooleanType;
+            case Type.BYTE:
+                return FormulaType.getBitvectorTypeWithSize(8);
+            case Type.SHORT:
+            case Type.CHAR:
+                return FormulaType.getBitvectorTypeWithSize(16);
+            case Type.INT:
+                return FormulaType.getBitvectorTypeWithSize(32);
+            case Type.LONG:
+                return FormulaType.getBitvectorTypeWithSize(64);
+            case Type.FLOAT:
+                return FormulaType.getSinglePrecisionFloatingPointType();
+            case Type.DOUBLE:
+                return FormulaType.getDoublePrecisionFloatingPointType();
+            case Type.OBJECT:
+                return "java.lang.String".equals(ret.getClassName()) ? FormulaType.StringType : null;
+            default:
+                return null; // void, array, other reference types
+        }
     }
 
 }

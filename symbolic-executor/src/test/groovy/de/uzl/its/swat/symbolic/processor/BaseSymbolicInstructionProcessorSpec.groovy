@@ -7,8 +7,10 @@ import de.uzl.its.swat.instrument.GlobalStateForInstrumentation
 import de.uzl.its.swat.instrument.Intrinsics
 import de.uzl.its.swat.metadata.ClassDepot
 import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor
+import de.uzl.its.swat.symbolic.instruction.GETVALUE_Object
 import de.uzl.its.swat.symbolic.instruction.INVOKEMETHOD_END
 import de.uzl.its.swat.symbolic.instruction.INVOKESTATIC
+import de.uzl.its.swat.symbolic.instruction.INVOKEVIRTUAL
 import de.uzl.its.swat.symbolic.instruction.Instruction
 import de.uzl.its.swat.symbolic.instruction.LDC_long
 import de.uzl.its.swat.symbolic.instruction.NOP
@@ -272,5 +274,58 @@ abstract class BaseSymbolicInstructionProcessorSpec extends Specification {
             result = resultFrame.peek()
         }
         return result
+    }
+
+    /**
+     * L1 boundary-recovery fixture. Drives the real unmodeled-invoke -> recovery path:
+     *
+     *   register {@code receiver} under its concrete object; push it as the invoke instance; then
+     *   process  INVOKEVIRTUAL(owner,name,desc) -> INVOKEMETHOD_END -> GETVALUE_Object(resultObject).
+     *
+     * An unmodeled method returns a PlaceHolder (InvocationHandler), INVOKEMETHOD_END pushes it, and
+     * GETVALUE_Object reconciles it against the reference-keyed heap. Passing {@code resultObject}
+     * identical to the receiver's concrete object reproduces a this-return (the toLowerCase aliasing
+     * defect); a distinct {@code resultObject} reproduces a new-object return.
+     *
+     * NOTE (honest limit): this fixture *fabricates* the result/receiver identity relationship that a
+     * real JVM would produce, so it pins the interpreter's recovery logic, not the
+     * instrumentation->processor contract. Pair flagship cases with an L2 agent run. It also relies
+     * on a value-type {@code getConcrete()} (a StringValue returns its String, so registration keys on
+     * that String); a plain ObjectValue receiver would key on its address and never recover.
+     *
+     * @return a map [recovered: Value, contextLoss: boolean]
+     */
+    def executeBoundaryRecovery(ObjectValue receiver, String owner, String name, String desc,
+                                Object resultObject) {
+        SymbolicInstructionVisitor visitor = ThreadHandler.getSymbolicVisitor(threadId)
+        ShadowContext context = visitor.getStack()
+        // Register the receiver under its concrete object, so a this-return (resultObject identical to
+        // the receiver's concrete) is recovered by reference identity; a distinct resultObject misses.
+        context.putToHeap(receiver.getConcrete(), receiver)
+        // Push the receiver as the invoke instance (consumed by newStackFrame in INVOKEVIRTUAL).
+        pushOperand(receiver)
+
+        List<Instruction> instructions = new ArrayList<>()
+        long invokeId = GlobalStateForInstrumentation.instance.incAndGetInvokeId()
+        // INVOKEVIRTUAL and its INVOKEMETHOD_END must share the invokeId so the open-invoke stack
+        // closes (closeOpenInvoke) and METHOD_END is visited despite the frame's class differing.
+        instructions.add(new INVOKEVIRTUAL(GlobalStateForInstrumentation.instance.incAndGetId(), invokeId, owner, name, desc))
+        instructions.add(new INVOKEMETHOD_END(GlobalStateForInstrumentation.instance.incAndGetId(), invokeId))
+        instructions.add(new GETVALUE_Object(GlobalStateForInstrumentation.instance.incAndGetId(), System.identityHashCode(resultObject), resultObject, 0))
+        instructions.add(new NOP(GlobalStateForInstrumentation.instance.incAndGetId()))
+
+        // Drive: setCurrent(first); each processInstruction(next) visits the *current* and advances.
+        // The trailing NOP exists only to flush the GETVALUE_Object visit (execution is one behind).
+        ThreadHandler.setCurrentInstruction(threadId, instructions.remove(0))
+        SymbolicInstructionProcessor processor = new SymbolicInstructionProcessor()
+        while (!instructions.isEmpty()) {
+            processor.processInstruction(instructions.remove(0))
+        }
+
+        def traceHandler = ThreadHandler.getSymbolicTraceHandler(threadId)
+        return [
+                recovered  : visitor.getStack().getActiveFrame().peek(),
+                contextLoss: traceHandler.isSymbolicContextLoss()
+        ]
     }
 }

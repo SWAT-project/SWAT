@@ -74,6 +74,7 @@ dependencyResolutionManagement {
             library('logback-core', 'ch.qos.logback:logback-core:1.5.3')
             library('slf4j-api', 'org.slf4j:slf4j-api:2.0.13')
             library('cfg-extractor', 'de.uzl.its:cfg-extractor:1.0-SNAPSHOT')
+            library('guava', 'com.google.guava:guava:33.4.8-jre')
 
             bundle('asm', ['asm-core', 'asm-commons', 'asm-util', 'asm-tree'])
             bundle('logging', ['logback-core', 'logback-classic', 'slf4j-api'])

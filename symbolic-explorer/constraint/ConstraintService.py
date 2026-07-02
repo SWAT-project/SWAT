@@ -22,8 +22,7 @@ class ConstraintService:
 
     @staticmethod
     def add_constraints(endpoint_id: str, trace_id: str, trace: List[TraceItem], inputs: List[InputItem], ufs: List[UFItem],
-                        symbolic_context_loss: bool, symbolic_precision_loss: bool,
-                        reference_semantic_change: bool = False):
+                        symbolic_context_loss: bool, symbolic_precision_loss: bool):
         """
         Adds constraints to the database.
 
@@ -39,7 +38,6 @@ class ConstraintService:
         ufs (list): Definition of all UFs that are used
         symbolic_context_loss (bool): A flag indicating whether the symbolic context was lost.
         symbolic_precision_loss (bool): A flag indicating whether the symbolic precision was lost (UFs introduced).
-        reference_semantic_change (bool): A flag indicating whether reference equality semantics changed.
 
         Returns:
         None: The result is the side effect of adding data to the database.
@@ -51,5 +49,5 @@ class ConstraintService:
         inputs_parsed: List[Input] = Parser.parse_inputs(inputs)
         ufs_parsed: List[UF] = Parser.parse_ufs(ufs)
         # Adding the trace and inputs to the database for the specified endpoint.
-        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change)
+        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss)
         logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')

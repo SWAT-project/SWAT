@@ -16,17 +16,13 @@ public class TraceDTO {
     private boolean symbolicContextLoss = false;
     @SuppressWarnings("unused")
     private boolean symbolicPrecisionLoss = false;
-    @SuppressWarnings("unused")
-    private boolean referenceSemanticChange = false;
 
-    public TraceDTO(ArrayList<InputDTO> inputs, ArrayList<BranchDTO> trace, ArrayList<UFDTO> ufs, boolean symbolicContextLoss, boolean symbolicPrecisionLoss, boolean referenceSemanticChange) {
+    public TraceDTO(ArrayList<InputDTO> inputs, ArrayList<BranchDTO> trace, ArrayList<UFDTO> ufs, boolean symbolicContextLoss, boolean symbolicPrecisionLoss) {
         this.trace = trace;
         this.inputs = inputs;
         this.ufs = ufs;
         this.symbolicContextLoss = symbolicContextLoss;
         this.symbolicPrecisionLoss = symbolicPrecisionLoss;
-        this.referenceSemanticChange = referenceSemanticChange;
-
     }
 
     @SuppressWarnings("unused")

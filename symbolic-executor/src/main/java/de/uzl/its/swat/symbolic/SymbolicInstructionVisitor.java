@@ -6,8 +6,10 @@ import static java.lang.Thread.currentThread;
 
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.*;
 import de.uzl.its.swat.common.logging.GlobalLogger;
+import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.coverage.BranchCoverage;
 import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
 import de.uzl.its.swat.instrument.Intrinsics;
@@ -19,6 +21,7 @@ import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
 import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
 import de.uzl.its.swat.symbolic.shadow.Frame;
 import de.uzl.its.swat.symbolic.shadow.ShadowContext;
+import de.uzl.its.swat.symbolic.shadow.ShadowDivergence;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -38,6 +41,7 @@ import java.util.*;
 import lombok.Getter;
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.*;
+import de.uzl.its.swat.symbolic.UFs.PureFunctionUF;
 
 public class SymbolicInstructionVisitor implements IVisitor {
     // The stack of stack frames (method stacks)
@@ -1266,8 +1270,54 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
                 // remove the placeholder value
                 stack.popOperand();
+
+                // The result of an unmodeled value-returning method must NOT be identity-recovered
+                // (that would re-bind the receiver's symbolic value, e.g. toLowerCase() returning
+                // `this`). Concretize the value type instead, and do NOT consult or mutate the heap, so
+                // the receiver's own entry (and its round-trip) is preserved. Context loss was already
+                // flagged in InvocationHandler. Non-value results fall through to registry recovery.
+                if (placeHolder.origin == PlaceHolder.ValueOrigin.UNMODELED_RETURN
+                        && Util.isValueType(inst.val)) {
+                    Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
+                    if (placeHolder.recoveredFormula != null && inst.val instanceof String s) {
+                        // A whitelisted pure method - model the result as the carried generic UF
+                        // over the inputs (concrete = observed). Preserves the relational fact
+                        // (equal inputs => equal outputs) instead of concretizing.
+                        SolverContext context = ThreadHandler.getSolverContext(currentThread().getId());
+                        tmp = new StringValue(context, s, (StringFormula) placeHolder.recoveredFormula, inst.address);
+                        shadowStateLogger.info("Modeled unmodeled pure result as a generic UF: {}", tmp);
+                        // Record this run's observed (input -> output) ground pair -
+                        // pure_<sig>(constant inputs) == observed output. Sound: a true fact about the
+                        // real function only tightens the axiom-free UF. Cross-run accumulation and
+                        // solve-time injection are the explorer's job.
+                        if (placeHolder.observedApplication != null) {
+                            StringFormulaManager smgr = context.getFormulaManager().getStringFormulaManager();
+                            symbolicTraceHandler.addConstraint(
+                                    smgr.equal((StringFormula) placeHolder.observedApplication, smgr.makeString(s)));
+                        }
+                    } else if (Util.isImmutableValueType(inst.val)
+                            && placeHolder.referenceValue != null
+                            && (tmp = stack.getFromHeap(inst.val)) != null
+                            && tmp != placeHolder.referenceValue
+                            && inst.val.equals(tmp.getConcrete())) {
+                        // The unmodeled method returned a distinct, already-tracked immutable value
+                        // (e.g. a String or boxed primitive retrieved from a container), not the
+                        // receiver. Recover its shadow so the value keeps its symbolic formula instead
+                        // of being concretized. An immutable value cannot have drifted since it was
+                        // registered, so the stored shadow is still exact (the concrete-equality check
+                        // is a defensive guard). A method returning `this` (e.g. toLowerCase) is
+                        // excluded by `tmp != referenceValue` and still concretizes.
+                        shadowStateLogger.info("Recovered distinct registered shadow for unmodeled value-typed result: {}", tmp);
+                    } else {
+                        tmp = ValueFactory.createObjectValue(inst.val, inst.address);
+                        shadowStateLogger.info("Concretized unmodeled value-typed result (no identity recovery): {}", tmp);
+                    }
+                    stack.pushOperand(tmp);
+                    return;
+                }
+
                 // try to get object
-                tmp = stack.getFromHeap(inst.address);
+                tmp = stack.getFromHeap(inst.val);
                 // check if the object was created earlier and then reuse it
                 if (tmp != null) {
                     if (isSymbolic) {
@@ -1291,7 +1341,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         tmp.MAKE_SYMBOLIC();
                     }
                     stack.pushOperand(tmp);
-                    stack.putToHeap(inst.address, tmp); // save the object for future use
+                    stack.putToHeap(inst.val, tmp); // save the object for future use (keyed by concrete ref)
                     if (placeHolder.origin == PlaceHolder.ValueOrigin.GETFIELD) {
                         ObjectValue<?, ?> ref = placeHolder.referenceValue;
                         GETFIELD gfInst = (GETFIELD) placeHolder.inst;
@@ -1319,24 +1369,40 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 "Concrete value of the object does not match the value in the stack: {} | {}",
                                 inst.val, peek.concrete);
                         if(peek.formula == null) {
-                            // TODO This needs to be cleaned up!
+                            // A constant String: reconstruct from the observed concrete. A constant is
+                            // recoverable from inst.val on round-trip, so it is NOT heap-registered
+                            // (registering it only grows the self-pinning heap leak - a String is its
+                            // own weak key).
                             stack.popOperand();
                             StringValue val = ValueFactory.createStringValue(s, inst.address);
                             stack.pushOperand(val);
-                            stack.putToHeap(inst.address, val);
                         } else {
                             (peek.asObjectValue()).setAddress(inst.address);
-                            stack.putToHeap(inst.address, peek);
+                            // Register iff the shadow carries symbolic content (a variable/UF) - those
+                            // can't be reconstructed from the concrete and must round-trip via the heap
+                            // (e.g. a whitelisted pure method's UF); pure constants are skipped to bound
+                            // the leak.
+                            FormulaManager fmgr =
+                                    ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+                            if (!fmgr.extractVariablesAndUFs((Formula) peek.formula).isEmpty()) {
+                                stack.putToHeap(inst.val, peek);
+                            }
                         }
 
                     } else {
                         (peek.asObjectValue()).setAddress(inst.address);
-                        stack.putToHeap(inst.address, peek);
+                        // Same policy as the String branch above, for de-interned boxed value types: a
+                        // constant boxed value is reconstructible from inst.val, so skip registering it;
+                        // symbolic boxed values, mutable objects, and uncached Float/Double keep
+                        // unconditional registration.
+                        if (!isConstantDeInternedValue(inst.val, peek)) {
+                            stack.putToHeap(inst.val, peek);
+                        }
                     }
                 } else {
                     // Need to obtain the Object address
                     (peek.asObjectValue()).setAddress(inst.address);
-                    stack.putToHeap(inst.address, peek);
+                    stack.putToHeap(inst.val, peek);
                 }
             } else if ((peek.asObjectValue()).getAddress() == ADDRESS_NULL) {
                 SWATAssert.check(inst.val == null,
@@ -1371,7 +1437,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                             stack.popOperand();
 
                             // Fetch the delegated object from the heap (e.g., IntReader)
-                            Object heapObj = stack.getFromHeap(inst.address);
+                            Object heapObj = stack.getFromHeap(inst.val);
                             if (heapObj instanceof Value<?, ?>) {
                                 Value<?, ?> delegatedObject = (Value<?, ?>) heapObj;
                                 // Push the delegated object onto the stack
@@ -1382,7 +1448,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 try {
                                     Value<?, ?> delegatedObject = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(inst.val, inst.address);
                                     stack.pushOperand(delegatedObject);
-                                    stack.putToHeap(inst.address, delegatedObject);
+                                    stack.putToHeap(inst.val, delegatedObject);
                                     logger.debug("Created new delegated object from instruction: {}", delegatedObject);
                                 } catch (Exception e) {
                                     logger.error("Failed to create delegated object from instruction value", e);
@@ -1404,6 +1470,28 @@ public class SymbolicInstructionVisitor implements IVisitor {
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
+    }
+
+    /**
+     * Whether {@code ref} is a de-interned value type (String / cached boxed wrapper) whose shadow is a
+     * pure constant - i.e. carries no symbolic variable or UF. Such a value is reconstructible from the
+     * observed concrete on round-trip, so it is not heap-registered; this bounds the heap, and only the
+     * symbolic/UF shadows that cannot be reconstructed are registered. A boxed
+     * value carries its formula in the inner {@link BoxedValue#getVal()}, not the wrapper's own field.
+     */
+    private boolean isConstantDeInternedValue(Object ref, Value<?, ?> shadow)
+            throws NoThreadContextException {
+        if (!Util.isDeInternedClass(ref)) {
+            return false;
+        }
+        Formula formula = (shadow instanceof BoxedValue<?> boxed)
+                ? (Formula) boxed.getVal().formula
+                : (Formula) shadow.formula;
+        if (formula == null) {
+            return true;
+        }
+        FormulaManager fmgr = ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+        return fmgr.extractVariablesAndUFs(formula).isEmpty();
     }
 
     /**
@@ -2706,14 +2794,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitLDC_Object(LDC_Object inst) throws SymbolicInstructionException{
         try{
-            Value<?, ?> tmp = stack.getFromHeap(inst.c);
+            Value<?, ?> tmp = stack.getFromHeap(inst.object);
             if (tmp != null) {
                 stack.pushOperand(tmp);
-            } else if (inst.c == 0) {
+            } else if (inst.object == null) {
                 stack.pushOperand(ValueFactory.createNULLValue());
             } else {
                 stack.pushOperand(tmp = ValueFactory.createObjectValue(null, inst.c));
-                stack.putToHeap(inst.c, tmp);
+                stack.putToHeap(inst.object, tmp);
             }
             checkAndSetException(inst);
         } catch (Throwable t) {
@@ -3578,9 +3666,31 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 } else {
                     stack.popOperand();
                 }
-                Value<?, ?> v = ValueFactory.createNumericalValue(type, inst.v);
-                if (isSymbolic) {
-                    v.MAKE_SYMBOLIC();
+                Value<?, ?> v;
+                if (placeHolder.origin == PlaceHolder.ValueOrigin.UNMODELED_RETURN
+                        && placeHolder.recoveredFormula != null) {
+                    // A whitelisted pure method with a primitive return - model the result as the
+                    // carried generic UF over the inputs (concrete = observed), preserving the relational
+                    // fact (equal inputs => equal outputs) instead of concretizing. Mirrors the String
+                    // path in visitGETVALUE_Object. No MAKE_SYMBOLIC: the UF formula already carries the
+                    // symbolic inputs (isSymbolic() is true iff the formula has free variables).
+                    v = ValueFactory.createNumericalValue(type, inst.v, placeHolder.recoveredFormula);
+                    ThreadHandler.getShadowStateLogger(currentThread().getId())
+                            .info("Modeled unmodeled pure primitive result as a generic UF: {}", v);
+                    // Record this run's observed (input -> output) ground pair over the same cached UF
+                    // declaration: pure_<sig>(constant inputs) == observed concrete output. A true fact
+                    // that lets the explorer force a different input when re-solving a diverged branch.
+                    if (placeHolder.observedApplication != null) {
+                        FormulaManager fmgr =
+                                ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+                        symbolicTraceHandler.addConstraint(
+                                PureFunctionUF.equalConstant(fmgr, placeHolder.observedApplication, inst.v));
+                    }
+                } else {
+                    v = ValueFactory.createNumericalValue(type, inst.v);
+                    if (isSymbolic) {
+                        v.MAKE_SYMBOLIC();
+                    }
                 }
 
                 if (cat2) {
@@ -3614,8 +3724,24 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 }
             } else if ((peek instanceof BoxedValue<?> && !checkEquality(((BoxedValue<?>)peek).getVal().concrete, inst.v))
                     || (!(peek instanceof BoxedValue<?>) && !checkEquality(peek.concrete, inst.v))) {
-                SWATAssert.check(false, "[GETVALUE_primitive]: Value on stack does not match expected value! Expected: {}, Actual: {}",
-                        inst.v, peek.concrete);
+                // The shadow's concrete diverges from the value the real JVM produced - an out-of-band
+                // change (e.g. a tracked object mutated inside unmodeled code) or an executor desync.
+                // CRASH keeps the strict hard-fail (development/CI bug catching); FLAG records a
+                // soundness flag (context loss, which downgrades a SAFE verdict to UNKNOWN) and adopts
+                // the observed concrete (sound, graceful). Escape-aware differentiation (crash only on a
+                // genuine desync) is not yet implemented.
+                if (Config.instance().getShadowDivergence() == ShadowDivergence.CRASH) {
+                    SWATAssert.check(false, "[GETVALUE_primitive]: Value on stack does not match expected value! Expected: {}, Actual: {}",
+                            inst.v, peek.concrete);
+                } else {
+                    symbolicTraceHandler.recordSymbolicContextLoss();
+                    Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
+                    shadowStateLogger.info(
+                            "Out-of-band change detected (shadow {} != observed {}); adopting observed concrete",
+                            peek.concrete, inst.v);
+                }
+                // Adopt the observed concrete (re-ground): always under FLAG; under CRASH only if the
+                // assert is soft (useAssertions=false), preserving the prior behavior.
                 if (cat2) {
                     stack.popWideOperand();
                     stack.pushWideOperand(ValueFactory.createNumericalValue(type, inst.v));

@@ -38,6 +38,7 @@ dependencies {
     implementation libs.bundles.asm
     implementation libs.jackson.databind
     implementation libs.java.smt
+    implementation libs.guava
 
     implementation rootProject.fileTree(dir: 'libs/java-library-path', include: ['*.jar']) // loads com.microsoft.z3 and java-smt
 
@@ -50,11 +51,26 @@ test {
     systemProperty "java.library.path", "../libs/java-library-path"
     // Surface SWAT errors as exceptions instead of halting the test JVM
     systemProperty "exitOnError", "false"
+    exclude '**/*AgentSpec*'
 
     testLogging {
         // Show events for passed, skipped, and failed tests
         events "passed", "failed", "skipped"
         // Enable standard output/error to be shown
+        showStandardStreams = true
+    }
+}
+tasks.register('agentTest', Test) {
+    description = 'Level-2 forked-agent tests (real instrumentation). Not part of `test`.'
+    group = 'verification'
+    useJUnitPlatform() 
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    filter { includeTestsMatching '*AgentSpec' }
+    dependsOn 'copyJar'
+
+    testLogging {
+        events "passed", "failed", "skipped"
         showStandardStreams = true
     }
 }

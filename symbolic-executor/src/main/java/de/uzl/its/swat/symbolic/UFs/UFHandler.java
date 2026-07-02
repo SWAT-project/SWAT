@@ -8,6 +8,7 @@ public class UFHandler {
     private EqualsIgnoreCaseUF equalsIgnoreCaseUF;
     private ToLowerCaseUF toLowerCaseUF;
     private SinCosUF sinCosUF;
+    private PureFunctionUF pureFunctionUF;
 
     public EqualsIgnoreCaseUF getEqualsIgnoreCaseUF() throws NoThreadContextException {
         if (equalsIgnoreCaseUF == null) {
@@ -28,5 +29,13 @@ public class UFHandler {
             sinCosUF = new SinCosUF(ThreadHandler.getSolverContext(currentThread().getId()));
         }
         return sinCosUF;
+    }
+
+    /** Registry of generic uninterpreted functions for whitelisted pure JDK methods. */
+    public PureFunctionUF getPureFunctionUF() throws NoThreadContextException {
+        if (pureFunctionUF == null) {
+            pureFunctionUF = new PureFunctionUF(ThreadHandler.getSolverContext(currentThread().getId()));
+        }
+        return pureFunctionUF;
     }
 }

@@ -30,15 +30,6 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     static final int REPLACE_COUNT = 10;
     private StringFormulaManager smgr;
 
-    /**
-     * Flag indicating this string was explicitly created via new String() in user code,
-     * as opposed to being de-interned by SWAT's NoCacheMethodAdapter.
-     * When true, reference equality comparisons on this string may have different
-     * semantics than the original code intended.
-     */
-    @Getter
-    private boolean userDeInterned = false;
-
     public StringValue(SolverContext context, String concrete, int address) {
         super(context, address);
         this.smgr = context.getFormulaManager().getStringFormulaManager();
@@ -222,9 +213,6 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             this.concrete = s.concrete;
             this.formula = s.formula;
         }
-        // Mark this string as user-de-interned since it was created via new String()
-        // in user code (as opposed to SWAT's NoCacheMethodAdapter de-interning)
-        this.userDeInterned = true;
         return VoidValue.instance;
     }
 

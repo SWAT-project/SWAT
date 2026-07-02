@@ -246,8 +246,14 @@ def log_output(output: List[str]):
     for line in output:
         logger.info(line.strip())
 
-def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[ExecutionStatus, list[str]]:
-    """Executes the given command and returns output from both STDOUT and STDERR."""
+def run_command_with_timeout(cmd: list[str], timeout: int = 120) -> tuple[ExecutionStatus, list[str]]:
+    """Executes the given command and returns output from both STDOUT and STDERR.
+
+    `timeout` is the per-testcase wall-clock cap enforced by this local runner, OUTSIDE the actual SWAT
+    run: on expiry the whole process group is SIGKILLed and the testcase scores 0 (TIMEOUT). Kept at
+    120s to bound local scoring runs; the competition-infra wrapper (scripts/svcomp-package/run_swat.py)
+    is separate and unaffected.
+    """
 
     logger.info(f'[TARGET EXECUTION]: Running symbolic-explorer: {cmd}')
     output = []

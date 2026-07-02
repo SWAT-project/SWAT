@@ -235,12 +235,11 @@ public class Util {
 
     private static void checkClassName(String className) {
         if (className.startsWith("[")) {
-            return; // array class, skip check for now
+            return; // array class; the descriptor check does not apply
         }
         SWATAssert.check(
-                !className.contains(";") && !className.contains("(") && !className.contains(")")
-                        && !className.startsWith("L"),
-                "Class name '{}' should not contain ';' or brackets", className);
+                !className.contains(";") && !className.contains("(") && !className.contains(")"),
+                "Class name '{}' should not be a type descriptor (contains ';' or brackets)", className);
     }
 
     /**
@@ -427,6 +426,56 @@ public class Util {
     private static boolean isDeInternedClass(Class<?> clazz) {
         // Check the exact class and optionally superclasses if inheritance matters
         return deInternedClasses.contains(clazz.getName());
+    }
+
+    /**
+     * Whether {@code o}'s runtime class is one that is de-interned: String and the cached boxed wrappers
+     * (Boolean/Byte/Short/Character/Integer/Long), but NOT the uncached Float/Double (which use
+     * reference equality). Used by recovery to limit the "skip registering pure constants" policy to
+     * exactly the de-interned value types, leaving mutable objects and Float/Double always registered.
+     */
+    public static boolean isDeInternedClass(Object o) {
+        return o != null && isDeInternedClass(o.getClass());
+    }
+
+    /**
+     * Whether a concrete object is an immutable value type (String / boxed primitive).
+     * Used by recovery to concretize an unmodeled value-returning method's result instead of
+     * identity-recovering it. Independent of {@link #deInternedClasses} (the de-intern /
+     * reference-equality concern, which omits the uncached Float/Double): this covers String and all
+     * eight boxed wrappers ({@link Number} = Byte/Short/Integer/Long/Float/Double, plus Boolean and
+     * Character).
+     *
+     * @param o the concrete object (may be null)
+     * @return true if {@code o} is a value type
+     */
+    public static boolean isValueType(Object o) {
+        return o instanceof String
+                || o instanceof Number
+                || o instanceof Boolean
+                || o instanceof Character;
+    }
+
+    /**
+     * The closed set of genuinely-immutable value types whose stored shadow recovery may safely
+     * reuse: String and the eight boxed primitive wrappers. Narrower than {@link #isValueType}, which
+     * admits mutable {@link Number} subtypes ({@code AtomicInteger}, {@code LongAdder}, ...) — reusing
+     * a stored shadow for those could be stale. An immutable value cannot have drifted since it was
+     * registered, so reusing its shadow is sound.
+     *
+     * @param o the concrete object (may be null)
+     * @return true if {@code o} is a String or a boxed primitive wrapper
+     */
+    public static boolean isImmutableValueType(Object o) {
+        return o instanceof String
+                || o instanceof Integer
+                || o instanceof Long
+                || o instanceof Short
+                || o instanceof Byte
+                || o instanceof Character
+                || o instanceof Boolean
+                || o instanceof Float
+                || o instanceof Double;
     }
 
 }

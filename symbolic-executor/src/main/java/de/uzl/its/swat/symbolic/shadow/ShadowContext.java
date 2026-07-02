@@ -45,12 +45,20 @@ public class ShadowContext {
         // lambdaFrameStore = new HashMap<>();
     }
 
-    public void putToHeap(int hashCode, Value<?, ?> value) {
-        heap.put(hashCode, value);
+    public void putToHeap(Object ref, Value<?, ?> value) {
+        heap.put(ref, value);
     }
 
-    public Value<?, ?> getFromHeap(int hashCode) {
-        return heap.get(hashCode);
+    public Value<?, ?> getFromHeap(Object ref) {
+        return heap.get(ref);
+    }
+    /**
+     * Number of registered recovery-cache cells. See {@link JVMHeap#size()}.
+     *
+     * @return the number of entries currently on the heap.
+     */
+    public int heapSize() {
+        return heap.size();
     }
 
     /**
