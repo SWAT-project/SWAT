@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.Formula;
 import org.sosy_lab.java_smt.api.FormulaType;
-import org.sosy_lab.java_smt.api.StringFormulaManager;
+import org.sosy_lab.java_smt.api.FormulaManager;
 
 public class InvocationHandler {
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
@@ -170,9 +170,8 @@ public class InvocationHandler {
      * back to concretization. Handles String and all primitive returns (the return sort is
      * {@link #pureUFReturnType}); the inputs (receiver + args) must all be value-typed so their
      * formula fully captures the input (sound; no stateful receivers). Also builds the same UF applied
-     * to the CONSTANT inputs (the observed-pair application) using the SAME cached declaration;
-     * that is null unless the return is a String and every input is a String (the only case whose
-     * recovery side asserts the observed pair, and where String concretes become constant formulas).
+     * to the CONSTANT (observed) inputs, over the SAME cached declaration, so recovery can assert the
+     * observed (inputs -&gt; output) ground pair.
      */
     private static PureUFModel buildPureUF(
             String owner, String name, String desc, List<Value<?, ?>> inputs)
@@ -183,33 +182,27 @@ public class InvocationHandler {
         if (returnType == null) {
             return null;
         }
-        StringFormulaManager smgr =
-                ThreadHandler.getSolverContext(Thread.currentThread().getId())
-                        .getFormulaManager()
-                        .getStringFormulaManager();
+        FormulaManager fmgr =
+                ThreadHandler.getSolverContext(Thread.currentThread().getId()).getFormulaManager();
         List<Formula> symbolicArgs = new ArrayList<>();
         List<Formula> constArgs = new ArrayList<>();
-        boolean observable = true; // an observed pair needs constant-buildable (String) inputs
         for (Value<?, ?> v : inputs) {
             if (v.formula == null || !Util.isValueType(v.concrete)) {
                 return null; // non-value-typed or formula-less input: defer to concretization.
             }
-            symbolicArgs.add((Formula) v.formula);
-            if (v.concrete instanceof String s) {
-                constArgs.add(smgr.makeString(s));
-            } else {
-                observable = false; // only String inputs become constant formulas here.
-            }
+            Formula sym = (Formula) v.formula;
+            symbolicArgs.add(sym);
+            // The ground input constant must match the symbolic argument's own sort, so the observed
+            // application reuses the same UF signature.
+            constArgs.add(PureFunctionUF.constant(fmgr, fmgr.getFormulaType(sym), v.concrete));
         }
         PureFunctionUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getPureFunctionUF();
         String ufName = PureMethods.ufName(owner, name, desc);
         Formula result = uf.apply(ufName, returnType, symbolicArgs);
-        // Observed pair: built only for String returns, the sole case whose recovery side
-        // (visitGETVALUE_Object) asserts the (constant inputs -> observed output) equality. The same
-        // cached declaration is applied to the constant inputs so the pair constrains the very symbol
-        // used in `result`. Primitive observed pairs are future work (with the explorer side).
-        Formula observed = (observable && FormulaType.StringType.equals(returnType))
-                ? uf.apply(ufName, returnType, constArgs) : null;
+        // Observed pair: the same cached UF declaration applied to the CONSTANT (observed) inputs, so
+        // the ground pair asserted at recovery constrains the very symbol used in `result`. Built for
+        // every supported return sort - the recovery side asserts it == the observed concrete output.
+        Formula observed = uf.apply(ufName, returnType, constArgs);
         return new PureUFModel(result, observed);
     }
 

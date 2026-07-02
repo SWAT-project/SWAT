@@ -41,6 +41,7 @@ import java.util.*;
 import lombok.Getter;
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.*;
+import de.uzl.its.swat.symbolic.UFs.PureFunctionUF;
 
 public class SymbolicInstructionVisitor implements IVisitor {
     // The stack of stack frames (method stacks)
@@ -3676,6 +3677,15 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     v = ValueFactory.createNumericalValue(type, inst.v, placeHolder.recoveredFormula);
                     ThreadHandler.getShadowStateLogger(currentThread().getId())
                             .info("Modeled unmodeled pure primitive result as a generic UF: {}", v);
+                    // Record this run's observed (input -> output) ground pair over the same cached UF
+                    // declaration: pure_<sig>(constant inputs) == observed concrete output. A true fact
+                    // that lets the explorer force a different input when re-solving a diverged branch.
+                    if (placeHolder.observedApplication != null) {
+                        FormulaManager fmgr =
+                                ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+                        symbolicTraceHandler.addConstraint(
+                                PureFunctionUF.equalConstant(fmgr, placeHolder.observedApplication, inst.v));
+                    }
                 } else {
                     v = ValueFactory.createNumericalValue(type, inst.v);
                     if (isSymbolic) {

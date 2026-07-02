@@ -91,6 +91,12 @@ class StrategyService:
 
         path_constraints.extend(StrategyService.collect_uf_definitions(possible_branch))
 
+        # Inject the accumulated observed input->output UF pairs from all prior runs of this testcase,
+        # so re-solving a diverged branch is forced to pick a different input (the previous input's real
+        # output is pinned). Each entry is a self-contained SMT script parsed in isolation, so re-declared
+        # UF symbols do not collide; the pairs are true observed facts, so injecting them stays sound.
+        path_constraints.extend(db.get_tree(0).ufs)
+
         inputs = possible_branch.inputs
 
         sat, sol = Z3Handler.solve(possible_branch, path_constraints)
