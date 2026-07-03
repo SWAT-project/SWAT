@@ -43,7 +43,7 @@ class INPUTTYPE(Enum):
 
 class State:
     def __init__(self):
-        self.verdict = Verdict.UNKNOWN
+        self.verdict = Verdict.SAFE
 
 
 class TargetDriver:
@@ -63,10 +63,26 @@ class TargetDriver:
             f"-Djava.library.path={self.args.z3dir}",
             '-Dsolver.mode=HTTP',
             '-Dagent.logging.level=DEBUG',
-            '-ea',
-            '-jar' if ".jar" in self.args.target else '',
-            self.args.target
+            '-ea',  # Enable assertions
         ]
+
+        # Add symbolic value assignments (if we have them)
+        for var in self.sym_storage.vars.values():
+            val = var.newValue if var.newValue is not None else var.value
+            # Use swat.assignment prefix (read by Intrinsics.retrieveAssignments())
+            cmd.insert(1, f'-Dswat.assignment.{var.dType.value}_{var.idx}={val}')
+
+        # Add target
+        if self.args.target.endswith('.jar'):
+            cmd.extend(['-jar', self.args.target])
+        else:
+            # Assume target is a class name with classpath provided
+            if self.args.classpath:
+                cmd.extend(['-cp', ':'.join(self.args.classpath), self.args.target])
+            else:
+                logger.error('[EXPLORE] No classpath provided for class target')
+                cmd.extend([self.args.target])
+
         return cmd
 
     def add_values(self, cmd: [str]) -> [str]:
@@ -84,15 +100,16 @@ class TargetDriver:
                 cmd.insert(1, f'-Dswat.assignment.{var.dType.value}_{var.idx}={val}')
         return cmd
 
-    def run_command_with_timeout(self, cmd: [str], timeout: int = 60) -> (ExecutionStatus, dict):
+    def run_command_with_timeout(self, cmd: list[str], timeout: int = 60) -> tuple[ExecutionStatus, dict]:
         """Executes the given command and returns the status and message."""
 
+        logger.debug(f'[EXPLORER] Running command: {" ".join(cmd)}')
         logger.info(f'[EXPLORER] Java Output Begin')
         try:
             stdout = []
             with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
                                   universal_newlines=True) as proc:
-                for line in proc.stdout:
+                for line in proc.stdout or []:
                     logger.info(f'[EXECUTOR] --> {line.strip()}')
                     stdout.append(line)
             logger.info(f'[EXPLORER] Java Output End')
@@ -125,18 +142,22 @@ class TargetDriver:
             case ExecutionStatus.VIOLATION:
                 self.record_violation()
                 logger.info(f'[EXPLORER] Violation recorded!')
+                self.state.verdict = Verdict.VIOLATION
                 return Action.SYMBOLICNEXT
             case ExecutionStatus.TIMEOUT:
                 logger.info(f'[EXPLORER] Timeout!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
             case ExecutionStatus.CRASH:
                 logger.info(f'[EXPLORER] Crash!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
             case ExecutionStatus.ERROR:
                 logger.info(f'[EXPLORER] Error!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
 
         raise Exception(f'Unknown execution status: {status}')
@@ -158,13 +179,14 @@ class TargetDriver:
                 break
 
         if not branch_found or sat == SATResult.UNSAT:
-            self.state.verdict = Verdict.SAFE
+            # self.state.verdict = Verdict.SAFE
             logger.info(f'[EXPLORER] No symbolic branch found or UNSAT')
             return Action.REPORTVERDICT
 
         if sat == SATResult.UNKNOWN:
             logger.info(f'[EXPLORER] SAT result is UNKNOWN')
-            self.state.verdict = Verdict.UNKNOWN
+            if self.state.verdict != Verdict.VIOLATION:
+                self.state.verdict = Verdict.UNKNOWN
             return Action.REPORTVERDICT
 
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
@@ -215,6 +237,8 @@ class TargetDriver:
         if len(violations) > 0:
             for v in violations:
                 logger.info(f'[EXPLORER] Violation: {[vv.__str__() for vv in v]}')
+        
+        return self.state.verdict
 
     def kill_current_process(self):
         pid = os.getpid()
