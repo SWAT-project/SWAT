@@ -72,6 +72,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
         check_port_availability,
         VerificationCategory,
     )
+    from lib.command_gen import new_run_timestamp, run_dir as make_run_dir
     script_dir = ctx.obj['script_dir']
 
     # Determine benchmark directory
@@ -113,7 +114,9 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
         else:
             config = config_file
 
-        ver_tasks_with_commands = generate_commands(ver_tasks, config)
+        # One timestamp ties this run's per-testcase logs to its results dir.
+        run_timestamp = new_run_timestamp()
+        ver_tasks_with_commands = generate_commands(ver_tasks, config, run_timestamp=run_timestamp)
         click.echo(f"Generated {len(ver_tasks_with_commands)} commands")
 
         # Check port availability
@@ -143,7 +146,9 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
                 # Run default single target
                 run_single_target(ver_tasks_with_commands, create_witness=not no_witness)
         else:
-            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness)
+            run = make_run_dir(run_timestamp)
+            click.echo(f"Run directory: {run}")
+            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run)
 
         click.secho("✓ Test execution complete", fg='green')
 

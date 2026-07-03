@@ -38,6 +38,7 @@ class ConstraintController:
         trace = request.trace
         inputs = request.inputs
         ufs = request.ufs
+        missingInvocations = request.missingInvocations
         symbolicContextLoss = request.symbolicContextLoss
         symbolicPrecisionLoss = request.symbolicPrecisionLoss
         referenceSemanticChange = request.referenceSemanticChange
@@ -49,6 +50,7 @@ class ConstraintController:
             'trace': trace,
             'inputs': inputs,
             'ufs': ufs,
+            'missing_invocations': missingInvocations,
             'symbolic_context_loss': symbolicContextLoss,
             'symbolic_precision_loss': symbolicPrecisionLoss,
             'reference_semantic_change': referenceSemanticChange})
