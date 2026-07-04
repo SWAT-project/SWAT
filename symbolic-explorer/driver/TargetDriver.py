@@ -52,6 +52,7 @@ class TargetDriver:
         self.sym_storage = SymbolicStorage()
         self.endpoint_id = None
         self.args = args
+        self.branch_log = None  # Log file for branches
 
     def build_command(self, mem: int = 32) -> [str]:
         """Builds the Java command list with given parameters."""
@@ -143,7 +144,8 @@ class TargetDriver:
                 self.record_violation()
                 logger.info(f'[EXPLORER] Violation recorded!')
                 self.state.verdict = Verdict.VIOLATION
-                return Action.SYMBOLICNEXT
+                # return Action.SYMBOLICNEXT
+                return Action.REPORTVERDICT
             case ExecutionStatus.TIMEOUT:
                 logger.info(f'[EXPLORER] Timeout!')
                 if self.state.verdict != Verdict.VIOLATION:
@@ -164,6 +166,7 @@ class TargetDriver:
 
     def retrieve_solution(self):
         possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id)
+        possible_branches = possible_branches[::-1]  # Reverse the order to prioritize deeper branches
         logger.info(f'[EXPLORER] Found {len(possible_branches)} possible branches')
         symbolic_vars = None
         sat = None
@@ -172,7 +175,13 @@ class TargetDriver:
             if not StrategyService.is_symbolic_branch(branch):
                 continue
             branch_found = True
+
             sat, sol = StrategyService.solve_branch(branch)
+
+            if self.branch_log is None:
+                self.branch_log = open("branches.log", "w")
+            branch_id = branch.id & 0xFFFFFFFFFFFFFFFF
+            print(f"Branch 0x{branch_id:016x} ({branch_id}) {sat}", flush=True, file=self.branch_log)
 
             if sat == SATResult.SAT:
                 symbolic_vars = branch.inputs
@@ -211,7 +220,13 @@ class TargetDriver:
         # Build the command to execute target
         base_cmd = self.build_command()
         # Main execution loop
-        while True:
+        iteration = 1
+        while iteration <= 150:
+            logger.info('')
+            logger.info('='*70)
+            logger.info(f'ITERATION {iteration}')
+            logger.info('='*70)
+
             # Add the symbolic values
             cmd = self.add_values(base_cmd)
             # Run the command
@@ -221,6 +236,13 @@ class TargetDriver:
             # Select the (only!) endpoint
             assert len(Database.instance().get_endpoints()) == 1
             self.endpoint_id = Database.instance().get_endpoints()[0]
+
+            # Visualize DB tree
+            # print("Plotting DB Tree...", flush=True)
+            # Database.instance().get_tree(self.endpoint_id).plot_tree(iteration)
+            
+            iteration += 1
+
             if next_step == Action.REPORTVERDICT:
                 break
 
@@ -231,7 +253,7 @@ class TargetDriver:
                 if next_step == Action.REPORTVERDICT:
                     break
 
-        logger.info(f'[EXPLORER] Symbolic execution terminated')
+        logger.info(f'[EXPLORER] Symbolic execution terminated after {iteration-1} iterations')
         violations = Database.instance().get_violations(self.endpoint_id)
         logger.info(f'[EXPLORER] Found {len(violations)} violations')
         if len(violations) > 0:

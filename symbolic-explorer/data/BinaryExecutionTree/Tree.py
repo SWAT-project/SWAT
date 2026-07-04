@@ -8,7 +8,6 @@ from data.trace.UF import UF
 
 import log
 logger = log.get_logger()
-# import pygraphviz as pgv
 
 class Tree:
     """
@@ -210,6 +209,7 @@ class Tree:
     def plot_tree(self, idx):
        """Plot the tree using Graphviz and save to a file."""
        #log.info(self.to_string())
+       import pygraphviz as pgv
        G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
        self.add_to_dot(self.root, G)
        G.layout(prog="dot")
