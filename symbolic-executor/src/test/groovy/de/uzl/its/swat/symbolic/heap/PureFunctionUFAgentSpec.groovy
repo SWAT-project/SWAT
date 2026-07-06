@@ -22,22 +22,24 @@ class PureFunctionUFAgentSpec extends Specification {
 
         and: "the relationship is preserved - the branch references the input through the UF"
         obs.anyBranchReferences(inputVar)
+        obs.anyBranchReferences("pure_String_trim")
 
         and: "neither SAFE downgrade fires: context loss is skipped because modeled, and the pure_ UF is exempt"
         !obs.symbolicContextLoss
         !obs.symbolicPrecisionLoss
     }
 
-    def "a whitelisted pure substring (arg-taking, mixed-sort UF) into a branch preserves SAFE"() {
+    def "a whitelisted pure repeat (arg-taking, mixed-sort UF) into a branch preserves SAFE"() {
         when:
-        TraceObservation obs = AgentRun.run("targets/SubstringTarget.java", "SubstringTarget")
+        TraceObservation obs = AgentRun.run("targets/RepeatTarget.java", "RepeatTarget")
         String inputVar = obs.inputNames.find { it.startsWith("java/lang/String") }
 
         then: "the symbolic input is designated"
         inputVar != null
 
-        and: "the branch references the input through the mixed-sort UF pure_String_substring_int"
+        and: "the branch references the input through the mixed-sort UF pure_String_repeat_int"
         obs.anyBranchReferences(inputVar)
+        obs.anyBranchReferences("pure_String_repeat")
 
         and: "neither SAFE downgrade fires (an arg-taking whitelisted method stays sound)"
         !obs.symbolicContextLoss

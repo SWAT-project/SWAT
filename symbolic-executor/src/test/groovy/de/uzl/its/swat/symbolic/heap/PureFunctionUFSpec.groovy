@@ -123,4 +123,21 @@ class PureFunctionUFSpec extends BaseSymbolicInstructionProcessorSpec {
         then: "context loss is not flagged, since the call is modeled"
         !result.contextLoss
     }
+
+    def "an observed NaN output pins satisfiably (structural assignment, not IEEE fp.eq)"() {
+        given: "a pure-UF application over a double constant"
+        setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
+        def fmgr = solverContext.getFormulaManager()
+        def uf = ThreadHandler.getUFHandler(threadId).getPureFunctionUF()
+        def dt = org.sosy_lab.java_smt.api.FormulaType.getDoublePrecisionFloatingPointType()
+        def arg = de.uzl.its.swat.symbolic.UFs.PureFunctionUF.constant(fmgr, dt, -2.5d)
+        def app = uf.apply("pure_Math_log_double", dt, [arg as Formula])
+
+        expect: "pinning an observed NaN output stays satisfiable (IEEE fp.eq to NaN is always false, \
+which would poison the whole path constraint into spurious UNSAT)"
+        isSat(de.uzl.its.swat.symbolic.UFs.PureFunctionUF.equalConstant(fmgr, app, Double.NaN))
+
+        and: "pinning a normal observed output stays satisfiable"
+        isSat(de.uzl.its.swat.symbolic.UFs.PureFunctionUF.equalConstant(fmgr, app, 0.5d))
+    }
 }

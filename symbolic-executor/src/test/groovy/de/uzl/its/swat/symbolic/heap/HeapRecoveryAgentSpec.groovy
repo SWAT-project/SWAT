@@ -15,7 +15,7 @@ class HeapRecoveryAgentSpec extends Specification {
         when:
         TraceObservation obs = AgentRun.run("targets/ToLowerCaseTarget.java", "ToLowerCaseTarget")
 
-        then: "the symbolic input is designated and the soundness backstop (context loss) fires"
+        then: "the symbolic input is designated and the context-loss soundness flag fires"
         obs.inputNames.any { it.startsWith("java/lang/String") }
         obs.symbolicContextLoss
     }

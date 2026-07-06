@@ -30,6 +30,15 @@ class AgentRun {
 
         // 1. Materialize + compile the target against the agent jar (which provides @Symbolic).
         File work = Files.createTempDirectory("swat-l2-").toFile()
+        try {
+            return runInWorkDir(work, targetResource, mainClass, agentJar, libs)
+        } finally {
+            work.deleteDir()
+        }
+    }
+
+    private static TraceObservation runInWorkDir(
+            File work, String targetResource, String mainClass, File agentJar, File libs) {
         File outDir = new File(work, "classes")
         outDir.mkdirs()
         File src = new File(work, mainClass + ".java")
@@ -54,9 +63,19 @@ class AgentRun {
                 mainClass
         ]
         Process proc = new ProcessBuilder(cmd).start()
+        // Drain stderr concurrently: a child filling one pipe while this thread blocks reading the
+        // other deadlocks once the pipe buffer is full.
+        StringBuilder errBuf = new StringBuilder()
+        Thread errDrain = Thread.start { proc.errorStream.eachLine { errBuf.append(it).append('\n') } }
         String stdout = proc.inputStream.text
-        String stderr = proc.errorStream.text
-        int exit = proc.waitFor()
+        boolean finished = proc.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)
+        if (!finished) {
+            proc.destroyForcibly()
+        }
+        errDrain.join(10_000)
+        String stderr = errBuf.toString()
+        assert finished: "Agent run timed out after 120s.\n--- STDOUT tail ---\n${tail(stdout)}\n--- STDERR tail ---\n${tail(stderr)}"
+        int exit = proc.exitValue()
         assert exit == 0:
                 "Agent run exited ${exit}.\n--- STDOUT tail ---\n${tail(stdout)}\n--- STDERR tail ---\n${tail(stderr)}"
 

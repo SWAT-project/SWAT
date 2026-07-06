@@ -47,7 +47,7 @@ class ExceptionalInvokeContextLossSpec extends BaseSymbolicInstructionProcessorS
     }
 
     def "a throwing static call with a symbolic argument records context loss"() {
-        given: "a symbolic String argument (the parseFloat shape that motivated the fix)"
+        given: "a symbolic String argument into a throwing static JDK call (the Float.parseFloat shape)"
         setupTestContext("test/ThrowingStatic", "test")
         def arg = pushStringOperand("fixed")
         arg.MAKE_SYMBOLIC()

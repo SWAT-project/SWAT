@@ -33,4 +33,16 @@ class PureFunctionPrimitiveAgentSpec extends Specification {
         obs.anyBranchReferences("pure_Character_toLowerCase_char") // char return
         obs.anyBranchReferences("pure_Character_isDigit_char")  // boolean return
     }
+
+    def "a shadow sort deviating from the descriptor concretizes instead of corrupting the UF declaration"() {
+        when: "a char-sorted shadow flows into an int-slot whitelisted call, then a genuine int does"
+        TraceObservation obs = AgentRun.run("targets/CharWideningTarget.java", "CharWideningTarget")
+
+        then: "the run completes (no UF signature clash) and the deviating call records context loss"
+        obs != null
+        obs.symbolicContextLoss
+
+        and: "the descriptor-conforming call is still modeled as the UF"
+        obs.anyBranchReferences("pure_Character_isWhitespace_int")
+    }
 }

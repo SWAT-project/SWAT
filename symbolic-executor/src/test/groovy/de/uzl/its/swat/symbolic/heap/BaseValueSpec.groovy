@@ -11,7 +11,7 @@ import static java.lang.Thread.currentThread
 
 /**
  * Level L0 base: a clean Z3 {@link SolverContext} per test for constructing {@code Value} objects
- * and shadow structures directly (no instrumentation, no instruction stream). Mirrors the proven
+ * and shadow structures directly (no instrumentation, no instruction stream). Mirrors the
  * {@code StringValueTest} setup. See docs/test-architecture.md (Level L0).
  *
  * Oracle helpers evaluate {@link BooleanFormula}s via SAT/UNSAT agreement with a real prover —

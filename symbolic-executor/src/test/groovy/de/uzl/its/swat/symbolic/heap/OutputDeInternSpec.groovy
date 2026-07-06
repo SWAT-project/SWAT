@@ -18,7 +18,7 @@ import de.uzl.its.swat.thread.ThreadHandler
 /**
  * Registration policy at value-typed GETVALUE recovery. A de-interned value type (String or a cached
  * boxed wrapper) whose shadow carries symbolic content is heap-registered so it round-trips through
- * untracked space, while a pure-constant shadow is not registered because it is reconstructible from
+ * untracked space, while a constant-only shadow is not registered because it is reconstructible from
  * the observed concrete. Mutable (non-value-type) objects on the shared recovery path stay
  * unconditionally registered.
  */
@@ -55,7 +55,7 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
     }
 
     def "a constant String shadow is not heap-registered since it is reconstructible"() {
-        given: "a pure-constant String shadow (formula = makeString) awaiting its address"
+        given: "a constant-only String shadow (formula = makeString) awaiting its address"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         String obj = "constant-xyz"
         StringValue shadow = new StringValue(solverContext, obj, ObjectValue.ADDRESS_UNKNOWN)
@@ -83,7 +83,7 @@ class OutputDeInternSpec extends BaseSymbolicInstructionProcessorSpec {
     }
 
     def "a constant boxed shadow is not heap-registered since it is reconstructible"() {
-        given: "a pure-constant Integer shadow awaiting its address"
+        given: "a constant-only Integer shadow awaiting its address"
         setupTestContext(Util.formatClassName("de.uzl.its.swat.test.TestClass"), "main")
         Integer obj = 7
         IntegerObjectValue shadow =
