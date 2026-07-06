@@ -68,15 +68,15 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 - match → `Points: 1` (a violation also needs a validated witness for the point unless `--no-witness`);
 - mismatch or unknown → `Points: 0`.
 - A `… -> unknown` caused by context/precision loss is **sound** — SWAT declined rather than answered
-  wrong; not a bug. Example: the flagship `…toLowerCase` case scores `violation -> unknown` because no-arg
+  wrong; not a bug. Example: the autostub `…toLowerCase` testcase scores `violation -> unknown` because no-arg
   `toLowerCase` is locale-dependent and unmodeled, so its result is concretized + context-loss-flagged.
 
 ## Per-testcase wall-clock cap (outside the actual run)
 Each testcase's SWAT process is wrapped in `lib/execution.py:run_command_with_timeout` — launched in its
 own session (`start_new_session=True`); on `TimeoutExpired` it `os.killpg(…, SIGKILL)`s the whole tree
 (JVM + Z3) and records `ExecutionStatus.TIMEOUT` → 0 points, never a wrong verdict. This is entirely
-outside the run (SWAT is given no limit; the harness kills it). Default is **900s**; set a shorter
-per-testcase cap here (e.g. 120s), or expose it as a `--timeout` option on `swat test`. Do **not** edit
+outside the run (SWAT is given no limit; the harness kills it). Default is **120s**; raise it here
+for slow targets, or expose it as a `--timeout` option on `./svcomp test`. Do **not** edit
 `scripts/svcomp-package/run_swat.py` — that is the separate wrapper the competition infra uses.
 
 ## Key files
@@ -91,7 +91,7 @@ per-testcase cap here (e.g. 120s), or expose it as a `--timeout` option on `swat
 ## Gotchas
 - Always run from `targets/sv-comp/scripts/` via `./svcomp` (not `svcomp.py` directly — the wrapper sets
   the venv Python). The older standalone `target_execution.py` (invoked by `run_locally.sh`) is a separate
-  path with its own shorter timeout — prefer the `swat test` CLI.
+  path with its own shorter timeout — prefer the `./svcomp test` CLI.
 - Witness validation (wit4java) resolves `python3` via PATH and needs extra venv packages
   (`setuptools`, `pyyaml`, `javalang`, `networkx`); prefix with `PATH="$PWD/.venv/bin:$PATH"` or use
   `--no-witness`.

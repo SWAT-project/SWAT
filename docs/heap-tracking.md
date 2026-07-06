@@ -68,7 +68,8 @@ wrapper's shadow is evicted once the object is unreachable.
   constructor; `put`/`get` (null-guarded); `size`.
 - `symbolic/shadow/ShadowContext.java` — per-thread owner; delegators `putToHeap` / `getFromHeap` /
   `heapSize`. One `JVMHeap` is created per `ShadowContext`.
-- Read/write sites: `SymbolicInstructionVisitor.visitGETVALUE_Object` (and the primitive mirror).
+- Read/write sites: `SymbolicInstructionVisitor.visitGETVALUE_Object` (and `visitLDC_Object`);
+  the primitive `GETVALUE` path never touches the heap.
 
 **String self-pinning caveat.** A `StringValue` stores its own concrete `String`, which is also its
 key, so the weak key stays strongly reachable — String-keyed entries do **not** evict until the
@@ -121,8 +122,9 @@ registered) and fires only for values already registered in the heap.
   `UNMODELED_RETURN`) tags where a placeholder came from; shared singletons `instance` /
   `symbolicInstance`.
 - `symbolic/invoke/InvocationHandler.java` — `invoke`: after the real call, if the result is a
-  placeholder and the call is not on `IGNORED_INVOCATIONS`, records a missing invocation and
-  re-wraps the result as an `UNMODELED_RETURN` placeholder.
+  placeholder and the call is not on `IGNORED_INVOCATIONS`, records a missing invocation; any raw
+  placeholder result is then re-wrapped as an `UNMODELED_RETURN` placeholder (this re-wrap is
+  unconditional — not gated on the ignore list).
 - `SymbolicInstructionVisitor.visitGETVALUE_Object` — the `UNMODELED_RETURN && Util.isValueType(...)`
   branch: models a whitelisted pure result as a UF; else recovers the registered shadow when the
   return is a distinct immutable value (`Util.isImmutableValueType`, the receiver carried on the
@@ -145,7 +147,7 @@ response.
 
 - `symbolic/shadow/ShadowDivergence.java` — the policy enum, two values:
   - `CRASH` (default) — hard-fail via `SWATAssert`; catches executor desync bugs in dev/CI; this is
-    the historical behavior.
+    the original behavior.
   - `FLAG` — record a context-loss flag, adopt the observed concrete, and continue. Fully sound;
     recommended for production/SV-COMP runs (no spurious crashes).
 - `config/Config.java` — field `shadowDivergence`, default `CRASH`, read from the `shadow.divergence`
@@ -219,12 +221,16 @@ be listed — otherwise the UF's "equal inputs ⇒ equal outputs" assumption is 
   construction.
 - `symbolic/UFs/UFHandler.java` — `getPureFunctionUF` (lazy per-thread accessor).
 - `symbolic/invoke/InvocationHandler.java` — `buildPureUF` constructs the result UF; the gate is
-  `containsSymbolicArgument && PureMethods.isWhitelisted(...)`. `pureUFReturnType` maps the return
-  descriptor to an SMT sort (String; boolean; bitvectors; floating point; else fall back to
-  concretize). A successful model also **suppresses the context-loss flag** (a modeled pure call
-  loses nothing).
+  `containsSymbolicArgument && PureMethods.isWhitelisted(...)`. `sortOf` maps a descriptor type to
+  an SMT sort (String; boolean; bitvectors; floating point; else fall back to concretize); every
+  input's shadow sort must match its descriptor-derived sort, or the call falls back to
+  concretization. A successful model also **suppresses the context-loss flag** (a modeled pure call
+  loses nothing). `buildPureUF` additionally applies the same UF (same cached declaration) to the
+  **constant observed inputs**, for the observed input → output ground pair (see the accumulation
+  section below).
 - Recovery: `visitGETVALUE_Object`/`visitGETVALUE_primitive` install the carried UF as the recovered
-  value's formula.
+  value's formula and assert the observed ground pair
+  (`pure_<sig>(observed inputs) == observed output`) into the trace constraints.
 
 **Invariants**
 - A whitelisted pure call preserves "equal inputs ⇒ equal outputs" instead of concretizing.
@@ -244,7 +250,9 @@ be listed — otherwise the UF's "equal inputs ⇒ equal outputs" assumption is 
    constraint.
 3. **Crosses a boundary** — an unmodeled call returns a placeholder (§3); at the next `GETVALUE` the
    result is recovered as either a modeled UF (if whitelisted-pure, §6) or a concrete value
-   (otherwise, flagging context loss).
+   (otherwise, flagging context loss). If the unmodeled callee **throws** instead of returning,
+   context loss is recorded whenever the receiver or any argument was symbolic
+   (`InvocationHandler.recordExceptionalContextLoss`) — whitelisted pure methods included.
 4. **Reference-compared** — `==` is resolved via provenance roots (§5).
 5. **Re-synchronized** — at each primitive `GETVALUE`, the shadow concrete is checked against reality
    (§4); a mismatch is crashed or flagged per policy.
@@ -254,13 +262,20 @@ be listed — otherwise the UF's "equal inputs ⇒ equal outputs" assumption is 
 ## Soundness model
 
 Two independent flags mark that the model may be incomplete; either one downgrades a **SAFE** verdict
-to **UNKNOWN** (a VIOLATION is not downgraded — it is replay-witnessed).
+to **UNKNOWN** (a VIOLATION is not downgraded — it is replay-witnessed). The explorer adds two
+downgrade channels of its own: uncaught exceptions and unverified diverged branches (below).
 
 - **Context loss** — set when SWAT hits an unmodeled method with symbolic input it cannot model at
-  all (result discarded), or when an out-of-band divergence is adopted under `FLAG`.
+  all (result discarded), when an unmodeled callee **throws** with a symbolic receiver or argument
+  (the thrown-or-not decision is unmodeled control flow), or when an out-of-band divergence is
+  adopted under `FLAG`.
   - Set via `symbolic/trace/SymbolicTraceHandler.java` `recordSymbolicContextLoss` →
-    `SymbolicTrace.setSymbolicContextLoss`. Call sites: `InvocationHandler.invoke` and the `FLAG`
-    divergence branch.
+    `SymbolicTrace.setSymbolicContextLoss`. Call sites: `InvocationHandler.invoke`,
+    `InvocationHandler.recordExceptionalContextLoss` (wired into the
+    `visitINVOKEVIRTUAL`/`SPECIAL`/`STATIC`/`INTERFACE`/`DYNAMIC` handlers of
+    `SymbolicInstructionVisitor`, taken when the next instruction is `INVOKEMETHOD_EXCEPTION`),
+    and the `FLAG` divergence branch. On the throw path, whitelisted pure methods are deliberately
+    **not** exempt: the UF models the returned value, never the throw decision.
 - **Precision loss** — set when a branch constraint contains a symbol that is neither a designated
   symbolic input, a recovery-named variable, nor a whitelisted `pure_` UF (i.e. a bespoke axiomatized
   UF or an ungrounded variable that could make the constraint unsound).
@@ -268,12 +283,24 @@ to **UNKNOWN** (a VIOLATION is not downgraded — it is replay-witnessed).
     `isPrecisionLoss(...)` walks each branch formula; there is deliberately no runtime recorder.
 - Both flags ride on `symbolic/trace/dto/TraceDTO.java` and are emitted by `DTOBuilder`.
 - Explorer side: `symbolic-explorer/data/BinaryExecutionTree/Tree.py` (`record_context_loss` /
-  `record_precision_loss`), populated by `data/Database.py` `add_trace`; the downgrade happens in
-  `driver/SVCompDriver.py` (`SAFE` + either flag ⇒ `UNKNOWN`).
+  `record_precision_loss`), populated by `data/Database.py` `add_trace`; the downgrades happen in
+  `driver/SVCompDriver.py`. A **SAFE** verdict is downgraded to **UNKNOWN** when any of: context
+  loss; precision loss; an **uncaught exception** was recorded during exploration
+  (`Database.record_uncaught_exception`); an **unverified branch** remains (below).
+- **Branch divergence handling** (`driver/SVCompDriver.py`). After solving a branch, the driver
+  re-runs the target on the solved inputs and checks the new trace: if the predicted branch does
+  not appear, or takes the same direction as before, the branch **diverged** (typically a branch
+  guarded by an axiom-free `pure_` UF the solver could not drive to the required value).
+  `handle_divergence` re-opens it (`Database.remove_solution`) for another attempt — the injected
+  observed pairs (see the accumulation section) pin the previous input's real output, forcing a
+  fresh solver input — up to `MAX_BRANCH_ATTEMPTS = 3` total attempts, after which it is abandoned
+  into `unverified_branches`. Attempt counts also order branch selection (fewest attempts first;
+  capped branches are excluded). Any remaining unverified branch forces the SAFE → UNKNOWN
+  downgrade above.
 
 **Invariants**
-- SAFE + (context loss OR precision loss) ⇒ UNKNOWN. Never a false SAFE from a knowingly-incomplete
-  model.
+- SAFE + (context loss OR precision loss OR an uncaught exception OR an unverified diverged
+  branch) ⇒ UNKNOWN. Never a false SAFE from a knowingly-incomplete model.
 - A whitelisted `pure_` UF does not trigger precision loss; a bespoke axiomatized UF does.
 
 ---
@@ -282,10 +309,10 @@ to **UNKNOWN** (a VIOLATION is not downgraded — it is replay-witnessed).
 
 - **Adding a pure method to the whitelist.** Add `owner/name+descriptor` to
   `PureMethods.WHITELIST` only after confirming the method is deterministic, side-effect-free, and
-  reads no ambient state (locale, time, environment, statics). A wrong entry is unsound. Today a bad
-  entry costs only precision (each run emits at most a single self-consistent fact); once cross-run
-  accumulation lands (see below) a bad entry can cause a **false SAFE**, so the bar is higher than it
-  looks.
+  reads no ambient state (locale, time, environment, statics). A wrong entry is unsound: observed
+  input → output pairs are accumulated across runs and injected at solve time (see below), so a
+  non-deterministic entry can inject contradictory facts that turn a reachable branch UNSAT — a
+  **false SAFE**. The bar is exactly the UF axiom: equal inputs ⇒ equal outputs, always.
 - **Instrumenter frame-analysis fragility.** A category-2 parameter (a `double` or `long`) followed
   by a reference parameter, and large mixed-type method bodies, trip an unrelated frame-analysis bug
   in the instrumenter. Keep test targets small and single-typed; see the Javadocs in
@@ -293,14 +320,34 @@ to **UNKNOWN** (a VIOLATION is not downgraded — it is replay-witnessed).
 - **`@Symbolic` goes on a method parameter, not a local.** Annotating a local crashes the annotation
   transformer when compiled without `-g`.
 - **The legacy `de/uzl/its/value/**` test suite is broken** on an old formula API and fails en
-  masse. Scope test runs to the `symbolic.shadow` / `symbolic.processor` / `common` packages (see
+  masse. Scope test runs to the `symbolic.heap` / `symbolic.processor` / `common` packages (see
   the `swat-test` skill).
 
 ---
 
-## Not yet implemented (planned)
+## Cross-run accumulation of observed pure-function facts
 
-Captured here so the plan survives; neither is in the code today.
+Implemented, split across executor and explorer. Per run, the executor emits one **ground**
+observed pair `pure_<sig>(constant inputs) == constant output` for every whitelisted pure call it
+models, for **every supported return sort**: `InvocationHandler.buildPureUF` applies the UF to the
+constant observed inputs over the same cached declaration, and recovery asserts the pair into the
+trace constraints — the String path in `SymbolicInstructionVisitor.visitGETVALUE_Object`, the
+primitive path in `visitGETVALUE_primitive` via `PureFunctionUF.equalConstant`. The explorer
+accumulates the pairs across runs (`Tree.record_ufs`, fed by `Database.add_trace`) and injects
+them at solve time: `StrategyService.solve_branch` extends the path constraints with the tree's
+accumulated pairs. Re-solving a diverged branch is thereby forced to a different input — the
+previous input's real output is pinned (see the divergence handling in the soundness model).
+
+There is deliberately **no contradiction guard and no UNSAT backstop** on injection. A
+contradiction between two observed pairs requires the same inputs to have yielded different
+outputs — a non-deterministic method — which already violates the whitelist's documented soundness
+precondition through the UF's own "equal inputs ⇒ equal outputs" axiom, so injection adds no *new*
+soundness requirement beyond the whitelist bar §6 states. The one real *encoding-level*
+contradiction channel — an observed **NaN** output, which under IEEE `fp.eq` is an unsatisfiable
+equality — is eliminated by pinning floating-point outputs with structural `=` (assignment:
+NaN == NaN) instead of `fp.eq`; see `PureFunctionUF.equalConstant`.
+
+## Not yet implemented (planned)
 
 - **Escape-aware divergence policy.** A third divergence mode (beyond `CRASH`/`FLAG`, §4) that tells
   a *legitimate* out-of-band mutation from a *genuine executor desync*. Intended mechanism: mark a
@@ -312,14 +359,3 @@ Captured here so the plan survives; neither is in the code today.
   field-read-of-escaped-object case (array/transitive reads still crash), so `FLAG` stays the
   fully-sound production hatch. A refinement: a *pure* whitelisted call cannot mutate, so it should
   not mark escape.
-
-- **Cross-run accumulation of observed pure-function facts.** The executor already emits, per run,
-  one **ground** observed pair `pure_<sig>(constant inputs) == constant output` for a whitelisted
-  String-returning pure call (`InvocationHandler.buildPureUF` builds it; `visitGETVALUE_Object`
-  asserts it). A single pair per run is sound on its own. What is missing is on the **explorer**: it
-  does not yet accumulate these pairs across runs and inject them at solve time. The three required
-  explorer changes **must land together**: (1) inject the accumulated per-testcase fact set at the
-  solve chokepoint; (2) a contradiction guard so a bad/nondeterministic entry cannot inject two
-  contradictory pairs; (3) an UNSAT backstop that downgrades SAFE→UNKNOWN if the accumulated `pure_`
-  facts alone are unsatisfiable. Injection without (2)+(3) could turn a bad whitelist entry into a
-  false SAFE.

@@ -16,15 +16,15 @@ Full rationale: `docs/test-architecture.md`. This skill is the operational recip
 | **L2** forked-agent | the real instrumentation→trace contract (real identity hashes, this-return, soundness flags) | run a real target under the agent |
 | L3 end-to-end | the SV-COMP verdict + downgrade rules | sv-comp driver (out of current scope) |
 
-If unsure between L1 and L2: L1 *fabricates* the instruction stream (incl. address collisions), so it pins interpreter logic, not the instrumentation contract — use L2 to anchor anything whose bug depends on real JVM identity/this-return.
+If unsure between L1 and L2: L1 *fabricates* the instruction stream (incl. the this-return's shared object identity), so it pins interpreter logic, not the instrumentation contract — use L2 to anchor anything whose bug depends on real JVM identity/this-return.
 
 ## Oracle rules (every level — non-negotiable)
 
 Assert ONLY on: `Value.concrete`, `isSymbolic()`, symbolic **variable names**
 (`extractVariables(f).keySet()`), `IF_ACMPEQ`/`equals` booleans, soundness flags, `Frame`
 contents, structured `TraceDTO` fields, or **SAT/UNSAT agreement** via a real prover.
-**Never** assert on a formula's SMT sort/representation (that is why the ~1670 `de/uzl/its/value/**`
-rows break en masse).
+**Never** assert on a formula's SMT sort/representation (that is why the legacy
+`de/uzl/its/value/**` suite's parameterized cases break en masse).
 
 ## Expected-red convention (`@PendingFeature`)
 
@@ -43,9 +43,10 @@ with `context`. Example: `ObjectIdentitySpec`.
 **L1** — extend `de.uzl.its.swat.symbolic.processor.BaseSymbolicInstructionProcessorSpec`. Call
 `setupTestContext(className, method)` first. For an unmodeled-call recovery, use the fixture:
 ```groovy
-def result = executeBoundaryRecovery(receiver, owner, name, desc, concreteResult, resultAddress)
+def result = executeBoundaryRecovery(receiver, owner, name, desc, resultObject)
 // result.recovered (Value), result.contextLoss
-// resultAddress == receiver.address  -> this-return;  fresh address -> new-object return
+// resultObject is receiver.getConcrete() -> this-return;  a distinct object -> new-object return
+// (selection is by reference identity; the GETVALUE address is derived internally)
 ```
 Example: `ValueRecoverySpec`.
 

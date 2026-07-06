@@ -59,20 +59,21 @@ arrays) and the shadow data structures (`JVMHeap`, `Frame`, `ShadowContext`). No
 no instruction stream — construct objects and call methods directly.
 
 **Tests well.** Value semantics: `IF_ACMPEQ`/`equals`, `invokeMethod`/`invokeInit` (e.g. the
-`new String(String)` copy ctor, `StringValue.java:217`), `MAKE_SYMBOLIC`, heap `put/get` and key
+`new String(String)` copy ctor, `StringValue.invokeInit`), `MAKE_SYMBOLIC`, heap `put/get` and key
 behavior, UF-defining-constraint SMT agreement. For example, construct two distinct objects with a
-colliding identity hash and assert they compare unequal, and assert that a single identity yields a
-single wrapper.
+colliding identity hash and assert they compare unequal, and assert that a single object yields a
+single shadow.
 
-**Driver.** A shared `BaseValueSpec`:
+**Driver.** A shared `BaseValueSpec` (package `symbolic.heap`):
 `ThreadHandler.init()` → `addThreadContext(currentThread().id, "Test-Thread", -2)` →
-`getSolverContext` → expose `fmgr/bmgr/smgr/...` and a fresh `ProverEnvironment`; `cleanup`
-closes the prover/context and removes the thread context. For UF agreement, pull
-UF-defining constraints from the trace
-(`ThreadHandler.getSymbolicTraceHandler(id).getConstraints()`) into the prover — see
+`getSolverContext` → expose `context`/`fmgr`; the `isValid`/`isUnsatisfiable` oracle helpers each
+open a fresh `ProverEnvironment` per call and close it; `cleanup` removes the thread context. For
+UF agreement, pull UF-defining constraints from the trace
+(`ThreadHandler.getSymbolicTraceHandler(id).getConstraints()`) into a prover — see
 `StringValueTest.addUFConstraintsFromTrace`.
 
-**Oracle.** Per the rules above. Exemplar in repo: `StringValueTest.groovy`.
+**Oracle.** Per the rules above. Exemplars in repo: `ObjectIdentitySpec`, `ValueSemanticsSpec`
+(and the original pattern-setter, `StringValueTest.groovy`).
 
 ---
 
@@ -92,30 +93,36 @@ names per test — required), the `push*Operand` helpers, and `executeLiftInsnSe
 shared by all recovery cases:
 
 ```
-executeBoundaryRecovery(receiver, owner, name, desc, concreteResult, resultAddress)
-  // 1. register `receiver` on the heap at its address (stack.putToHeap)
+executeBoundaryRecovery(ObjectValue receiver, String owner, String name, String desc,
+                        Object resultObject)
+  // 1. register `receiver` in the registry under its concrete object (stack.putToHeap)
   // 2. push receiver as the invoke operand
   // 3. process: INVOKEVIRTUAL(owner,name,desc) ; INVOKEMETHOD_END ;
-  //             GETVALUE_Object(resultAddress, concreteResult, i)
-  // 4. return { recovered: peekOperand, contextLoss, heap snapshot }
+  //             GETVALUE_Object(resultObject)   // address derived via identityHashCode
+  // 4. return [recovered: <top of operand stack>, contextLoss]
 ```
 
-This drives the *real* bug path: an unmodeled invoke returns `PlaceHolder`
-(`InvocationHandler.invoke`, `StringValue.invokeToLowerCase:1126`), `INVOKEMETHOD_END` pushes it
-(`SymbolicInstructionVisitor:3406`), and `visitGETVALUE_Object` (`:1265`) recovers from the
-identity-keyed heap — the aliasing defect.
+`resultObject` selects the case by **reference identity**: pass the receiver's own concrete object
+(`receiver.getConcrete()`) for a *this*-return, a distinct object for a new-object return.
 
-**Honest caveat.** L1 *fabricates* the instruction stream, including the
-`resultAddress == receiver.address` collision that a real `this`-return produces. So an L1
-recovery test pins the **interpreter's recovery logic**, not the instrumentation→processor
+This drives the *real* recovery path: an unmodeled invoke returns a `PlaceHolder`
+(`InvocationHandler.invoke`; e.g. `StringValue.invokeToLowerCase`), `visitINVOKEMETHOD_END` pushes
+it, and `visitGETVALUE_Object` runs boundary recovery against the reference-keyed registry.
+(Identity-*hash* keying is the OLD design whose aliasing defect these cases reproduce and guard
+against; today the registry is keyed by the object itself and an unmodeled value-typed
+`this`-return concretizes instead of identity-recovering — see `heap-tracking.md` §3.)
+
+**Honest caveat.** L1 *fabricates* the instruction stream, including the shared object identity
+that a real `this`-return produces (`resultObject` being the receiver's own concrete object). So an
+L1 recovery test pins the **interpreter's recovery logic**, not the instrumentation→processor
 contract, and bakes in an assumption about the emitted sequence. Therefore: pair a flagship
-recovery case with an **L2 anchor** that gets the collision from the real JVM.
+recovery case with an **L2 anchor** that gets the identity from the real JVM.
 
-**Seams required (see Cross-cutting).** Heap-inspection view on `ShadowContext`; flag getters on
-`SymbolicTraceHandler`.
+**Seams (see Cross-cutting).** The registry surface on `ShadowContext`
+(`putToHeap`/`getFromHeap`/`heapSize`); the flag getter on `SymbolicTraceHandler`.
 
-**Oracle.** L0 rules + `Frame`/heap-view/flags. Exemplars: `InternalInvocationSpec`,
-`INVOKEVIRTUALSpec`, `IADDSpec`.
+**Oracle.** L0 rules + `Frame`/heap/flags. Exemplars: `ValueRecoverySpec` (boundary recovery),
+`InternalInvocationSpec`, `INVOKEVIRTUALSpec`, `IADDSpec`.
 
 ---
 
@@ -130,20 +137,22 @@ come from the real JVM + instrumenter — nothing is hand-fabricated.
 `TraceDTO` JSON on stdout, **no Python explorer needed**. `LOCAL` mode (default) instead solves
 in-JVM with Z3 via `LocalSolver.solve()`. `SolverMode = {LOCAL, HTTP, PRINT, NONE}`.
 
-**Driver — `AgentRunFixture`:**
+**Driver — `AgentRun`** (`testsupport/agent/AgentRun.groovy`):
 
 1. Build the agent jar first: `./gradlew :symbolic-executor:copyJar`
-   → `symbolic-executor/lib/symbolic-executor.jar` (build with `copyJar`, never `spotlessApply`).
+   → `symbolic-executor/lib/symbolic-executor.jar` (build with `copyJar`, never `spotlessApply`);
+   the `agentTest` Gradle task depends on it.
 2. Target programs live in `src/test/resources/targets/<Name>.java` (tiny, hand-written).
-   Designate symbolic inputs with `Verifier.nondetInt(long id)` / `nondetString(id)` / …
-   (SV_COMP transformer) — e.g. `String s = Verifier.nondetString(0);`.
-3. Fork: `java -javaagent:symbolic-executor.jar -Dsolver.mode=PRINT
-   -Dconfig.path=<test.cfg> -Dswat.input.<name>=<concrete> -cp <target> <Main>`
-   with a minimal `test.cfg` (`instrumentation.transformer=SV_COMP`, `solver.mode=PRINT`,
-   `exitOnError=false`). `swat.input.*` pins the concrete path so the run is deterministic.
-4. Capture stdout, parse the TraceDTO JSON (Jackson) into a typed
-   `TraceObservation { inputs[], branches[], ufs[], symbolicContextLoss,
-   symbolicPrecisionLoss }`.
+   Designate symbolic inputs with `@Symbolic` (import `de.uzl.its.swat.annotations.Symbolic`) on a
+   **method parameter**, and call that method from `main()` with a fixed seed value — e.g.
+   `static String test(@Symbolic String s)` invoked as `test("abc")` — so the concrete path is
+   deterministic.
+3. `AgentRun.run(targetResource, mainClass)` compiles the target against the agent jar, then
+   forks: `java -Djava.library.path=<libs> -Dsolver.mode=PRINT -Dlogging.debug=false
+   -javaagent:symbolic-executor.jar -cp <classes> <Main>` (no config file, no input overrides).
+4. It captures stdout, extracts the TraceDTO JSON, and parses it (Jackson) into a typed
+   `TraceObservation { inputNames, branchConstraints, symbolicContextLoss,
+   symbolicPrecisionLoss }` with the helper `anyBranchReferences(String token)`.
 
 **Why forked, not in-process:** the agent attaches at premain and `ThreadHandler`/`Config` are
 process-global singletons set at startup; resetting them mid-JVM is hacky and fragile. A forked
@@ -165,9 +174,9 @@ symbolic input variable (so no confident wrong SAFE can be derived).
 final SV-COMP verdict, including the downgrade rules (SAFE+contextLoss→UNKNOWN, etc.). Tests the
 *verdict*, not just the trace.
 
-**Driver.** The sv-comp driver / `targets/` harness. Structured per-testcase observation
-(`{verdict, contextLoss}`) becomes clean once the consolidated `stats.json` work lands — until
-then it is STDOUT/log scraping (`[VERDICT <category>]`).
+**Driver.** The sv-comp driver / `targets/` harness. Per-testcase observation
+(`{verdict, contextLoss}`) will become structured if a consolidated per-testcase stats file is
+added; today it is STDOUT/log scraping (`[VERDICT <category>]`).
 
 **CI.** Not gated; nightly / manual regression lane.
 
@@ -177,21 +186,22 @@ then it is STDOUT/log scraping (`[VERDICT <category>]`).
 
 The durable seams that back the levels, reused well beyond any single subsystem:
 
-1. **Flag-observation seam.** Getters on `SymbolicTraceHandler`:
-   `isSymbolicContextLoss()`, `isReferenceSemanticChange()` (the `SymbolicTrace` fields are
+1. **Flag-observation seam.** The getter on `SymbolicTraceHandler`:
+   `isSymbolicContextLoss()` (the `SymbolicTrace` fields are
    package-private; `processor`-package specs can't see them). Used by L1 + every flag
-   assertion.
-2. **Heap/registry inspection view.** A small read-only view on `ShadowContext` (every spec
+   assertion. (Precision loss has no runtime getter — it is computed at trace-build time in
+   `DTOBuilder`, so it is observed at L2 via the `TraceDTO`.)
+2. **Heap/registry inspection.** The registry surface on `ShadowContext` (every spec
    already gets it via `visitor.getStack()`, so no new wiring):
-   `int heapSize()`, `int heapDistinctIdentities()`, `Value<?,?> heapLookup(long id)`,
-   `Collection<Value<?,?>> heapEntries()`. Assertions phrased against this view don't change as
-   the backing structure evolves; they flip red→green as the behavior is fixed (e.g. two distinct
-   objects with a colliding hash → `heapDistinctIdentities()` should be 2). Chosen over raw
-   `JVMHeap` getters, which would couple tests to a structure under active change, and over
-   future-API-only tests, which wouldn't compile and so give no running red signal.
+   `putToHeap(Object ref, Value)`, `getFromHeap(Object ref)`, `int heapSize()`. The registry is
+   keyed by the concrete object itself — reference identity, weak keys (see `heap-tracking.md`
+   §1) — so identity questions are asked by handing over the object, not a hash: two distinct
+   objects with colliding identity hashes are two distinct entries. Assertions phrased against
+   this surface don't change as the backing `JVMHeap` structure evolves.
 3. **L1 boundary-recovery fixture** (see L1). Highest leverage; shared by all recovery cases.
-4. **L0 `BaseValueSpec`** — a shared prover + solver context for all value-semantics specs.
-5. **L2 `AgentRunFixture` + `TraceObservation`** (see L2). Forked-JVM + PRINT-mode + JSON parse.
+4. **L0 `BaseValueSpec`** — a shared solver context (with per-call provers) for all
+   value-semantics specs.
+5. **L2 `AgentRun` + `TraceObservation`** (see L2). Forked-JVM + PRINT-mode + JSON parse.
 
 ## Framework
 
