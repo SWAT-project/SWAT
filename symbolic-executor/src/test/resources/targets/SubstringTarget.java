@@ -5,6 +5,9 @@ import de.uzl.its.swat.annotations.Symbolic;
  * ({@code String.substring(int)}) and branches on the result. This exercises the mixed-sort generic
  * uninterpreted function {@code pure_String_substring_int(String, int)}, so the branch references the
  * input through the UF. Complements {@code TrimTarget}, which uses a no-argument method.
+ * NOTE: the concrete seed values here must NOT make any whitelisted call throw - a throwing
+ * call takes the exception path, which records context loss by design and would (correctly)
+ * flip this target's no-context-loss assertion.
  */
 public class SubstringTarget {
 

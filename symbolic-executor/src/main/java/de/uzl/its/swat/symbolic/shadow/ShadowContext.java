@@ -319,6 +319,15 @@ public class ShadowContext {
     }
 
     /**
+     * The raw receiver (local 0) of the active frame, without {@code ObjectValue} conversion.
+     * Read-only; used on the exception path of an invoke, where the shadow value must be inspected
+     * without risking a conversion failure.
+     */
+    public Value<?, ?> getReceiverRaw() throws NoThreadContextException {
+        return activeFrame.getLocal(0);
+    }
+
+    /**
      * This method is called by INVOKE* It Creates a new frame for the execution of the method and
      * sets all locals (arguments)
      *

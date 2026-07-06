@@ -6,6 +6,9 @@ import de.uzl.its.swat.annotations.Symbolic;
  * bridge. Each result is modeled as a generic pure_<sig> uninterpreted function. The methods are kept
  * small and separate because large mixed-type method bodies trip a frame-analysis limitation in the
  * instrumenter.
+ * NOTE: the concrete seed values here must NOT make any whitelisted call throw - a throwing
+ * call takes the exception path, which records context loss by design and would (correctly)
+ * flip this target's no-context-loss assertion.
  */
 public class WhitelistAuditAgentTarget {
 

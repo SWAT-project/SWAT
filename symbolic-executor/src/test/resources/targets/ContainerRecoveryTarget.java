@@ -8,6 +8,9 @@ import java.util.HashMap;
  * shadow on the way out keeps the branch dependent on the symbolic input rather than concretizing it.
  * A single String parameter avoids an unrelated instrumenter frame-analysis limitation on mixed
  * category-2/reference signatures.
+ * NOTE: the concrete seed values here must NOT make any whitelisted call throw - a throwing
+ * call takes the exception path, which records context loss by design and would (correctly)
+ * flip this target's no-context-loss assertion.
  */
 public class ContainerRecoveryTarget {
 

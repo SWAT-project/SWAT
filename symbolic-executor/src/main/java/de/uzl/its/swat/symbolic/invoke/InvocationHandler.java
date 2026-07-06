@@ -9,6 +9,7 @@ import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.symbolic.UFs.PureFunctionUF;
 import de.uzl.its.swat.symbolic.UFs.PureMethods;
+import de.uzl.its.swat.symbolic.shadow.ShadowContext;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -159,6 +160,69 @@ public class InvocationHandler {
                     pureUF == null ? null : pureUF.observedApplication());
         }
         return retValue;
+    }
+
+    /**
+     * Exception-path counterpart of the context-loss handling in {@link #invoke}: an unmodeled
+     * callee threw before any return value reached the shadow layer. If the call depended on a
+     * symbolic input, whether the exception was raised is itself unmodeled control flow, so a SAFE
+     * verdict is no longer backed by the symbolic trace and context loss is recorded (downgrading
+     * SAFE to UNKNOWN). Robust by construction: any failure to analyze the call conservatively
+     * records the loss, which is sound - it can only downgrade SAFE.
+     *
+     * <p>Deliberately does NOT exempt whitelisted pure methods: their generic UF models the
+     * returned value, not the thrown-or-not decision, so on the exception path the whitelist
+     * guarantees nothing.
+     */
+    public static void recordExceptionalContextLoss(
+            SymbolicTraceHandler symbolicTraceHandler,
+            ShadowContext stack,
+            String owner,
+            String name,
+            String desc,
+            boolean isInstance) {
+        if (IGNORED_INVOCATIONS.contains(owner + "/" + name)
+                || IGNORED_INVOCATIONS.contains(owner)) {
+            return;
+        }
+        boolean symbolic;
+        try {
+            symbolic = false;
+            for (Value<?, ?> v :
+                    stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), isInstance)) {
+                symbolic |= safeIsSymbolic(v);
+            }
+            if (isInstance) {
+                symbolic |= safeIsSymbolic(stack.getReceiverRaw());
+            }
+        } catch (Throwable t) {
+            // Could not analyze the throwing call -> conservatively flag (sound).
+            symbolic = true;
+        }
+        if (symbolic) {
+            logger.warn(
+                    "Exceptional context loss: symbolic input into throwing call {}/{}{}",
+                    owner,
+                    name,
+                    desc);
+            symbolicTraceHandler.recordSymbolicContextLoss();
+        }
+    }
+
+    /**
+     * True if {@code v} is provably symbolic; on any failure to determine, true (conservative,
+     * sound). Catches broadly by design: {@code ObjectValue.isSymbolic} can rethrow a wrapped
+     * RuntimeException while scanning fields.
+     */
+    private static boolean safeIsSymbolic(Value<?, ?> v) {
+        if (v == null) {
+            return false;
+        }
+        try {
+            return v.isSymbolic();
+        } catch (Throwable t) {
+            return true;
+        }
     }
 
     /** A whitelisted pure call modeled as a generic UF: the result over symbolic inputs, and the

@@ -2321,6 +2321,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 instance);
                 stack.setReturnValue(retVal);
 
+        } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+            InvocationHandler.recordExceptionalContextLoss(
+                    symbolicTraceHandler, stack, inst.owner, inst.name, inst.desc, true);
         }
 
         if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2355,6 +2358,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 true,
                                 instance);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                InvocationHandler.recordExceptionalContextLoss(
+                        symbolicTraceHandler, stack, inst.owner, inst.name, inst.desc, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2388,6 +2394,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 false,
                                 null);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                InvocationHandler.recordExceptionalContextLoss(
+                        symbolicTraceHandler, stack, inst.owner, inst.name, inst.desc, false);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2422,6 +2431,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 true,
                                 instance);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                InvocationHandler.recordExceptionalContextLoss(
+                        symbolicTraceHandler, stack, inst.owner, inst.name, inst.desc, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
