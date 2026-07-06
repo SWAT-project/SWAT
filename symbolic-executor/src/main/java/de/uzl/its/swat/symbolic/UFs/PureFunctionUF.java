@@ -92,8 +92,13 @@ public class PureFunctionUF {
             return fmgr.getBitvectorFormulaManager().equal((BitvectorFormula) uf, (BitvectorFormula) c);
         }
         if (type.isFloatingPointType()) {
+            // Pin the observed output with structural '=' (assignment: NaN == NaN, +0 != -0), NOT
+            // fp.eq. IEEE fp.eq is false for any NaN operand, so an observed pair whose output is NaN
+            // (e.g. Math.log/sqrt of an out-of-domain input) would encode as an unsatisfiable term
+            // that poisons the whole path constraint, making the solver report a reachable branch as
+            // UNSAT (a spurious SAFE). '=' pins the exact observed bit-value soundly, NaN included.
             return fmgr.getFloatingPointFormulaManager()
-                    .equalWithFPSemantics((FloatingPointFormula) uf, (FloatingPointFormula) c);
+                    .assignment((FloatingPointFormula) uf, (FloatingPointFormula) c);
         }
         if (type.isStringType()) {
             return fmgr.getStringFormulaManager().equal((StringFormula) uf, (StringFormula) c);
