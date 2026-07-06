@@ -30,8 +30,9 @@ import platform
 ENDPOINT_ID = 0
 
 # A branch guarded by an uninterpreted pure_ UF can diverge on concrete replay (the solver cannot
-# drive the UF to the required value). We re-open and retry such a branch - with a fresh solver input
-# once observed input->output pairs are injected - but only up to this many attempts, after which it
+# drive the UF to the required value). We re-open and retry such a branch - the injected observed
+# input->output pairs pin the previous input's real output, forcing a fresh solver input - but only
+# up to this many attempts, after which it
 # is abandoned as unverified (forcing UNKNOWN). This bounds exploration and guarantees termination.
 MAX_BRANCH_ATTEMPTS = 3
     
@@ -274,7 +275,7 @@ class SVCompDriver:
         attempts = self.state.branch_attempts[gid]
         if attempts < MAX_BRANCH_ATTEMPTS:
             # Not actually explored - re-open so it is selectable again (yields a different solver
-            # input once observed input->output pairs are injected). Bounded by the attempt cap.
+            # input because the injected observed pairs pin the previous input's real output). Bounded by the attempt cap.
             Database.instance().remove_solution(gid)
             logger.info(f'[SVCOMP] Re-opening diverged branch {branch.id} (gid {gid}), attempt {attempts}/{MAX_BRANCH_ATTEMPTS}')
         else:
@@ -292,6 +293,10 @@ class SVCompDriver:
         logger.info(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
         symbolic_vars = None
         sat = None
+        # A solver UNKNOWN (e.g. timeout) anywhere in this round means that branch was neither
+        # explored nor proven infeasible, so a SAFE conclusion is not backed - even if a later
+        # branch returns UNSAT.
+        unknown_seen = False
         branch_found = False
         for branch in possible_branches:
             #logger.info(f'[SYMBOLIC EXPLORATION] Checking branch {branch.id}, kind={branch.kind}')
@@ -301,21 +306,23 @@ class SVCompDriver:
             branch_found = True
             #logger.info(f'[SYMBOLIC EXPLORATION] Solving for branch {branch.id}')
             sat, sol = StrategyService.solve_branch(branch)
-             
+
             if sat == SATResult.SAT:
                 logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
                 symbolic_vars = branch.inputs
                 # remember which branch we want to explore
                 self.state.branch_to_explore = branch
                 break
+            if sat == SATResult.UNKNOWN:
+                unknown_seen = True
             logger.debug(f'[SYMBOLIC EXPLORATION] No solution ({sat}) found for branch {branch.id}')
-       
-        if not branch_found or sat == SATResult.UNSAT:
+
+        if not branch_found or (sat == SATResult.UNSAT and not unknown_seen):
             self.state.verdict = Verdict.SAFE
             logger.info(f'[SYMBOLIC EXPLORATION] No symbolic branch found or UNSAT')
             return Action.REPORTVERDICT
-        
-        if sat == SATResult.UNKNOWN:
+
+        if sat == SATResult.UNKNOWN or unknown_seen:
             logger.info(f'[SYMBOLIC EXPLORATION] SAT result is UNKNOWN')
             self.state.verdict = Verdict.UNKNOWN
             return Action.REPORTVERDICT

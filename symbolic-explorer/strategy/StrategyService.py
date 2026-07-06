@@ -95,7 +95,7 @@ class StrategyService:
         # so re-solving a diverged branch is forced to pick a different input (the previous input's real
         # output is pinned). Each entry is a self-contained SMT script parsed in isolation, so re-declared
         # UF symbols do not collide; the pairs are true observed facts, so injecting them stays sound.
-        path_constraints.extend(db.get_tree(0).ufs)
+        path_constraints.extend(db.get_ufs(endpoint_id))
 
         inputs = possible_branch.inputs
 

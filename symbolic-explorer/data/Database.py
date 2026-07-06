@@ -147,6 +147,21 @@ class Database:
         lock.release()
         return ret
     
+    def get_ufs(self, endpoint_id: Union[str, int, None]) -> list:
+        # Accumulated observed input->output pair scripts for the endpoint's tree, in a stable
+        # order (reproducible solver queries). Falls back to the sole registered tree when the
+        # endpoint is not given (single-endpoint drivers pass None); returns [] when the endpoint
+        # cannot be resolved, since the pairs only ever tighten a query. Copies just the pair
+        # strings, not the whole tree.
+        lock.acquire()
+        try:
+            tree = self.tree.get(str(endpoint_id))
+            if tree is None and len(self.tree) == 1:
+                tree = next(iter(self.tree.values()))
+            return sorted(tree.ufs) if tree is not None else []
+        finally:
+            lock.release()
+
     def record_uncaught_exception(self, endpoint_id: Union[str, int]):
         endpoint_id = str(endpoint_id)
         lock.acquire()

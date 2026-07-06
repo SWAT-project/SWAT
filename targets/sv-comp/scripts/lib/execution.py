@@ -250,7 +250,7 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 120) -> tuple[Execut
     """Executes the given command and returns output from both STDOUT and STDERR.
 
     `timeout` is the per-testcase wall-clock cap enforced by this local runner, OUTSIDE the actual SWAT
-    run: on expiry the whole process group is SIGKILLed and the testcase scores 0 (TIMEOUT). Kept at
+    run: on expiry the whole process group is SIGKILLed and the testcase scores 0 (TIMEOUT). Default
     120s to bound local scoring runs; the competition-infra wrapper (scripts/svcomp-package/run_swat.py)
     is separate and unaffected.
     """
@@ -274,7 +274,10 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 120) -> tuple[Execut
                
             
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL) # Kill the whole process group to prevent java subprocesses from sticking around
+            try:
+                os.killpg(proc.pid, signal.SIGKILL) # Kill the whole process group to prevent java subprocesses from sticking around
+            except ProcessLookupError:
+                pass # group already gone
             proc.kill()
             stdout, _ = proc.communicate()
             output = stdout.splitlines()
