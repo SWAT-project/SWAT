@@ -57,7 +57,8 @@ public final class PureMethods {
                     "java/lang/String/stripTrailing()Ljava/lang/String;",
                     "java/lang/String/translateEscapes()Ljava/lang/String;",
                     "java/lang/String/trim()Ljava/lang/String;",
-                    // Pure, unmodeled, value-typed methods from the java.lang/util purity audit:
+                    // Pure, unmodeled, value-typed methods, individually verified deterministic,
+                    // side-effect-free and locale-independent:
                     "java/lang/Math/IEEEremainder(DD)D",
                     "java/lang/Math/absExact(I)I",
                     "java/lang/Math/absExact(J)J",

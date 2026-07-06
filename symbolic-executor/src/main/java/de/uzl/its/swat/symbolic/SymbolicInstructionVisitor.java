@@ -1380,7 +1380,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                             (peek.asObjectValue()).setAddress(inst.address);
                             // Register iff the shadow carries symbolic content (a variable/UF) - those
                             // can't be reconstructed from the concrete and must round-trip via the heap
-                            // (e.g. a whitelisted pure method's UF); pure constants are skipped to bound
+                            // (e.g. a whitelisted pure method's UF); constant-only shadows are skipped to bound
                             // the leak.
                             FormulaManager fmgr =
                                     ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
@@ -1474,7 +1474,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
     /**
      * Whether {@code ref} is a de-interned value type (String / cached boxed wrapper) whose shadow is a
-     * pure constant - i.e. carries no symbolic variable or UF. Such a value is reconstructible from the
+     * constant-only - i.e. carries no symbolic variable or UF. Such a value is reconstructible from the
      * observed concrete on round-trip, so it is not heap-registered; this bounds the heap, and only the
      * symbolic/UF shadows that cannot be reconstructed are registered. A boxed
      * value carries its formula in the inner {@link BoxedValue#getVal()}, not the wrapper's own field.
@@ -1485,7 +1485,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             return false;
         }
         Formula formula = (shadow instanceof BoxedValue<?> boxed)
-                ? (Formula) boxed.getVal().formula
+                ? (boxed.getVal() == null ? null : (Formula) boxed.getVal().formula)
                 : (Formula) shadow.formula;
         if (formula == null) {
             return true;
@@ -2467,6 +2467,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
                                 false,
                                 null);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                InvocationHandler.recordExceptionalContextLoss(
+                        symbolicTraceHandler, stack, inst.owner, inst.name, inst.desc, false);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {

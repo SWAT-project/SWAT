@@ -16,9 +16,9 @@ import java.util.Map;
  * shadow value holds no strong reference to its concrete key, so an entry is evicted once the
  * concrete object becomes unreachable. NOTE: a {@code StringValue} stores its own concrete
  * {@code String}, which is also the key, so String-keyed entries are self-pinned and do not evict
- * until the thread's context is discarded - no worse than the previous never-evicting map, and
- * reference keying still removes the identity-hash collision/reuse hazard. (A unique-id key would
- * also evict Strings; deferred.)
+ * until the thread's context is discarded. Reference keying still removes the identity-hash
+ * collision/reuse hazard; a unique-id key (which would also evict Strings) is a possible future
+ * improvement.
  */
 public class JVMHeap {
 

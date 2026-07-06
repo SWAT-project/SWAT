@@ -40,7 +40,9 @@ public class Util {
     private static final String[] symbolicScope = config.getSymbolicScope().length > 0 ? config.getSymbolicScope()
             : config.getInstrumentationScope();
 
-    private static final HashMap<String, Boolean> shouldInstrumentCache = new HashMap<>();
+    // ConcurrentHashMap: ClassFileTransformers may run concurrently on class-loading threads.
+    private static final java.util.concurrent.ConcurrentHashMap<String, Boolean> shouldInstrumentCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     // Maintain a set of class names that have been de-interned
     private static final Set<String> deInternedClasses = new HashSet<>(Arrays.asList(
@@ -431,7 +433,7 @@ public class Util {
     /**
      * Whether {@code o}'s runtime class is one that is de-interned: String and the cached boxed wrappers
      * (Boolean/Byte/Short/Character/Integer/Long), but NOT the uncached Float/Double (which use
-     * reference equality). Used by recovery to limit the "skip registering pure constants" policy to
+     * reference equality). Used by recovery to limit the "skip registering constant-only shadows" policy to
      * exactly the de-interned value types, leaving mutable objects and Float/Double always registered.
      */
     public static boolean isDeInternedClass(Object o) {

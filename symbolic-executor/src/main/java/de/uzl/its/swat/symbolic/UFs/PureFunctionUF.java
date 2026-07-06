@@ -36,9 +36,11 @@ public class PureFunctionUF {
     }
 
     /**
-     * Build the UF application {@code ufName(args)} of the given return type. The argument sorts are
-     * derived from the actual {@code args} formulas (not the descriptor) so they match the values'
-     * sorts. The declaration is cached per name; on reuse the signature is asserted to match.
+     * Build the UF application {@code ufName(args)} of the given return type. The declaration is
+     * cached per name, so every application of one name must use identical sorts; callers guarantee
+     * this by deriving all sorts from the method descriptor (see {@code InvocationHandler.buildPureUF}).
+     * A signature mismatch on reuse fails fast - reusing a cached declaration with different sorts
+     * would otherwise surface as an opaque solver exception.
      */
     public Formula apply(String ufName, FormulaType<?> returnType, List<Formula> args) {
         List<FormulaType<?>> argTypes =
@@ -47,9 +49,11 @@ public class PureFunctionUF {
         if (decl == null) {
             decl = ufmgr.declareUF(ufName, returnType, argTypes);
             declarations.put(ufName, decl);
-        } else {
-            assert decl.getType().equals(returnType) && decl.getArgumentTypes().equals(argTypes)
-                    : "Generic UF signature mismatch for " + ufName;
+        } else if (!decl.getType().equals(returnType) || !decl.getArgumentTypes().equals(argTypes)) {
+            throw new IllegalArgumentException(
+                    "Generic UF signature mismatch for " + ufName
+                            + ": cached " + decl.getArgumentTypes() + " -> " + decl.getType()
+                            + ", requested " + argTypes + " -> " + returnType);
         }
         return ufmgr.callUF(decl, args);
     }

@@ -53,7 +53,7 @@ public class ShadowContext {
         return heap.get(ref);
     }
     /**
-     * Number of registered recovery-cache cells. See {@link JVMHeap#size()}.
+     * Number of entries in the shadow registry. See {@link JVMHeap#size()}.
      *
      * @return the number of entries currently on the heap.
      */

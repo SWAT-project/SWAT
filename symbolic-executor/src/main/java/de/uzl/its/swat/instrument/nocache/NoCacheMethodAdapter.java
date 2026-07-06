@@ -119,7 +119,8 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
         // callee - the boundary where interned/shared values (literals, constants, this-returns,
         // cached boxes) enter shadow space. A fresh copy gives the produced value a distinct identity,
         // so the reference-keyed heap stays sound for value types. Skip the SWAT / sv-benchmarks
-        // intrinsics (the symbolic-input designation / witness seam). Gated on the de-intern switch.
+        // intrinsics that designate symbolic inputs and record witnesses. Gated on the
+        // useStringInterning config flag.
         if (Config.instance().isUseStringInterning()
                 && !Util.shouldInstrument(owner)
                 && !isDeInternSkippedOwner(owner)) {

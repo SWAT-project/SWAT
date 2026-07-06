@@ -126,7 +126,7 @@ public class InvocationHandler {
             // over-approximates any deterministic function. Only when an input is symbolic;
             // `arguments` here already includes the receiver (prepended above).
             if (containsSymbolicArgument && PureMethods.isWhitelisted(owner, name, desc)) {
-                pureUF = buildPureUF(owner, name, desc, arguments);
+                pureUF = buildPureUF(owner, name, desc, isInstance, arguments);
             }
 
             if(
@@ -231,34 +231,59 @@ public class InvocationHandler {
 
     /**
      * Build the generic UF {@code pure_<sig>(inputs)} for a whitelisted pure call, or null to fall
-     * back to concretization. Handles String and all primitive returns (the return sort is
-     * {@link #pureUFReturnType}); the inputs (receiver + args) must all be value-typed so their
-     * formula fully captures the input (sound; no stateful receivers). Also builds the same UF applied
-     * to the CONSTANT (observed) inputs, over the SAME cached declaration, so recovery can assert the
+     * back to concretization. Handles String and all primitive returns (the sorts come from
+     * {@link #sortOf}); the inputs (receiver + args) must all be value-typed so their formula fully
+     * captures the input (sound; no stateful receivers). Also builds the same UF applied to the
+     * CONSTANT (observed) inputs, over the SAME cached declaration, so recovery can assert the
      * observed (inputs -&gt; output) ground pair.
+     *
+     * <p>Every input's shadow sort must equal its descriptor-derived sort. The UF declaration is
+     * cached per name, so all call sites of one signature must agree on sorts - but the shadow
+     * layer permits deviating sorts in a slot (e.g. a char-born BV16 value flowing into an int
+     * slot, since the widening emits no bytecode). A deviating input therefore yields null and
+     * falls back to concretization (sound), keeping the cached declaration consistent and the
+     * {@code pure_<sig>} name deterministically bound to one sort signature across runs.
      */
     private static PureUFModel buildPureUF(
-            String owner, String name, String desc, List<Value<?, ?>> inputs)
+            String owner, String name, String desc, boolean isInstance, List<Value<?, ?>> inputs)
             throws NoThreadContextException {
         // The UF's return sort is the method's return type - String or any primitive. Unsupported
         // returns (void, arrays, non-String objects) yield null and fall back to concretization.
-        FormulaType<?> returnType = pureUFReturnType(desc);
+        FormulaType<?> returnType = sortOf(Type.getReturnType(desc));
         if (returnType == null) {
             return null;
+        }
+        // Descriptor-derived sort for every input, receiver first for instance calls (only String
+        // receivers are supported - the whitelist's instance methods are String's).
+        Type[] argTypes = Type.getArgumentTypes(desc);
+        FormulaType<?>[] expected = new FormulaType<?>[(isInstance ? 1 : 0) + argTypes.length];
+        int slot = 0;
+        if (isInstance) {
+            expected[slot++] = "java/lang/String".equals(owner) ? FormulaType.StringType : null;
+        }
+        for (Type t : argTypes) {
+            expected[slot++] = sortOf(t);
+        }
+        if (inputs.size() != expected.length) {
+            return null; // arity mismatch: defer to concretization.
         }
         FormulaManager fmgr =
                 ThreadHandler.getSolverContext(Thread.currentThread().getId()).getFormulaManager();
         List<Formula> symbolicArgs = new ArrayList<>();
         List<Formula> constArgs = new ArrayList<>();
-        for (Value<?, ?> v : inputs) {
+        for (int i = 0; i < inputs.size(); i++) {
+            Value<?, ?> v = inputs.get(i);
             if (v.formula == null || !Util.isValueType(v.concrete)) {
                 return null; // non-value-typed or formula-less input: defer to concretization.
             }
             Formula sym = (Formula) v.formula;
+            if (expected[i] == null || !fmgr.getFormulaType(sym).equals(expected[i])) {
+                return null; // shadow sort deviates from the descriptor: defer to concretization.
+            }
             symbolicArgs.add(sym);
-            // The ground input constant must match the symbolic argument's own sort, so the observed
-            // application reuses the same UF signature.
-            constArgs.add(PureFunctionUF.constant(fmgr, fmgr.getFormulaType(sym), v.concrete));
+            // The ground input constant shares the (descriptor-derived) sort of the symbolic
+            // argument, so the observed application reuses the same UF signature.
+            constArgs.add(PureFunctionUF.constant(fmgr, expected[i], v.concrete));
         }
         PureFunctionUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getPureFunctionUF();
         String ufName = PureMethods.ufName(owner, name, desc);
@@ -271,13 +296,12 @@ public class InvocationHandler {
     }
 
     /**
-     * The SMT return sort for a whitelisted pure method, matching the shadow value sorts exactly:
-     * String; boolean; bitvectors of width 8/16/16/32/64 for byte/short/char/int/long; and
-     * floating-point (single for float, double for double). Returns null for unsupported returns
+     * The SMT sort for a descriptor type of a whitelisted pure method, matching the shadow value
+     * sorts exactly: String; boolean; bitvectors of width 8/16/16/32/64 for byte/short/char/int/long;
+     * and floating-point (single for float, double for double). Returns null for unsupported types
      * (void, arrays, non-String objects), which fall back to concretization.
      */
-    private static FormulaType<?> pureUFReturnType(String desc) {
-        Type ret = Type.getReturnType(desc);
+    private static FormulaType<?> sortOf(Type ret) {
         switch (ret.getSort()) {
             case Type.BOOLEAN:
                 return FormulaType.BooleanType;

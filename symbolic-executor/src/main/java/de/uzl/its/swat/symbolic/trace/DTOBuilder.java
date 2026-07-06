@@ -113,12 +113,13 @@ class DTOBuilder {
 
     /**
      * A symbolic-variable name produced by the input-naming convention (primitive prefixes like
-     * {@code I_0}). Kept as a backstop for symbolic variables that are NOT designated inputs but are
-     * still grounded - notably values re-materialized by GETVALUE heap recovery (which call
-     * MAKE_SYMBOLIC with a fresh name, without re-registering an input). Dropping it would
-     * conservatively (but soundly) downgrade such cases; keeping it avoids that regression.
+     * {@code I_0}). Matches symbolic variables that are NOT designated inputs but are still
+     * grounded - notably values re-materialized by GETVALUE heap recovery (which call MAKE_SYMBOLIC
+     * with a fresh name, without re-registering an input). Without this pattern such branches would
+     * be classified as precision loss - soundly, but unnecessarily.
      */
-    private static final String INPUT_VAR_PATTERN = "[A-Z].*_[0-9].*";
+    private static final java.util.regex.Pattern INPUT_VAR_PATTERN =
+            java.util.regex.Pattern.compile("[A-Z].*_[0-9].*");
 
     /**
      * Whether a branch constraint loses symbolic precision, given the terms of the designated symbolic
@@ -149,7 +150,7 @@ class DTOBuilder {
 
                     @Override
                     public TraversalProcess visitFreeVariable(Formula formula, String name) {
-                        if (!inputTerms.contains(formula) && !name.matches(INPUT_VAR_PATTERN)) {
+                        if (!inputTerms.contains(formula) && !INPUT_VAR_PATTERN.matcher(name).matches()) {
                             lossy.set(true);
                             return TraversalProcess.ABORT;
                         }

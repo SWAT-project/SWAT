@@ -55,8 +55,8 @@ public class PlaceHolder extends Value {
     /**
      * The same generic UF applied to the CONSTANT (observed) inputs, e.g.
      * {@code pure_<sig>(makeString(concreteInput))}. At recovery this is asserted equal to the
-     * observed concrete output to record a ground (input -> output) pair. Null when no pair is
-     * emitted (non-String inputs, or not a whitelisted pure call).
+     * observed concrete output to record a ground (input -> output) pair. Null exactly when no
+     * generic UF was built (not a whitelisted pure call, or unsupported input/return sorts).
      */
     public final Formula observedApplication;
     public static final PlaceHolder instance = new PlaceHolder(false);
