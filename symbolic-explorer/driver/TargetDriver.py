@@ -70,6 +70,8 @@ class TargetDriver:
         # Add symbolic value assignments (if we have them)
         for var in self.sym_storage.vars.values():
             val = var.newValue if var.newValue is not None else var.value
+            if val is None:
+                continue  # no known value; the executor keeps the target's original value
             # Use swat.assignment prefix (read by Intrinsics.retrieveAssignments())
             cmd.insert(1, f'-Dswat.assignment.{var.dType.value}_{var.idx}={val}')
 
@@ -95,6 +97,12 @@ class TargetDriver:
             else:
                 val = var.newValue
                 var.value = var.newValue
+            if val is None:
+                # Neither a solver value nor a concrete fallback is known; skipping the
+                # assignment lets the executor keep the target's original value instead
+                # of crashing on parsing a literal 'None'.
+                logger.error(f'[EXPLORER] No value known for {var.dType.value}_{var.idx}, skipping assignment')
+                continue
             if self.args.mode == "args":
                 cmd.append(f'{val}')
             else:
@@ -200,7 +208,7 @@ class TargetDriver:
 
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
         logger.info(f'[EXPLORER] Found new solution: {sol_viz}')
-        self.sym_storage.register_vars([var.name.split('_')[0] for var in symbolic_vars])
+        self.sym_storage.register_inputs(symbolic_vars)
         self.sym_storage.store_solution(sol)
         return Action.SYMBOLICNEXT
 
