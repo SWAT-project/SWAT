@@ -5,11 +5,8 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.core.FileAppender;
 import de.uzl.its.swat.common.exceptions.SWATException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
-import de.uzl.its.swat.common.logging.records.ErrorRecord;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.thread.ThreadHandler;
-
-import java.util.Arrays;
 
 import static java.lang.Thread.currentThread;
 /**
@@ -73,14 +70,6 @@ public class ErrorHandler {
             throw new RuntimeException(msg, t);
         }
         logger.error("Preparing to halt execution due to error...");
-        try {
-            if (ThreadHandler.hasThreadContext(currentThread().getId())) {
-                ThreadHandler.logStats(currentThread().getId());
-            }
-            ThreadHandler.logStats(-1);
-        } catch (Exception e) {
-            logger.error("Error while logging stats");
-        }
         logger.error("Halting...");
         if (!config.isLogShadowStateToConsole()) {
             logger.info("Flushing loggers...");
@@ -100,28 +89,6 @@ public class ErrorHandler {
 
     public void logException(String msg, Throwable t){
         logger.error(msg, t);
-        long threadId = currentThread().getId();
-        String executionStage;
-        if(ThreadHandler.hasThreadContext(threadId)){
-            try {
-                executionStage = ThreadHandler.getCurrentInstruction(threadId).toString();
-            } catch (Exception e) {
-                logger.error("Error while getting current instruction", e);
-                executionStage = "Unknown";
-            }
-        }  else {
-            executionStage = "Main Thread";
-            threadId = -1;
-        }
-
-        // Record the error
-        ErrorRecord errorRecord = new ErrorRecord(msg, t.getClass().getSimpleName(),
-                Arrays.toString(t.getStackTrace()), t.getMessage(), executionStage);
-        try{
-            ThreadHandler.recordException(threadId, errorRecord);
-        } catch (Exception e) {
-            logger.error("Error while recording exception", e);
-        }
     }
 
 }

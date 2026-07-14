@@ -82,7 +82,7 @@ class StrategyService:
         return uf_definitions
 
     @staticmethod
-    def solve_branch(possible_branch: Node, endpoint_id=None):
+    def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000):
         db = Database.instance()
 
         path_constraints = StrategyService.collect_path_constrains(possible_branch)
@@ -93,7 +93,7 @@ class StrategyService:
 
         inputs = possible_branch.inputs
 
-        sat, sol = Z3Handler.solve(possible_branch, path_constraints)
+        sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms)
 
         if sat == SATResult.SAT:
             db.add_solution(branch_id=possible_branch.gid, sol=sol, inputs=inputs, endpoint_id=endpoint_id)

@@ -8,7 +8,7 @@ from data.trace.UF import UF
 
 import log
 logger = log.get_logger()
-#import pygraphviz as pgv
+# import pygraphviz as pgv
 
 class Tree:
     """
@@ -37,6 +37,13 @@ class Tree:
         self.uncaught_exceptions: int = 0
         self.symbolic_vars: Set = set()
         self.ufs: Set = set()
+        # Missing invocations accumulated across all traces of this testcase, keyed by
+        # (owner, name, desc, isInstance, isSymbolic). Each value aggregates count and context_loss.
+        self.missing_invocations: dict = {}
+        # Execution errors detected in the executor's stdout (internal SWAT assertions or
+        # [SWAT Exception]s) that make the verdict untrustworthy. These cannot ride the trace
+        # because they halt the executor JVM before it sends one, so they are surfaced here.
+        self.execution_errors: list = []
 
 
     def record_inputs(self, inputs: List[Input]):
@@ -59,6 +66,52 @@ class Tree:
         for uf in ufs:
             self.ufs.add(uf.definition)
                                    
+
+    def record_missing_invocations(self, invocations: Optional[List[dict]]):
+        """
+        Accumulates missing invocations across all traces of this testcase.
+
+        Args:
+            invocations (list): Dicts with keys owner, name, desc, isInstance, isSymbolic,
+                contextLoss, count. Entries are deduped by
+                (owner, name, desc, isInstance, isSymbolic); counts are summed and contextLoss
+                is OR-ed across traces. The full set is the superset of missing invocations;
+                entries with context_loss=True form the context-loss subset.
+        """
+        if not invocations:
+            return
+        for inv in invocations:
+            key = (inv['owner'], inv['name'], inv['desc'], inv['isInstance'], inv['isSymbolic'])
+            count = int(inv.get('count', 1))
+            context_loss = bool(inv.get('contextLoss', False))
+            existing = self.missing_invocations.get(key)
+            if existing is None:
+                self.missing_invocations[key] = {
+                    'owner': inv['owner'],
+                    'name': inv['name'],
+                    'desc': inv['desc'],
+                    'isInstance': inv['isInstance'],
+                    'isSymbolic': inv['isSymbolic'],
+                    'context_loss': context_loss,
+                    'count': count,
+                }
+            else:
+                existing['count'] += count
+                existing['context_loss'] = existing['context_loss'] or context_loss
+
+    def record_execution_error(self, kind: str, message: str):
+        """
+        Records an execution error surfaced from the executor's stdout.
+
+        Deduplicated by (kind, message) so repeated exploration rounds don't inflate the list.
+
+        Args:
+            kind (str): A short category, e.g. "swat_assertion" or "swat_exception".
+            message (str): The offending output line.
+        """
+        entry = {'kind': kind, 'message': message}
+        if entry not in self.execution_errors:
+            self.execution_errors.append(entry)
 
     def record_context_loss(self):
         logger.warning("Context loss recorded!")
@@ -130,8 +183,10 @@ class Tree:
                 return Node(parent, trace, inputs, ufs) if len(trace) > 0 else Leaf(parent, inputs, ufs)
 
         return node
+    
+
+# VISUALIZATIONS
     def get_constraint_label(self, parent: Node, node: Union[Node, Leaf]):
-        return None
         """Get the constraint label for an edge."""
         if isinstance(node, Leaf):
             return ""
@@ -140,7 +195,6 @@ class Tree:
         return ""
 
     def add_to_dot(self, node: Optional[Union[Node, Leaf]], graph, parent: Optional[Node] = None):
-        return None
         """Recursively add nodes and edges to the DOT graph."""
         if node is not None:
             graph.add_node(node.gid, label=str(node.gid) + ':' + str(node.id))
@@ -153,11 +207,10 @@ class Tree:
                 self.add_to_dot(node.branched, graph, node)
                 self.add_to_dot(node.skipped, graph, node)
 
-#    def plot_tree(self, idx):
-#        return None
-#        """Plot the tree using Graphviz and save to a file."""
-#        #log.info(self.to_string())
-#        G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
-#        self.add_to_dot(self.root, G)
-#        G.layout(prog="dot")
-#        G.draw(f"tree_{idx}.png")
+    def plot_tree(self, idx):
+       """Plot the tree using Graphviz and save to a file."""
+       #log.info(self.to_string())
+       G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
+       self.add_to_dot(self.root, G)
+       G.layout(prog="dot")
+       G.draw(f"tree_{idx}.png")

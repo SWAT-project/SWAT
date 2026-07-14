@@ -3,7 +3,6 @@
 import click
 import logging
 from pathlib import Path
-import sys
 
 logger = logging.getLogger(__name__)
 
@@ -15,57 +14,29 @@ def analyze():
 
 
 @analyze.command(name='results')
-@click.argument('results_file', type=click.Path(exists=True), required=False)
-@click.option('--logs-dir', type=click.Path(exists=True), help='Path to logs directory')
+@click.argument('run_dir', type=click.Path(exists=True), required=False)
 @click.pass_context
-def analyze_results(ctx, results_file, logs_dir):
-    """Analyze results to identify context losses and failures.
+def analyze_results(ctx, run_dir):
+    """Analyze a run from its consolidated stats.json files.
 
-    If RESULTS_FILE is not provided, will use the most recent results file.
+    Prints a scoring summary plus the missing-invocation superset and its
+    context-loss subset. If RUN_DIR is not provided, uses the most recent
+    runs/run_* directory.
     """
-    from lib.analysis.context_loss import main as run_analysis
+    from lib.analysis.context_loss import analyze_run, find_latest_run
 
     script_dir = ctx.obj['script_dir']
 
-    # Determine results file
-    if results_file:
-        results_path = Path(results_file)
+    if run_dir:
+        run_path = Path(run_dir)
     else:
-        # Look for latest results file
-        results_dir = script_dir.parent / 'results'
-        if results_dir.exists():
-            json_files = list(results_dir.glob('results_*.json'))
-            if json_files:
-                results_path = max(json_files, key=lambda p: p.stat().st_mtime)
-                click.echo(f"Using latest results file: {results_path}")
-            else:
-                click.echo("Error: No results files found in results/", err=True)
-                ctx.exit(1)
-        else:
-            click.echo("Error: results/ directory not found and no file specified", err=True)
+        run_path = find_latest_run(script_dir.parent / 'runs')
+        if run_path is None:
+            click.echo("Error: No runs found under runs/. Run 'svcomp test run' first.", err=True)
             ctx.exit(1)
+        click.echo(f"Using latest run: {run_path}")
 
-    # Determine logs directory
-    if logs_dir:
-        logs_path = Path(logs_dir)
-    else:
-        logs_path = script_dir.parent / 'logs'
-
-    if not logs_path.exists():
-        click.secho(f"Warning: Logs directory not found at {logs_path}", fg='yellow')
-
-    click.echo(f"Analyzing results from: {results_path}")
-    click.echo(f"Looking for logs in: {logs_path}\n")
-
-    # Run the analysis by temporarily modifying sys.argv
-    old_argv = sys.argv
-    try:
-        sys.argv = ['analyse_ctx_loss.py', str(results_path)]
-        run_analysis()
-    except SystemExit:
-        pass  # analysis script calls sys.exit
-    finally:
-        sys.argv = old_argv
+    analyze_run(run_path)
 
 
 @analyze.command(name='compare')

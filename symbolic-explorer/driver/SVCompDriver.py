@@ -17,6 +17,7 @@ from strategy.StrategyService import StrategyService
 
 from enum import Enum
 from svcomp.SymbolicStorage import SymbolicStorage
+from svcomp.TestcaseStats import write_testcase_stats
 from timing.TimingManager import TimingManager
 
 
@@ -139,8 +140,9 @@ class SVCompDriver:
             
             for l in output:
                 if "java.lang.AssertionError: [SWAT]" in l:
-                    # Internal assertion error in the DSE 
+                    # Internal assertion error in the DSE
                     logger.critical(f'[SVCOMP] SWAT Assertion failed: {l}')
+                    Database.instance().record_execution_error(ENDPOINT_ID, 'swat_assertion', l.strip())
                     self.state.verdict = Verdict.UNKNOWN
                     return Action.REPORTVERDICT
                 if "java.lang.AssertionError" in l and self.verification_category == VerificationCategory.VALID_ASSERT_PRP:
@@ -156,6 +158,7 @@ class SVCompDriver:
                     Database.instance().record_uncaught_exception(ENDPOINT_ID)
                 if "[SWAT Exception]:" in l:
                     logger.info(f'[SVCOMP] SWAT Exception: {l}')
+                    Database.instance().record_execution_error(ENDPOINT_ID, 'swat_exception', l.strip())
                     self.state.verdict = Verdict.UNKNOWN
                     return Action.REPORTVERDICT
 
@@ -222,6 +225,9 @@ class SVCompDriver:
             logger.info(f'[STATUS] {status}')
             next_step: Action = self.determine_next_step(status, output)
 
+            # Visualize DB tree
+            # print("Plotting DB Tree...", flush=True)
+            # Database.instance().get_tree(0).plot_tree(round_idx)
             round_idx += 1
 
             if next_step == Action.REPORTVERDICT:
@@ -258,7 +264,7 @@ class SVCompDriver:
                 continue
             branch_found = True
             #logger.info(f'[SYMBOLIC EXPLORATION] Solving for branch {branch.id}')
-            sat, sol = StrategyService.solve_branch(branch)
+            sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None)
              
             if sat == SATResult.SAT:
                 logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
@@ -328,6 +334,11 @@ class SVCompDriver:
         log_dir = self.args.logdir if hasattr(self.args, 'logdir') else 'logs'
         timing_file = os.path.join(log_dir, 'timing_data.json')
         TimingManager.instance().save_to_file(Path(timing_file))
+
+        # Write the consolidated per-testcase statistics (verdict, soundness flags, missing
+        # invocations and the context-loss subset) so the analysis can rely on structured data.
+        stats_file = os.path.join(log_dir, 'stats.json')
+        write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID))
 
         self.kill_current_process()
         

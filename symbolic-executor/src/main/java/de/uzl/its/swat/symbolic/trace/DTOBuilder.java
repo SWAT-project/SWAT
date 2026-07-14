@@ -11,12 +11,15 @@ import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
+import de.uzl.its.swat.common.logging.StatsStorage;
+import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.coverage.InstrCoverage;
 import de.uzl.its.swat.symbolic.trace.dto.*;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.Formula;
@@ -34,8 +37,33 @@ class DTOBuilder {
      * @param symbolicTrace The symbolic trace to be encoded.
      * @return The symbolic trace encoded as a JSON string.
      */
-    protected static String encodeTrace(SymbolicTrace symbolicTrace) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
-        return buildRequestBody(buildTraceDTO(symbolicTrace));
+    protected static String encodeTrace(SymbolicTrace symbolicTrace, StatsStorage statsStorage) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
+        return buildRequestBody(buildTraceDTO(symbolicTrace, statsStorage));
+    }
+
+    /**
+     * Builds the list of missing-invocation DTOs from the per-execution statistics. The full set of
+     * missing invocations is the superset; entries present in the context-loss set are flagged so
+     * the explorer can compute the context-loss subset without log scraping.
+     *
+     * @param statsStorage The per-execution statistics accumulator.
+     * @return The missing invocations encoded as DTOs.
+     */
+    private static ArrayList<InvocationDTO> buildMissingInvocations(StatsStorage statsStorage) {
+        ArrayList<InvocationDTO> missingInvocations = new ArrayList<>();
+        for (Map.Entry<InvocationEntry, Integer> e : statsStorage.getInvocations().entrySet()) {
+            InvocationEntry entry = e.getKey();
+            missingInvocations.add(
+                    new InvocationDTO(
+                            entry.owner(),
+                            entry.name(),
+                            entry.desc(),
+                            entry.isInstance(),
+                            entry.isSymbolic(),
+                            statsStorage.getContextLossInvocations().contains(entry),
+                            e.getValue()));
+        }
+        return missingInvocations;
     }
 
     /**
@@ -46,7 +74,7 @@ class DTOBuilder {
      * @return A {@link TraceDTO ConstraintDTO} that contains relevant all relevant information
      *     to transfer symbolic traces
      */
-    private static TraceDTO buildTraceDTO(SymbolicTrace symbolicTrace) throws NoThreadContextException, NotImplementedException {
+    private static TraceDTO buildTraceDTO(SymbolicTrace symbolicTrace, StatsStorage statsStorage) throws NoThreadContextException, NotImplementedException {
         ArrayList<InputDTO> inputs = new ArrayList<>();
         ArrayList<UFDTO> ufs = new ArrayList<>();
         ArrayList<BranchDTO> trace = new ArrayList<>();
@@ -106,7 +134,7 @@ class DTOBuilder {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }
         }
-        return new TraceDTO(inputs, trace, ufs, symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange());
+        return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange());
     }
 
     protected static String encodeCoverage(InstrCoverage instrCoverage) throws JsonProcessingException {

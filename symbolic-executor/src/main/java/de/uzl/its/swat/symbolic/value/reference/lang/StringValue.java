@@ -69,6 +69,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             return super.IF_ACMPNE(o2);
         }
     }
+
     /**
      * Compares if two references are identical
      *
@@ -91,10 +92,10 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     public String MAKE_SYMBOLIC(String prefixOrIdx) {
-        if (prefixOrIdx.matches("-?\\d+")){
+        if (prefixOrIdx.matches("-?\\d+")) {
             // We assume a constructed idx was passed as it is a number
             initSymbolic(symbolicPrefix, prefixOrIdx);
-        } else if (prefixOrIdx.matches(".*-?\\d+")){
+        } else if (prefixOrIdx.matches(".*-?\\d+")) {
             // Its a list which already has prefix and idx
             initSymbolicWithoutIdx(prefixOrIdx);
         } else {
@@ -110,6 +111,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         formula = smgr.makeVariable(name);
         return name;
     }
+
     /**
      * Turns this IntValue into a symbolic variable
      *
@@ -146,7 +148,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     implemented or void should be returned
      */
     @Override
-    public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+    public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args)
+            throws NotImplementedException, ValueConversionException {
         return switch (name) {
             case "<init>" -> invokeInit(args, desc);
             case "charAt" -> invokeCharAt(args, desc);
@@ -215,7 +218,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeInit(Value<?, ?>[] args, Type[] desc) {
-        if(args.length == 1 && args[0] instanceof StringValue s) {
+        if (args.length == 1 && args[0] instanceof StringValue s) {
             this.concrete = s.concrete;
             this.formula = s.formula;
         }
@@ -236,7 +239,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeCharAt(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+    private Value<?, ?> invokeCharAt(Value<?, ?>[] args, Type[] desc)
+            throws NotImplementedException, ValueConversionException {
         if (args.length == 1) {
             IntValue index = args[0].asIntValue();
             char result = concrete.charAt(index.concrete);
@@ -502,8 +506,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             BooleanFormula constraints = uf.createEqualsIgnoreCaseConstraints(
                     this.formula, rhs.formula,
                     this.concrete, rhs.concrete,
-                    this.isSymbolic(), rhs.isSymbolic()
-            );
+                    this.isSymbolic(), rhs.isSymbolic());
             ThreadHandler.getSymbolicTraceHandler(currentThread().getId()).addConstraint(constraints);
 
             // also carry the concrete result for concolic steering
@@ -515,7 +518,6 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             return PlaceHolder.instance;
         }
     }
-
 
     /**
      * Invocation handling for the String instance method <a
@@ -566,8 +568,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
                 CharArrayValue dst = args[2].asObjectValue().asArrayValue().asCharArrayValue();
                 IntValue dstBegin = args[3].asIntValue();
                 for (int idx = srcBegin.concrete; idx < srcEnd.concrete; idx++) {
-                    Value<?, ?>[] charAtArgs = new Value[] {new IntValue(context, idx)};
-                    Type[] charAtDesc = new Type[] {Type.INT_TYPE};
+                    Value<?, ?>[] charAtArgs = new Value[] { new IntValue(context, idx) };
+                    Type[] charAtDesc = new Type[] { Type.INT_TYPE };
                     dst.storeElement(
                             new IntValue(context, dstBegin.concrete + idx),
                             (CharValue) invokeCharAt(charAtArgs, charAtDesc));
@@ -624,7 +626,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeIndexOf(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+    private Value<?, ?> invokeIndexOf(Value<?, ?>[] args, Type[] desc)
+            throws NotImplementedException, ValueConversionException {
         if (args.length == 1) {
             return switch (desc[0].getDescriptor()) {
                 case "I" -> invokeIndexOf(args[0].asIntValue());
@@ -823,7 +826,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeReplace(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+    private Value<?, ?> invokeReplace(Value<?, ?>[] args, Type[] desc)
+            throws NotImplementedException, ValueConversionException {
         if (args.length == 2) {
             return switch (desc[0].getDescriptor()) {
                 case "C" -> invokeReplace(args[0].asCharValue(), args[1].asCharValue());
@@ -836,17 +840,20 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     private Value<?, ?> invokeReplace(ObjectValue<?, ?> target, ObjectValue<?, ?> replacement) {
-        if (target instanceof StringValue s1 && replacement instanceof StringValue s2) {
+        if (target instanceof StringValue oldString && replacement instanceof StringValue newString) {
             // ToDo  (Nils): This is the correct implementation. However replaceAll is currently not
             // supported by Z3
             /*
-            this.formula = smgr.replaceAll(this.formula, oldString.formula, newString.formula);
+            formula = smgr.replaceAll(this.formula, oldString.formula, newString.formula);
              */
-            this.concrete = this.concrete.replace(s1.concrete, s2.concrete);
+
+            var newConcrete = this.concrete.replace(oldString.concrete, newString.concrete);
+            var newFormula = this.formula;
             for (int i = 0; i < REPLACE_COUNT; i++) {
-                this.formula = smgr.replace(this.formula, s1.formula, s2.formula);
+                newFormula = smgr.replace(newFormula, oldString.formula, newString.formula);
             }
-            return this;
+
+            return new StringValue(context, newConcrete, newFormula, ObjectValue.ADDRESS_UNKNOWN);
         } else {
             return PlaceHolder.instance;
         }
@@ -858,16 +865,17 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         // ToDo  (Nils): This is the correct implementation. However replaceAll is currently not
         // supported by Z3
         // See: https://git.its.uni-luebeck.de/research-projects/pet-hmr/knife-fuzzer/-/issues/54
-
         /*
-        this.formula = smgr.replaceAll(this.formula, oldString.formula, newString.formula);
+        formula = smgr.replaceAll(this.formula, oldString.formula, newString.formula);
          */
-        this.concrete = this.concrete.replace(oldString.concrete, newString.concrete);
+
+        var newConcrete = this.concrete.replace(oldString.concrete, newString.concrete);
+        var newFormula = this.formula;
         for (int i = 0; i < REPLACE_COUNT; i++) {
-            this.formula = smgr.replace(this.formula, oldString.formula, newString.formula);
+            newFormula = smgr.replace(newFormula, oldString.formula, newString.formula);
         }
-        // ToDo: A new string is created as we need a new address, should the entire object be recreated above?
-        return new StringValue(context, this.concrete, this.formula, ObjectValue.ADDRESS_UNKNOWN);
+
+        return new StringValue(context, newConcrete, newFormula, ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -941,7 +949,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeStartsWith(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+    private Value<?, ?> invokeStartsWith(Value<?, ?>[] args, Type[] desc)
+            throws NotImplementedException, ValueConversionException {
         if (args.length == 1) {
             return invokeStartsWith(args[0].asStringValue());
         } else if (args.length == 2) {
@@ -1053,7 +1062,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeSubstring(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+    private Value<?, ?> invokeSubstring(Value<?, ?>[] args, Type[] desc)
+            throws NotImplementedException, ValueConversionException {
         if (args.length == 1) {
             return invokeSubstring(args[0].asIntValue());
         } else if (args.length == 2) {
@@ -1091,14 +1101,14 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeToCharArray(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+    private Value<?, ?> invokeToCharArray(Value<?, ?>[] args, Type[] desc)
+            throws NotImplementedException, ValueConversionException {
 
         if (!concrete.isEmpty()) {
-            CharArrayValue dst =
-                    new CharArrayValue(context, new IntValue(context, concrete.length()), -1);
+            CharArrayValue dst = new CharArrayValue(context, new IntValue(context, concrete.length()), -1);
             for (int idx = 0; idx < concrete.length(); idx++) {
-                Value<?, ?>[] charAtArgs = new Value[] {new IntValue(context, idx)};
-                Type[] charAtDesc = new Type[] {Type.INT_TYPE};
+                Value<?, ?>[] charAtArgs = new Value[] { new IntValue(context, idx) };
+                Type[] charAtDesc = new Type[] { Type.INT_TYPE };
                 dst.storeElement(
                         new IntValue(context, idx),
                         (CharValue) invokeCharAt(charAtArgs, charAtDesc));
@@ -1232,7 +1242,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     @Override
-    public String getSymPrefix(){
+    public String getSymPrefix() {
         return symbolicPrefix;
     }
 
@@ -1242,11 +1252,10 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         String concreteString = null != concrete ? concrete : "";
 
         if (formulaString.length() > Config.instance().getLoggingFormulaLength()) {
-            formulaString =
-                    formulaString.substring(0, Config.instance().getLoggingFormulaLength()) + "...";
+            formulaString = formulaString.substring(0, Config.instance().getLoggingFormulaLength()) + "...";
         }
 
-        return "StringValue[" + this.internalID +"]; @"
+        return "StringValue[" + this.internalID + "]; @"
                 + Integer.toHexString(address)
                 + " ("
                 + concreteString
