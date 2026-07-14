@@ -6,8 +6,9 @@ on:
   workflow_dispatch:
 
 env:
-  SVCOMP_REFERENCE_URL: https://zenodo.org/api/records/17748741/files/swat-verify.zip/content
-  SVCOMP_REFERENCE_MD5: 8c776d19ac33ecf5c1c7441d16cc18a6
+  SVCOMP_VENV_DIR_NAME: .venv_ubuntu_24_04_1__x86_64
+  WITNESS_CREATOR_VERSION: v0.1.1
+  WITNESS_CREATOR_SHA256: 8fc8810237c99bf7d709bdb8692142695e407b5681e818fcfe8b45f9c598d814
 
 jobs:
   build:
@@ -27,31 +28,51 @@ jobs:
       run: ./gradlew copyNativeLibs
     - name: Build
       run: ./gradlew --no-daemon build -x test
-    - name: Build WitnessCreator JAR
-      run: ./gradlew --no-daemon :targets:sv-comp:WitnessCreator:shadowJar
+    - name: Collect JavaSMT JAR
+      run: |
+        java_smt_dir="${HOME}/.gradle/caches/modules-2/files-2.1/org.sosy-lab/java-smt"
+        if [[ ! -d "$java_smt_dir" ]]; then
+          echo "JavaSMT Gradle cache directory not found: $java_smt_dir" >&2
+          exit 1
+        fi
+
+        java_smt_jar="$(find "$java_smt_dir" -type f -name 'java-smt-*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | sort | tail -n 1)"
+        if [[ -z "$java_smt_jar" ]]; then
+          echo "JavaSMT JAR not found in Gradle cache: $java_smt_dir" >&2
+          exit 1
+        fi
+
+        mkdir -p build/svcomp-runtime
+        cp "$java_smt_jar" build/svcomp-runtime/java-smt-latest.jar
     - name: Upload JARs
-      if: github.event_name != 'pull_request'
       uses: actions/upload-artifact@v4
       with:
         name: release-jars-${{ github.sha }}
         path: |
           symbolic-executor/lib/symbolic-executor.jar
-          targets/sv-comp/WitnessCreator/build/libs/WitnessCreator.jar
+          build/svcomp-runtime/java-smt-latest.jar
         if-no-files-found: error
         retention-days: 1
 
   package:
     needs: build
     if: >-
+      github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && (
         github.ref == 'refs/heads/main' ||
         github.ref == 'refs/heads/dev' ||
         startsWith(github.ref, 'refs/tags/')
       ))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      channel: ${{ steps.meta.outputs.channel }}
+      zip-name: ${{ steps.meta.outputs.zip-name }}
+      rolling: ${{ steps.meta.outputs.rolling }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      artifact-name: ${{ steps.meta.outputs.artifact-name }}
     steps:
     - uses: actions/checkout@v5
     - name: Download JARs
@@ -59,6 +80,28 @@ jobs:
       with:
         name: release-jars-${{ github.sha }}
         path: ${{ runner.temp }}/release-jars
+    - name: Install JavaSMT packaging artifact
+      run: |
+        mkdir -p libs/java-library-path
+        cp "${RUNNER_TEMP}/release-jars/build/svcomp-runtime/java-smt-latest.jar" \
+          libs/java-library-path/java-smt-latest.jar
+    - name: Download WitnessCreator runtime
+      run: |
+        version="${WITNESS_CREATOR_VERSION}"
+        zip_name="witness-creator-${version#v}.zip"
+        zip_path="${RUNNER_TEMP}/${zip_name}"
+        runtime_dir="${RUNNER_TEMP}/witness-creator-runtime"
+
+        curl --fail --location --retry 3 \
+          --output "${zip_path}" \
+          "https://github.com/SWAT-project/WitnessCreator/releases/download/${version}/${zip_name}"
+        echo "${WITNESS_CREATOR_SHA256}  ${zip_path}" | sha256sum --check -
+
+        mkdir -p "${runtime_dir}"
+        unzip -q "${zip_path}" -d "${runtime_dir}"
+        test -f "${runtime_dir}/WitnessCreator/build/libs/WitnessCreator.jar"
+        test -f "${runtime_dir}/WitnessCreator/witnesses/default_violation.st"
+        test -f "${runtime_dir}/WitnessCreator/witnesses/witness.st"
     - name: Determine release channel
       id: meta
       run: |
@@ -98,20 +141,27 @@ jobs:
           echo "channel=${channel}"
           echo "version=${version}"
           echo "zip-name=${zip_name}"
+          echo "artifact-name=swat-svcomp-${version}"
           echo "release=${release}"
           echo "rolling=${rolling}"
           echo "prerelease=${prerelease}"
         } >> "${GITHUB_OUTPUT}"
-    - name: Download SV-COMP reference runtime
+    - name: Build SV-COMP Python runtime
+      env:
+        VENV_DIR: ${{ runner.temp }}/svcomp-runtime/${{ env.SVCOMP_VENV_DIR_NAME }}
       run: |
-        curl --fail --location --retry 3 --output "${RUNNER_TEMP}/swat-verify.zip" "${SVCOMP_REFERENCE_URL}"
-        echo "${SVCOMP_REFERENCE_MD5}  ${RUNNER_TEMP}/swat-verify.zip" | md5sum --check -
-        unzip -q "${RUNNER_TEMP}/swat-verify.zip" -d "${RUNNER_TEMP}/swat-reference"
+        mkdir -p "$(dirname "${VENV_DIR}")"
+        /usr/bin/python3 -m venv --copies "${VENV_DIR}"
+        "${VENV_DIR}/bin/python3" -m pip install --no-deps -r scripts/svcomp-package/requirements.txt
+        "${VENV_DIR}/bin/python3" -m pip check
+        "${VENV_DIR}/bin/python3" -m pip freeze --all > "${VENV_DIR}/requirements.freeze.txt"
+        "${VENV_DIR}/bin/python3" -c "import fastapi, pydantic, z3"
     - name: Pack SV-COMP ZIP
       env:
         SWAT_SVCOMP_VERSION: ${{ steps.meta.outputs.version }}
         SWAT_SVCOMP_ARTIFACT_DIR: ${{ runner.temp }}/release-jars
-        SWAT_SVCOMP_REFERENCE_DIR: ${{ runner.temp }}/swat-reference/swat-verify
+        SWAT_SVCOMP_RUNTIME_DIR: ${{ runner.temp }}/svcomp-runtime
+        SWAT_SVCOMP_WITNESS_CREATOR_DIR: ${{ runner.temp }}/witness-creator-runtime/WitnessCreator
         SWAT_SVCOMP_COMMIT: ${{ github.sha }}
         SWAT_SVCOMP_REF: ${{ github.ref_name }}
         SWAT_SVCOMP_CHANNEL: ${{ steps.meta.outputs.channel }}
@@ -119,19 +169,37 @@ jobs:
     - name: Upload SV-COMP ZIP artifact
       uses: actions/upload-artifact@v4
       with:
-        name: swat-svcomp-${{ steps.meta.outputs.version }}
+        name: ${{ steps.meta.outputs.artifact-name }}
         path: build/distributions/${{ steps.meta.outputs.zip-name }}
         if-no-files-found: error
+
+  publish-release:
+    needs: package
+    if: >-
+      github.event_name == 'push' && (
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/dev' ||
+        startsWith(github.ref, 'refs/tags/')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download SV-COMP ZIP artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ needs.package.outputs.artifact-name }}
+        path: ${{ runner.temp }}/svcomp-package
     - name: Publish release
-      if: steps.meta.outputs.release == 'true'
       env:
         GH_TOKEN: ${{ github.token }}
-        CHANNEL: ${{ steps.meta.outputs.channel }}
-        ZIP_NAME: ${{ steps.meta.outputs.zip-name }}
-        ROLLING: ${{ steps.meta.outputs.rolling }}
-        PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        GH_REPO: ${{ github.repository }}
+        CHANNEL: ${{ needs.package.outputs.channel }}
+        ZIP_NAME: ${{ needs.package.outputs.zip-name }}
+        ROLLING: ${{ needs.package.outputs.rolling }}
+        PRERELEASE: ${{ needs.package.outputs.prerelease }}
       run: |
-        zip_path="build/distributions/${ZIP_NAME}"
+        zip_path="${RUNNER_TEMP}/svcomp-package/${ZIP_NAME}"
         notes="$(printf 'Automated SWAT SV-COMP package.\n\nRef: %s\nCommit: %s\nRun: %s/%s/actions/runs/%s\n' \
           "$GITHUB_REF_NAME" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
 

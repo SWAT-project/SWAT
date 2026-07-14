@@ -9,15 +9,21 @@ set -euo pipefail
 # else. The artifact root must contain:
 #
 # - symbolic-executor/lib/symbolic-executor.jar
-# - targets/sv-comp/WitnessCreator/build/libs/WitnessCreator.jar
 #
-# Set SWAT_SVCOMP_REFERENCE_DIR to the extracted Zenodo reference package root
-# from https://zenodo.org/records/17748741. The reference root is used for the
-# pinned SV-COMP Python environment and JavaSMT compatibility JAR:
+# Set SWAT_SVCOMP_WITNESS_CREATOR_DIR to the extracted WitnessCreator runtime
+# root from https://github.com/SWAT-project/WitnessCreator. The root must
+# contain:
+#
+# - build/libs/WitnessCreator.jar
+# - witnesses/default_violation.st
+# - witnesses/witness.st
+#
+# Set SWAT_SVCOMP_RUNTIME_DIR to a runtime package root that contains the
+# pinned SV-COMP Python environment:
 #
 # - .venv_ubuntu_24_04_1__x86_64/
 #
-# Z3 is taken from the vendored Linux distribution ZIP in this repository.
+# Z3 and JavaSMT are taken from the vendored files in this repository.
 #
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -32,34 +38,24 @@ PACKAGE_DIR="${WORK_DIR}/${PACKAGE_NAME}"
 DIST_DIR="${ROOT_DIR}/build/distributions"
 SUPPORT_DIR="${ROOT_DIR}/scripts/svcomp-package"
 ARTIFACT_DIR="$(cd "${SWAT_SVCOMP_ARTIFACT_DIR:-$ROOT_DIR}" && pwd)"
-REFERENCE_DIR="${SWAT_SVCOMP_REFERENCE_DIR:-}"
+RUNTIME_DIR="${SWAT_SVCOMP_RUNTIME_DIR:-${SWAT_SVCOMP_REFERENCE_DIR:-}}"
+WITNESS_CREATOR_DIR="${SWAT_SVCOMP_WITNESS_CREATOR_DIR:-}"
 VENV_DIR_NAME="${SWAT_SVCOMP_VENV_DIR_NAME:-.venv_ubuntu_24_04_1__x86_64}"
 LINUX_Z3_DIST="z3-4.15.4-x64-glibc-2.39"
 LINUX_Z3_ZIP="${ROOT_DIR}/libs/${LINUX_Z3_DIST}.zip"
+JAVA_SMT_JAR="${ROOT_DIR}/libs/java-library-path/java-smt-latest.jar"
 
-if [[ -n "$REFERENCE_DIR" ]]; then
-  REFERENCE_DIR="$(cd "$REFERENCE_DIR" && pwd)"
+if [[ -n "$RUNTIME_DIR" ]]; then
+  RUNTIME_DIR="$(cd "$RUNTIME_DIR" && pwd)"
+fi
+
+if [[ -n "$WITNESS_CREATOR_DIR" ]]; then
+  WITNESS_CREATOR_DIR="$(cd "$WITNESS_CREATOR_DIR" && pwd)"
 fi
 
 fail() {
   echo "error: $*" >&2
   exit 1
-}
-
-artifact_file() {
-  local rel="$1"
-  local path="${ARTIFACT_DIR}/${rel}"
-  [[ -f "$path" ]] || fail "missing built artifact file: ${path}"
-  printf '%s\n' "$path"
-}
-
-reference_file() {
-  local rel="$1"
-  [[ -n "$REFERENCE_DIR" ]] || fail "SWAT_SVCOMP_REFERENCE_DIR is required for ${rel}"
-
-  local path="${REFERENCE_DIR}/${rel}"
-  [[ -f "$path" ]] || fail "missing Zenodo reference file: ${path}"
-  printf '%s\n' "$path"
 }
 
 first_artifact_file() {
@@ -137,6 +133,7 @@ install -m 0755 "$SUPPORT_DIR/run-swat.sh" "$PACKAGE_DIR/run-swat.sh"
 install -m 0755 "$SUPPORT_DIR/compile-target.sh" "$PACKAGE_DIR/compile-target.sh"
 install -m 0755 "$SUPPORT_DIR/smoketest.sh" "$PACKAGE_DIR/smoketest.sh"
 install -m 0755 "$SUPPORT_DIR/run_swat.py" "$PACKAGE_DIR/run_swat.py"
+install -m 0644 "$SUPPORT_DIR/requirements.txt" "$PACKAGE_DIR/requirements.txt"
 install -m 0644 targets/sv-comp/sv-comp.cfg "$PACKAGE_DIR/sv-comp.cfg"
 
 EXECUTOR_JAR="$(first_artifact_file \
@@ -146,24 +143,24 @@ copy_artifact_file "$EXECUTOR_JAR" "$PACKAGE_DIR/symbolic-executor/lib/symbolic-
 
 copy_tree_files symbolic-explorer "$PACKAGE_DIR/symbolic-explorer"
 
-WITNESS_CREATOR_JAR="$(artifact_file targets/sv-comp/WitnessCreator/build/libs/WitnessCreator.jar)"
-copy_artifact_file "$WITNESS_CREATOR_JAR" "$PACKAGE_DIR/WitnessCreator/build/libs/WitnessCreator.jar"
-mkdir -p "$PACKAGE_DIR/WitnessCreator/witnesses"
-install -m 0644 targets/sv-comp/WitnessCreator/witnesses/default_violation.st "$PACKAGE_DIR/WitnessCreator/witnesses/default_violation.st"
-install -m 0644 targets/sv-comp/WitnessCreator/witnesses/witness.st "$PACKAGE_DIR/WitnessCreator/witnesses/witness.st"
+[[ -n "$WITNESS_CREATOR_DIR" ]] || fail "SWAT_SVCOMP_WITNESS_CREATOR_DIR must point to the extracted WitnessCreator runtime root"
+[[ -f "$WITNESS_CREATOR_DIR/build/libs/WitnessCreator.jar" ]] || fail "missing WitnessCreator JAR: ${WITNESS_CREATOR_DIR}/build/libs/WitnessCreator.jar"
+[[ -f "$WITNESS_CREATOR_DIR/witnesses/default_violation.st" ]] || fail "missing WitnessCreator template: ${WITNESS_CREATOR_DIR}/witnesses/default_violation.st"
+[[ -f "$WITNESS_CREATOR_DIR/witnesses/witness.st" ]] || fail "missing WitnessCreator template: ${WITNESS_CREATOR_DIR}/witnesses/witness.st"
+copy_artifact_tree "$WITNESS_CREATOR_DIR" "$PACKAGE_DIR/WitnessCreator"
 
 install_z3_runtime_file z3 0755
 install_z3_runtime_file libz3.so
 install_z3_runtime_file libz3java.so
 install_z3_runtime_file com.microsoft.z3.jar
 install_z3_runtime_file libz3.a
-JAVA_SMT_JAR="$(reference_file libs/java-library-path/java-smt-latest.jar)"
+[[ -f "$JAVA_SMT_JAR" ]] || fail "missing JavaSMT JAR: ${JAVA_SMT_JAR}"
 copy_artifact_file "$JAVA_SMT_JAR" "$PACKAGE_DIR/libs/java-library-path/java-smt-latest.jar"
 
 copy_tree_files "$SUPPORT_DIR/smoketest" "$PACKAGE_DIR/smoketest"
 
-[[ -n "$REFERENCE_DIR" ]] || fail "SWAT_SVCOMP_REFERENCE_DIR must point to the extracted Zenodo package root for ${VENV_DIR_NAME}"
-copy_artifact_tree "${REFERENCE_DIR}/${VENV_DIR_NAME}" "${PACKAGE_DIR}/${VENV_DIR_NAME}"
+[[ -n "$RUNTIME_DIR" ]] || fail "SWAT_SVCOMP_RUNTIME_DIR must point to a runtime package root containing ${VENV_DIR_NAME}"
+copy_artifact_tree "${RUNTIME_DIR}/${VENV_DIR_NAME}" "${PACKAGE_DIR}/${VENV_DIR_NAME}"
 
 mkdir -p "$DIST_DIR"
 ZIP_PATH="${DIST_DIR}/${PACKAGE_NAME}.zip"

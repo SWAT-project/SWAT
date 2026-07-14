@@ -6,7 +6,6 @@ rootProject.name = "SWAT"
 
 include 'symbolic-executor'
 include 'annotations'
-include 'targets:sv-comp:WitnessCreator'
 
 include 'targets:instruction-tests:IFXX'
 include 'targets:instruction-tests:I2X'
