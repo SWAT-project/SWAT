@@ -93,6 +93,18 @@ def run_command_with_timeout(cmd: list[str], timeout: int | None = None) -> tupl
 
 
 
+def derive_target_id(args: list[str]) -> str:
+    target_path = os.path.normpath(args[-1]).replace("\\", "/")
+    marker = "sv-benchmarks/java/"
+    if marker in target_path:
+        return target_path.split(marker, 1)[1]
+
+    parts = [part for part in target_path.split("/") if part and part != "."]
+    if len(parts) >= 2:
+        return "/".join(parts[-2:])
+    return parts[-1] if parts else ""
+
+
 def generate_command(args, property_file: str):
     config_file = 'sv-comp.cfg'
 
@@ -111,6 +123,7 @@ def generate_command(args, property_file: str):
                      "--logdir", logging_dir,
                      "--mode", "sv-comp",
                      '--port', "8000",
+                     "--target-id", derive_target_id(args),
                      "--classpath"]
     print("CP args: " + str(args))
     for arg in args[1:]:

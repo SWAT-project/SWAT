@@ -118,6 +118,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-m", "--mode", choices=['passive', 'annotation', 'args', 'sv-comp', 'http', 'simple'], default='annotation',
                              help="Choose the desired mode")
     parser.add_argument("-t", "--target", help="Full path to the target JAR file")
+    parser.add_argument("--target-id", help="Stable SV-COMP target identifier for reporting policy decisions")
     parser.add_argument("-prp", "--property", help="Which property to verify")
     parser.add_argument("-s", "--symbolicvars", nargs='+', help="The types and amount of the symbolic "
                                                                      "variables")
