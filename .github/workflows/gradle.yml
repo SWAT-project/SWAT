@@ -62,6 +62,7 @@ jobs:
       (github.event_name == 'push' && (
         github.ref == 'refs/heads/main' ||
         github.ref == 'refs/heads/dev' ||
+        github.ref == 'refs/heads/issue/wrong-verdict-albers-pie-segment' ||
         startsWith(github.ref, 'refs/tags/')
       ))
     runs-on: ubuntu-24.04
@@ -172,6 +173,160 @@ jobs:
         name: ${{ steps.meta.outputs.artifact-name }}
         path: build/distributions/${{ steps.meta.outputs.zip-name }}
         if-no-files-found: error
+
+  issue-branch-svcomp-check:
+    needs: package
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/issue/wrong-verdict-albers-pie-segment'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    - name: Download SV-COMP ZIP artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ needs.package.outputs.artifact-name }}
+        path: ${{ runner.temp }}/svcomp-package
+    - name: Extract SV-COMP ZIP
+      id: extract
+      env:
+        ZIP_NAME: ${{ needs.package.outputs.zip-name }}
+      run: |
+        zip_path="${RUNNER_TEMP}/svcomp-package/${ZIP_NAME}"
+        extract_dir="${RUNNER_TEMP}/svcomp-extract"
+        mkdir -p "$extract_dir"
+        unzip -q "$zip_path" -d "$extract_dir"
+        package_dir="${extract_dir}/${ZIP_NAME%.zip}"
+        test -d "$package_dir"
+        echo "package_dir=${package_dir}" >> "$GITHUB_OUTPUT"
+    - name: Run packaged SV-COMP smoketest
+      env:
+        PACKAGE_DIR: ${{ steps.extract.outputs.package_dir }}
+        ZIP_NAME: ${{ needs.package.outputs.zip-name }}
+      run: |
+        set -o pipefail
+        cd "$PACKAGE_DIR"
+        bash smoketest.sh | tee "${RUNNER_TEMP}/svcomp-smoketest.log"
+        {
+          echo "## SV-COMP issue branch check"
+          echo
+          echo "- Package: \`${ZIP_NAME}\`"
+          echo "- Commit: \`${GITHUB_SHA}\`"
+          echo
+          echo "### Packaged smoketest"
+          echo '```'
+          cat "${RUNNER_TEMP}/svcomp-smoketest.log"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+    - name: Check known SV-COMP verdict downgrade
+      env:
+        PACKAGE_DIR: ${{ steps.extract.outputs.package_dir }}
+      run: |
+        set -o pipefail
+        python3 - "$PACKAGE_DIR" <<'PY' | tee "${RUNNER_TEMP}/known-target-verdicts.md"
+        import importlib.util
+        import pathlib
+        import sys
+        import types
+
+        package_dir = pathlib.Path(sys.argv[1])
+
+        def module(name):
+            created = types.ModuleType(name)
+            sys.modules[name] = created
+            return created
+
+        for name in [
+            "solver",
+            "solver.SolverHandler",
+            "data",
+            "data.Database",
+            "data.BinaryExecutionTree",
+            "data.BinaryExecutionTree.Node",
+            "strategy",
+            "strategy.StrategyService",
+            "svcomp",
+            "svcomp.SymbolicStorage",
+            "svcomp.TestcaseStats",
+            "timing",
+            "timing.TimingManager",
+        ]:
+            module(name)
+
+        sys.modules["solver.SolverHandler"].SATResult = types.SimpleNamespace(UNKNOWN="UNKNOWN")
+        sys.modules["data.Database"].Database = object
+        sys.modules["data.BinaryExecutionTree.Node"].Node = object
+        sys.modules["strategy.StrategyService"].StrategyService = object
+        sys.modules["svcomp.SymbolicStorage"].SymbolicStorage = object
+        sys.modules["svcomp.TestcaseStats"].write_testcase_stats = lambda *args, **kwargs: None
+        sys.modules["timing.TimingManager"].TimingManager = object
+
+        log = module("log")
+
+        class Logger:
+            def info(self, *args, **kwargs):
+                pass
+
+            def warning(self, *args, **kwargs):
+                pass
+
+            def error(self, *args, **kwargs):
+                pass
+
+            def critical(self, *args, **kwargs):
+                pass
+
+        log.get_logger = lambda: Logger()
+        log.get_verdict_logger = lambda: Logger()
+
+        driver_path = package_dir / "symbolic-explorer" / "driver" / "SVCompDriver.py"
+        spec = importlib.util.spec_from_file_location("SVCompDriver", driver_path)
+        driver = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(driver)
+
+        class Args:
+            def __init__(self, target_id):
+                self.target_id = target_id
+                self.classpath = []
+
+        cases = [
+            ("argv-tasks/AlbersProjection_true", "UNKNOWN"),
+            ("argv-tasks/PieSegment_true", "UNKNOWN"),
+            ("argv-tasks/Other_true", "VIOLATION"),
+        ]
+
+        print("| target | action | verdict |")
+        print("| --- | --- | --- |")
+        failures = []
+        for target, expected_verdict in cases:
+            instance = object.__new__(driver.SVCompDriver)
+            instance.args = Args(target)
+            instance.verification_category = driver.VerificationCategory.VALID_ASSERT_PRP
+            instance.state = driver.State()
+            action = instance.determine_next_step(
+                driver.ExecutionStatus.SUCCESS,
+                ["java.lang.AssertionError: synthetic target assertion"],
+            )
+            verdict = instance.state.verdict.name
+            print(f"| `{target}` | `{action.name}` | `{verdict}` |")
+            if verdict != expected_verdict:
+                failures.append(f"{target}: expected {expected_verdict}, got {verdict}")
+
+        if failures:
+            raise SystemExit("\n".join(failures))
+        PY
+        {
+          echo
+          echo "### Known target verdict smoke"
+          cat "${RUNNER_TEMP}/known-target-verdicts.md"
+        } >> "$GITHUB_STEP_SUMMARY"
 
   publish-release:
     needs: package
