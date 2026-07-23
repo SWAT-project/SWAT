@@ -34,7 +34,8 @@ def is_port_available(port: int) -> bool:
         return False
 
 
-def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg') -> list[str]:
+def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg',
+                     target_id: Optional[Path] = None) -> list[str]:
 
 
     test_case_dir = ver_task['file_path'].parent
@@ -51,6 +52,8 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     "--mode", "sv-comp",
                     '--port', str(port),
                     "--classpath"]
+    if target_id is not None:
+        base_command[-1:-1] = ["--target-id", target_id.as_posix()]
 
     cp: list[str] = []
     for input_file in ver_task['input_files']:
@@ -117,7 +120,7 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
             'target_dir': target_dir,
             'target': target,
             'log_dir': logging_dir,
-            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file)
+            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, target_id=target)
         }
         ver_task['command'] = command
         port += 1

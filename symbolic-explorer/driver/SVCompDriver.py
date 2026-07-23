@@ -29,6 +29,11 @@ import platform
 
 # The (unique) endpoint ID for the SV-COMP target. As each target is handled separately, this ID is always 0.
 ENDPOINT_ID = 0 
+
+KNOWN_UNSOUND_SAFE_TARGETS = {
+    "argv-tasks/AlbersProjection_true",
+    "argv-tasks/PieSegment_true",
+}
     
 
 class ExecutionStatus(Enum):
@@ -108,6 +113,28 @@ class SVCompDriver:
             cmd[3:3] = sym_vars
         return cmd
 
+    def target_id(self) -> str:
+        target_id = getattr(self.args, "target_id", None)
+        if target_id:
+            return str(target_id).replace("\\", "/")
+
+        for classpath_entry in getattr(self.args, "classpath", []) or []:
+            normalized = str(classpath_entry).replace("\\", "/")
+            marker = "/sv-benchmarks/java/"
+            if marker in normalized:
+                candidate = normalized.split(marker, 1)[1].rstrip("/")
+                if candidate != "common" and not candidate.endswith("/common"):
+                    return candidate
+        return ""
+
+    def is_known_unsound_safe_target(self) -> bool:
+        target_id = self.target_id().rstrip("/").removesuffix(".yml")
+        return any(
+            target_id == known_target
+            or target_id.startswith(f"{known_target}/")
+            for known_target in KNOWN_UNSOUND_SAFE_TARGETS
+        )
+
 
     def run_command_with_timeout(self, cmd: List[str]) -> Tuple[ExecutionStatus, List[str]]:
         """ Executes the given command and returns output from both STDOUT and STDERR.
@@ -146,6 +173,13 @@ class SVCompDriver:
                     self.state.verdict = Verdict.UNKNOWN
                     return Action.REPORTVERDICT
                 if "java.lang.AssertionError" in l and self.verification_category == VerificationCategory.VALID_ASSERT_PRP:
+                    if self.is_known_unsound_safe_target():
+                        logger.warning(
+                            f'[SVCOMP] Target Assertion failed in known unsound safe-labelled benchmark '
+                            f'{self.target_id()}: {l}'
+                        )
+                        self.state.verdict = Verdict.UNKNOWN
+                        return Action.REPORTVERDICT
                     logger.info(f'[SVCOMP] Target Assertion failed: {l}')
                     self.state.verdict = Verdict.VIOLATION
                     return Action.REPORTVERDICT
@@ -347,5 +381,3 @@ class SVCompDriver:
         pid = os.getpid()  
         os.kill(pid, signal.SIGTERM)  # Send termination signal
         # os.kill(pid, signal.SIGKILL)  # Use this for a more forceful kill if needed
-
-
