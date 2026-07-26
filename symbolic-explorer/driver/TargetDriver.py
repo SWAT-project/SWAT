@@ -54,7 +54,7 @@ class TargetDriver:
         self.args = args
         self.branch_log = None  # Log file for branches
 
-    def build_command(self, mem: int = 32) -> [str]:
+    def build_command(self, mem: int = 32) -> list[str]:
         """Builds the Java command list with given parameters."""
         cmd = [
             'java',
@@ -66,12 +66,6 @@ class TargetDriver:
             '-Dagent.logging.level=DEBUG',
             '-ea',  # Enable assertions
         ]
-
-        # Add symbolic value assignments (if we have them)
-        for var in self.sym_storage.vars.values():
-            val = var.newValue if var.newValue is not None else var.value
-            # Use swat.assignment prefix (read by Intrinsics.retrieveAssignments())
-            cmd.insert(1, f'-Dswat.assignment.{var.dType.value}_{var.idx}={val}')
 
         # Add target
         if self.args.target.endswith('.jar'):
@@ -86,7 +80,7 @@ class TargetDriver:
 
         return cmd
 
-    def add_values(self, cmd: [str]) -> [str]:
+    def add_values(self, cmd: list[str]) -> list[str]:
         cmd = cmd.copy()
         """Adds the symbolic values to the Java command."""
         for var in self.sym_storage.vars.values():
@@ -135,7 +129,7 @@ class TargetDriver:
         db = Database.instance()
         db.add_violation(endpoint_id=self.endpoint_id, sym_vars=list(self.sym_storage.vars.values()))
 
-    def determine_next_step(self, status: ExecutionStatus, stdout: [str]) -> Action:
+    def determine_next_step(self, status: ExecutionStatus, stdout: list[str]) -> Action:
         """Determines the next step based on the execution status."""
         match status:
             case ExecutionStatus.SUCCESS:
@@ -166,9 +160,8 @@ class TargetDriver:
 
     def retrieve_solution(self):
         possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id)
-        possible_branches = possible_branches[::-1]  # Reverse the order to prioritize deeper branches
+        # possible_branches = possible_branches[::-1]  # Reverse the order to prioritize deeper branches
         logger.info(f'[EXPLORER] Found {len(possible_branches)} possible branches')
-        symbolic_vars = None
         sat = None
         branch_found = False
         for branch in possible_branches:
@@ -184,8 +177,15 @@ class TargetDriver:
             print(f"Branch 0x{branch_id:016x} ({branch_id}) {sat}", flush=True, file=self.branch_log)
 
             if sat == SATResult.SAT:
-                symbolic_vars = branch.inputs
-                break
+                sol_viz = {key: val.get('plain_value', val.get('encoded_value'))
+                          for key, val in sol.items()}
+                logger.info(f'[EXPLORER] Solved branch {branch.id}')
+                logger.info(f'[EXPLORER] Solution: {sol_viz}')
+
+                # Register the solution in symbolic storage
+                self.sym_storage.register_vars(branch.inputs)
+                self.sym_storage.store_solution(sol)
+                return Action.SYMBOLICNEXT
 
         if not branch_found or sat == SATResult.UNSAT:
             # self.state.verdict = Verdict.SAFE
@@ -197,12 +197,6 @@ class TargetDriver:
             if self.state.verdict != Verdict.VIOLATION:
                 self.state.verdict = Verdict.UNKNOWN
             return Action.REPORTVERDICT
-
-        sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
-        logger.info(f'[EXPLORER] Found new solution: {sol_viz}')
-        self.sym_storage.register_vars([var.name.split('_')[0] for var in symbolic_vars])
-        self.sym_storage.store_solution(sol)
-        return Action.SYMBOLICNEXT
 
     def run(self):
         verdict = self.exec()
