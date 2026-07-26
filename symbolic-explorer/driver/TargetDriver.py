@@ -89,6 +89,12 @@ class TargetDriver:
             else:
                 val = var.newValue
                 var.value = var.newValue
+            if val is None:
+                # Neither a solver value nor a concrete fallback is known; skipping the
+                # assignment lets the executor keep the target's original value instead
+                # of crashing on parsing a literal 'None'.
+                logger.error(f'[EXPLORER] No value known for {var.dType.value}_{var.idx}, skipping assignment')
+                continue
             if self.args.mode == "args":
                 cmd.append(f'{val}')
             else:
@@ -183,7 +189,7 @@ class TargetDriver:
                 logger.info(f'[EXPLORER] Solution: {sol_viz}')
 
                 # Register the solution in symbolic storage
-                self.sym_storage.register_vars(branch.inputs)
+                self.sym_storage.register_inputs(branch.inputs)
                 self.sym_storage.store_solution(sol)
                 return Action.SYMBOLICNEXT
 
