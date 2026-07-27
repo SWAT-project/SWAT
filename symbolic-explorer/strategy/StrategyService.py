@@ -18,7 +18,7 @@ class StrategyService:
         db = Database.instance()
         tree = db.get_tree(endpoint_id)
         visited = set()
-        possible_branches = dfs(visited, tree, tree.root, db.get_solutions(), db.get_unsat_branches())
+        possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches())
         
         return possible_branches
         

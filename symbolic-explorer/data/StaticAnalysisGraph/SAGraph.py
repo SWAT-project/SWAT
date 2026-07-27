@@ -8,6 +8,28 @@ class SANode:
     onPathToAssert: bool = False
     prev: list[SANode] = field(default_factory=list, repr=False)
     next: list[SANode] = field(default_factory=list)
+    
+    def has_fallthrough_child(self):
+        return 0 < len(self.next)
+    
+    def has_branched_child(self):
+        return 1 < len(self.next)
+    
+    def get_fallthrough_child(self):
+        return self.next[0] #if 0 < len(self.next) else None
+    
+    def get_branched_child(self):
+        return self.next[1] #if 1 < len(self.next) else None
+    
+    def is_branch(self):
+        return len(self.next) > 1
+    
+    def walk_till_branch(self) -> SANode | None:
+        if self.is_branch():
+            return self
+        if self.has_fallthrough_child():
+            return self.get_fallthrough_child().walk_till_branch()
+        return None
 
 def mark_assertion_path(node: SANode):
     if node.onPathToAssert: # already marked, prevent infinite recursion

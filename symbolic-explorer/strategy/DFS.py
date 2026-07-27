@@ -1,19 +1,33 @@
-from typing import List, Set
-
 from data.BinaryExecutionTree.Node import Node
+from data.BinaryExecutionTree.Leaf import Leaf
+from data.StaticAnalysisGraph.SAGraph import SANode
 
-
-def dfs(visited: Set[Node], tree, node: Node, solved_branches: Set[int], unsat_branch_ids: Set[int]) -> List[Node]:
-    possible_nodes = list()
+def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None) -> list[Node]:
+    possible_nodes = []
+    
     if node is not None \
-            and node not in visited \
-            and isinstance(node, Node):
-        if (node.skipped is None or node.branched is None) \
-                and node.gid not in solved_branches \
-                and node.gid not in unsat_branch_ids \
-                and node.kind != "Special":
-            possible_nodes.append(node)
+      and node not in visited \
+      and isinstance(node, Node):
+
         visited.add(node)
-        possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids))
-        possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids))
+    
+        # Get information on interesting paths. If sa_node is None, all paths should be considered interesting
+        if sa_node:
+            sa_node = sa_node.walk_till_branch()
+        skip_is_interesting = (sa_node is None) or sa_node.get_fallthrough_child().onPathToAssert
+        branch_is_interesting = (sa_node is None) or sa_node.get_branched_child().onPathToAssert
+        
+        # Add the node itself, if eligible
+        if (node.skipped is None and skip_is_interesting) or (node.branched is None and branch_is_interesting):
+            if node.gid not in solved_branches \
+            and node.gid not in unsat_branch_ids \
+            and node.kind != "Special":
+                possible_nodes.append(node)
+        
+        # Only walk the tree further if the path is interesting (leads to an assert) or if we don't have information (sa_node is None)
+        if skip_is_interesting:
+            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_node))
+        if branch_is_interesting:
+            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node))
+    
     return possible_nodes
