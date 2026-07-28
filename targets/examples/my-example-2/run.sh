@@ -6,4 +6,6 @@
     --target Example \
     --classpath . \
     --agent ../../../symbolic-executor/lib/symbolic-executor.jar \
-    --z3dir ../../../libs/java-library-path
+    --z3dir ../../../libs/java-library-path \
+    --config swat.cfg \
+    "$@" # additional args are passed through

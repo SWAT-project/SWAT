@@ -2,7 +2,7 @@ from data.BinaryExecutionTree.Node import Node
 from data.BinaryExecutionTree.Leaf import Leaf
 from data.StaticAnalysisGraph.SAGraph import SANode
 
-def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None) -> list[Node]:
+def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None) -> list[Node]:
     possible_nodes = []
     
     if node is not None \

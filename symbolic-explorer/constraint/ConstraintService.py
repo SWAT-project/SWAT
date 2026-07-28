@@ -50,6 +50,7 @@ class ConstraintService:
         # logger.info(f'[CONSTRAINT SERVICE] Received trace: {[t.__str__() for t in trace]}')
         trace_parsed: List[Branch | Special] = Parser.parse_trace(trace, trace_id=trace_id)
         # logger.info(f'[CONSTRAINT SERVICE] Parsed trace: {[t.__str__() for t in trace_parsed]}')
+        logger.info(f'[CONSTRAINT SERVICE] Parsed trace branches: {[t.__str__() for t in trace_parsed if isinstance(t, Branch)]}')
         inputs_parsed: List[Input] = Parser.parse_inputs(inputs)
         # logger.info(f'[CONSTRAINT SERVICE] Parsed inputs: {[i.__str__() for i in inputs_parsed]}')
         ufs_parsed: List[UF] = Parser.parse_ufs(ufs)

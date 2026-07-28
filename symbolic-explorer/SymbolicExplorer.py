@@ -131,6 +131,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-i", "--ip_addr", help="IP address to Listen on", default="127.0.0.1")
     parser.add_argument("--optimize", action="store_true", help="Enable Z3 optimizer to minimize variable values (slower but may produce simpler solutions)", default=False)
     parser.add_argument("--log-smt-formulas", action="store_true", help="Log SMT formulas and models to disk for debugging", default=False)
+    parser.add_argument("--sa-file", help="Path to a file with static pre-analysis results for informing branch exploration (optional)")
 
     # HTTP-specific arguments
     parser.add_argument("--host", help="HTTP target host", default="localhost")  

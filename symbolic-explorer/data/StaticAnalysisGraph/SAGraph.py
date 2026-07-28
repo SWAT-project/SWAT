@@ -45,7 +45,7 @@ class SAGraph:
     def __init__(self):
         self.json_graph = {}
         self.nodes: dict[str, SANode] = {}
-        self.entry_node: SANode
+        self.entry_node: SANode | None = None
 
 
     def load_json_graph(self, path: str):

@@ -6,7 +6,7 @@ from enum import Enum
 
 from data.Database import Database
 from driver.SymbolicStorage import SymbolicStorage
-# import logging
+from data.StaticAnalysisGraph.SAGraph import SAGraph
 
 import log
 logger = log.get_logger()
@@ -53,6 +53,7 @@ class TargetDriver:
         self.endpoint_id = None
         self.args = args
         self.branch_log = None  # Log file for branches
+        self.sa_graph = SAGraph() # static analysis graph
 
     def build_command(self, mem: int = 32) -> list[str]:
         """Builds the Java command list with given parameters."""
@@ -165,7 +166,7 @@ class TargetDriver:
         raise Exception(f'Unknown execution status: {status}')
 
     def retrieve_solution(self):
-        possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id)
+        possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id, sa_node=self.sa_graph.entry_node)
         # possible_branches = possible_branches[::-1]  # Reverse the order to prioritize deeper branches
         logger.info(f'[EXPLORER] Found {len(possible_branches)} possible branches')
         sat = None
@@ -210,8 +211,8 @@ class TargetDriver:
         self.kill_current_process()
 
     def exec(self):
-
         """Runs the symbolic execution on the given testcase."""
+        
         logger.info(f'[EXPLORER] Beginning testcase analysis')
         # Register symbolic variables (in case of cmd line argument mode)
         if self.args.mode == "args":
@@ -219,6 +220,11 @@ class TargetDriver:
             self.sym_storage.init_values()
         # Build the command to execute target
         base_cmd = self.build_command()
+        
+        # Load static pre-analysis information if provided
+        if self.args.sa_file:
+            self.sa_graph.load_json_graph(self.args.sa_file)
+        
         # Main execution loop
         iteration = 1
         while iteration <= 150:
