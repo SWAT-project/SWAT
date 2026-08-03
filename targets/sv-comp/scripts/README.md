@@ -98,6 +98,10 @@ scripts/
 ./svcomp analyze compare runs/run_A/results/results_valid-assert.prp_*.json \
                          runs/run_B/results/results_valid-assert.prp_*.json
 
+# Compare two BenchExec XML files or run directories
+./svcomp analyze benchdiff results/old-run results/new-run
+./svcomp analyze benchdiff results/old-run results/new-run --format markdown
+
 # Show test case statistics
 ./svcomp analyze stats
 ```

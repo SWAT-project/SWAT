@@ -20,6 +20,13 @@ from .execution import (
 from .witness import generate_and_validate_witness
 from .analysis.context_loss import main as analyze_context_loss
 from .comparison import compare_results
+from .benchexec_comparison import (
+    collect_result_files,
+    load_benchexec_results,
+    compare_benchexec_results,
+    format_benchexec_diff,
+    diff_to_json,
+)
 from .utils import ci_print
 from .cfg_metrics import (
     check_cfg_extractor_available,
@@ -55,6 +62,11 @@ __all__ = [
     "analyze_context_loss",
     # Comparison
     "compare_results",
+    "collect_result_files",
+    "load_benchexec_results",
+    "compare_benchexec_results",
+    "format_benchexec_diff",
+    "diff_to_json",
     # Utils
     "ci_print",
     # CFG Metrics

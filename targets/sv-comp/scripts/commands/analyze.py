@@ -65,6 +65,49 @@ def compare(ctx, current_file, reference_file):
         ctx.exit(1)
 
 
+@analyze.command(name='benchdiff')
+@click.argument('reference_path', type=click.Path(exists=True))
+@click.argument('current_path', type=click.Path(exists=True))
+@click.option(
+    '--format',
+    'output_format',
+    type=click.Choice(['text', 'markdown', 'json']),
+    default='text',
+    help='Output format',
+)
+@click.option(
+    '--category-only',
+    is_flag=True,
+    help='Ignore status changes if the BenchExec category stayed the same',
+)
+@click.pass_context
+def benchdiff(ctx, reference_path, current_path, output_format, category_only):
+    """Compare BenchExec XML result files or run directories.
+
+    Shows changed per-task outcomes between REFERENCE_PATH and CURRENT_PATH.
+    Each path may point to one .xml/.xml.bz2 file or to a directory containing
+    BenchExec result XML files.
+    """
+    from lib import compare_benchexec_results, diff_to_json, format_benchexec_diff
+
+    try:
+        diff = compare_benchexec_results(
+            [reference_path],
+            [current_path],
+            include_status_changes=not category_only,
+        )
+        if output_format == 'json':
+            click.echo(diff_to_json(diff))
+        else:
+            click.echo(format_benchexec_diff(diff, markdown=output_format == 'markdown'))
+    except click.exceptions.Exit:
+        raise
+    except Exception as e:
+        click.echo(f"Error comparing BenchExec results: {e}", err=True)
+        logger.exception("BenchExec comparison failed")
+        ctx.exit(1)
+
+
 @analyze.command(name='stats')
 @click.option('--benchmark-dir', type=click.Path(exists=True), help='Path to sv-benchmarks directory')
 @click.pass_context
