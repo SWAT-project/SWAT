@@ -23,7 +23,7 @@ set -euo pipefail
 #
 # - .venv_ubuntu_24_04_1__x86_64/
 #
-# Z3 and JavaSMT are taken from the vendored files in this repository.
+# Z3 and JavaSMT are taken from the runtime files prepared by CI.
 #
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -41,8 +41,6 @@ ARTIFACT_DIR="$(cd "${SWAT_SVCOMP_ARTIFACT_DIR:-$ROOT_DIR}" && pwd)"
 RUNTIME_DIR="${SWAT_SVCOMP_RUNTIME_DIR:-${SWAT_SVCOMP_REFERENCE_DIR:-}}"
 WITNESS_CREATOR_DIR="${SWAT_SVCOMP_WITNESS_CREATOR_DIR:-}"
 VENV_DIR_NAME="${SWAT_SVCOMP_VENV_DIR_NAME:-.venv_ubuntu_24_04_1__x86_64}"
-LINUX_Z3_DIST="z3-4.15.4-x64-glibc-2.39"
-LINUX_Z3_ZIP="${ROOT_DIR}/libs/${LINUX_Z3_DIST}.zip"
 JAVA_SMT_JAR="${ROOT_DIR}/libs/java-library-path/java-smt-latest.jar"
 
 if [[ -n "$RUNTIME_DIR" ]]; then
@@ -106,12 +104,11 @@ copy_artifact_tree() {
 install_z3_runtime_file() {
   local name="$1"
   local mode="${2:-0644}"
+  local src="${ROOT_DIR}/libs/java-library-path/${name}"
   local dest="${PACKAGE_DIR}/libs/java-library-path/${name}"
 
-  [[ -f "$LINUX_Z3_ZIP" ]] || fail "missing vendored Linux Z3 distribution: ${LINUX_Z3_ZIP}"
-  mkdir -p "$(dirname "$dest")"
-  unzip -p "$LINUX_Z3_ZIP" "${LINUX_Z3_DIST}/bin/${name}" > "$dest"
-  chmod "$mode" "$dest"
+  [[ -f "$src" ]] || fail "missing prepared Z3 runtime file: ${src}"
+  copy_artifact_file "$src" "$dest" "$mode"
 }
 
 echo "Packaging repository files from: ${ROOT_DIR}"
@@ -149,7 +146,6 @@ copy_tree_files symbolic-explorer "$PACKAGE_DIR/symbolic-explorer"
 [[ -f "$WITNESS_CREATOR_DIR/witnesses/witness.st" ]] || fail "missing WitnessCreator template: ${WITNESS_CREATOR_DIR}/witnesses/witness.st"
 copy_artifact_tree "$WITNESS_CREATOR_DIR" "$PACKAGE_DIR/WitnessCreator"
 
-install_z3_runtime_file z3 0755
 install_z3_runtime_file libz3.so
 install_z3_runtime_file libz3java.so
 install_z3_runtime_file com.microsoft.z3.jar

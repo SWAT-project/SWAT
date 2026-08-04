@@ -4,56 +4,82 @@ plugins {
     id 'com.diffplug.spotless' version '6.9.0'
 }
 
-tasks.register('copyNativeLibs', Copy) { // copies correct native z3 files to libs/
-        def osArchMap = [
-                'windows-x64': 'z3-4.15.4-x64-win',
-                'windows-x86': 'z3-4.15.4-x86-win',
-                'osx-x64'    : 'z3-4.15.4-x64-osx-13.7.6',
-                'osx-arm64'  : 'z3-4.15.4-arm64-osx-13.7.6',
-                'linux-x64'  : 'z3-4.15.4-x64-glibc-2.39',
-                'linux-arm64': 'z3-4.15.4-arm64-glibc-2.34'
-        ]
+ext {
+    z3Version = libs.versions.z3.get()
+    z3NativeDir = layout.projectDirectory.dir('libs/java-library-path')
+}
 
-        def os = OperatingSystem.current()
-        println("Operating system: $os")
+def z3Platform() {
+    def os = OperatingSystem.current()
+    def arch = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+    def z3Arch = arch in ['aarch64', 'arm64'] ? 'arm64' : 'x64'
 
-        def arch = System.getProperty("os.arch") // Use Java system property to get architecture
-        println("Architecture: $arch")
-
-
-    def osKey = ''
-        switch (os) {
-            case OperatingSystem.LINUX:
-                osKey = arch == "aarch64" ? "linux-arm64" : "linux-x64"
-                break;
-            case OperatingSystem.MAC_OS:
-                osKey = arch == "aarch64" ? "osx-arm64" : "osx-x64"
-                break;
-            case OperatingSystem.WINDOWS:
-                osKey = arch == "x86" ? "windows-x86" : "windows-x64"
-                break;
-        }
-        println("Operating system key: $osKey")
-        if (!osKey) {
-            throw new GradleException("Unsupported operating system or architecture.")
-        }
-
-        def z3Zip = file("libs/${osArchMap[osKey]}.zip")
-        if (!z3Zip.exists()) {
-            throw new GradleException("Z3 distribution zip file not found at ${z3Zip.path}")
-        }
-            from zipTree(z3Zip)
-            into 'libs/java-library-path'
-            include "${osArchMap[osKey]}/bin/z3*"
-            include "${osArchMap[osKey]}/bin/libz3.*"
-            include "${osArchMap[osKey]}/bin/libz3java.*"
-            include "${osArchMap[osKey]}/bin/com.microsoft.z3.jar"
-            eachFile { FileCopyDetails fcp ->
-                fcp.relativePath = new RelativePath(true, fcp.name)
-            }
-            includeEmptyDirs false
-
+    if (os.isLinux()) {
+        def libc = z3Arch == 'arm64' ? 'glibc-2.34' : 'glibc-2.39'
+        return [distribution: "z3-${z3Version}-${z3Arch}-${libc}"]
     }
+    if (os.isMacOsX()) {
+        return [distribution: "z3-${z3Version}-${z3Arch}-osx-13.7.6"]
+    }
+    if (os.isWindows()) {
+        def windowsArch = arch in ['x86', 'i386'] ? 'x86' : z3Arch
+        return [distribution: "z3-${z3Version}-${windowsArch}-win"]
+    }
+
+    throw new GradleException("Unsupported operating system for Z3 native libraries: ${os}")
+}
+
+configurations {
+    cfgExtractor
+}
+
+dependencies {
+    cfgExtractor 'de.uzl.its:cfg-extractor:1.0-SNAPSHOT'
+}
+
+def z3Platform = z3Platform()
+def z3Archive = layout.buildDirectory.file("z3/${z3Platform.distribution}.zip")
+def z3DownloadUrl = "https://github.com/Z3Prover/z3/releases/download/z3-${z3Version}/${z3Platform.distribution}.zip"
+
+tasks.register('downloadZ3Distribution') {
+    description = 'Downloads the official Z3 distribution for the current platform.'
+    inputs.property 'url', z3DownloadUrl
+    outputs.file z3Archive
+
+    doLast {
+        def archive = z3Archive.get().asFile
+        def temporaryArchive = new File(archive.parentFile, "${archive.name}.part")
+        archive.parentFile.mkdirs()
+
+        new URL(z3DownloadUrl).withInputStream { input ->
+            temporaryArchive.withOutputStream { output -> output << input }
+        }
+        java.nio.file.Files.move(
+                temporaryArchive.toPath(),
+                archive.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+    }
+}
+
+tasks.register('copyNativeLibs', Sync) {
+    description = 'Fetches the Z3 Java bindings and native libraries.'
+    dependsOn tasks.named('downloadZ3Distribution')
+    inputs.property 'runtimeLayoutVersion', 2
+
+    into z3NativeDir
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from({ zipTree(z3Archive.get().asFile) }) {
+        include "${z3Platform.distribution}/bin/libz3.*"
+        include "${z3Platform.distribution}/bin/libz3java.*"
+        include "${z3Platform.distribution}/bin/com.microsoft.z3.jar"
+        eachFile { details ->
+            details.relativePath = new RelativePath(true, details.name)
+        }
+        includeEmptyDirs = false
+    }
+}
 tasks.register('downloadJacoco') {
     description = 'Downloads JaCoCo agent jar for coverage collection'
     def jacocoVersion = '0.8.13'
@@ -83,14 +109,6 @@ tasks.register('downloadJacoco') {
         println "JaCoCo agent downloaded to: ${jacocoAgent.absolutePath}"
         println "JaCoCo CLI downloaded to: ${jacocoCli.absolutePath}"
     }
-}
-
-configurations {
-    cfgExtractor
-}
-
-dependencies {
-    cfgExtractor 'de.uzl.its:cfg-extractor:1.0-SNAPSHOT'
 }
 
 tasks.register('downloadCfgExtractor', Copy) {

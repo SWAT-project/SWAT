@@ -38,8 +38,7 @@ dependencies {
     implementation libs.bundles.asm
     implementation libs.jackson.databind
     implementation libs.java.smt
-
-    implementation rootProject.fileTree(dir: 'libs/java-library-path', include: ['*.jar']) // loads com.microsoft.z3 and java-smt
+    implementation libs.javasmt.solver.z3
 
     testImplementation libs.spock.core
     testImplementation libs.jackson.databind
@@ -47,7 +46,20 @@ dependencies {
 }
 
 test {
-    systemProperty "java.library.path", "../libs/java-library-path"
+    dependsOn rootProject.tasks.named('copyNativeLibs')
+    def z3NativePath = rootProject.z3NativeDir.asFile.absolutePath
+    def currentOs = org.gradle.internal.os.OperatingSystem.current()
+    systemProperty "java.library.path", z3NativePath
+    if (currentOs.isLinux()) {
+        def existingPath = System.getenv('LD_LIBRARY_PATH')
+        environment "LD_LIBRARY_PATH", existingPath ? "${z3NativePath}${File.pathSeparator}${existingPath}" : z3NativePath
+    } else if (currentOs.isMacOsX()) {
+        def existingPath = System.getenv('DYLD_LIBRARY_PATH')
+        environment "DYLD_LIBRARY_PATH", existingPath ? "${z3NativePath}${File.pathSeparator}${existingPath}" : z3NativePath
+    } else if (currentOs.isWindows()) {
+        def existingPath = System.getenv('PATH')
+        environment "PATH", existingPath ? "${z3NativePath}${File.pathSeparator}${existingPath}" : z3NativePath
+    }
     // Surface SWAT errors as exceptions instead of halting the test JVM
     systemProperty "exitOnError", "false"
     
