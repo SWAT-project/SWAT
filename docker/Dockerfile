@@ -2,7 +2,7 @@ FROM gradle:8.13.0-jdk17
 
 # Install Python and other tools
 RUN apt-get update && \
-    apt-get install -y python3 python3-pip python3-venv findutils unzip ant
+    apt-get install -y python3 python3-pip python3-venv findutils unzip
 
 # Set working dir
 WORKDIR /app
@@ -10,10 +10,7 @@ WORKDIR /app
 # Copy project source
 COPY . .
 
-RUN chmod +x ./scripts/build-javasmt.sh
-RUN ./scripts/build-javasmt.sh
-
-# Copy native Z3 libs via Gradle task (assumes they go to /app/libs/java-library-path)
+# Fetch native Z3 libs via Gradle task
 RUN gradle copyNativeLibs
 
 # Build Java code (skip tests)
