@@ -51,6 +51,10 @@ jobs:
         path: |
           symbolic-executor/lib/symbolic-executor.jar
           build/svcomp-runtime/java-smt-latest.jar
+          libs/java-library-path/com.microsoft.z3.jar
+          libs/java-library-path/libz3.so
+          libs/java-library-path/libz3java.so
+          libs/java-library-path/libz3.a
         if-no-files-found: error
         retention-days: 1
 
@@ -85,6 +89,11 @@ jobs:
         mkdir -p libs/java-library-path
         cp "${RUNNER_TEMP}/release-jars/build/svcomp-runtime/java-smt-latest.jar" \
           libs/java-library-path/java-smt-latest.jar
+        cp "${RUNNER_TEMP}/release-jars/libs/java-library-path/com.microsoft.z3.jar" \
+          "${RUNNER_TEMP}/release-jars/libs/java-library-path/libz3.so" \
+          "${RUNNER_TEMP}/release-jars/libs/java-library-path/libz3java.so" \
+          "${RUNNER_TEMP}/release-jars/libs/java-library-path/libz3.a" \
+          libs/java-library-path/
     - name: Download WitnessCreator runtime
       run: |
         version="${WITNESS_CREATOR_VERSION}"
