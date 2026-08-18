@@ -30,6 +30,12 @@ class SANode:
         if self.has_fallthrough_child():
             return self.get_fallthrough_child().walk_till_branch()
         return None
+    
+    def add_fallthrough_child(self, child: SANode):
+        self.next.insert(0, child)
+    
+    def add_branched_child(self, child: SANode):
+        self.next.append(child)
 
 def mark_assertion_path(node: SANode):
     if node.onPathToAssert: # already marked, prevent infinite recursion
@@ -59,7 +65,12 @@ class SAGraph:
         for json_edge in self.json_graph["edges"]:
             source = self.nodes[json_edge["source"]]
             target = self.nodes[json_edge["target"]]
-            source.next.append(target)
+
+            if json_edge["type"] == "TRUE_BRANCH":
+                source.add_branched_child(target)
+            else:
+                source.add_fallthrough_child(target)
+
             target.prev.append(source)
         
 
