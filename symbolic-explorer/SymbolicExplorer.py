@@ -117,7 +117,7 @@ class SymbolicExplorer:
 def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-m", "--mode", choices=['passive', 'annotation', 'args', 'sv-comp', 'http', 'simple'], default='annotation',
                              help="Choose the desired mode")
-    parser.add_argument("-t", "--target", help="Full path to the target JAR file")
+    parser.add_argument("-t", "--target", help="Full path to the target JAR or class name")
     parser.add_argument("-prp", "--property", help="Which property to verify")
     parser.add_argument("-s", "--symbolicvars", nargs='+', help="The types and amount of the symbolic "
                                                                      "variables")
@@ -132,6 +132,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--optimize", action="store_true", help="Enable Z3 optimizer to minimize variable values (slower but may produce simpler solutions)", default=False)
     parser.add_argument("--log-smt-formulas", action="store_true", help="Log SMT formulas and models to disk for debugging", default=False)
     parser.add_argument("--sa-file", help="Path to a file with static pre-analysis results for informing branch exploration (optional)")
+    parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
 
     # HTTP-specific arguments
     parser.add_argument("--host", help="HTTP target host", default="localhost")  

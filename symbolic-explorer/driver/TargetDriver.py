@@ -222,8 +222,20 @@ class TargetDriver:
         base_cmd = self.build_command()
         
         # Load static pre-analysis information if provided
-        if self.args.sa_file:
-            self.sa_graph.load_json_graph(self.args.sa_file)
+        try:
+            if self.args.sa_file:
+                self.sa_graph.load_json_graph(self.args.sa_file)
+            elif self.args.sa_path:
+                logger.info(f'[EXPLORER] Running static pre-analysis...')
+                subprocess.run(["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
+                                ':'.join(self.args.classpath), self.args.logdir, self.args.target, "main", "inter"],
+                               check=True, timeout=5)
+                
+                self.sa_graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"))
+                logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
+        except Exception as e:
+            logger.error(f'[EXPLORER] Failed to get static pre-analysis information. Exception: {e}')
+        
         
         # Main execution loop
         iteration = 1
