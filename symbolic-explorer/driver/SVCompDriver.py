@@ -14,6 +14,7 @@ from data.Database import Database
 from data.BinaryExecutionTree.Node import Node
 
 from strategy.StrategyService import StrategyService
+from data.StaticAnalysisGraph.SAGraph import SAGraph
 
 from enum import Enum
 from svcomp.SymbolicStorage import SymbolicStorage
@@ -72,6 +73,9 @@ class SVCompDriver:
         self.symbolicStorage = SymbolicStorage()
         self.shutdown_flag = False
         self.verification_category = VerificationCategory(self.args.property)
+        self.sa_graph = SAGraph() # static analysis graph
+        self.round_idx = 0
+        self.nr_solver_calls = 0
     
     @contextmanager
     def pushd(self, dirname):
@@ -188,13 +192,29 @@ class SVCompDriver:
 
     def run_testcase(self, java_path, agentpath: str, configpath: str, z3path, port, cp) -> Verdict:
         """Runs the testcase using the constructed Java command."""
+        
+        # Get static pre-analysis information if provided
+        try:
+            if self.args.sa_file:
+                self.sa_graph.load_json_graph(self.args.sa_file)
+            elif self.args.sa_path:
+                logger.info(f'[EXPLORER] Running static pre-analysis...')
+                subprocess.run(["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
+                                ':'.join(self.args.classpath), self.args.logdir, self.args.target, "main", "inter"],
+                               check=True, timeout=5)
+                
+                self.sa_graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"))
+                logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
+        except Exception as e:
+            logger.error(f'[EXPLORER] Failed to get static pre-analysis information. Exception: {e}')
+
 
         next_step = Action.RANDOMNEXT
-        round_idx = 0
+        self.round_idx = 0
 
         while True:
             logger.info(f'[SVCOMP] {"="*73}')
-            logger.info(f'[SVCOMP] {"="*30} ROUND ({round_idx:03}) {"="*30}')
+            logger.info(f'[SVCOMP] {"="*30} ROUND ({self.round_idx:03}) {"="*30}')
             logger.info(f'[SVCOMP] {"="*73}')
 
             # Build the java command to run DSE
@@ -227,8 +247,8 @@ class SVCompDriver:
 
             # Visualize DB tree
             # print("Plotting DB Tree...", flush=True)
-            # Database.instance().get_tree(0).plot_tree(round_idx)
-            round_idx += 1
+            # Database.instance().get_tree(0).plot_tree(self.round_idx)
+            self.round_idx += 1
 
             if next_step == Action.REPORTVERDICT:
                 logger.info(f'[SVCOMP] Finised testcase analysis, reporting verdict')
@@ -251,7 +271,7 @@ class SVCompDriver:
             
 
     def retrieve_solution(self):
-        possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID)
+        possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node)
         logger.info(f'[SYMBOLIC EXPLORATION] Found {len(possible_branches)} possible branches')
         logger.info(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
         symbolic_vars = None
@@ -265,6 +285,7 @@ class SVCompDriver:
             branch_found = True
             #logger.info(f'[SYMBOLIC EXPLORATION] Solving for branch {branch.id}')
             sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None)
+            self.nr_solver_calls += 1
              
             if sat == SATResult.SAT:
                 logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
@@ -326,6 +347,7 @@ class SVCompDriver:
         if verdict == Verdict.NO_SYMBOLIC_VARS:
             verdict = Verdict.SAFE
         verdict_logger.info(f'[VERDICT {self.verification_category.value}] {verdict.value}')
+        logger.info(f'[EXPLORER] Symbolic execution terminated after {self.round_idx} iterations')
 
         # Stop total timing (don't print summary here - execution.py will print complete summary with witness timing)
         TimingManager.instance().stop_total_timer()
@@ -338,7 +360,8 @@ class SVCompDriver:
         # Write the consolidated per-testcase statistics (verdict, soundness flags, missing
         # invocations and the context-loss subset) so the analysis can rely on structured data.
         stats_file = os.path.join(log_dir, 'stats.json')
-        write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID))
+        write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
+                             self.round_idx, self.nr_solver_calls)
 
         self.kill_current_process()
         

@@ -221,7 +221,7 @@ class TargetDriver:
         # Build the command to execute target
         base_cmd = self.build_command()
         
-        # Load static pre-analysis information if provided
+        # Get static pre-analysis information if provided
         try:
             if self.args.sa_file:
                 self.sa_graph.load_json_graph(self.args.sa_file)

@@ -24,7 +24,7 @@ def _signature(inv: dict) -> str:
     return f"{inv['owner']}/{inv['name']}:{inv['desc']}"
 
 
-def build_testcase_stats(verdict, category, tree) -> dict:
+def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int) -> dict:
     """
     Assemble the consolidated per-testcase statistics dictionary.
 
@@ -62,12 +62,16 @@ def build_testcase_stats(verdict, category, tree) -> dict:
             'context_loss_invocations': sum(1 for i in missing if i['context_loss']),
             'execution_errors': len(tree.execution_errors),
         },
+        'performance': {
+            'symbolic_exec_iterations': symbolic_exec_iterations,
+            'nr_solver_calls': nr_solver_calls,
+        },
     }
 
 
-def write_testcase_stats(filepath: Path, verdict, category, tree):
+def write_testcase_stats(filepath: Path, verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int):
     """Write the consolidated per-testcase statistics to ``filepath`` as JSON."""
-    data = build_testcase_stats(verdict, category, tree)
+    data = build_testcase_stats(verdict, category, tree, symbolic_exec_iterations, nr_solver_calls)
 
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, 'w') as f:

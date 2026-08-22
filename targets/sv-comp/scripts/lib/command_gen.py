@@ -41,6 +41,7 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
     agent_path = BASE_PATH / 'symbolic-executor' / 'lib' / 'symbolic-executor.jar'
     config_path = SCRIPT_DIR / '..' / config_file
     library_path = BASE_PATH / 'libs' / 'java-library-path'
+    sa_path = BASE_PATH.parent / 'cfg-extraction'
 
     base_command: list[str] = [str(PYENV_PATH), "-u", str(BASE_PATH / 'symbolic-explorer' / 'SymbolicExplorer.py'),
                     "-prp", ver_task['category'].value,
@@ -49,7 +50,9 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     "-z3", str(library_path),
                     "--logdir", str(logging_dir),
                     "--mode", "sv-comp",
-                    '--port', str(port),
+                    "--port", str(port),
+                    "--target", "Main",
+                    "--sa-path", str(sa_path),
                     "--classpath"]
 
     cp: list[str] = []
