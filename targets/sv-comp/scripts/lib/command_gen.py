@@ -34,7 +34,7 @@ def is_port_available(port: int) -> bool:
         return False
 
 
-def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = True) -> list[str]:
+def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False) -> list[str]:
 
 
     test_case_dir = ver_task['file_path'].parent
@@ -52,7 +52,7 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     "--mode", "sv-comp",
                     "--port", str(port),
                     "--target", "Main"] + \
-                    [] if no_sa else ["--sa-path", str(sa_path)] + \
+                    ([] if no_sa else ["--sa-path", str(sa_path)]) + \
                     ["--classpath"]
 
     cp: list[str] = []
@@ -74,7 +74,7 @@ def run_dir(run_timestamp: str) -> Path:
     return SCRIPT_DIR / '..' / 'runs' / f"run_{run_timestamp}"
 
 
-def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = True) -> list[VerificationTask]:
+def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False) -> list[VerificationTask]:
 
     port = 9000
     skipped_ports = []
