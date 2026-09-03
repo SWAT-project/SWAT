@@ -6,23 +6,31 @@ import json
 class SANode:
     id: str
     onPathToAssert: bool = False
-    prev: list[SANode] = field(default_factory=list, repr=False)
-    next: list[SANode] = field(default_factory=list)
+    isPhantomGuard: bool = False # a phantom guard is a generated explicit check for an implicit exception, e.g. `if (op2 != 0)` before an IDIV.
+    prev: list[SANode] = field(default_factory=list, repr=False) # preceding nodes
+    next_fallthrough: SANode | None = None
+    next_branched: SANode | None = None
+    next_exceptional: list[SANode] = field(default_factory=list)
     
     def has_fallthrough_child(self):
-        return 0 < len(self.next)
+        return self.next_fallthrough is not None
     
     def has_branched_child(self):
-        return 1 < len(self.next)
+        return self.next_branched is not None
     
-    def get_fallthrough_child(self):
-        return self.next[0] #if 0 < len(self.next) else None
+    def get_fallthrough_child(self) -> SANode:
+        assert self.next_fallthrough is not None
+        return self.next_fallthrough
     
-    def get_branched_child(self):
-        return self.next[1] #if 1 < len(self.next) else None
+    def get_branched_child(self) -> SANode:
+        assert self.next_branched is not None
+        return self.next_branched
     
     def is_branch(self):
-        return len(self.next) > 1
+        if self.has_branched_child():
+            assert self.has_fallthrough_child()
+            return True
+        return False
     
     def walk_till_branch(self) -> SANode | None:
         if self.is_branch():
@@ -32,10 +40,15 @@ class SANode:
         return None
     
     def add_fallthrough_child(self, child: SANode):
-        self.next.insert(0, child)
+        assert self.next_fallthrough is None
+        self.next_fallthrough = child
     
     def add_branched_child(self, child: SANode):
-        self.next.append(child)
+        assert self.next_branched is None
+        self.next_branched = child
+    
+    def add_exceptional_child(self, child: SANode):
+        self.next_exceptional.append(child)
 
 def mark_assertion_path(node: SANode):
     if node.onPathToAssert: # already marked, prevent infinite recursion
@@ -65,10 +78,19 @@ class SAGraph:
         for json_edge in self.json_graph["edges"]:
             source = self.nodes[json_edge["source"]]
             target = self.nodes[json_edge["target"]]
-
-            if json_edge["type"] == "TRUE_BRANCH":
+            
+            etype = json_edge["type"]
+            if etype == "EXCEPTION":
+                source.add_exceptional_child(target)
+                
+            elif etype == "PHANTOM_TRUE_BRANCH":
                 source.add_branched_child(target)
-            else:
+                source.isPhantomGuard = True
+                
+            elif etype == "TRUE_BRANCH":
+                source.add_branched_child(target)
+                
+            else: # FALSE_BRANCH, PHANTOM_FALSE_BRANCH, NORMAL, CALL, RETURN
                 source.add_fallthrough_child(target)
 
             target.prev.append(source)
