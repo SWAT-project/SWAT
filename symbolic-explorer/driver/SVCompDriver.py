@@ -197,6 +197,7 @@ class SVCompDriver:
         try:
             if self.args.sa_file:
                 self.sa_graph.load_json_graph(self.args.sa_file)
+                logger.info(f'[EXPLORER] Loaded static pre-analysis graph from provided file.')
             elif self.args.sa_path:
                 logger.info(f'[EXPLORER] Running static pre-analysis...')
                 subprocess.run(["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
@@ -205,6 +206,8 @@ class SVCompDriver:
                 
                 self.sa_graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"))
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
+            else:
+                logger.info(f'[EXPLORER] Static pre-analysis is disabled.')
         except Exception as e:
             logger.error(f'[EXPLORER] Failed to get static pre-analysis information. Exception: {e}')
 
