@@ -1963,7 +1963,6 @@ public class SymbolicInstructionVisitor implements IVisitor {
             }
             boolean isBranchTaken = isBranchTaken();
             long iid = determineIid(inst.iid);
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid); // TODO: why is this line doubled below? Remove and check for regression?
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
