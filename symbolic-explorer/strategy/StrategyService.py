@@ -19,7 +19,10 @@ class StrategyService:
         tree = db.get_tree(endpoint_id)
         visited = set()
         possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches(), kwargs.get("sa_node", None))
-        # TODO: if possible_branches is empty, try again without sa_node to prevent false SAFE classifications.
+        
+        # If possible_branches is empty, try again without sa_node to prevent false SAFE classifications.
+        if not possible_branches:
+            possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches(), None)
         
         return possible_branches
         
