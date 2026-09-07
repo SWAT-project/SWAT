@@ -74,6 +74,7 @@ class SVCompDriver:
         self.shutdown_flag = False
         self.verification_category = VerificationCategory(self.args.property)
         self.sa_graph = SAGraph() # static analysis graph
+        self.sa_timed_out = False
         self.round_idx = 0
         self.nr_solver_calls = 0
     
@@ -208,8 +209,12 @@ class SVCompDriver:
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
             else:
                 logger.info(f'[EXPLORER] Static pre-analysis is disabled.')
+        except subprocess.TimeoutExpired as e:
+            logger.error(f'[EXPLORER] Failed to get static pre-analysis information. TimeoutExpired: {e}')
+            self.sa_timed_out = True
         except Exception as e:
             logger.error(f'[EXPLORER] Failed to get static pre-analysis information. Exception: {e}')
+            self.sa_graph = SAGraph() # clear any half-loaded graph
 
 
         next_step = Action.RANDOMNEXT
@@ -364,7 +369,7 @@ class SVCompDriver:
         # invocations and the context-loss subset) so the analysis can rely on structured data.
         stats_file = os.path.join(log_dir, 'stats.json')
         write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
-                             self.round_idx, self.nr_solver_calls)
+                             self.round_idx, self.nr_solver_calls, (self.args.sa_file or self.args.sa_path), (self.sa_graph.entry_node is None), self.sa_timed_out)
 
         self.kill_current_process()
         

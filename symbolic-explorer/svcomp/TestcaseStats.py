@@ -24,7 +24,7 @@ def _signature(inv: dict) -> str:
     return f"{inv['owner']}/{inv['name']}:{inv['desc']}"
 
 
-def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int) -> dict:
+def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, sa_enabled: bool, sa_failed: bool, sa_timed_out: bool) -> dict:
     """
     Assemble the consolidated per-testcase statistics dictionary.
 
@@ -66,12 +66,17 @@ def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int,
             'symbolic_exec_iterations': symbolic_exec_iterations,
             'nr_solver_calls': nr_solver_calls,
         },
+        'static_analysis': {
+            'enabled': sa_enabled,
+            'failed': sa_failed,
+            'timed_out': sa_timed_out,
+        },
     }
 
 
-def write_testcase_stats(filepath: Path, verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int):
+def write_testcase_stats(filepath: Path, verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, sa_enabled: bool, sa_failed: bool, sa_timed_out: bool):
     """Write the consolidated per-testcase statistics to ``filepath`` as JSON."""
-    data = build_testcase_stats(verdict, category, tree, symbolic_exec_iterations, nr_solver_calls)
+    data = build_testcase_stats(verdict, category, tree, symbolic_exec_iterations, nr_solver_calls, sa_enabled, sa_failed, sa_timed_out)
 
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, 'w') as f:

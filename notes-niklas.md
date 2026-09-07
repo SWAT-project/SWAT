@@ -68,3 +68,26 @@ Implicit exceptions handled by SWAT (in SymbolicInstructionVisitor):
   - IREM
   - LDIV
   - LREM
+
+
+
+## 2nd Try (try-catch fixed?)
+Points increased but still negative
+- baseline:  601
+- 1st try: -2315
+- 2nd try:   -83
+
+Way fewer false SAFE verdicts (from 90 down to 20)
+- still 20 too many... investigate!
+Also more crashes
+
+Case: securibench/Arrays1 changed from violation -> violation to violation -> unknown
+- Also Arrays2, 3, 4, ...
+- Somehow, the assert does not appear in the SA at all
+  - "assertionPointIds": []
+  - thus all, paths are seen as uninteresting
+
+
+
+TODO: test "play it safe" mode where we rerun without SA if we dont find branches
+- see how many points this would get
