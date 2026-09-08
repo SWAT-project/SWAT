@@ -269,6 +269,13 @@ class SVCompDriver:
                 # Explorer time is computed as residual in TimingManager.get_aggregates()
                 # (total_time - executor_time - solver_time - witness_times)
                 next_step = self.retrieve_solution()
+                
+                # If we are using SA and come to a SAFE verdict, then continue without SA
+                # this should prevent false SAFE classifications from incomplete SA
+                if self.sa_graph.entry_node is not None and next_step == Action.REPORTVERDICT and self.state.verdict == Verdict.SAFE:
+                    logger.info(f'[SYMBOLIC EXPLORATION] No violation found. Retrying without SA.')
+                    self.sa_graph = SAGraph() # disable SA
+                    next_step = self.retrieve_solution() # and try again
 
                 if next_step == Action.REPORTVERDICT:
                     return self.state.verdict
@@ -302,6 +309,8 @@ class SVCompDriver:
                 self.state.branch_to_explore = branch
                 break
             logger.debug(f'[SYMBOLIC EXPLORATION] No solution ({sat}) found for branch {branch.id}')
+            
+            # TODO: should we remember any SATResult.UNKNOWN and then downgrade SAFE verdicts?
        
         if not branch_found or sat == SATResult.UNSAT:
             self.state.verdict = Verdict.SAFE

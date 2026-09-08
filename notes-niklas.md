@@ -89,5 +89,24 @@ Case: securibench/Arrays1 changed from violation -> violation to violation -> un
 
 
 
-TODO: test "play it safe" mode where we rerun without SA if we dont find branches
-- see how many points this would get
+### "play it safe" mode where we rerun without SA if we dont find branches
+- somehow this performed worse: 23 false SAFE verdicts, up from 20
+For example in coral31
+- very simple test case: `if (Math.round(x) > 5) { assert false; }`
+- mismatch between trace and SA graph
+  - seems like SA is missing a branch before the actual `round(x) > 5` check
+  - what branch is this?
+    - it is inside the class static initializer block, related to initializing `$assertionsDisabled`
+  - why did this mismatch only occur now?
+    - rerunning without the change produced the same issue
+    - is this an intermittend problem? Or caused by some other change?
+    - log current git commit on every run for better reproducibility
+    - always do two runs to find flaky issues?
+
+Another flaw:
+we only rerun without SA if we find NO branches at all.
+However, we might find SOME branches which then turn out to be UNSAT or non-symbolic. We should still retry in this case.
+Maybe also disable SA for the rest of the run to prevent double-searching every time.
+Our retry scope was too low-level (no possible_branches). It should be one level higher (no useful branches inside possible_branches).
+
+
