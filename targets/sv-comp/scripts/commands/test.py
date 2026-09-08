@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 import sys
 from lib.execution import target_execution
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -160,9 +161,12 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
                 # Run default single target
                 run_single_target(ver_tasks_with_commands, create_witness=not no_witness)
         else:
-            run = make_run_dir(run_timestamp)
-            click.echo(f"Run directory: {run}")
-            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run)
+            run_dir = make_run_dir(run_timestamp)
+            click.echo(f"Run directory: {run_dir}")
+            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run_dir)
+        
+            # Log current commit for debugging and reproducibility
+            subprocess.run(f'(git log -1 --pretty=format:"%h %s" && git status) > {run_dir / "gitlog.txt"}', shell=True)
 
         click.secho("✓ Test execution complete", fg='green')
 
