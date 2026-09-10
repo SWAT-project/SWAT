@@ -40,15 +40,21 @@ def analyze_results(ctx, run_dir):
 
 
 @analyze.command(name='compare')
-@click.argument('current_file', type=click.Path(exists=True))
-@click.argument('reference_file', type=click.Path(exists=True))
+@click.argument('current_file', type=click.Path(exists=True, path_type=Path))
+@click.argument('reference_file', type=click.Path(exists=True, path_type=Path))
 @click.pass_context
-def compare(ctx, current_file, reference_file):
+def compare(ctx, current_file: Path, reference_file: Path):
     """Compare two result files.
 
     Shows what changed between REFERENCE_FILE and CURRENT_FILE.
     """
     from lib import compare_results
+    
+    # shorthand notation
+    if current_file.is_dir():
+        current_file = current_file / "results" / f"results_valid-assert.prp_{current_file.name[4:]}.json"
+    if reference_file.is_dir():
+        reference_file = reference_file / "results" / f"results_valid-assert.prp_{reference_file.name[4:]}.json"
 
     click.echo(f"Comparing results:")
     click.echo(f"  Reference: {reference_file}")
