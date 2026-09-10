@@ -466,27 +466,13 @@ class Z3Handler:
                 except Exception as e:
                     logger.warning(f"[SOLVER] Failed to save model: {e}")
 
-            # DEBUG: Print the full Z3 model
-            for decl in sol.decls():
-                var_name = decl.name()
-                var_value = sol[decl]
-
-                # For arrays, show first few elements
-                if '[' in str(var_name):
-                    from z3 import Int as Z3Int
-                    try:
-                        # Get context from the array to avoid context mismatch
-                        ctx = var_value.ctx if hasattr(var_value, 'ctx') else None
-                        for i in range(min(5, 10)):  # Show first 5 elements
-                            idx = Z3Int(i, ctx=ctx) if ctx is not None else Z3Int(i)
-                            elem_val = sol.eval(var_value[idx], model_completion=True)
-                    except:
-                        pass
-
-            # DEBUG: Verify model satisfies constraints
-            for i, constraint in enumerate(solver.assertions()):
-                satisfied = sol.evaluate(constraint, model_completion=True)
-                status = "✓" if satisfied else "✗"
+            # Sanity check: every assertion must hold under the returned model.
+            # Evaluating all assertions is real Z3 work, so only do it when DEBUG
+            # logging is actually enabled.
+            if logger.isEnabledFor(logging.DEBUG):
+                for constraint in solver.assertions():
+                    if not is_true(sol.evaluate(constraint, model_completion=True)):
+                        logger.warning(f"[SOLVER] Model does not satisfy assertion: {constraint}")
 
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
             t_encode = time.perf_counter() - t_start
