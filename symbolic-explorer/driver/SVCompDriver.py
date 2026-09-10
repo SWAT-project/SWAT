@@ -194,7 +194,10 @@ class SVCompDriver:
     def run_testcase(self, java_path, agentpath: str, configpath: str, z3path, port, cp) -> Verdict:
         """Runs the testcase using the constructed Java command."""
         
-        # Get static pre-analysis information if provided
+        # Get static pre-analysis information if provided - Time the static pre-analysis.
+        # This is an external Java subprocess; without its own stage it would be silently
+        # folded into the symbolic explorer residual.
+        sa_start = time.perf_counter()
         try:
             if self.args.sa_file:
                 self.sa_graph.load_json_graph(self.args.sa_file)
@@ -215,6 +218,9 @@ class SVCompDriver:
         except Exception as e:
             logger.error(f'[EXPLORER] Failed to get static pre-analysis information. Exception: {e}')
             self.sa_graph = SAGraph() # clear any half-loaded graph
+        finally:
+            # Record on every path: a timed-out or failed pre-analysis still costs wall time.
+            TimingManager.instance().record_static_analysis_time(time.perf_counter() - sa_start)
 
 
         next_step = Action.RANDOMNEXT

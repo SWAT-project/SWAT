@@ -10,6 +10,7 @@ from .dtypes import Verdict, ExpectedVerdict, VerificationCategory, Verification
 from .utils import ci_print
 from .command_gen import extract_testcases, generate_commands, new_run_timestamp, run_dir as make_run_dir
 from .witness import generate_and_validate_witness
+from .analysis.timing import stage_label
 from collections import Counter
 from pathlib import Path
 
@@ -352,6 +353,7 @@ def evaluate_results(results, results_dir: Path, run_timestamp: str):
                 'total': 0
             },
             'stage_timing': {
+                'static_pre_analysis': 0.0,
                 'symbolic_executor': 0.0,
                 'smt_solver': 0.0,
                 'symbolic_explorer': 0.0,
@@ -440,6 +442,7 @@ def evaluate_results(results, results_dir: Path, run_timestamp: str):
         stage_total = sum(stage_timing.values())
         if stage_total > 0:
             logger.info(f"[{category_name}] Stage Timing Breakdown:")
+            logger.info(f"  - Static Pre-Analysis: {stage_timing['static_pre_analysis']:>8.2f}s ({stage_timing['static_pre_analysis']/stage_total*100:>5.1f}%)")
             logger.info(f"  - Symbolic Executor:   {stage_timing['symbolic_executor']:>8.2f}s ({stage_timing['symbolic_executor']/stage_total*100:>5.1f}%)")
             logger.info(f"  - SMT Solver:          {stage_timing['smt_solver']:>8.2f}s ({stage_timing['smt_solver']/stage_total*100:>5.1f}%)")
             logger.info(f"  - Symbolic Explorer:   {stage_timing['symbolic_explorer']:>8.2f}s ({stage_timing['symbolic_explorer']/stage_total*100:>5.1f}%)")
@@ -453,6 +456,7 @@ def evaluate_results(results, results_dir: Path, run_timestamp: str):
 
     # Print aggregate stage timing across all categories
     aggregate_stage_timing = {
+        'static_pre_analysis': 0.0,
         'symbolic_executor': 0.0,
         'smt_solver': 0.0,
         'symbolic_explorer': 0.0,
@@ -469,6 +473,7 @@ def evaluate_results(results, results_dir: Path, run_timestamp: str):
         logger.info(f"AGGREGATE STAGE TIMING (ALL CATEGORIES)")
         logger.info(f"{'='*50}")
         logger.info(f"Total Stage Time:        {aggregate_total:>8.2f}s")
+        logger.info(f"  - Static Pre-Analysis: {aggregate_stage_timing['static_pre_analysis']:>8.2f}s ({aggregate_stage_timing['static_pre_analysis']/aggregate_total*100:>5.1f}%)")
         logger.info(f"  - Symbolic Executor:   {aggregate_stage_timing['symbolic_executor']:>8.2f}s ({aggregate_stage_timing['symbolic_executor']/aggregate_total*100:>5.1f}%)")
         logger.info(f"  - SMT Solver:          {aggregate_stage_timing['smt_solver']:>8.2f}s ({aggregate_stage_timing['smt_solver']/aggregate_total*100:>5.1f}%)")
         logger.info(f"  - Symbolic Explorer:   {aggregate_stage_timing['symbolic_explorer']:>8.2f}s ({aggregate_stage_timing['symbolic_explorer']/aggregate_total*100:>5.1f}%)")
@@ -677,6 +682,7 @@ def save_aggregate_stage_timing(category_stats, results_dir: Path, run_timestamp
 
     # Calculate aggregate across all categories
     aggregate_stage_timing = {
+        'static_pre_analysis': 0.0,
         'symbolic_executor': 0.0,
         'smt_solver': 0.0,
         'symbolic_explorer': 0.0,
@@ -698,8 +704,7 @@ def save_aggregate_stage_timing(category_stats, results_dir: Path, run_timestamp
         # Data rows
         for stage, time_val in aggregate_stage_timing.items():
             percentage = (time_val / aggregate_total * 100) if aggregate_total > 0 else 0.0
-            stage_name = stage.replace('_', ' ').title()
-            f.write(f"{stage_name},{time_val:.2f},{percentage:.2f}\n")
+            f.write(f"{stage_label(stage)},{time_val:.2f},{percentage:.2f}\n")
 
         # Total row
         f.write(f"Total,{aggregate_total:.2f},100.00\n")
@@ -806,11 +811,13 @@ def run_single_target(ver_tasks: list[VerificationTask], create_witness: bool = 
             logger.info("\n" + "="*60)
             logger.info("TIMING BREAKDOWN FOR SINGLE TARGET")
             logger.info("="*60)
-            total = sum(timing_breakdown.values())
-            for stage, time_val in timing_breakdown.items():
+            # 'total_time' is the measured wall time of the run, not a stage; summing it
+            # along with the stages would double-count and halve every percentage.
+            stages = {k: v for k, v in timing_breakdown.items() if k != 'total_time'}
+            total = sum(stages.values())
+            for stage, time_val in stages.items():
                 percent = (time_val / total * 100) if total > 0 else 0
-                stage_name = stage.replace('_', ' ').title()
-                logger.info(f"  {stage_name:<25} {time_val:>8.2f}s ({percent:>5.1f}%)")
+                logger.info(f"  {stage_label(stage):<25} {time_val:>8.2f}s ({percent:>5.1f}%)")
             logger.info(f"  {'Total':<25} {total:>8.2f}s")
             logger.info("="*60)
 

@@ -1,11 +1,13 @@
 import json
 import logging
+import time
 
 from data.BinaryExecutionTree.Node import Node
 
 from data.Database import Database
 from strategy.DFS import dfs
 from solver.SolverHandler import SATResult, Z3Handler
+from timing.TimingManager import TimingManager
 
 logger = logging.getLogger(__name__)
 
@@ -127,9 +129,14 @@ class StrategyService:
         from solver.ConstraintCache import get_constraint_cache
 
         try:
-            # Get cached parsed constraint (parse once, reuse many times)
+            # Get cached parsed constraint (parse once, reuse many times).
+            # On a cache miss this parses SMT-LIB via Z3 and walks the AST, which is
+            # solver work and must not be charged to the explorer residual. It is not
+            # a solver query, hence count=False.
             cache = get_constraint_cache()
+            t_parse = time.perf_counter()
             cached_data = cache.get_node_constraint(node)
+            TimingManager.instance().record_solver_time(time.perf_counter() - t_parse, count=False)
 
             # Extract variables from the parsed constraint
             constraint_vars = cached_data['variables']

@@ -2,6 +2,7 @@
 Centralized timing manager for tracking execution time across different stages.
 
 This module provides a singleton TimingManager that tracks timing for:
+- Static Pre-Analysis: Time spent running the external CFG extractor
 - Symbolic Executor: Time spent running instrumented Java code
 - SMT Solver: Time spent in Z3 solving constraints
 - Symbolic Explorer: Time spent in Python coordination logic
@@ -25,6 +26,7 @@ class TimingManager:
 
     def __init__(self):
         """Initialize timing storage."""
+        self.static_analysis_time: float = 0.0
         self.executor_time: float = 0.0
         self.solver_time: float = 0.0
         self.explorer_time: float = 0.0
@@ -58,6 +60,16 @@ class TimingManager:
         """Stop the total execution timer."""
         self.total_end_time = time.perf_counter()
 
+    def record_static_analysis_time(self, duration: float):
+        """
+        Record time spent in the static pre-analysis (external CFG extractor).
+
+        Args:
+            duration: Time in seconds
+        """
+        self.static_analysis_time += duration
+        logger.debug(f"[TIMING] Static Pre-Analysis: +{duration:.3f}s (total: {self.static_analysis_time:.3f}s)")
+
     def record_executor_time(self, duration: float):
         """
         Record time spent in symbolic executor (Java).
@@ -69,15 +81,20 @@ class TimingManager:
         self.executor_count += 1
         logger.debug(f"[TIMING] Executor: +{duration:.3f}s (total: {self.executor_time:.3f}s)")
 
-    def record_solver_time(self, duration: float):
+    def record_solver_time(self, duration: float, count: bool = True):
         """
-        Record time spent in SMT solver.
+        Record time spent in the SMT solver.
 
         Args:
             duration: Time in seconds
+            count: Whether this is a distinct solver query. Pass False for
+                   surrounding Z3 work (SMT-LIB parsing, model extraction) that
+                   belongs to the solver stage but is not a check() call, so the
+                   per-call average stays meaningful.
         """
         self.solver_time += duration
-        self.solver_count += 1
+        if count:
+            self.solver_count += 1
         logger.debug(f"[TIMING] Solver: +{duration:.3f}s (total: {self.solver_time:.3f}s)")
 
     def record_explorer_time(self, duration: float):
@@ -123,16 +140,19 @@ class TimingManager:
             total_time = self.total_end_time - self.total_start_time
         else:
             # Fallback: sum of all components
-            total_time = (self.executor_time + self.solver_time + self.explorer_time +
-                         self.witness_generation_time + self.witness_validation_time)
+            total_time = (self.static_analysis_time + self.executor_time + self.solver_time +
+                         self.explorer_time + self.witness_generation_time +
+                         self.witness_validation_time)
 
         # Compute explorer time as residual: overhead time not accounted for by other stages
-        # explorer_time = total_time - executor_time - solver_time - witness_times
-        computed_explorer_time = max(0.0, total_time - self.executor_time - self.solver_time -
-                                      self.witness_generation_time - self.witness_validation_time)
+        # explorer_time = total_time - static_analysis_time - executor_time - solver_time - witness_times
+        computed_explorer_time = max(0.0, total_time - self.static_analysis_time - self.executor_time -
+                                      self.solver_time - self.witness_generation_time -
+                                      self.witness_validation_time)
 
         return {
             'total_time': total_time,
+            'static_pre_analysis': self.static_analysis_time,
             'symbolic_executor': self.executor_time,
             'smt_solver': self.solver_time,
             'symbolic_explorer': computed_explorer_time,  # Use computed residual, not measured value
@@ -202,12 +222,14 @@ class TimingManager:
         logger.info(f"Total Execution Time:        {total:>8.2f}s")
 
         if total > 0:
+            logger.info(f"  - Static Pre-Analysis:     {aggregates['static_pre_analysis']:>8.2f}s ({aggregates['static_pre_analysis']/total*100:>5.1f}%)")
             logger.info(f"  - Symbolic Executor:       {aggregates['symbolic_executor']:>8.2f}s ({aggregates['symbolic_executor']/total*100:>5.1f}%)")
             logger.info(f"  - SMT Solver:              {aggregates['smt_solver']:>8.2f}s ({aggregates['smt_solver']/total*100:>5.1f}%)")
             logger.info(f"  - Symbolic Explorer:       {aggregates['symbolic_explorer']:>8.2f}s ({aggregates['symbolic_explorer']/total*100:>5.1f}%)")
             logger.info(f"  - Witness Generation:      {aggregates['witness_generation']:>8.2f}s ({aggregates['witness_generation']/total*100:>5.1f}%)")
             logger.info(f"  - Witness Validation:      {aggregates['witness_validation']:>8.2f}s ({aggregates['witness_validation']/total*100:>5.1f}%)")
         else:
+            logger.info(f"  - Static Pre-Analysis:     {aggregates['static_pre_analysis']:>8.2f}s")
             logger.info(f"  - Symbolic Executor:       {aggregates['symbolic_executor']:>8.2f}s")
             logger.info(f"  - SMT Solver:              {aggregates['smt_solver']:>8.2f}s")
             logger.info(f"  - Symbolic Explorer:       {aggregates['symbolic_explorer']:>8.2f}s")

@@ -372,10 +372,9 @@ class Z3Handler:
         Returns:
         - Tuple[SATResult, Dict[str, Any]]: Tuple containing SAT result and solution dictionary.
         """
-        import time
         from solver.ConstraintCache import get_constraint_cache
 
-        t_start = time.time()
+        t_start = time.perf_counter()
 
 
         # Get the global constraint cache (with shared context)
@@ -410,7 +409,11 @@ class Z3Handler:
             for i, path_expr in enumerate(all_exprs[len(node_exprs):]):
                 solver.add(path_expr)
 
-        t_path = time.time() - t_start
+        # Building the solver is Z3 work (SMT-LIB parsing on cache misses, assertion
+        # construction), so it counts towards the SMT solver stage rather than the
+        # explorer residual. It is not a query, hence count=False.
+        t_path = time.perf_counter() - t_start
+        TimingManager.instance().record_solver_time(t_path, count=False)
 
         # Array length constraints are now added in the Java symbolic executor
         # when the array length is made symbolic (InternalInvocation.java)
@@ -436,13 +439,14 @@ class Z3Handler:
 
         if timeout_ms is not None:
             solver.set("timeout", timeout_ms)
-        t_start = time.time()
+        t_start = time.perf_counter()
         res = solver.check()
-        t_check = time.time() - t_start
+        t_check = time.perf_counter() - t_start
+        TimingManager.instance().record_solver_time(t_check)
 
 
         if str(res) == SATResult.SAT.value:
-            t_start = time.time()
+            t_start = time.perf_counter()
             sol = solver.model()
 
             # Log model to disk for debugging (if enabled)
@@ -485,9 +489,12 @@ class Z3Handler:
                 status = "✓" if satisfied else "✗"
 
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
-            t_encode = time.time() - t_start
+            t_encode = time.perf_counter() - t_start
+            TimingManager.instance().record_solver_time(t_encode, count=False)
+            logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s model={t_encode:.3f}s")
             return SATResult.SAT, encoded_sol
         else:
+            logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s ({res})")
             return SATResult.UNSAT if str(res) == SATResult.UNSAT.value else SATResult.UNKNOWN, {}
 
     @staticmethod
@@ -502,6 +509,7 @@ class Z3Handler:
         Returns:
         - Tuple[SATResult, Dict[str, Any]]: Tuple containing SAT result and solution dictionary.
         """
+        build_start = time.perf_counter()
         c = Not(Z3Handler.string_to_expr(node.constraint[node.trace_id]))
         optimizer = Optimize()
         optimizer.add(c)
@@ -524,6 +532,10 @@ class Z3Handler:
                         optimizer.minimize(Abs(var))
 
         optimizer.set("timeout", 60 * 1000)
+        # Same accounting as Z3Handler.solve(): building the optimizer is solver work
+        # but not a query, so it is recorded with count=False.
+        TimingManager.instance().record_solver_time(time.perf_counter() - build_start, count=False)
+
         smt_file = Z3Handler.write_optimizer_to_file(optimizer)
         print(f"Saved SMT-LIB file to: {smt_file}")
 
@@ -536,8 +548,10 @@ class Z3Handler:
         TimingManager.instance().record_solver_time(solver_duration)
 
         if str(res) == SATResult.SAT.value:
+            model_start = time.perf_counter()
             sol = optimizer.model()
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
+            TimingManager.instance().record_solver_time(time.perf_counter() - model_start, count=False)
             return SATResult.SAT, encoded_sol
         else:
             return SATResult.UNSAT if str(res) == SATResult.UNSAT.value else SATResult.UNKNOWN, {}
