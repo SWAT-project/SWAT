@@ -233,14 +233,19 @@ public class Util {
         return interfaces;
     }
 
+    private static final List<String> allowlistedClassNames = List.of("LinkedList", "LogOutput"); // Benign names beginning with 'L'
+
     private static void checkClassName(String className) {
         if (className.startsWith("[")) {
             return; // array class, skip check for now
         }
+        if (allowlistedClassNames.contains(className)) {
+            return;
+        }
         SWATAssert.check(
                 !className.contains(";") && !className.contains("(") && !className.contains(")")
                         && !className.startsWith("L"),
-                "Class name '{}' should not contain ';' or brackets", className);
+                "Class name '{}' should not contain ';', '(', ')', or start with 'L'", className);
     }
 
     /**

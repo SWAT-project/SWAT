@@ -204,7 +204,7 @@ def _print_execution_errors(exec_errors: dict):
     print("=" * 78)
     for msg, tasks in sorted(exec_errors.items(), key=lambda kv: -len(kv[1])):
         unique = list(dict.fromkeys(tasks))
-        print(f"  {len(unique):>4} tasks  {msg[:90]}")
+        print(f"  {len(unique):>4} tasks  {msg[:300]}")
         print(f"           e.g. {', '.join(unique[:3])}")
     print()
 

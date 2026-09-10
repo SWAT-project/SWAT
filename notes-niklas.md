@@ -97,6 +97,9 @@ For example in coral31
   - seems like SA is missing a branch before the actual `round(x) > 5` check
   - what branch is this?
     - it is inside the class static initializer block, related to initializing `$assertionsDisabled`
+    - potentially already handled in SWAT (see CLINIT)
+      - static initializer blocks should be visible in trace
+      - filter out branches inside static initializer blocks?
   - why did this mismatch only occur now?
     - rerunning without the change produced the same issue
     - is this an intermittend problem? Or caused by some other change?
