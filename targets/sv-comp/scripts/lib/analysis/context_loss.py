@@ -8,11 +8,13 @@ A run lives under ``runs/run_<timestamp>/`` with:
                                                context-loss subset, execution errors
 
 This reads that structured data directly — no log scraping — and prints a scoring
-summary (Correct / Failed / Unk / Error / Timeout) plus the missing-invocation
-superset and its authoritative context-loss subset (issue #25).
+summary (Correct / Failed / Unk / Error / Timeout), the missing-invocation
+superset and its authoritative context-loss subset (issue #25), and the
+performance totals (symbolic execution iterations, solver calls) over the run.
 """
 
 import json
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -22,6 +24,14 @@ from typing import Optional
 SCRIPT_DIR = Path(__file__).resolve().parents[2]
 
 SCORE_BUCKETS = ['Correct', 'Failed', 'Unk', 'Error', 'Timeout']
+
+# "2026-09-08 12:49:27,348 ERROR [main] [ErrorHandler.java:91] ..." -> the leading
+# timestamp is per-testcase noise; every number in the rest of the line (instruction
+# offsets, instrumentation ids, source line numbers) varies for the same failure.
+LOG_TIMESTAMP_RE = re.compile(r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\s*')
+# Guard against a preceding word char so identifiers keep their digits ('Refl2'
+# stays distinct from 'Refl4'); only free-standing numbers are templated.
+NUMBER_RE = re.compile(r'(?<![\w.])-?\d+(?:\.\d+)?\b')
 
 
 def find_latest_run(runs_root: Path) -> Optional[Path]:
@@ -73,6 +83,17 @@ def signature(inv: dict) -> str:
     return f"{inv['owner']}/{inv['name']}:{inv['desc']}"
 
 
+def error_signature(message: str) -> str:
+    """Reduce an error log line to a template that groups identical failures.
+
+    Drops the leading timestamp and replaces every number with ``N``, so the same
+    failure reported by many testcases — which otherwise differs only in its
+    timestamp, instruction offset, instrumentation id or source line — collapses
+    into a single group.
+    """
+    return NUMBER_RE.sub('N', LOG_TIMESTAMP_RE.sub('', message.strip()))
+
+
 def analyze_run(run_dir: Path):
     """Aggregate and print the analysis for a single run directory."""
     run_dir = Path(run_dir)
@@ -95,7 +116,15 @@ def analyze_run(run_dir: Path):
     # Missing-invocation aggregation across all testcases of the run.
     # signature -> {tasks: set, count: int, context_loss: bool, isSymbolic: bool}
     missing: dict = {}
-    exec_errors: dict = defaultdict(list)  # message -> [tasks]
+    # Errors grouped by normalized message template (see error_signature):
+    # template -> {tasks: [], variants: set of raw messages}
+    exec_errors: dict = {}
+
+    # Performance counters summed over all testcases that reported a
+    # "performance" section: metric -> total / peak, plus how many did.
+    perf_total: dict = defaultdict(int)
+    perf_max: dict = defaultdict(int)
+    perf_tasks = 0
 
     total_tasks = 0
     stats_missing = 0  # testcases with no stats.json on disk
@@ -128,13 +157,27 @@ def analyze_run(run_dir: Path):
                 m['context_loss'] = m['context_loss'] or inv.get('context_loss', False)
                 m['isSymbolic'] = m['isSymbolic'] or inv.get('isSymbolic', False)
             for e in stats.get('execution_errors', []):
-                exec_errors[e.get('message', '')].append(target)
+                msg = e.get('message', '')
+                grp = exec_errors.setdefault(
+                    error_signature(msg), {'tasks': [], 'variants': set()})
+                grp['tasks'].append(target)
+                grp['variants'].add(msg)
+
+            perf = stats.get('performance') or {}
+            if perf:
+                perf_tasks += 1
+            for metric, value in perf.items():
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue  # only numeric counters are summable
+                perf_total[metric] += value
+                perf_max[metric] = max(perf_max[metric], value)
 
         score[category] = dict(cat_buckets)
         points_by_cat[category] = data.get('points')
 
     _print_scoring_summary(score, points_by_cat, total_tasks)
     _print_missing_invocations(missing)
+    _print_performance(perf_total, perf_max, perf_tasks)
     _print_execution_errors(exec_errors)
 
     if stats_missing:
@@ -196,15 +239,38 @@ def _print_missing_invocations(missing: dict):
         print()
 
 
+def _print_performance(perf_total: dict, perf_max: dict, perf_tasks: int):
+    print("=" * 78)
+    print(f"PERFORMANCE  ({perf_tasks} testcase(s) reported a performance section)")
+    print("=" * 78)
+    if not perf_total:
+        print("None.")
+        print()
+        return
+
+    header = f"{'Metric':<32}{'Total':>14}{'Mean/case':>12}{'Max':>10}"
+    print(header)
+    print("-" * len(header))
+    for metric in sorted(perf_total):
+        total = perf_total[metric]
+        mean = total / perf_tasks if perf_tasks else 0.0
+        print(f"{metric:<32}{total:>14}{mean:>12.1f}{perf_max[metric]:>10}")
+    print()
+
+
 def _print_execution_errors(exec_errors: dict):
     if not exec_errors:
         return
     print("=" * 78)
-    print(f"EXECUTION ERRORS  ({len(exec_errors)} distinct)")
+    total_raw = sum(len(g['variants']) for g in exec_errors.values())
+    print(f"EXECUTION ERRORS  ({len(exec_errors)} distinct; "
+          f"{total_raw} raw message(s))")
     print("=" * 78)
-    for msg, tasks in sorted(exec_errors.items(), key=lambda kv: -len(kv[1])):
-        unique = list(dict.fromkeys(tasks))
-        print(f"  {len(unique):>4} tasks  {msg[:300]}")
+    for template, grp in sorted(exec_errors.items(), key=lambda kv: -len(set(kv[1]['tasks']))):
+        unique = list(dict.fromkeys(grp['tasks']))
+        variants = len(grp['variants'])
+        vtxt = f"({variants} variants)" if variants > 1 else ""
+        print(f"  {len(unique):>4} tasks {vtxt:>14}  {template[:300]}")
         print(f"           e.g. {', '.join(unique[:3])}")
     print()
 
