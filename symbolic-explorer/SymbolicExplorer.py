@@ -133,6 +133,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--log-smt-formulas", action="store_true", help="Log SMT formulas and models to disk for debugging", default=False)
     parser.add_argument("--sa-file", help="Path to a file with static pre-analysis results for informing branch exploration (optional)")
     parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
+    parser.add_argument("--sa-retry-without", action="store_true", help="On a SAFE verdict reached with static pre-analysis, disable it and explore again (guards against false SAFE from incomplete SA)", default=False)
 
     # HTTP-specific arguments
     parser.add_argument("--host", help="HTTP target host", default="localhost")  

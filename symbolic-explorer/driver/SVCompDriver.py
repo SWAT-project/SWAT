@@ -278,7 +278,8 @@ class SVCompDriver:
                 
                 # If we are using SA and come to a SAFE verdict, then continue without SA
                 # this should prevent false SAFE classifications from incomplete SA
-                if self.sa_graph.entry_node is not None and next_step == Action.REPORTVERDICT and self.state.verdict == Verdict.SAFE:
+                if self.args.sa_retry_without and self.sa_graph.entry_node is not None \
+                        and next_step == Action.REPORTVERDICT and self.state.verdict == Verdict.SAFE:
                     logger.info(f'[SYMBOLIC EXPLORATION] No violation found. Retrying without SA.')
                     self.sa_graph = SAGraph() # disable SA
                     next_step = self.retrieve_solution() # and try again

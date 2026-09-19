@@ -65,8 +65,9 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--target', help='Single target to run (only for single mode)')
 @click.option('--no-witness', 'no_witness', is_flag=True, default=False, help='Skip witness creation and validation')
 @click.option('--no-sa', 'no_sa', is_flag=True, default=False, help='Skip static pre-analysis')
+@click.option('--sa-retry-without', 'sa_retry_without', is_flag=True, default=False, help='On a SAFE verdict reached with static pre-analysis, retry the exploration without it')
 @click.pass_context
-def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, categories, suite, limit_nr_tests: int | None, target: str, no_witness: bool, no_sa: bool):
+def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, categories, suite, limit_nr_tests: int | None, target: str, no_witness: bool, no_sa: bool, sa_retry_without: bool):
     """Run verification tests."""
     from lib import (
         extract_testcases,
@@ -131,7 +132,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
 
         # One timestamp ties this run's per-testcase logs to its results dir.
         run_timestamp = new_run_timestamp()
-        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa)
+        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without)
         click.echo(f"Generated {len(ver_tasks_with_commands)} commands")
 
         # Check port availability
