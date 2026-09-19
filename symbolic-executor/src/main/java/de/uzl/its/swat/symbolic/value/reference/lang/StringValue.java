@@ -29,6 +29,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
 
     static final int REPLACE_COUNT = 10;
     private StringFormulaManager smgr;
+    private IntegerFormulaManager imgr;
 
     /**
      * Flag indicating this string was explicitly created via new String() in user code,
@@ -42,6 +43,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     public StringValue(SolverContext context, String concrete, int address) {
         super(context, address);
         this.smgr = context.getFormulaManager().getStringFormulaManager();
+        this.imgr = context.getFormulaManager().getIntegerFormulaManager();
         this.concrete = concrete;
         this.formula = smgr.makeString(concrete);
     }
@@ -49,6 +51,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     public StringValue(SolverContext context, String concrete, StringFormula formula, int address) {
         super(context, address);
         this.smgr = context.getFormulaManager().getStringFormulaManager();
+        this.imgr = context.getFormulaManager().getIntegerFormulaManager();
         this.concrete = concrete;
         this.formula = formula;
     }
@@ -707,7 +710,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeIsEmpty(Value<?, ?>[] args, Type[] desc) {
-        return PlaceHolder.instance;
+        return new BooleanValue(context, concrete.length() == 0, imgr.equal(smgr.length(formula), imgr.makeNumber(0)));
     }
 
     /**
