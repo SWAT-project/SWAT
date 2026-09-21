@@ -2,6 +2,9 @@ from data.BinaryExecutionTree.Node import Node
 from data.BinaryExecutionTree.Leaf import Leaf
 from data.StaticAnalysisGraph.SAGraph import SANode
 
+import log
+logger = log.get_logger()
+
 def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0) -> list[Node]:
     assert clinit_depth >= 0
     possible_nodes = []
@@ -36,7 +39,7 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         skip_is_interesting = mask_sa_node or (sa_node is None) or sa_node.get_fallthrough_child().onPathToAssert
         branch_is_interesting = mask_sa_node or (sa_node is None) or sa_node.get_branched_child().onPathToAssert
         
-        print(f"[DFS] @{node.id}/{"CLINIT" if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
+        logger.info(f"[DFS] @{node.id}/{"CLINIT" if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
         
         # Add the node itself, if eligible
         if (node.skipped is None and skip_is_interesting) or (node.branched is None and branch_is_interesting):
