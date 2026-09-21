@@ -228,7 +228,7 @@ class TargetDriver:
             elif self.args.sa_path:
                 logger.info(f'[EXPLORER] Running static pre-analysis...')
                 subprocess.run(["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
-                                ':'.join(self.args.classpath), self.args.logdir, self.args.target, "main", "inter"],
+                                ':'.join(os.path.abspath(p) for p in self.args.classpath), self.args.logdir, self.args.target, "main", "inter"],
                                check=True, timeout=5)
                 
                 self.sa_graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"))
