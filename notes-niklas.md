@@ -86,7 +86,16 @@ Case: securibench/Arrays1 changed from violation -> violation to violation -> un
 - Somehow, the assert does not appear in the SA at all
   - "assertionPointIds": []
   - thus all, paths are seen as uninteresting
-
+  - assert is hidden behind a virtualinvoke `writer.println()`
+    - the virtualinvoke is not expanded in the cfg
+    - "<java.io.PrintWriter: void println(java.lang.String)>" is blacklisted for some reason
+      - cause: `if (sigStr.contains(blacklistPattern))` matches on "java.lang."
+      - idea was to match methods of classes in java.lang, not parameters of type java.lang.String
+    - maybe not even possible in the general case to follow all virtualinvokes
+    - maybe treat unknown virtualinvokes as 'interesting' (possible assertion point)
+- virtual dispatch support added to CFG extractor and new example target in SWAT (`my-example-3/src/VirtualDispatch.java`)
+  - still fails with SA
+  - same issue as below: static initializer blocks (CLINIT)
 
 
 ### "play it safe" mode where we rerun without SA if we dont find branches
@@ -106,10 +115,16 @@ For example in coral31
     - log current git commit on every run for better reproducibility
     - always do two runs to find flaky issues?
 
-Another flaw:
+Another flaw: (NOW FIXED)
 we only rerun without SA if we find NO branches at all.
 However, we might find SOME branches which then turn out to be UNSAT or non-symbolic. We should still retry in this case.
 Maybe also disable SA for the rest of the run to prevent double-searching every time.
 Our retry scope was too low-level (no possible_branches). It should be one level higher (no useful branches inside possible_branches).
 
+
+# Next things to look into
+Benchmarks with no assertion point: securibench Inter6/Refl4 hide their assert in a nested class's <clinit>, which the cfg-extractor never enters.
+
+Datastructures6 violates SAGraph's single-fall-through invariant, because a method inlined once but called twice gets two RETURN edges. The baseline produces the identical violation, so it is unrelated to this change — worth a separate look.
+Two ways forward: inline a method once per call site (context-sensitive, bigger graphs), or treat a repeat call to an already-inlined method the same way we treat ambiguous dispatch — no CALL edge, flag the call site.
 
