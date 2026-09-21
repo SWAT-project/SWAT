@@ -20,6 +20,9 @@ No new violations where found
 
 How often did SA extraction fail?
   TODO
+  But many timed out :(
+    In `--mode parallel` the load is higher and extraction can take longer
+    Timeout increased to 120s for now
 
 
 First look at Case: jbmc-regression/ArrayIndexOutOfBoundsException1 changed from violation -> violation to violation -> safe
@@ -94,8 +97,9 @@ Case: securibench/Arrays1 changed from violation -> violation to violation -> un
     - maybe not even possible in the general case to follow all virtualinvokes
     - maybe treat unknown virtualinvokes as 'interesting' (possible assertion point)
 - virtual dispatch support added to CFG extractor and new example target in SWAT (`my-example-3/src/VirtualDispatch.java`)
-  - still fails with SA
-  - same issue as below: static initializer blocks (CLINIT)
+  - used to fail with SA
+    - same issue as below: static initializer blocks (CLINIT)
+    - now fixed. CLINIT-blocks are ignored when walking the SA tree
 
 
 ### "play it safe" mode where we rerun without SA if we dont find branches
