@@ -3428,6 +3428,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKECLINIT_END(INVOKECLINIT_END inst) throws SymbolicInstructionException {
         try {
+            symbolicTraceHandler.recordInvocation(
+                    determineIid(inst.iid), inst.getClass().getCanonicalName());
             if (stack.getActiveFrame().getMethodName().equals(inst.name)) {
                 stack.popFrame();
             } else {

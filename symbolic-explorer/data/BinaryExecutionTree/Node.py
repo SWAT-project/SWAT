@@ -4,7 +4,7 @@ import json
 from typing import List, Optional
 
 from data.trace.Input import Input
-from data.trace.Special import Special
+from data.trace.Special import Special, CLINIT, CLINIT_END
 from data.trace.UF import UF
 
 GLOBAL_IID = 0  # Global unique identifier for nodes
@@ -28,6 +28,8 @@ class Node:
         id (any): The ID of the branch.
         trace_id (any): The trace ID of the branch.
         kind (str): The type of the node, either 'Special' or 'Branch'.
+        inst (str): For 'Special' nodes, the instruction that produced the marker
+            (e.g. '...instruction.CLINIT'); None for 'Branch' nodes.
 
     Raises:
         ValueError: If the trace argument is None or empty, indicating that the node cannot be created.
@@ -52,6 +54,7 @@ class Node:
         self.gid = GLOBAL_IID  # Assign a unique global identifier
         GLOBAL_IID += 1
         self.constraint = {}
+        self.inst = None  # Only set for Special nodes
 
         # Validate trace argument
         if trace is None or len(trace) == 0:
@@ -73,6 +76,7 @@ class Node:
         # Check if the branch is of type Special and set properties accordingly
         if isinstance(branch, Special):
             self.kind = "Special"
+            self.inst = branch.inst
             self.branched = child
         else:
             self.kind = "Branch"
@@ -82,6 +86,24 @@ class Node:
                 self.branched = child
             else:
                 self.skipped = child
+
+    def is_clinit_start(self) -> bool:
+        """
+        Checks whether this node marks the beginning of a static initializer (<clinit>).
+
+        Returns:
+            bool: True if this is the CLINIT marker of a static initializer.
+        """
+        return self.kind == "Special" and self.inst == CLINIT
+
+    def is_clinit_end(self) -> bool:
+        """
+        Checks whether this node marks the end of a static initializer (<clinit>).
+
+        Returns:
+            bool: True if this is the INVOKECLINIT_END marker of a static initializer.
+        """
+        return self.kind == "Special" and self.inst == CLINIT_END
 
     def __str__(self):
         """
