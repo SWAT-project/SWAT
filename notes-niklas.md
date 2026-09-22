@@ -82,7 +82,7 @@ Points increased but still negative
 
 Way fewer false SAFE verdicts (from 90 down to 20)
 - still 20 too many... investigate!
-Also more crashes
+Also more timeouts ("crashes")
 
 Case: securibench/Arrays1 changed from violation -> violation to violation -> unknown
 - Also Arrays2, 3, 4, ...
@@ -131,4 +131,28 @@ Benchmarks with no assertion point: securibench Inter6/Refl4 hide their assert i
 
 Datastructures6 violates SAGraph's single-fall-through invariant, because a method inlined once but called twice gets two RETURN edges. The baseline produces the identical violation, so it is unrelated to this change — worth a separate look.
 Two ways forward: inline a method once per call site (context-sensitive, bigger graphs), or treat a repeat call to an already-inlined method the same way we treat ambiguous dispatch — no CALL edge, flag the call site.
+
+## Is the static pre-analysis too heavy?
+Time spent in SA must be made up by faster exploration.
+Idea: do virtual dispatch lazily
+- First: assume an invokevirtual can reach all application classes that derive from the stated type (add assertion point if necessary)
+- When SWAT executes this invokevirtual, remember the exact class that we dispatched to
+- update the SA graph with this information
+Problem: the receiver type might vary based on preceding branches
+- we would need to re-check for every branch
+- state explosion and no benefit (we still need to conservatively assume an assertion point)
+
+TODO: Find potential performance optimizations in SA
+
+
+# 3rd Try (targets/sv-comp/runs/run_20260921_185747/VirtualDispatch_CLINIT-ignored)
+Points now 494, almost back at baseline.
+Only 5 false SAFE verdicts left.
+- all in the `algorithms/` suite
+but many timeouts
+
+Weird though, because sum of ``stage_timing`` values seems to have decreased.
+Maybe thorough timing comparison is in order:
+- confirm timing works correctly
+- find all timeouts and increase for trial run
 
