@@ -3,7 +3,7 @@
 import click
 import logging
 from pathlib import Path
-import sys
+import sys, shlex
 from lib.execution import target_execution
 import subprocess
 
@@ -168,8 +168,8 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
             click.echo(f"Run directory: {run_dir}")
             run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run_dir, testcase_timeout_s=testcase_timeout_s)
         
-            # Log current commit for debugging and reproducibility
-            subprocess.run(f'(git log -1 --pretty=format:"%h %s" && echo && git status) > {run_dir / "gitlog.txt"}', shell=True)
+            # Log argv and current commit for debugging and reproducibility
+            subprocess.run(f'(echo {shlex.quote(shlex.join(sys.argv))} && echo && git log -1 --pretty=format:"%h %s" && echo && git status) > {run_dir / "gitlog.txt"}', shell=True)
 
         click.secho("✓ Test execution complete", fg='green')
 

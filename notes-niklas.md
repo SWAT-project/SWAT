@@ -131,6 +131,8 @@ Benchmarks with no assertion point: securibench Inter6/Refl4 hide their assert i
 
 Datastructures6 violates SAGraph's single-fall-through invariant, because a method inlined once but called twice gets two RETURN edges. The baseline produces the identical violation, so it is unrelated to this change — worth a separate look.
 Two ways forward: inline a method once per call site (context-sensitive, bigger graphs), or treat a repeat call to an already-inlined method the same way we treat ambiguous dispatch — no CALL edge, flag the call site.
+- additional idea: add a "return address" to each CALL edge and record a call stack inside the symbolic explorer
+  - should have the same effect as inlining once per call site, but with less overhead (smaller graphs)
 
 
 ## Is the static pre-analysis too heavy?
