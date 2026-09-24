@@ -155,4 +155,7 @@ Weird though, because sum of ``stage_timing`` values seems to have decreased.
 Maybe thorough timing comparison is in order:
 - confirm timing works correctly
 - find all timeouts and increase for trial run
+  - timeout for static pre-analysis: 120s (in SVCompDriver)
+  - timeout for Z3 solver: None (in SVCompDriver)
+  - timeout for symbolic explorer as a whole: 900s (in targets/sv-comp/scripts/lib/execution.py)
 

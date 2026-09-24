@@ -66,8 +66,10 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--no-witness', 'no_witness', is_flag=True, default=False, help='Skip witness creation and validation')
 @click.option('--no-sa', 'no_sa', is_flag=True, default=False, help='Skip static pre-analysis')
 @click.option('--sa-retry-without', 'sa_retry_without', is_flag=True, default=False, help='On a SAFE verdict reached with static pre-analysis, retry the exploration without it')
+@click.option('--testcase-timeout-s', type=int, default=15 * 60, help='Timeout of the symbolic-explorer in seconds for each test case')
 @click.pass_context
-def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, categories, suite, limit_nr_tests: int | None, target: str, no_witness: bool, no_sa: bool, sa_retry_without: bool):
+def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, categories, suite, limit_nr_tests: int | None, target: str,
+              no_witness: bool, no_sa: bool, sa_retry_without: bool, testcase_timeout_s: int):
     """Run verification tests."""
     from lib import (
         extract_testcases,
@@ -157,14 +159,14 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
                     ctx.exit(1)
 
                 click.echo(f"Running single target: {target}")
-                target_execution(ver_task, create_witness=not no_witness)
+                target_execution(ver_task, create_witness=not no_witness, testcase_timeout_s=testcase_timeout_s)
             else:
                 # Run default single target
                 run_single_target(ver_tasks_with_commands, create_witness=not no_witness)
         else:
             run_dir = make_run_dir(run_timestamp)
             click.echo(f"Run directory: {run_dir}")
-            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run_dir)
+            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run_dir, testcase_timeout_s=testcase_timeout_s)
         
             # Log current commit for debugging and reproducibility
             subprocess.run(f'(git log -1 --pretty=format:"%h %s" && echo && git status) > {run_dir / "gitlog.txt"}', shell=True)

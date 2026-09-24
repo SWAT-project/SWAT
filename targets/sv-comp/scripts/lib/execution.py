@@ -161,7 +161,7 @@ def determine_result(output: List[str], category: VerificationCategory, expected
     # Shouldn't reach here, but handle gracefully
     return 0, 'unknown'
 
-def target_execution(ver_task: VerificationTask, create_witness: bool = True) -> tuple[Path, str, int, ExecutionStatus, bool, Optional[bool], float, dict]:
+def target_execution(ver_task: VerificationTask, create_witness: bool = True, testcase_timeout_s: int = 900) -> tuple[Path, str, int, ExecutionStatus, bool, Optional[bool], float, dict]:
     """
     Execute a verification task and return results including execution time.
 
@@ -184,7 +184,7 @@ def target_execution(ver_task: VerificationTask, create_witness: bool = True) ->
     start_time = time.perf_counter()
 
     with pushd(log_dir):
-        execution_status, output = run_command_with_timeout(cmd)
+        execution_status, output = run_command_with_timeout(cmd, testcase_timeout_s)
         log_output(output)
         error: bool = check_for_dse_error(output)
         points, case = determine_result(output, ver_task['category'], ver_task['verdict'])
@@ -284,7 +284,7 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[Execut
 
  
 
-def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_witness: bool = True, run_dir: Optional[Path] = None, run_timestamp: Optional[str] = None):
+def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_witness: bool = True, run_dir: Optional[Path] = None, run_timestamp: Optional[str] = None, testcase_timeout_s: int = 900):
     # Resolve the run context so all outputs (per-testcase logs + aggregated results) share one dir.
     if run_timestamp is None:
         run_timestamp = run_dir.name.replace('run_', '') if run_dir is not None else new_run_timestamp()
@@ -307,7 +307,7 @@ def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_
         # Create a mapping from futures to their corresponding tasks
         future_to_task = {}
         for ver_task in ver_tasks:
-            future = executor.submit(target_execution, ver_task, create_witness)
+            future = executor.submit(target_execution, ver_task, create_witness, testcase_timeout_s)
             future_to_task[future] = ver_task
 
         for future in concurrent.futures.as_completed(future_to_task): # type: ignore
