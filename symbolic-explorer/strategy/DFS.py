@@ -48,14 +48,20 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             and node.kind != "Special":
                 possible_nodes.append(node)
         
+        # Walk the SA graph in step with the tree. Each side needs its own successor held in its
+        # own variable: rebinding one shared local here would leave the branched recursion
+        # descending from the fallthrough child instead of from this branch.
+        sa_skipped = sa_node
+        sa_branched = sa_node
+        if sa_node and not mask_sa_node:
+            # walk_till_branch() returned a node with both children, or None.
+            sa_skipped = sa_node.get_fallthrough_child()
+            sa_branched = sa_node.get_branched_child()
+
         # Only walk the tree further if the path is interesting (leads to an assert) or if we don't have information (sa_node is None)
         if skip_is_interesting:
-            if sa_node and not mask_sa_node:
-                sa_node = sa_node.get_fallthrough_child() # Walk the SA graph
-            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_node, clinit_depth))
+            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_skipped, clinit_depth))
         if branch_is_interesting:
-            if sa_node and not mask_sa_node:
-                sa_node = sa_node.get_branched_child() # Walk the SA graph
-            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node, clinit_depth))
+            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_branched, clinit_depth))
     
     return possible_nodes
