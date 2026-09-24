@@ -40,7 +40,7 @@ class SANode:
         return None
     
     def add_fallthrough_child(self, child: SANode):
-        assert self.next_fallthrough is None
+        assert self.next_fallthrough is None, f"SANode {self.id} has multiple fallthrough edges!"
         self.next_fallthrough = child
     
     def add_branched_child(self, child: SANode):

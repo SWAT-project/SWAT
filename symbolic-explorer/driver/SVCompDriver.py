@@ -200,6 +200,7 @@ class SVCompDriver:
         sa_start = time.perf_counter()
         try:
             if self.args.sa_file:
+                logger.info(f'[EXPLORER] Loading static pre-analysis graph from provided file...')
                 self.sa_graph.load_json_graph(self.args.sa_file)
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph from provided file.')
             elif self.args.sa_path:
@@ -208,6 +209,7 @@ class SVCompDriver:
                                 ':'.join(os.path.abspath(p) for p in self.args.classpath), self.args.logdir, self.args.target, "main", "inter"],
                                check=True, timeout=120)
                 
+                logger.info(f'[EXPLORER] Loading static pre-analysis graph...')
                 self.sa_graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"))
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
             else:
@@ -216,7 +218,10 @@ class SVCompDriver:
             logger.error(f'[EXPLORER] Failed to get static pre-analysis information. TimeoutExpired: {e}')
             self.sa_timed_out = True
         except Exception as e:
-            logger.error(f'[EXPLORER] Failed to get static pre-analysis information. Exception: {e}')
+            logger.error(f'[EXPLORER] Failed to get static pre-analysis information. Exception of type {type(e).__name__}: {e}')
+            import traceback
+            logger.error(traceback.format_exc())
+
             self.sa_graph = SAGraph() # clear any half-loaded graph
         finally:
             # Record on every path: a timed-out or failed pre-analysis still costs wall time.
