@@ -7,6 +7,14 @@ class SANode:
     id: str
     onPathToAssert: bool = False
     isPhantomGuard: bool = False # a phantom guard is a generated explicit check for an implicit exception, e.g. `if (op2 != 0)` before an IDIV.
+    # The static analysis could not expand something here (a call whose target it could not pin
+    # down, or one cut off by its recursion depth limit), so the statements and branches of
+    # whatever was left out are missing from the graph. We walk this graph in step with a real
+    # execution, matching branch for branch by position, so past this node the execution reports
+    # branches the graph has no counterpart for and every later pairing would be shifted by them.
+    # walk_till_branch() therefore stops here and reports "no information", which callers already
+    # treat as "everything is interesting".
+    isIncomplete: bool = False
     prev: list[SANode] = field(default_factory=list, repr=False) # preceding nodes
     next_fallthrough: SANode | None = None
     next_branched: SANode | None = None
@@ -33,6 +41,8 @@ class SANode:
         return False
     
     def walk_till_branch(self) -> SANode | None:
+        if self.isIncomplete: # the graph stops being faithful here, so stop trusting it
+            return None
         if self.is_branch():
             return self
         if self.has_fallthrough_child():
@@ -73,7 +83,8 @@ class SAGraph:
         
         for json_node in self.json_graph["nodes"]:
             id = json_node["id"]
-            self.nodes[id] = SANode(id)
+            # Older graphs carry no isIncomplete field; absent means the node is faithful.
+            self.nodes[id] = SANode(id, isIncomplete=json_node.get("isIncomplete", False))
         
         for json_edge in self.json_graph["edges"]:
             source = self.nodes[json_edge["source"]]
@@ -100,6 +111,14 @@ class SAGraph:
 
         for assertion_point_id in self.json_graph["metadata"]["assertionPointIds"]:
             mark_assertion_path(self.nodes[assertion_point_id])
+
+        # An incomplete node may hide an assert in the part that was not expanded, so the paths
+        # leading to it have to stay interesting. The extractor already reports these as assertion
+        # points; marking them here too means a graph that ever forgets one half still errs on the
+        # safe side rather than pruning a path that leads to something we cannot see.
+        for node in self.nodes.values():
+            if node.isIncomplete:
+                mark_assertion_path(node)
 
 
 
