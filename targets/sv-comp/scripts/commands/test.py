@@ -165,11 +165,12 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
                 run_single_target(ver_tasks_with_commands, create_witness=not no_witness)
         else:
             run_dir = make_run_dir(run_timestamp)
+            run_dir.mkdir(parents=True)
             click.echo(f"Run directory: {run_dir}")
-            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run_dir, testcase_timeout_s=testcase_timeout_s)
-        
             # Log argv and current commit for debugging and reproducibility
             subprocess.run(f'(echo {shlex.quote(shlex.join(sys.argv))} && echo && git log -1 --pretty=format:"%h %s" && echo && git status) > {run_dir / "gitlog.txt"}', shell=True)
+            
+            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run_dir, testcase_timeout_s=testcase_timeout_s)
 
         click.secho("✓ Test execution complete", fg='green')
 
