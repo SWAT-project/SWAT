@@ -651,7 +651,7 @@ def save_results(category_stats, results, results_dir: Path, run_timestamp: str)
         data = {
             'category': category_name,
             'points': stats['points'],
-            'case_occurrences': stats['case_occurrences'],
+            'case_occurrences': dict(sorted(stats['case_occurrences'].items())),
             'execution_statuses': stats['execution_statuses'],
             'dse_errors': stats['dse_errors'],
             'witness_stats': stats['witness_stats'],
