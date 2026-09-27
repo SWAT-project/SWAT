@@ -1,11 +1,14 @@
 from data.BinaryExecutionTree.Node import Node
 from data.BinaryExecutionTree.Leaf import Leaf
-from data.StaticAnalysisGraph.SAGraph import SANode
+from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, is_interesting
 
 import log
 logger = log.get_logger()
 
-def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0) -> list[Node]:
+def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0, sa_stack: CallStack = None) -> list[Node]:
+    # sa_node and sa_stack together are where the SA walk stands: the node, and the call stack of
+    # call sites the walk entered to get there. The same graph node means different things under
+    # different stacks -- a method's exit returns to whichever call site is on top.
     assert clinit_depth >= 0
     possible_nodes = []
     
@@ -25,7 +28,7 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             clinit_depth -= 1
 
         if node.kind == "Special": # skip over Special nodes (includes CLINIT / INVOKECLINIT_END)
-            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node, clinit_depth))
+            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node, clinit_depth, sa_stack))
             return possible_nodes
         else:
             assert node.kind == "Branch"
@@ -34,10 +37,11 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         mask_sa_node = clinit_depth > 0
     
         # Get information on interesting paths. If sa_node is None, all paths should be considered interesting
-        if sa_node:
-            sa_node = sa_node.walk_till_branch() # idempotent
-        skip_is_interesting = mask_sa_node or (sa_node is None) or sa_node.get_fallthrough_child().onPathToAssert
-        branch_is_interesting = mask_sa_node or (sa_node is None) or sa_node.get_branched_child().onPathToAssert
+        if sa_node and not mask_sa_node:
+            walked = sa_node.walk_till_branch(sa_stack) # idempotent
+            sa_node, sa_stack = walked if walked is not None else (None, None)
+        skip_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_fallthrough_child(), sa_stack)
+        branch_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_branched_child(), sa_stack)
         
         logger.info(f"[DFS] @{node.id}/{"CLINIT" if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
         
@@ -60,8 +64,8 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
 
         # Only walk the tree further if the path is interesting (leads to an assert) or if we don't have information (sa_node is None)
         if skip_is_interesting:
-            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_skipped, clinit_depth))
+            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_skipped, clinit_depth, sa_stack))
         if branch_is_interesting:
-            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_branched, clinit_depth))
+            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_branched, clinit_depth, sa_stack))
     
     return possible_nodes
