@@ -2,16 +2,19 @@
 """
 Compare the timing behavior of two or more SV-COMP runs in a set of plots.
 
-Takes results_<prp>_<timestamp>.json files. The first file is the baseline;
-pairwise plots compare every other run against it. Per-task stats.json files
+Takes results_<prp>_<timestamp>.json files, or run directories (runs/run_<timestamp>/),
+in which case the results file for --prp is picked from their results/ folder. The
+first run is the baseline; pairwise plots compare every other run against it. Per-task stats.json files
 (iteration and solver-call counts) are read from the run's logs/ directory
 next to results/ when they exist.
 
 Writes numbered SVGs, summary.md and a self-contained report.html into the
-output directory.
+output directory, by default runs/comparison_<A>_vs_<B>[_vs_...]/ next to the runs,
+named after the labels or, without labels, the run directories.
 
 Usage:
     compare_runs.py BASELINE.json OTHER.json [...] [-o outdir] [--label NAME ...]
+    compare_runs.py runs/run_A/ runs/run_B/ [...] [--prp valid-assert] [--label NAME ...]
 """
 
 import argparse
@@ -34,6 +37,7 @@ from matplotlib.patches import Patch  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 
 TIMING_INDEX = 6
+RUNS_DIR = Path(__file__).resolve().parent.parent / "runs"
 
 # Categorical order (runs); a run keeps its color by position on the command line.
 RUN_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100",
@@ -799,22 +803,56 @@ def md_to_html(md):
     return "\n".join(out)
 
 
+def resolve_results(arg: str, prp: str) -> Path:
+    """Return the results file for a results file or a run directory (or its results/ folder)."""
+    path = Path(arg)
+    if path.is_file():
+        return path
+    if not path.is_dir():
+        raise SystemExit(f"error: {arg} is neither a results file nor a directory")
+    results_dir = path / "results" if (path / "results").is_dir() else path
+    matches = sorted(results_dir.glob(f"results_{prp}.prp_*.json"))
+    if len(matches) != 1:
+        found = ", ".join(p.name for p in sorted(results_dir.glob("results_*.json"))) or "none"
+        raise SystemExit(f"error: expected one results_{prp}.prp_*.json in {results_dir}, "
+                         f"found {len(matches)} (results files there: {found})")
+    return matches[0]
+
+
+def default_outdir(paths, labels) -> Path:
+    """runs/comparison_<A>_vs_<B>..., from the labels or else the run directory names."""
+    if labels:
+        names = labels
+    else:
+        names = [p.resolve().parent.parent.name.removeprefix("run_") for p in paths]
+    names = [re.sub(r"[^A-Za-z0-9._-]+", "-", n).strip("-") or "run" for n in names]
+    return RUNS_DIR / ("comparison_" + "_vs_".join(names))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("results", nargs="+", help="results_<prp>_<timestamp>.json files; the first is the baseline")
-    parser.add_argument("-o", "--outdir", default="run_comparison", help="output directory (default: run_comparison)")
-    parser.add_argument("--label", action="append", help="label per result file, in order")
+    parser.add_argument("results", nargs="+",
+                        help="results_<prp>_<timestamp>.json files or run directories; the first is the baseline")
+    parser.add_argument("--prp", default="valid-assert",
+                        help="property whose results file is used for run directories (default: valid-assert)")
+    parser.add_argument("-o", "--outdir",
+                        help="output directory (default: runs/comparison_<A>_vs_<B>..., from the labels "
+                             "or the run directory names)")
+    parser.add_argument("--label", action="append", help="label per run, in order")
     args = parser.parse_args()
 
     if len(args.results) < 2:
-        parser.error("need at least two result files")
+        parser.error("need at least two runs")
     if len(args.results) > len(RUN_COLORS):
-        parser.error(f"at most {len(RUN_COLORS)} result files are supported")
+        parser.error(f"at most {len(RUN_COLORS)} runs are supported")
     if args.label and len(args.label) != len(args.results):
-        parser.error("--label must be given once per result file")
-    paths = [Path(p) for p in args.results]
+        parser.error("--label must be given once per run")
+    paths = [resolve_results(p, args.prp) for p in args.results]
     labels = args.label or [default_label(p) for p in paths]
     runs = [load_run(p, lbl) for p, lbl in zip(paths, labels)]
+    for r in runs:
+        if not any(t.finished for t in r.tasks.values()):
+            parser.error(f"{r.path} has no finished tasks with timing data ({len(r.tasks)} tasks in total)")
     for r, c in zip(runs, RUN_COLORS):
         r.color = c
     timeouts = {r.timeout for r in runs}
@@ -822,7 +860,7 @@ def main():
         print(f"Warning: runs used different timeouts {sorted(t or 0 for t in timeouts)}; "
               "only compare runs made with the same timeout.")
 
-    outdir = Path(args.outdir)
+    outdir = Path(args.outdir) if args.outdir else default_outdir(paths, args.label)
     outdir.mkdir(parents=True, exist_ok=True)
     stages = active_stages(runs)
 
