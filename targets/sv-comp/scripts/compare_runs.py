@@ -7,7 +7,7 @@ pairwise plots compare every other run against it. Per-task stats.json files
 (iteration and solver-call counts) are read from the run's logs/ directory
 next to results/ when they exist.
 
-Writes numbered PNGs, summary.md and a self-contained report.html into the
+Writes numbered SVGs, summary.md and a self-contained report.html into the
 output directory.
 
 Usage:
@@ -190,6 +190,7 @@ plt.rcParams.update({
     "font.size": 10, "axes.titlesize": 11, "axes.titleweight": "bold", "axes.titlelocation": "left",
     "axes.labelcolor": TEXT, "text.color": TEXT, "figure.facecolor": "white",
     "axes.facecolor": "white", "legend.frameon": False, "savefig.bbox": "tight",
+    "svg.fonttype": "none",  # keep text as text in the SVGs
 })
 
 
@@ -686,7 +687,7 @@ def plot_overhead(runs, out):
 
 
 def save(fig, out):
-    fig.savefig(out, dpi=130)
+    fig.savefig(out)
     plt.close(fig)
 
 
@@ -732,23 +733,23 @@ def summary_md(runs, stages):
 
 
 CAPTIONS = {
-    "01_cactus.png": "Cumulative finished tasks over a simulated timeout, for the explorer's total_time "
+    "01_cactus.svg": "Cumulative finished tasks over a simulated timeout, for the explorer's total_time "
                      "and for the harness wall time.",
-    "02_score.png": "SV-COMP score if the timeout were t: a task slower than t counts as unknown (0 points).",
-    "03_stage_cactus.png": "One cactus per stage. Shows which stage makes the difference and at which scale.",
-    "04_scatter.png": "Every task, baseline time vs other run time (log-log). Dotted lines: 2x and 10x. "
+    "02_score.svg": "SV-COMP score if the timeout were t: a task slower than t counts as unknown (0 points).",
+    "03_stage_cactus.svg": "One cactus per stage. Shows which stage makes the difference and at which scale.",
+    "04_scatter.svg": "Every task, baseline time vs other run time (log-log). Dotted lines: 2x and 10x. "
                       "Tasks that did not finish sit in the grey band; markers show verdict changes.",
-    "05_speedup.png": "Left: sorted per-task ratio. Right: ratio against baseline time with a bucketed "
+    "05_speedup.svg": "Left: sorted per-task ratio. Right: ratio against baseline time with a bucketed "
                       "geometric mean, showing for which task sizes the change helps.",
-    "06_stage_totals.png": "Stacked summed stage time on the tasks finished in every run, split by "
+    "06_stage_totals.svg": "Stacked summed stage time on the tasks finished in every run, split by "
                            "baseline task size.",
-    "07_suite_heatmap.png": "Summed per-stage time difference per suite (symlog color).",
-    "08_suite_dots.png": "Sum and median of total_time per suite for each run.",
-    "09_stage_share.png": "Stage share of each task's wall time, tasks sorted by total_time.",
-    "10_iterations.png": "Iterations, solver calls and executor time per iteration, per task (from stats.json).",
-    "11_top_deltas.png": "The tasks with the largest wall-time change, broken down by stage.",
-    "12_sa_payoff.png": "Per task: static pre-analysis cost vs the time it saved in the other stages.",
-    "13_overhead.png": "Wall time the explorer's timer does not cover (process start, stats.json, shutdown).",
+    "07_suite_heatmap.svg": "Summed per-stage time difference per suite (symlog color).",
+    "08_suite_dots.svg": "Sum and median of total_time per suite for each run.",
+    "09_stage_share.svg": "Stage share of each task's wall time, tasks sorted by total_time.",
+    "10_iterations.svg": "Iterations, solver calls and executor time per iteration, per task (from stats.json).",
+    "11_top_deltas.svg": "The tasks with the largest wall-time change, broken down by stage.",
+    "12_sa_payoff.svg": "Per task: static pre-analysis cost vs the time it saved in the other stages.",
+    "13_overhead.svg": "Wall time the explorer's timer does not cover (process start, stats.json, shutdown).",
 }
 
 
@@ -761,7 +762,7 @@ def write_html(outdir: Path, images, summary):
     parts.append(md_to_html(summary))
     for img in images:
         data = base64.b64encode((outdir / img).read_bytes()).decode()
-        parts.append(f"<h2>{img}</h2><p>{CAPTIONS.get(img, '')}</p><img src='data:image/png;base64,{data}'>")
+        parts.append(f"<h2>{img}</h2><p>{CAPTIONS.get(img, '')}</p><img src='data:image/svg+xml;base64,{data}'>")
     parts.append("</body></html>")
     (outdir / "report.html").write_text("\n".join(parts))
 
@@ -833,19 +834,19 @@ def main():
             images.append(name)
             print(f"wrote {path}")
 
-    emit("01_cactus.png", plot_cactus, runs)
-    emit("02_score.png", plot_score, runs)
-    emit("03_stage_cactus.png", plot_stage_cactus, runs, stages)
-    emit("04_scatter.png", plot_scatter, runs)
-    emit("05_speedup.png", plot_speedup, runs)
-    emit("06_stage_totals.png", plot_stage_totals, runs, stages)
-    emit("07_suite_heatmap.png", plot_suite_heatmap, runs, stages)
-    emit("08_suite_dots.png", plot_suite_dots, runs)
-    emit("09_stage_share.png", plot_stage_share, runs, stages)
-    emit("10_iterations.png", plot_iterations, runs)
-    emit("11_top_deltas.png", plot_top_deltas, runs, stages)
-    emit("12_sa_payoff.png", plot_sa_payoff, runs)
-    emit("13_overhead.png", plot_overhead, runs)
+    emit("01_cactus.svg", plot_cactus, runs)
+    emit("02_score.svg", plot_score, runs)
+    emit("03_stage_cactus.svg", plot_stage_cactus, runs, stages)
+    emit("04_scatter.svg", plot_scatter, runs)
+    emit("05_speedup.svg", plot_speedup, runs)
+    emit("06_stage_totals.svg", plot_stage_totals, runs, stages)
+    emit("07_suite_heatmap.svg", plot_suite_heatmap, runs, stages)
+    emit("08_suite_dots.svg", plot_suite_dots, runs)
+    emit("09_stage_share.svg", plot_stage_share, runs, stages)
+    emit("10_iterations.svg", plot_iterations, runs)
+    emit("11_top_deltas.svg", plot_top_deltas, runs, stages)
+    emit("12_sa_payoff.svg", plot_sa_payoff, runs)
+    emit("13_overhead.svg", plot_overhead, runs)
 
     summary = summary_md(runs, stages)
     (outdir / "summary.md").write_text(summary)
