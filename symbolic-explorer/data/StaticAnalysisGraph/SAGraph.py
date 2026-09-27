@@ -398,5 +398,5 @@ if __name__ == "__main__":
     import sys
     tree = SAGraph()
     tree.load_json_graph(sys.argv[1])
-    print(tree.entry_node)
+    # print(tree.entry_node) # prints the whole tree
     print("not reachesAssertSameLevel:", [n.id for n in tree.nodes.values() if not n.reachesAssertSameLevel])
