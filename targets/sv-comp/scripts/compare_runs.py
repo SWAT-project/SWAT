@@ -61,6 +61,7 @@ TEXT = "#2b2b29"
 MUTED = "#6f6e69"
 GRID = "#e6e5e0"
 EPS = 1e-4  # floor for log axes (seconds)
+LINEAR = False  # --linear: linear instead of log time axes in the cactus and score plots
 
 
 @dataclass
@@ -200,20 +201,31 @@ plt.rcParams.update({
 
 # ----------------------------------------------------------------------------- plots
 
-def cactus(ax, runs, value, title, timeout_lines=True):
+def time_axis(ax, lo, hi, label):
+    """Log x-axis from just below lo, or with --linear a linear one from 0 to just above hi."""
+    if LINEAR:
+        ax.set_xlim(0, hi * 1.03 if hi > 0 else 1)
+        ax.set_xlabel(label)
+    else:
+        ax.set_xscale("log")
+        if lo < math.inf:
+            ax.set_xlim(left=max(EPS, lo) / 1.5)
+        ax.set_xlabel(f"{label} (log)")
+
+
+def cactus(ax, runs, value, title, xlabel, timeout_lines=True, hi=0.0):
     lo = math.inf
+    timeouts = sorted({r.timeout for r in runs if r.timeout}) if timeout_lines else []
     for r in runs:
         vals = sorted(max(EPS, v) for v in (value(t) for t in r.tasks.values()) if v is not None)
         if not vals:
             continue
-        lo = min(lo, vals[0])
+        lo, hi = min(lo, vals[0]), max(hi, vals[-1])
         ax.step([EPS] + vals, range(len(vals) + 1), where="post", color=r.color, linewidth=2,
                 label=f"{short_label(r)}: {len(vals)}/{len(r.tasks)}")
-    ax.set_xscale("log")
-    if lo < math.inf:
-        ax.set_xlim(left=lo / 1.5)
+    time_axis(ax, lo, max([hi] + timeouts), xlabel)
     if timeout_lines:
-        for to in sorted({r.timeout for r in runs if r.timeout}):
+        for to in timeouts:
             ax.axvline(to, color=MUTED, linewidth=1, linestyle=":")
             ax.text(to, 0.02, f" timeout {to:.0f} s", transform=ax.get_xaxis_transform(),
                     color=MUTED, fontsize=8, rotation=90, va="bottom", ha="right")
@@ -228,11 +240,9 @@ def cactus(ax, runs, value, title, timeout_lines=True):
 
 def plot_cactus(runs, out):
     fig, axes = plt.subplots(1, 2, figsize=(14, 5.5), sharey=True)
-    cactus(axes[0], runs, lambda t: t.total, "Explorer total_time")
-    axes[0].set_xlabel("simulated timeout [s] (log)")
+    cactus(axes[0], runs, lambda t: t.total, "Explorer total_time", "simulated timeout [s]")
     cactus(axes[1], runs, lambda t: t.wall if t.finished else None,
-           "Harness wall time (includes process start/stop)")
-    axes[1].set_xlabel("simulated timeout [s] (log)")
+           "Harness wall time (includes process start/stop)", "simulated timeout [s]")
     fig.suptitle("How many tasks finish within t seconds", x=0.01, ha="left", fontweight="bold")
     save(fig, out)
 
@@ -240,13 +250,15 @@ def plot_cactus(runs, out):
 def plot_cactus_free_sa(runs, out):
     """Like the total_time cactus, but as if static pre-analysis took no time."""
     fig, ax = plt.subplots(figsize=(9, 5.5))
+    measured_hi = 0.0
     for r in runs:  # the measured curves, faint, for reference
         vals = sorted(max(EPS, t.total) for t in r.tasks.values() if t.finished)
         ax.step([EPS] + vals, range(len(vals) + 1), where="post", color=r.color, linewidth=1,
                 linestyle="--", alpha=0.6)
+        measured_hi = max([measured_hi] + vals[-1:])
     cactus(ax, runs, lambda t: t.total - t.stage("static_pre_analysis") if t.finished else None,
-           "Explorer total_time with static pre-analysis counted as 0 s")
-    ax.set_xlabel("simulated timeout [s] (log)")
+           "Explorer total_time with static pre-analysis counted as 0 s", "simulated timeout [s]",
+           hi=measured_hi)
     handles, labels = ax.get_legend_handles_labels()
     handles += [Line2D([], [], color=MUTED, linewidth=2),
                 Line2D([], [], color=MUTED, linewidth=1, linestyle="--")]
@@ -272,11 +284,10 @@ def plot_score(runs, out):
         if len(fin):
             axes[0].annotate(f"{score[-1]}", (xs[-1], score[-1]), xytext=(4, 0),
                              textcoords="offset points", va="center", fontsize=8, color=TEXT)
+    lo = min(min(r.finished_totals()) for r in runs)
+    hi = max(max(r.finished_totals()) for r in runs)
     for ax in axes:
-        ax.set_xscale("log")
-        ax.set_xlabel("simulated timeout [s] (log)")
-        lo = min(min(r.finished_totals()) for r in runs)
-        ax.set_xlim(left=max(EPS, lo) / 1.5)
+        time_axis(ax, lo, hi * 1.04, "simulated timeout [s]")  # room for the end-of-line score
         style_axes(ax)
     axes[0].set_title("SV-COMP score at simulated timeout")
     axes[0].set_ylabel("points")
@@ -296,8 +307,8 @@ def plot_stage_cactus(runs, stages, out):
     rows = math.ceil(n / cols)
     fig, axes = plt.subplots(rows, cols, figsize=(15, 4.3 * rows), sharey=True, squeeze=False)
     for ax, s in zip(axes.flat, stages):
-        cactus(ax, runs, lambda t, s=s: t.stage(s), STAGE_NAMES[s], timeout_lines=False)
-        ax.set_xlabel("time in stage [s] (log)")
+        cactus(ax, runs, lambda t, s=s: t.stage(s), STAGE_NAMES[s], "time in stage [s]",
+               timeout_lines=False)
         ax.get_legend().remove()
     for ax in list(axes.flat)[n:]:
         ax.axis("off")
@@ -693,8 +704,7 @@ def plot_overhead(runs, out):
         axes[0].scatter([max(EPS, t.total) for t in fin], [max(EPS, t.untracked) for t in fin], s=14,
                         color=r.color, alpha=0.6, edgecolors="none", label=short_label(r))
     cactus(axes[1], runs, lambda t: t.untracked, "Cactus of time outside the explorer timer",
-           timeout_lines=False)
-    axes[1].set_xlabel("wall time − total_time [s] (log)")
+           "wall time − total_time [s]", timeout_lines=False)
     ax = axes[0]
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -859,6 +869,10 @@ def main():
                         help="output directory (default: runs/comparison_<A>_vs_<B>..., from the labels "
                              "or the run directory names)")
     parser.add_argument("--label", action="append", help="label per run, in order")
+    parser.add_argument("--linear", action="store_true",
+                        help="linear instead of log time axes in the cactus and score plots "
+                             "(01, 01b, 02, 03, right half of 13); the default output directory "
+                             "gets a _linear suffix")
     args = parser.parse_args()
 
     if len(args.results) < 2:
@@ -880,7 +894,11 @@ def main():
         print(f"Warning: runs used different timeouts {sorted(t or 0 for t in timeouts)}; "
               "only compare runs made with the same timeout.")
 
+    global LINEAR
+    LINEAR = args.linear
     outdir = Path(args.outdir) if args.outdir else default_outdir(paths, args.label)
+    if args.linear and not args.outdir:
+        outdir = outdir.with_name(outdir.name + "_linear")
     outdir.mkdir(parents=True, exist_ok=True)
     stages = active_stages(runs)
 
