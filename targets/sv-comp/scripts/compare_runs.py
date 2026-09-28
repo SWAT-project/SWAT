@@ -237,6 +237,24 @@ def plot_cactus(runs, out):
     save(fig, out)
 
 
+def plot_cactus_free_sa(runs, out):
+    """Like the total_time cactus, but as if static pre-analysis took no time."""
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    for r in runs:  # the measured curves, faint, for reference
+        vals = sorted(max(EPS, t.total) for t in r.tasks.values() if t.finished)
+        ax.step([EPS] + vals, range(len(vals) + 1), where="post", color=r.color, linewidth=1,
+                linestyle="--", alpha=0.6)
+    cactus(ax, runs, lambda t: t.total - t.stage("static_pre_analysis") if t.finished else None,
+           "Explorer total_time with static pre-analysis counted as 0 s")
+    ax.set_xlabel("simulated timeout [s] (log)")
+    handles, labels = ax.get_legend_handles_labels()
+    handles += [Line2D([], [], color=MUTED, linewidth=2),
+                Line2D([], [], color=MUTED, linewidth=1, linestyle="--")]
+    labels += ["solid: pre-analysis free", "dashed: measured total_time"]
+    ax.legend(handles, labels, loc="center right", fontsize=8)
+    save(fig, out)
+
+
 def plot_score(runs, out):
     """SV-COMP score if the timeout were t: tasks slower than t score 0 (unknown)."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
@@ -737,6 +755,8 @@ def summary_md(runs, stages):
 
 
 CAPTIONS = {
+    "01b_cactus_free_sa.svg": "Same cactus with each task's static pre-analysis time subtracted: what the "
+                              "runs would look like if the pre-analysis were free. Dashed: the measured curves.",
     "01_cactus.svg": "Cumulative finished tasks over a simulated timeout, for the explorer's total_time "
                      "and for the harness wall time.",
     "02_score.svg": "SV-COMP score if the timeout were t: a task slower than t counts as unknown (0 points).",
@@ -873,6 +893,7 @@ def main():
             print(f"wrote {path}")
 
     emit("01_cactus.svg", plot_cactus, runs)
+    emit("01b_cactus_free_sa.svg", plot_cactus_free_sa, runs)
     emit("02_score.svg", plot_score, runs)
     emit("03_stage_cactus.svg", plot_stage_cactus, runs, stages)
     emit("04_scatter.svg", plot_scatter, runs)
