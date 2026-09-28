@@ -24,6 +24,12 @@ and used in `strategy/DFS.py`.
 - **Walker giving up is safe:** when `walk_till_branch` returns `None`, the walker has no
   information, and `dfs` treats everything as interesting. That fallback is always safe.
 - **`<clinit>` is masked:** static initializers are not in the graph, so the walk is frozen inside
+- **SA runs in the background:** in sv-comp mode `svcomp/StaticPreAnalysis.py` runs the extractor
+  in a thread while exploration starts unpruned; `SVCompDriver.adopt_sa_graph` switches to the
+  graph once it is loaded, and it is cancelled (extractor killed) if exploration finishes first.
+  `--wait-for-sa` restores the old sequential behaviour. In parallel runs the `static_pre_analysis`
+  timing stage is 0 and its duration is `static_pre_analysis_wall`; `run_info.json` in the run dir
+  records the SA mode.
   them.
 
 Tests for the walk, runnable without a SWAT run:
@@ -51,7 +57,7 @@ spot a walk that has fallen out of step with the execution.
 
 ```bash
 cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --categories valid-assert.prp
-./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --testcase-timeout-s ...
+./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --wait-for-sa, --testcase-timeout-s ...
 ```
 
 - **Duration:** a full valid-assert run takes about 40 min with the default 900 s timeout, and

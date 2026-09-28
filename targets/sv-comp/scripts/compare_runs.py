@@ -12,6 +12,14 @@ Writes numbered SVGs, summary.md and a self-contained report.html into the
 output directory, by default runs/comparison_<A>_vs_<B>[_vs_...]/ next to the runs,
 named after the labels or, without labels, the run directories.
 
+Static pre-analysis (SA) timing depends on the run's SA mode, read from the run's run_info.json
+(older runs without one: inferred from gitlog.txt, where anything but --no-sa ran sequentially):
+  - none:       no pre-analysis.
+  - sequential: (--wait-for-sa) exploration waited for SA; the static_pre_analysis stage is its
+                whole duration.
+  - parallel:   SA ran in the background while exploring; the static_pre_analysis stage is 0 and
+                its duration (static_pre_analysis_wall) overlaps the other stages.
+
 Usage:
     compare_runs.py BASELINE.json OTHER.json [...] [-o outdir] [--label NAME ...]
     compare_runs.py runs/run_A/ runs/run_B/ [...] [--prp valid-assert] [--label NAME ...]
@@ -75,6 +83,9 @@ class Task:
     stages: Optional[dict]  # None when the explorer wrote no timing (e.g. harness timeout)
     iterations: Optional[int] = None
     solver_calls: Optional[int] = None
+    sa_wall: Optional[float] = None  # SA duration, blocking or not; None without SA or timing
+    sa_status: Optional[str] = None  # from stats.json: loaded, cancelled, failed, timeout, ...
+    sa_adopted_round: Optional[int] = None
 
     @property
     def total(self) -> Optional[float]:
@@ -103,6 +114,7 @@ class Run:
     timeout: Optional[float]
     tasks: dict = field(default_factory=dict)
     color: str = ""
+    sa_mode: str = "unknown"  # none, sequential, parallel (see the module docstring)
 
     def finished_totals(self):
         return sorted(t.total for t in self.tasks.values() if t.finished)
@@ -110,7 +122,30 @@ class Run:
 
 # ----------------------------------------------------------------------------- loading
 
-def parse_timeout(run_dir: Path, tasks) -> Optional[float]:
+def read_run_info(run_dir: Path) -> dict:
+    """run_info.json of a run, or {} for runs from before it was written."""
+    try:
+        return json.loads((run_dir / "run_info.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def parse_sa_mode(run_dir: Path, info: dict) -> str:
+    if info.get("sa_mode"):
+        return info["sa_mode"]
+    gitlog = run_dir / "gitlog.txt"
+    if gitlog.exists():
+        argv = (gitlog.read_text().splitlines() or [""])[0]
+        if "--no-sa" in argv:
+            return "none"
+        # Before run_info.json the pre-analysis always ran before the exploration.
+        return "sequential"
+    return "unknown"
+
+
+def parse_timeout(run_dir: Path, tasks, info: dict) -> Optional[float]:
+    if info.get("testcase_timeout_s"):
+        return float(info["testcase_timeout_s"])
     gitlog = run_dir / "gitlog.txt"
     if gitlog.exists():
         m = re.search(r"--testcase-timeout-s[ =](\d+)", gitlog.read_text())
@@ -126,6 +161,9 @@ def default_label(path: Path) -> str:
     # Empty marker files next to logs/ and results/ (e.g. "high-timeout_SA") describe the run.
     markers = sorted(p.name for p in run_dir.iterdir() if p.is_file() and p.stat().st_size == 0) \
         if run_dir.is_dir() else []
+    sa_mode = parse_sa_mode(run_dir, read_run_info(run_dir))
+    if sa_mode != "unknown":
+        markers.append(f"SA {sa_mode}")
     return f"{name} ({', '.join(markers)})" if markers else name
 
 
@@ -134,22 +172,34 @@ def load_run(path: Path, label: str) -> Run:
         results = json.load(f)["results"]
     m = re.match(r"results_(.+?)\.prp_", path.name)
     prp = m.group(1) if m else None
-    logs = path.resolve().parent.parent / "logs"
+    run_dir = path.resolve().parent.parent
+    info = read_run_info(run_dir)
+    sa_mode = parse_sa_mode(run_dir, info)
+    logs = run_dir / "logs"
     tasks = {}
     for name, entry in results.items():
         case, points, status, _err, _validated, wall, timing = entry[:7]
         stages = timing if isinstance(timing, dict) and "total_time" in timing else None
         task = Task(name, name.split("/")[0], case, points, status, wall, stages)
+        if stages and sa_mode != "none":
+            # Older timing has no static_pre_analysis_wall: SA was sequential, so it is the stage.
+            task.sa_wall = stages.get("static_pre_analysis_wall", stages.get("static_pre_analysis"))
         stats_file = logs / f"{name}_{prp}" / "stats.json"
         if prp and stats_file.exists():
             try:
-                perf = json.loads(stats_file.read_text()).get("performance", {})
+                data = json.loads(stats_file.read_text())
+                perf = data.get("performance", {})
                 task.iterations = perf.get("symbolic_exec_iterations")
                 task.solver_calls = perf.get("nr_solver_calls")
+                sa = data.get("static_analysis", {})
+                task.sa_status = sa.get("status")
+                if task.sa_status is None and sa.get("enabled"):  # stats.json from sequential-only runs
+                    task.sa_status = "timeout" if sa.get("timed_out") else "failed" if sa.get("failed") else "loaded"
+                task.sa_adopted_round = sa.get("adopted_at_round")
             except (json.JSONDecodeError, OSError):
                 pass
         tasks[name] = task
-    return Run(label, path, parse_timeout(path.resolve().parent.parent, tasks), tasks)
+    return Run(label, path, parse_timeout(run_dir, tasks, info), tasks, sa_mode=sa_mode)
 
 
 def active_stages(runs):
@@ -646,32 +696,55 @@ def plot_top_deltas(runs, stages, out, top=30):
     save(fig, out)
 
 
-def plot_sa_payoff(runs, out):
-    """For a pair where one run spends real time in static pre-analysis and the other does not."""
+def sa_payoff_pairs(runs):
+    """(run with SA, run without SA) pairs of the baseline with another run."""
     base, others = runs[0], runs[1:]
     pairs = []
     for other in others:
-        names = common_finished([base, other])
-        sa_b = sum(base.tasks[n].stage("static_pre_analysis") for n in names)
-        sa_o = sum(other.tasks[n].stage("static_pre_analysis") for n in names)
-        if max(sa_b, sa_o) > 10 * max(min(sa_b, sa_o), 1e-9):
-            pairs.append((base, other) if sa_b > sa_o else (other, base))
+        modes = {base.sa_mode, other.sa_mode}
+        if "none" in modes and modes & {"sequential", "parallel"}:
+            pairs.append((other, base) if base.sa_mode == "none" else (base, other))
+        elif "unknown" in modes and modes <= {"unknown", "none", "sequential"}:
+            # No run_info.json or gitlog.txt: one run spending much more time in SA has it.
+            names = common_finished([base, other])
+            sa_b = sum(base.tasks[n].stage("static_pre_analysis") for n in names)
+            sa_o = sum(other.tasks[n].stage("static_pre_analysis") for n in names)
+            if max(sa_b, sa_o) > 10 * max(min(sa_b, sa_o), 1e-9):
+                pairs.append((base, other) if sa_b > sa_o else (other, base))
+    return pairs
+
+
+def plot_sa_payoff(runs, out):
+    """For a pair where one run uses static pre-analysis and the other does not.
+
+    With sequential SA, its cost is its (blocking) stage time. With parallel SA, it costs no
+    wall time of its own, so the x-axis is its background duration and the payoff is the
+    total_time saved."""
+    pairs = sa_payoff_pairs(runs)
     if not pairs:
         return False
     fig, axes = plt.subplots(1, len(pairs), figsize=(8 * len(pairs), 7), squeeze=False)
     for ax, (sa, nosa) in zip(axes.flat, pairs):
         names = common_finished([sa, nosa])
-        cost = np.array([sa.tasks[n].stage("static_pre_analysis") for n in names])
-        rest = lambda t: t.total - t.stage("static_pre_analysis")  # noqa: E731
-        saved = np.array([rest(nosa.tasks[n]) - rest(sa.tasks[n]) for n in names])
-        pays = saved > cost
+        parallel = sa.sa_mode == "parallel"
+        if parallel:
+            cost = np.array([sa.tasks[n].sa_wall or 0.0 for n in names])
+            saved = np.array([nosa.tasks[n].total - sa.tasks[n].total for n in names])
+            pays = saved > 0
+        else:
+            cost = np.array([sa.tasks[n].stage("static_pre_analysis") for n in names])
+            rest = lambda t: t.total - t.stage("static_pre_analysis")  # noqa: E731
+            saved = np.array([rest(nosa.tasks[n]) - rest(sa.tasks[n]) for n in names])
+            pays = saved > cost
         ax.scatter(np.maximum(EPS, cost[~pays]), saved[~pays], s=18, c=CHANGE_STYLE["same"][0], alpha=0.5,
                    edgecolors="white", linewidths=0.5, label=f"does not pay off ({(~pays).sum()})")
         ax.scatter(np.maximum(EPS, cost[pays]), saved[pays], s=34, c=sa.color, marker="^",
-                   edgecolors="white", linewidths=0.5, label=f"pays off: saved > cost ({pays.sum()})")
-        xs = np.logspace(np.log10(max(EPS, cost.min())), np.log10(cost.max() * 1.5), 50)
-        ax.plot(xs, xs, color=MUTED, linewidth=1)
-        ax.text(xs[-1], xs[-1], " saved = cost", fontsize=8, color=MUTED, va="bottom", ha="right")
+                   edgecolors="white", linewidths=0.5,
+                   label=f"pays off: {'total_time saved' if parallel else 'saved > cost'} ({pays.sum()})")
+        if not parallel:
+            xs = np.logspace(np.log10(max(EPS, cost.min())), np.log10(max(EPS, cost.max()) * 1.5), 50)
+            ax.plot(xs, xs, color=MUTED, linewidth=1)
+            ax.text(xs[-1], xs[-1], " saved = cost", fontsize=8, color=MUTED, va="bottom", ha="right")
         ax.axhline(0, color=MUTED, linewidth=0.8, linestyle=":")
         ax.set_xscale("log")
         ax.set_yscale("symlog", linthresh=1)
@@ -679,19 +752,71 @@ def plot_sa_payoff(runs, out):
         for i in order:
             ax.annotate(names[i].split("/")[-1], (max(EPS, cost[i]), saved[i]), xytext=(5, 0),
                         textcoords="offset points", fontsize=7)
-        net = float(saved.sum() - cost.sum())
-        ax.text(0.98, 0.97, f"pre-analysis cost: {fmt_s(cost.sum())}\n"
-                f"saved in other stages: {fmt_s(saved.sum())}\nnet: {fmt_s(net)}",
+        if parallel:
+            box = (f"pre-analysis in the background: {fmt_s(cost.sum())}\n"
+                   f"total_time saved (net): {fmt_s(float(saved.sum()))}")
+        else:
+            box = (f"pre-analysis cost: {fmt_s(cost.sum())}\n"
+                   f"saved in other stages: {fmt_s(saved.sum())}\nnet: {fmt_s(float(saved.sum() - cost.sum()))}")
+        ax.text(0.98, 0.97, box,
                 transform=ax.transAxes, va="top", ha="right", fontsize=9,
                 bbox=dict(facecolor="white", edgecolor=GRID))
         nf_sa = sum(1 for t in sa.tasks.values() if not t.finished)
         nf_no = sum(1 for t in nosa.tasks.values() if not t.finished)
-        ax.set_title(f"Does static pre-analysis pay off per task?\n{short_label(sa)} vs {short_label(nosa)} "
-                     f"(unfinished: {nf_sa} vs {nf_no})")
-        ax.set_xlabel("static pre-analysis time [s] (log)")
-        ax.set_ylabel("time saved in all other stages [s] (symlog)")
+        ax.set_title(f"Does {sa.sa_mode} static pre-analysis pay off per task?\n{short_label(sa)} vs "
+                     f"{short_label(nosa)} (unfinished: {nf_sa} vs {nf_no})")
+        if parallel:
+            ax.set_xlabel("static pre-analysis time in the background [s] (log)")
+            ax.set_ylabel("total_time saved [s] (symlog)")
+        else:
+            ax.set_xlabel("static pre-analysis time [s] (log)")
+            ax.set_ylabel("time saved in all other stages [s] (symlog)")
         style_axes(ax)
         ax.legend(loc="lower right", fontsize=8)
+    save(fig, out)
+    return True
+
+
+SA_STATUS_STYLE = {"loaded": ("#1baf7a", "o", "graph used"),
+                   "cancelled": ("#eda100", "s", "exploration finished first"),
+                   "failed": ("#d03b3b", "x", "failed"),
+                   "timeout": ("#d03b3b", "v", "extractor timed out")}
+
+
+def plot_sa_background(runs, out):
+    """Parallel runs only: when did the background pre-analysis finish, relative to exploration?"""
+    par = [r for r in runs if r.sa_mode == "parallel"]
+    if not par:
+        return False
+    fig, axes = plt.subplots(1, len(par), figsize=(8 * len(par), 6.5), squeeze=False)
+    for ax, r in zip(axes.flat, par):
+        fin = [t for t in r.tasks.values() if t.finished and t.sa_wall is not None]
+        if not fin:
+            ax.text(0.5, 0.5, "no data", transform=ax.transAxes, ha="center")
+            continue
+        for status, (color, marker, text) in SA_STATUS_STYLE.items():
+            sel = [t for t in fin if t.sa_status == status]
+            if sel:
+                ax.scatter([max(EPS, t.total) for t in sel], [max(EPS, t.sa_wall) for t in sel], s=18,
+                           c=color, marker=marker, alpha=0.7, linewidths=0.8 if marker == "x" else 0,
+                           label=f"{text} ({len(sel)})")
+        rest = [t for t in fin if t.sa_status not in SA_STATUS_STYLE]
+        if rest:
+            ax.scatter([max(EPS, t.total) for t in rest], [max(EPS, t.sa_wall) for t in rest], s=14,
+                       c=MUTED, alpha=0.5, linewidths=0, label=f"status unknown ({len(rest)})")
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        lo = min(min(ax.get_xlim()), min(ax.get_ylim()))
+        hi = max(max(ax.get_xlim()), max(ax.get_ylim()))
+        ax.plot([lo, hi], [lo, hi], color=MUTED, linewidth=0.8, linestyle=":")
+        ax.text(hi, hi, " SA = total_time", fontsize=8, color=MUTED, va="bottom", ha="right")
+        rounds = [t.sa_adopted_round for t in fin if t.sa_adopted_round is not None]
+        med = f", graph first used in round {statistics.median(rounds):.0f} (median)" if rounds else ""
+        ax.set_title(f"{short_label(r)}: background pre-analysis vs total_time{med}")
+        ax.set_xlabel("explorer total_time [s] (log)")
+        ax.set_ylabel("static pre-analysis duration [s] (log)")
+        style_axes(ax)
+        ax.legend(loc="upper left", fontsize=8)
     save(fig, out)
     return True
 
@@ -727,17 +852,31 @@ def save(fig, out):
 
 def summary_md(runs, stages):
     base = runs[0]
-    lines = ["# Run comparison", "", "| run | timeout | finished | score | correct | wrong | "
+    lines = ["# Run comparison", "", "| run | SA mode | timeout | finished | score | correct | wrong | "
              "median total | mean total | summed total | summed wall |",
-             "|---|---|---|---|---|---|---|---|---|---|"]
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in runs:
         fin = [t for t in r.tasks.values() if t.finished]
         tot = [t.total for t in fin]
         lines.append(
-            f"| {r.label} | {r.timeout or '?'} s | {len(fin)}/{len(r.tasks)} | "
+            f"| {r.label} | {r.sa_mode} | {r.timeout or '?'} s | {len(fin)}/{len(r.tasks)} | "
             f"{sum(t.points for t in r.tasks.values())} | {sum(t.points > 0 for t in r.tasks.values())} | "
             f"{sum(t.points < 0 for t in r.tasks.values())} | {statistics.median(tot):.2f} s | "
             f"{statistics.mean(tot):.1f} s | {sum(tot):,.0f} s | {sum(t.wall for t in fin):,.0f} s |")
+    sa_runs = [r for r in runs if r.sa_mode in ("sequential", "parallel")]
+    if sa_runs:
+        statuses = sorted({t.sa_status for r in sa_runs for t in r.tasks.values() if t.sa_status})
+        lines += ["", "Static pre-analysis per run (finished tasks). In parallel runs it overlaps the "
+                  "other stages, so its static_pre_analysis stage is 0 and its duration is shown here:", "",
+                  "| run | SA mode | summed duration | median duration | "
+                  + "".join(f"{s} | " for s in statuses),
+                  "|---|---|---|---|" + "---|" * len(statuses)]
+        for r in sa_runs:
+            fin = [t for t in r.tasks.values() if t.finished and t.sa_wall is not None]
+            walls = [t.sa_wall for t in fin]
+            med = f"{statistics.median(walls):.2f} s" if walls else "–"
+            lines.append(f"| {r.label} | {r.sa_mode} | {sum(walls):,.1f} s | {med} | "
+                         + "".join(f"{sum(t.sa_status == s for t in fin)} | " for s in statuses))
     names = common_finished(runs)
     lines += ["", f"Stage sums over the {len(names)} tasks finished in every run:", "",
               "| run | " + " | ".join(STAGE_NAMES[s] for s in stages) + " |",
@@ -766,7 +905,8 @@ def summary_md(runs, stages):
 
 CAPTIONS = {
     "01b_cactus_free_sa.svg": "Same cactus with each task's static pre-analysis time subtracted: what the "
-                              "runs would look like if the pre-analysis were free. Dashed: the measured curves.",
+                              "runs would look like if the pre-analysis were free. Dashed: the measured curves. "
+                              "Parallel SA runs have no pre-analysis stage, so both curves coincide.",
     "01_cactus.svg": "Cumulative finished tasks over a simulated timeout, for the explorer's total_time "
                      "and for the harness wall time.",
     "02_score.svg": "SV-COMP score if the timeout were t: a task slower than t counts as unknown (0 points).",
@@ -782,7 +922,11 @@ CAPTIONS = {
     "09_stage_share.svg": "Stage share of each task's wall time, tasks sorted by total_time.",
     "10_iterations.svg": "Iterations, solver calls and executor time per iteration, per task (from stats.json).",
     "11_top_deltas.svg": "The tasks with the largest wall-time change, broken down by stage.",
-    "12_sa_payoff.svg": "Per task: static pre-analysis cost vs the time it saved in the other stages.",
+    "12_sa_payoff.svg": "Per task: static pre-analysis cost vs the time it saved in the other stages. For a "
+                        "parallel SA run: its background duration vs the total_time it saved.",
+    "14_sa_background.svg": "Parallel SA runs: per task, the background pre-analysis duration against the "
+                            "explorer's total_time. Below the diagonal the graph was ready before exploration "
+                            "ended; 'exploration finished first' tasks were cancelled.",
     "13_overhead.svg": "Wall time the explorer's timer does not cover (process start, stats.json, shutdown).",
 }
 
@@ -889,6 +1033,10 @@ def main():
             parser.error(f"{r.path} has no finished tasks with timing data ({len(r.tasks)} tasks in total)")
     for r, c in zip(runs, RUN_COLORS):
         r.color = c
+    for r in runs:
+        if r.sa_mode == "unknown":
+            print(f"Warning: SA mode of {r.label} is unknown (no run_info.json or gitlog.txt); "
+                  "static pre-analysis plots may treat it wrongly.")
     timeouts = {r.timeout for r in runs}
     if len(timeouts) > 1:
         print(f"Warning: runs used different timeouts {sorted(t or 0 for t in timeouts)}; "
@@ -924,6 +1072,7 @@ def main():
     emit("11_top_deltas.svg", plot_top_deltas, runs, stages)
     emit("12_sa_payoff.svg", plot_sa_payoff, runs)
     emit("13_overhead.svg", plot_overhead, runs)
+    emit("14_sa_background.svg", plot_sa_background, runs)
 
     summary = summary_md(runs, stages)
     (outdir / "summary.md").write_text(summary)

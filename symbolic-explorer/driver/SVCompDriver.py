@@ -15,6 +15,7 @@ from data.BinaryExecutionTree.Node import Node
 
 from strategy.StrategyService import StrategyService
 from data.StaticAnalysisGraph.SAGraph import SAGraph
+from svcomp.StaticPreAnalysis import StaticPreAnalysis
 
 from enum import Enum
 from svcomp.SymbolicStorage import SymbolicStorage
@@ -73,8 +74,9 @@ class SVCompDriver:
         self.symbolicStorage = SymbolicStorage()
         self.shutdown_flag = False
         self.verification_category = VerificationCategory(self.args.property)
-        self.sa_graph = SAGraph() # static analysis graph
-        self.sa_timed_out = False
+        self.sa_graph = SAGraph() # static analysis graph, empty until the pre-analysis is adopted
+        self.sa = StaticPreAnalysis(args)
+        self.sa_adopted_round: int | None = None
         self.round_idx = 0
         self.nr_solver_calls = 0
     
@@ -194,39 +196,15 @@ class SVCompDriver:
     def run_testcase(self, java_path, agentpath: str, configpath: str, z3path, port, cp) -> Verdict:
         """Runs the testcase using the constructed Java command."""
         
-        # Get static pre-analysis information if provided - Time the static pre-analysis.
-        # This is an external Java subprocess; without its own stage it would be silently
-        # folded into the symbolic explorer residual.
-        sa_start = time.perf_counter()
-        try:
-            if self.args.sa_file:
-                logger.info(f'[EXPLORER] Loading static pre-analysis graph from provided file...')
-                self.sa_graph.load_json_graph(self.args.sa_file)
-                logger.info(f'[EXPLORER] Loaded static pre-analysis graph from provided file.')
-            elif self.args.sa_path:
-                logger.info(f'[EXPLORER] Running static pre-analysis...')
-                subprocess.run(["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
-                                ':'.join(os.path.abspath(p) for p in self.args.classpath), self.args.logdir, self.args.target, "main", "inter"],
-                               check=True, timeout=120)
-                
-                logger.info(f'[EXPLORER] Loading static pre-analysis graph...')
-                self.sa_graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"))
-                logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
-            else:
-                logger.info(f'[EXPLORER] Static pre-analysis is disabled.')
-        except subprocess.TimeoutExpired as e:
-            logger.error(f'[EXPLORER] Failed to get static pre-analysis information. TimeoutExpired: {e}')
-            self.sa_timed_out = True
-        except Exception as e:
-            logger.error(f'[EXPLORER] Failed to get static pre-analysis information. Exception of type {type(e).__name__}: {e}')
-            import traceback
-            logger.error(traceback.format_exc())
-
-            self.sa_graph = SAGraph() # clear any half-loaded graph
-        finally:
-            # Record on every path: a timed-out or failed pre-analysis still costs wall time.
-            TimingManager.instance().record_static_analysis_time(time.perf_counter() - sa_start)
-
+        # Static pre-analysis: an external Java subprocess plus loading its graph. By default it
+        # runs in the background while exploration already starts without pruning, and the graph
+        # is adopted in retrieve_solution() once it is ready. With --wait-for-sa exploration waits
+        # for it, and the wait is its own timing stage (otherwise it would be folded into the
+        # symbolic explorer residual).
+        self.sa.start()
+        if self.args.wait_for_sa:
+            self.sa.wait()
+            self.adopt_sa_graph()
 
         next_step = Action.RANDOMNEXT
         self.round_idx = 0
@@ -297,7 +275,20 @@ class SVCompDriver:
          
             
 
+    def adopt_sa_graph(self):
+        """Switches branch selection to the pre-analysis graph once it is ready (at most once).
+
+        Switching mid-exploration is safe: every selection walks the tree from its root, and the
+        rounds before only explored more than pruning would have.
+        """
+        graph = self.sa.take_graph()
+        if graph is not None:
+            logger.info(f'[EXPLORER] Using static pre-analysis graph from round {self.round_idx} on.')
+            self.sa_graph = graph
+            self.sa_adopted_round = self.round_idx
+
     def retrieve_solution(self):
+        self.adopt_sa_graph()
         possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node)
         logger.info(f'[SYMBOLIC EXPLORATION] Found {len(possible_branches)} possible branches')
         logger.info(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
@@ -355,7 +346,13 @@ class SVCompDriver:
         # Start total timing
         TimingManager.instance().start_total_timer()
 
-        verdict = self.run_testcase(java_path=self.args.java_path, agentpath=self.args.agent, configpath=self.args.config, z3path=self.args.z3dir, port=self.args.port, cp=self.args.classpath)
+        try:
+            verdict = self.run_testcase(java_path=self.args.java_path, agentpath=self.args.agent, configpath=self.args.config, z3path=self.args.z3dir, port=self.args.port, cp=self.args.classpath)
+        finally:
+            # Exploration can finish before the pre-analysis: stop it, so no extractor outlives us.
+            self.sa.cancel()
+            if self.sa.duration is not None:
+                TimingManager.instance().record_static_analysis_time(self.sa.duration, blocking=self.args.wait_for_sa)
         
         if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).symbolic_context_loss:
             logger.warning(f'[SVCOMP] Found symbolic context loss')
@@ -390,7 +387,7 @@ class SVCompDriver:
         # invocations and the context-loss subset) so the analysis can rely on structured data.
         stats_file = os.path.join(log_dir, 'stats.json')
         write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
-                             self.round_idx, self.nr_solver_calls, (self.args.sa_file or self.args.sa_path), (self.sa_graph.entry_node is None), self.sa_timed_out)
+                             self.round_idx, self.nr_solver_calls, self.sa.stats(self.sa_adopted_round))
 
         self.kill_current_process()
         

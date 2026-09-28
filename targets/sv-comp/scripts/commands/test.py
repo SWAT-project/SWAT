@@ -66,10 +66,11 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--no-witness', 'no_witness', is_flag=True, default=False, help='Skip witness creation and validation')
 @click.option('--no-sa', 'no_sa', is_flag=True, default=False, help='Skip static pre-analysis')
 @click.option('--sa-retry-without', 'sa_retry_without', is_flag=True, default=False, help='On a SAFE verdict reached with static pre-analysis, retry the exploration without it')
+@click.option('--wait-for-sa', 'wait_for_sa', is_flag=True, default=False, help='Wait for the static pre-analysis before exploring, instead of running it in the background')
 @click.option('--testcase-timeout-s', type=int, default=15 * 60, help='Timeout of the symbolic-explorer in seconds for each test case')
 @click.pass_context
 def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, categories, suite, limit_nr_tests: int | None, target: str,
-              no_witness: bool, no_sa: bool, sa_retry_without: bool, testcase_timeout_s: int):
+              no_witness: bool, no_sa: bool, sa_retry_without: bool, wait_for_sa: bool, testcase_timeout_s: int):
     """Run verification tests."""
     from lib import (
         extract_testcases,
@@ -79,7 +80,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
         check_port_availability,
         VerificationCategory,
     )
-    from lib.command_gen import new_run_timestamp, run_dir as make_run_dir
+    from lib.command_gen import new_run_timestamp, run_dir as make_run_dir, write_run_info
     script_dir = ctx.obj['script_dir']
 
     # Determine benchmark directory
@@ -134,7 +135,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
 
         # One timestamp ties this run's per-testcase logs to its results dir.
         run_timestamp = new_run_timestamp()
-        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without)
+        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without, wait_for_sa=wait_for_sa)
         click.echo(f"Generated {len(ver_tasks_with_commands)} commands")
 
         # Check port availability
@@ -169,6 +170,12 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
             click.echo(f"Run directory: {run_dir}")
             # Log argv and current commit for debugging and reproducibility
             subprocess.run(f'(echo {shlex.quote(shlex.join(sys.argv))} && echo && git log -1 --pretty=format:"%h %s" && echo && git status) > {run_dir / "gitlog.txt"}', shell=True)
+            # Structured run settings, e.g. for compare_runs.py; the SA mode changes what the timing means.
+            write_run_info(run_dir, argv=sys.argv, run_timestamp=run_timestamp, mode=mode, config_file=config_file,
+                           categories=list(categories), suite=suite, limit_nr_tests=limit_nr_tests,
+                           testcase_timeout_s=testcase_timeout_s, create_witness=not no_witness,
+                           sa_mode='none' if no_sa else 'sequential' if wait_for_sa else 'parallel',
+                           sa_retry_without=sa_retry_without and not no_sa)
             
             run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run_dir, testcase_timeout_s=testcase_timeout_s)
 

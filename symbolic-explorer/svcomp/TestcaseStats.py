@@ -24,7 +24,7 @@ def _signature(inv: dict) -> str:
     return f"{inv['owner']}/{inv['name']}:{inv['desc']}"
 
 
-def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, sa_enabled: bool, sa_failed: bool, sa_timed_out: bool) -> dict:
+def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, static_analysis: dict) -> dict:
     """
     Assemble the consolidated per-testcase statistics dictionary.
 
@@ -32,6 +32,7 @@ def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int,
         verdict: The final (post-downgrade) Verdict enum for the testcase.
         category: The VerificationCategory enum for the property.
         tree: The per-endpoint Tree holding accumulated metadata for the testcase.
+        static_analysis: The pre-analysis outcome, see StaticPreAnalysis.stats().
 
     Returns:
         A JSON-serializable dict describing the testcase outcome.
@@ -66,17 +67,13 @@ def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int,
             'symbolic_exec_iterations': symbolic_exec_iterations,
             'nr_solver_calls': nr_solver_calls,
         },
-        'static_analysis': {
-            'enabled': sa_enabled,
-            'failed': sa_failed,
-            'timed_out': sa_timed_out,
-        },
+        'static_analysis': static_analysis,
     }
 
 
-def write_testcase_stats(filepath: Path, verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, sa_enabled: bool, sa_failed: bool, sa_timed_out: bool):
+def write_testcase_stats(filepath: Path, verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, static_analysis: dict):
     """Write the consolidated per-testcase statistics to ``filepath`` as JSON."""
-    data = build_testcase_stats(verdict, category, tree, symbolic_exec_iterations, nr_solver_calls, sa_enabled, sa_failed, sa_timed_out)
+    data = build_testcase_stats(verdict, category, tree, symbolic_exec_iterations, nr_solver_calls, static_analysis)
 
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, 'w') as f:
