@@ -24,7 +24,8 @@ class ConstraintService:
     def add_constraints(endpoint_id: str, trace_id: str, trace: List[TraceItem], inputs: List[InputItem], ufs: List[UFItem],
                         symbolic_context_loss: bool, symbolic_precision_loss: bool,
                         reference_semantic_change: bool = False,
-                        missing_invocations: List[InvocationItem] = None):
+                        missing_invocations: List[InvocationItem] = None,
+                        approximate_model: bool = False):
         """
         Adds constraints to the database.
 
@@ -42,6 +43,8 @@ class ConstraintService:
         symbolic_precision_loss (bool): A flag indicating whether the symbolic precision was lost (UFs introduced).
         reference_semantic_change (bool): A flag indicating whether reference equality semantics changed.
         missing_invocations (list): Methods that could not be modelled symbolically during this trace.
+        approximate_model (bool): Whether an approximate model (a sampled Math function) was used,
+            so that solutions built from this trace are only guesses.
 
         Returns:
         None: The result is the side effect of adding data to the database.
@@ -58,5 +61,5 @@ class ConstraintService:
         # from the pydantic request models.
         missing_invocations_data = [item.model_dump() for item in (missing_invocations or [])]
         # Adding the trace and inputs to the database for the specified endpoint.
-        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data)
+        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, approximate_model)
         logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')

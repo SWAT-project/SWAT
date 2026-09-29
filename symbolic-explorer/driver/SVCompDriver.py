@@ -65,6 +65,9 @@ class State:
     def __init__(self):
         self.verdict = Verdict.UNKNOWN
         self.branch_to_explore: Node | None = None
+        # Whether the solution for branch_to_explore came from a trace with an approximate model,
+        # so that the next run may legitimately diverge from it.
+        self.solution_is_guess: bool = False
     
     
 class SVCompDriver:
@@ -229,14 +232,9 @@ class SVCompDriver:
 
             # check if the target explored the branch as expected
             if self.state.branch_to_explore:
-                for branch in Database.instance().get_trace(-1): # most recent trace
-                    if branch.id == self.state.branch_to_explore.id:
-                        if branch.has_branched == (self.state.branch_to_explore.branched is not None):
-                            logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {branch.id} as expected! Branch unexpectedly taken/skipped.')
-                        break
-                else:
-                    logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {self.state.branch_to_explore.id} as expected! Branch does not appear in trace.')
+                self.check_divergence(Database.instance().get_trace(-1)) # most recent trace
             self.state.branch_to_explore = None
+            self.state.solution_is_guess = False
 
             self.log_output(output)
             logger.info(f'[STATUS] {status}')
@@ -275,6 +273,28 @@ class SVCompDriver:
          
             
 
+    def check_divergence(self, trace) -> None:
+        """Checks that the last run took the side of branch_to_explore its solution was solved for.
+
+        A divergence is a bug, unless the solution relied on an approximate model: then it was only a
+        guess, and the divergence is expected. That is logged without the "SWAT Assertion failed"
+        marker the harness counts as an internal error, and counted in the tree's statistics.
+        """
+        target = self.state.branch_to_explore
+        for branch in trace:
+            if branch.id == target.id:
+                if branch.has_branched != (target.branched is not None):
+                    return
+                reason = 'Branch unexpectedly taken/skipped.'
+                break
+        else:
+            reason = 'Branch does not appear in trace.'
+        if self.state.solution_is_guess:
+            Database.instance().record_expected_divergence(ENDPOINT_ID)
+            logger.info(f'[SVCOMP] Diverged from branch {target.id}: its solution relied on an approximate model (expected). {reason}')
+        else:
+            logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {target.id} as expected! {reason}')
+
     def adopt_sa_graph(self):
         """Switches branch selection to the pre-analysis graph once it is ready (at most once).
 
@@ -310,6 +330,7 @@ class SVCompDriver:
                 symbolic_vars = branch.inputs
                 # remember which branch we want to explore
                 self.state.branch_to_explore = branch
+                self.state.solution_is_guess = Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id)
                 break
             logger.debug(f'[SYMBOLIC EXPLORATION] No solution ({sat}) found for branch {branch.id}')
             

@@ -47,6 +47,8 @@ class ConstraintRequest(BaseModel):
     symbolicContextLoss: bool
     symbolicPrecisionLoss: bool
     referenceSemanticChange: bool = False
+    # An approximate model (a sampled Math function) was used: solutions from this trace are guesses.
+    approximateModel: bool = False
 
 
 class CoverageRequest(BaseModel):

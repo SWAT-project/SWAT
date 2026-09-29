@@ -66,6 +66,8 @@ def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int,
         'performance': {
             'symbolic_exec_iterations': symbolic_exec_iterations,
             'nr_solver_calls': nr_solver_calls,
+            # Runs that took another path than a solution based on an approximate model predicted.
+            'expected_divergences': tree.expected_divergences,
         },
         'static_analysis': static_analysis,
     }

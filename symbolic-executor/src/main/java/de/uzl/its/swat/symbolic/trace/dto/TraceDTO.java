@@ -23,8 +23,12 @@ public class TraceDTO {
     private boolean symbolicPrecisionLoss = false;
     @SuppressWarnings("unused")
     private boolean referenceSemanticChange = false;
+    // Whether an approximate model (a sampled Math function) was used. Unlike symbolicPrecisionLoss,
+    // which also covers exact UF-based models, solutions from such a trace are only guesses.
+    @SuppressWarnings("unused")
+    private boolean approximateModel = false;
 
-    public TraceDTO(ArrayList<InputDTO> inputs, ArrayList<BranchDTO> trace, ArrayList<UFDTO> ufs, ArrayList<InvocationDTO> missingInvocations, boolean symbolicContextLoss, boolean symbolicPrecisionLoss, boolean referenceSemanticChange) {
+    public TraceDTO(ArrayList<InputDTO> inputs, ArrayList<BranchDTO> trace, ArrayList<UFDTO> ufs, ArrayList<InvocationDTO> missingInvocations, boolean symbolicContextLoss, boolean symbolicPrecisionLoss, boolean referenceSemanticChange, boolean approximateModel) {
         this.trace = trace;
         this.inputs = inputs;
         this.ufs = ufs;
@@ -32,6 +36,7 @@ public class TraceDTO {
         this.symbolicContextLoss = symbolicContextLoss;
         this.symbolicPrecisionLoss = symbolicPrecisionLoss;
         this.referenceSemanticChange = referenceSemanticChange;
+        this.approximateModel = approximateModel;
 
     }
 

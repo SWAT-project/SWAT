@@ -24,6 +24,7 @@ and used in `strategy/DFS.py`.
 - **Walker giving up is safe:** when `walk_till_branch` returns `None`, the walker has no
   information, and `dfs` treats everything as interesting. That fallback is always safe.
 - **`<clinit>` is masked:** static initializers are not in the graph, so the walk is frozen inside
+  them.
 - **SA runs before exploring by default:** in sv-comp mode exploration waits for
   `svcomp/StaticPreAnalysis.py`, so the graph is used from round 0 and runs are deterministic.
   `--parallel-sa` instead runs the extractor in a thread while exploration starts unpruned;
@@ -32,13 +33,13 @@ and used in `strategy/DFS.py`.
   too late, and makes results depend on load. In parallel runs the `static_pre_analysis` timing
   stage is 0 and its duration is `static_pre_analysis_wall`; `run_info.json` in the run dir records
   the SA mode.
-  them.
 
 Tests for the walk, runnable without a SWAT run:
 
 ```bash
 cd symbolic-explorer && python3 -m unittest tests.test_sa_walk -v
 python3 tests/check_marking_on_graphs.py <graph.json>...   # checks marking against an explicit search
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_divergence -v   # needs the venv
 ```
 
 `dfs` only descends into real `data.BinaryExecutionTree.Node` instances. In tests, build them with
