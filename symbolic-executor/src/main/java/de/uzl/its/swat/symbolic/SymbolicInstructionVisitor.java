@@ -31,6 +31,7 @@ import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue;
 import de.uzl.its.swat.symbolic.value.reference.array.*;
 import de.uzl.its.swat.symbolic.value.reference.lang.*;
+import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.thread.ThreadHandler;
 
 import java.lang.reflect.Modifier;
@@ -2241,6 +2242,30 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     /**
+     * Handles a call to an uninstrumented method that threw instead of returning: its model, if it
+     * has one, is not consulted (that happens on a normal return), and whether it throws may depend
+     * on symbolic arguments, a branch nothing in the trace captures. With symbolic arguments the
+     * search past this call is therefore incomplete, which is recorded as a context loss.
+     */
+    private void recordThrowingCall(String owner, String name, String desc, long invokeId, boolean isInstance) throws NoThreadContextException {
+        boolean symbolic;
+        try {
+            Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), isInstance);
+            symbolic = isInstance && stack.getInstance().isSymbolic();
+            for (Value<?, ?> argument : arguments) symbolic = symbolic || argument.isSymbolic();
+        } catch (Exception e) {
+            symbolic = true; // cannot tell, so assume the worst
+        }
+        if (!symbolic) return;
+        logger.warn("Invocation of method {} in class {} with arguments {} threw, causes context loss", name, owner, desc);
+        symbolicTraceHandler.recordSymbolicContextLoss();
+        long threadId = Thread.currentThread().getId();
+        InvocationEntry entry = new InvocationEntry(owner, name, desc, isInstance, invokeId, true);
+        ThreadHandler.recordMissingInvocation(threadId, entry);
+        ThreadHandler.recordContextLossInvocation(threadId, entry);
+    }
+
+    /**
      * Invokes an interface method on an object reference from the symbolic stack
      *
      * @param inst The INVOKEINTERFACE instruction
@@ -2264,6 +2289,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         instance);
                 stack.setReturnValue(retVal);
 
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2297,6 +2324,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         true,
                         instance);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2329,6 +2358,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         false,
                         null);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, false);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2362,6 +2393,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         true,
                         instance);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2394,6 +2427,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         false,
                         null);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, false);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
