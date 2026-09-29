@@ -300,8 +300,10 @@ public class Verifier {
             printBox.addMsg("Requested ID: " + newId);
             if (inputs.containsKey(prefix + newId) && !inputs.get(prefix + newId).isEmpty()) {
                 printBox.addMsg("Predetermined value available!");
-                // Parse as unsigned to handle values from SMT solver bitvector representation
-                long l = Long.parseUnsignedLong(inputs.get(prefix + newId).remove());
+                // The explorer sends solver values signed (negative longs with a minus sign); an
+                // unsigned form is accepted too.
+                String encoded = inputs.get(prefix + newId).remove();
+                long l = encoded.startsWith("-") ? Long.parseLong(encoded) : Long.parseUnsignedLong(encoded);
                 printBox.addMsg("Returning: " + l);
                 logger.info(printBox.toString());
                 return l;
