@@ -66,12 +66,12 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--no-witness', 'no_witness', is_flag=True, default=False, help='Skip witness creation and validation')
 @click.option('--no-sa', 'no_sa', is_flag=True, default=False, help='Skip static pre-analysis')
 @click.option('--sa-retry-without', 'sa_retry_without', is_flag=True, default=False, help='On a SAFE verdict reached with static pre-analysis, retry the exploration without it')
-@click.option('--wait-for-sa', 'wait_for_sa', is_flag=True, default=False, help='Wait for the static pre-analysis before exploring, instead of running it in the background')
+@click.option('--parallel-sa', 'parallel_sa', is_flag=True, default=False, help='Run the static pre-analysis in the background while exploring, instead of waiting for it (nondeterministic)')
 @click.option('--sa-rank-distance', 'sa_rank_distance', is_flag=True, default=False, help='Try branches closest to an assert in the static pre-analysis graph first')
 @click.option('--testcase-timeout-s', type=int, default=15 * 60, help='Timeout of the symbolic-explorer in seconds for each test case')
 @click.pass_context
 def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, categories, suite, limit_nr_tests: int | None, target: str,
-              no_witness: bool, no_sa: bool, sa_retry_without: bool, wait_for_sa: bool, sa_rank_distance: bool, testcase_timeout_s: int):
+              no_witness: bool, no_sa: bool, sa_retry_without: bool, parallel_sa: bool, sa_rank_distance: bool, testcase_timeout_s: int):
     """Run verification tests."""
     from lib import (
         extract_testcases,
@@ -136,7 +136,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
 
         # One timestamp ties this run's per-testcase logs to its results dir.
         run_timestamp = new_run_timestamp()
-        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without, wait_for_sa=wait_for_sa, sa_rank_distance=sa_rank_distance)
+        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance)
         click.echo(f"Generated {len(ver_tasks_with_commands)} commands")
 
         # Check port availability
@@ -175,7 +175,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
             write_run_info(run_dir, argv=sys.argv, run_timestamp=run_timestamp, mode=mode, config_file=config_file,
                            categories=list(categories), suite=suite, limit_nr_tests=limit_nr_tests,
                            testcase_timeout_s=testcase_timeout_s, create_witness=not no_witness,
-                           sa_mode='none' if no_sa else 'sequential' if wait_for_sa else 'parallel',
+                           sa_mode='none' if no_sa else 'parallel' if parallel_sa else 'sequential',
                            sa_retry_without=sa_retry_without and not no_sa,
                            sa_rank_distance=sa_rank_distance and not no_sa)
             

@@ -1,9 +1,9 @@
 """
 Static pre-analysis (SA) for the SV-COMP driver, run in a background thread.
 
-The extractor is an external Java process. While it runs (and while its graph is loaded) the
-explorer can already explore without pruning; the driver adopts the graph once it is ready. With
-``--wait-for-sa`` the driver waits for it before the first round instead, as it used to.
+The extractor is an external Java process. By default the driver waits for it before the first
+round. With ``--parallel-sa`` the explorer already explores without pruning while it runs (and
+while its graph is loaded), and the driver adopts the graph once it is ready.
 
 The graph is built in a private ``SAGraph`` and only handed out once it is fully loaded, so the
 explorer never sees a half-loaded graph. ``cancel()`` kills the extractor and joins the thread, so
@@ -154,7 +154,7 @@ class StaticPreAnalysis:
     def stats(self, adopted_at_round: int | None) -> dict:
         return {
             'enabled': self.enabled,
-            'mode': 'sequential' if self.args.wait_for_sa else 'parallel',
+            'mode': 'parallel' if self.args.parallel_sa else 'sequential',
             'status': self.status.value,
             'failed': self.status in (SAStatus.FAILED, SAStatus.TIMEOUT),
             'timed_out': self.status == SAStatus.TIMEOUT,

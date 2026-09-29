@@ -196,13 +196,13 @@ class SVCompDriver:
     def run_testcase(self, java_path, agentpath: str, configpath: str, z3path, port, cp) -> Verdict:
         """Runs the testcase using the constructed Java command."""
         
-        # Static pre-analysis: an external Java subprocess plus loading its graph. By default it
-        # runs in the background while exploration already starts without pruning, and the graph
-        # is adopted in retrieve_solution() once it is ready. With --wait-for-sa exploration waits
-        # for it, and the wait is its own timing stage (otherwise it would be folded into the
-        # symbolic explorer residual).
+        # Static pre-analysis: an external Java subprocess plus loading its graph. By default
+        # exploration waits for it, and the wait is its own timing stage (otherwise it would be
+        # folded into the symbolic explorer residual). With --parallel-sa it runs in the background
+        # while exploration already starts without pruning, and the graph is adopted in
+        # retrieve_solution() once it is ready.
         self.sa.start()
-        if self.args.wait_for_sa:
+        if not self.args.parallel_sa:
             self.sa.wait()
             self.adopt_sa_graph()
 
@@ -352,7 +352,7 @@ class SVCompDriver:
             # Exploration can finish before the pre-analysis: stop it, so no extractor outlives us.
             self.sa.cancel()
             if self.sa.duration is not None:
-                TimingManager.instance().record_static_analysis_time(self.sa.duration, blocking=self.args.wait_for_sa)
+                TimingManager.instance().record_static_analysis_time(self.sa.duration, blocking=not self.args.parallel_sa)
         
         if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).symbolic_context_loss:
             logger.warning(f'[SVCOMP] Found symbolic context loss')

@@ -15,9 +15,9 @@ named after the labels or, without labels, the run directories.
 Static pre-analysis (SA) timing depends on the run's SA mode, read from the run's run_info.json
 (older runs without one: inferred from gitlog.txt, where anything but --no-sa ran sequentially):
   - none:       no pre-analysis.
-  - sequential: (--wait-for-sa) exploration waited for SA; the static_pre_analysis stage is its
+  - sequential: (the default) exploration waited for SA; the static_pre_analysis stage is its
                 whole duration.
-  - parallel:   SA ran in the background while exploring; the static_pre_analysis stage is 0 and
+  - parallel:   (--parallel-sa) SA ran in the background while exploring; the static_pre_analysis stage is 0 and
                 its duration (static_pre_analysis_wall) overlaps the other stages.
 
 Usage:

@@ -35,7 +35,7 @@ def is_port_available(port: int) -> bool:
         return False
 
 
-def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, wait_for_sa: bool = False, sa_rank_distance: bool = False) -> list[str]:
+def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False) -> list[str]:
 
 
     test_case_dir = ver_task['file_path'].parent
@@ -55,7 +55,7 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     "--target", "Main"] + \
                     ([] if no_sa else ["--sa-path", str(sa_path)]) + \
                     (["--sa-retry-without"] if sa_retry_without and not no_sa else []) + \
-                    (["--wait-for-sa"] if wait_for_sa and not no_sa else []) + \
+                    (["--parallel-sa"] if parallel_sa and not no_sa else []) + \
                     (["--sa-rank-distance"] if sa_rank_distance and not no_sa else []) + \
                     ["--classpath"]
 
@@ -81,8 +81,8 @@ def run_dir(run_timestamp: str) -> Path:
 def write_run_info(run_dir: Path, **settings) -> Path:
     """Writes run_info.json with the settings of a run into its run dir.
 
-    sa_mode is 'none', 'sequential' (--wait-for-sa: exploration waits for the pre-analysis) or
-    'parallel' (the pre-analysis runs in the background). In 'parallel' runs the
+    sa_mode is 'none', 'sequential' (the default: exploration waits for the pre-analysis) or
+    'parallel' (--parallel-sa: the pre-analysis runs in the background). In 'parallel' runs the
     static_pre_analysis timing stage is ~0 and its wall time is static_pre_analysis_wall.
     """
     path = run_dir / 'run_info.json'
@@ -90,7 +90,7 @@ def write_run_info(run_dir: Path, **settings) -> Path:
     return path
 
 
-def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, wait_for_sa: bool = False, sa_rank_distance: bool = False) -> list[VerificationTask]:
+def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False) -> list[VerificationTask]:
 
     port = 9000
     skipped_ports = []
@@ -136,7 +136,7 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
             'target_dir': target_dir,
             'target': target,
             'log_dir': logging_dir,
-            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, wait_for_sa=wait_for_sa, sa_rank_distance=sa_rank_distance)
+            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance)
         }
         ver_task['command'] = command
         port += 1

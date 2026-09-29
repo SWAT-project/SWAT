@@ -9,9 +9,9 @@ This module provides a singleton TimingManager that tracks timing for:
 - Witness Generation: Time spent generating witness files
 - Witness Validation: Time spent validating witness files
 
-The stages add up to total_time. The pre-analysis normally runs in the background, in parallel
-with the exploration, and then costs no stage time: ``static_pre_analysis`` is only the time the
-exploration was blocked by it (all of it with --wait-for-sa). Its own wall time is recorded
+The stages add up to total_time. ``static_pre_analysis`` is the time the exploration was blocked
+by the pre-analysis: all of it by default, and none of it with --parallel-sa, where it runs in the
+background in parallel with the exploration. Its own wall time is recorded
 separately as ``static_pre_analysis_wall``, which is not a stage and overlaps the others.
 """
 
