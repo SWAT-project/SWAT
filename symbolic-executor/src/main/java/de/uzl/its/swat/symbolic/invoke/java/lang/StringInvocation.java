@@ -6,6 +6,8 @@ import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.array.CharArrayValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.BoxedValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import org.objectweb.asm.Type;
 
 public class StringInvocation {
@@ -30,6 +32,7 @@ public class StringInvocation {
                         .asCharArrayValue()
                         .asStringValue();
                 case "Z" -> args[0].asBooleanValue().asStringValue();
+                case "Ljava/lang/Object;" -> invokeValueOfObject(args[0]);
                 default -> PlaceHolder.instance;
             };
         } else if (args.length == 3) {
@@ -40,6 +43,16 @@ public class StringInvocation {
         } else {
             return PlaceHolder.instance;
         }
+    }
+
+    /**
+     * String.valueOf(Object) is obj.toString() for a non-null obj, which is modelled for strings
+     * and boxed primitives (a boxed toString that is not modelled stays a PlaceHolder).
+     */
+    private static Value<?, ?> invokeValueOfObject(Value<?, ?> obj) throws NotImplementedException, ValueConversionException {
+        if (obj instanceof StringValue str) return str;
+        if (obj instanceof BoxedValue<?> boxed) return boxed.invokeMethod("toString", new Type[0], new Value<?, ?>[0]);
+        return PlaceHolder.instance;
     }
 
     private static Value<?, ?> invokeValueOf(CharArrayValue data, IntValue offset, IntValue count) {

@@ -339,8 +339,39 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeCompareTo(Value<?, ?>[] args, Type[] desc) {
-        return PlaceHolder.instance;
+    private Value<?, ?> invokeCompareTo(Value<?, ?>[] args, Type[] desc) throws NotImplementedException {
+        if (args.length != 1 || !(args[0] instanceof StringValue other)) return PlaceHolder.instance;
+        int result = concrete.compareTo(other.concrete);
+        if (!isSymbolic() && !other.isSymbolic()) return new IntValue(context, result);
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        NumeralFormula.IntegerFormula len = smgr.length(formula);
+        NumeralFormula.IntegerFormula otherLen = smgr.length(other.formula);
+        // k = the length of the longest common prefix, defined by a UF of both strings: the
+        // prefixes up to k agree, and k is the end of one string or the chars at k differ.
+        FunctionDeclaration<NumeralFormula.IntegerFormula> lcp = context.getFormulaManager().getUFManager()
+                .declareUF("commonPrefixLength", FormulaType.IntegerType, FormulaType.StringType, FormulaType.StringType);
+        NumeralFormula.IntegerFormula k = context.getFormulaManager().getUFManager().callUF(lcp, formula, other.formula);
+        BooleanFormula kInsideBoth = bmgr.and(imgr.lessThan(k, len), imgr.lessThan(k, otherLen));
+        addDefinition(bmgr.and(
+                imgr.greaterOrEquals(k, imgr.makeNumber(0)),
+                imgr.lessOrEquals(k, len),
+                imgr.lessOrEquals(k, otherLen),
+                smgr.equal(smgr.substring(formula, imgr.makeNumber(0), k), smgr.substring(other.formula, imgr.makeNumber(0), k)),
+                bmgr.implication(kInsideBoth, bmgr.not(smgr.equal(smgr.charAt(formula, k), smgr.charAt(other.formula, k))))));
+        // Java: the difference of the first differing chars, or else of the lengths.
+        NumeralFormula.IntegerFormula cmp = bmgr.ifThenElse(kInsideBoth,
+                imgr.subtract(smgr.toCodePoint(smgr.charAt(formula, k)), smgr.toCodePoint(smgr.charAt(other.formula, k))),
+                imgr.subtract(len, otherLen));
+        return new IntValue(context, result, cmp);
+    }
+
+    /** Adds a constraint that defines the UFs a model introduced; it holds on every path and is never negated. */
+    private static void addDefinition(BooleanFormula definition) {
+        try {
+            ThreadHandler.getSymbolicTraceHandler(currentThread().getId()).addConstraint(definition);
+        } catch (Exception e) {
+            throw new IllegalStateException("No symbolic trace handler for the current thread", e);
+        }
     }
 
     /**
@@ -724,8 +755,51 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeLastIndexOf(Value<?, ?>[] args, Type[] desc) {
-        return PlaceHolder.instance;
+    private Value<?, ?> invokeLastIndexOf(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+        if (args.length < 1 || args.length > 2) return PlaceHolder.instance;
+        IntValue from = args.length == 2 ? args[1].asIntValue() : new IntValue(context, Integer.MAX_VALUE);
+        StringValue target;
+        int result;
+        if (desc[0].getSort() == Type.INT) {
+            IntValue ch = args[0].asIntValue();
+            // Supplementary code points are two chars in a Java string but one in the solver's, so
+            // only BMP chars are modelled exactly (the UF below flags the result as imprecise anyway).
+            if (ch.concrete < 0 || ch.concrete > Character.MAX_VALUE) return PlaceHolder.instance;
+            target = new StringValue(context, String.valueOf((char) (int) ch.concrete),
+                    smgr.fromCodePoint(ch.asIntegerFormula()), -1);
+            result = concrete.lastIndexOf(ch.concrete, from.concrete);
+        } else if (args[0] instanceof StringValue str) {
+            target = str;
+            result = concrete.lastIndexOf(str.concrete, from.concrete);
+        } else {
+            return PlaceHolder.instance;
+        }
+        if (!isSymbolic() && !target.isSymbolic() && !from.isSymbolic()) return new IntValue(context, result);
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        UFManager ufmgr = context.getFormulaManager().getUFManager();
+        NumeralFormula.IntegerFormula tlen = smgr.length(target.formula);
+        NumeralFormula.IntegerFormula fromF = from.asIntegerFormula();
+        // The last start position a match may have: min(from, length - target length).
+        NumeralFormula.IntegerFormula maxStart = imgr.subtract(smgr.length(formula), tlen);
+        NumeralFormula.IntegerFormula last = bmgr.ifThenElse(imgr.lessThan(fromF, maxStart), fromF, maxStart);
+        FunctionDeclaration<NumeralFormula.IntegerFormula> uf = ufmgr.declareUF("lastIndexOf", FormulaType.IntegerType,
+                FormulaType.StringType, FormulaType.StringType, FormulaType.IntegerType);
+        NumeralFormula.IntegerFormula r = ufmgr.callUF(uf, formula, target.formula, last);
+        // Matches starting at or before `last` are the occurrences of target in the window s[0, last + tlen).
+        // (Encoded with contains rather than indexOf, which Z3 solves much faster.)
+        StringFormula window = smgr.substring(formula, imgr.makeNumber(0), imgr.add(last, tlen));
+        StringFormula afterR = smgr.substring(window, imgr.add(r, imgr.makeNumber(1)),
+                imgr.subtract(smgr.length(window), imgr.add(r, imgr.makeNumber(1))));
+        BooleanFormula noMatch = bmgr.or(imgr.lessThan(last, imgr.makeNumber(0)), bmgr.not(smgr.contains(window, target.formula)));
+        // r is -1 without a match; `last` for an empty target; otherwise a match with none after it in the window.
+        addDefinition(bmgr.ifThenElse(noMatch,
+                imgr.equal(r, imgr.makeNumber(-1)),
+                bmgr.ifThenElse(imgr.equal(tlen, imgr.makeNumber(0)),
+                        imgr.equal(r, last),
+                        bmgr.and(imgr.greaterOrEquals(r, imgr.makeNumber(0)), imgr.lessOrEquals(r, last),
+                                smgr.equal(smgr.substring(formula, r, tlen), target.formula),
+                                bmgr.not(smgr.contains(afterR, target.formula))))));
+        return new IntValue(context, result, r);
     }
 
     /**
@@ -799,8 +873,34 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeRegionMatches(Value<?, ?>[] args, Type[] desc) {
-        return PlaceHolder.instance;
+    private Value<?, ?> invokeRegionMatches(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+        int i = 0;
+        if (args.length == 5) {
+            // regionMatches(ignoreCase, ...): only the case-sensitive comparison is modelled.
+            BooleanValue ignoreCase = args[0].asBooleanValue();
+            if (ignoreCase.isSymbolic() || ignoreCase.concrete) return PlaceHolder.instance;
+            i = 1;
+        } else if (args.length != 4) {
+            return PlaceHolder.instance;
+        }
+        if (!(args[i + 1] instanceof StringValue other)) return PlaceHolder.instance;
+        IntValue toffset = args[i].asIntValue();
+        IntValue ooffset = args[i + 2].asIntValue();
+        IntValue len = args[i + 3].asIntValue();
+        boolean result = concrete.regionMatches(toffset.concrete, other.concrete, ooffset.concrete, len.concrete);
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        NumeralFormula.IntegerFormula t = toffset.asIntegerFormula();
+        NumeralFormula.IntegerFormula o = ooffset.asIntegerFormula();
+        NumeralFormula.IntegerFormula l = len.asIntegerFormula();
+        NumeralFormula.IntegerFormula zero = imgr.makeNumber(0);
+        // As String.regionMatches: false if either region starts before 0 or ends past its string,
+        // else true for an empty region, else the regions are compared.
+        BooleanFormula inBounds = bmgr.and(imgr.greaterOrEquals(t, zero), imgr.greaterOrEquals(o, zero),
+                imgr.lessOrEquals(t, imgr.subtract(smgr.length(formula), l)),
+                imgr.lessOrEquals(o, imgr.subtract(smgr.length(other.formula), l)));
+        BooleanFormula matches = bmgr.or(imgr.lessOrEquals(l, zero),
+                smgr.equal(smgr.substring(formula, t, l), smgr.substring(other.formula, o, l)));
+        return new BooleanValue(context, result, bmgr.and(inBounds, matches));
     }
 
     /**
@@ -1211,7 +1311,29 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeTrim(Value<?, ?>[] args, Type[] desc) {
-        return PlaceHolder.instance;
+        if (args.length != 0) return PlaceHolder.instance;
+        String result = concrete.trim();
+        if (!isSymbolic()) return new StringValue(context, result, -1);
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        UFManager ufmgr = context.getFormulaManager().getUFManager();
+        // trim() keeps [lo, hi): lo and hi are UFs of the string, defined by what they cut off
+        // being made of chars <= ' ' only, and by the kept part, if any, not starting or ending in one.
+        FunctionDeclaration<NumeralFormula.IntegerFormula> loUF = ufmgr.declareUF("trimStart", FormulaType.IntegerType, FormulaType.StringType);
+        FunctionDeclaration<NumeralFormula.IntegerFormula> hiUF = ufmgr.declareUF("trimEnd", FormulaType.IntegerType, FormulaType.StringType);
+        NumeralFormula.IntegerFormula lo = ufmgr.callUF(loUF, formula);
+        NumeralFormula.IntegerFormula hi = ufmgr.callUF(hiUF, formula);
+        NumeralFormula.IntegerFormula len = smgr.length(formula);
+        RegexFormula trimmed = smgr.range((char) 0, ' ');
+        addDefinition(bmgr.and(
+                imgr.greaterOrEquals(lo, imgr.makeNumber(0)),
+                imgr.lessOrEquals(lo, hi),
+                imgr.lessOrEquals(hi, len),
+                smgr.in(smgr.substring(formula, imgr.makeNumber(0), lo), smgr.closure(trimmed)),
+                smgr.in(smgr.substring(formula, hi, imgr.subtract(len, hi)), smgr.closure(trimmed)),
+                bmgr.implication(imgr.lessThan(lo, hi), bmgr.and(
+                        bmgr.not(smgr.in(smgr.charAt(formula, lo), trimmed)),
+                        bmgr.not(smgr.in(smgr.charAt(formula, imgr.subtract(hi, imgr.makeNumber(1))), trimmed))))));
+        return new StringValue(context, result, smgr.substring(formula, lo, imgr.subtract(hi, lo)), -1);
     }
 
     @Override
