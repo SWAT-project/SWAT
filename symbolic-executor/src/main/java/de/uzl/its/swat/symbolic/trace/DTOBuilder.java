@@ -98,7 +98,7 @@ class DTOBuilder {
             ufs.add(new UFDTO(formula));
         }
         logger.trace("Parsing constraints...");
-        boolean symbolicPrecisionLoss = false;
+        boolean symbolicPrecisionLoss = symbolicTrace.isSymbolicPrecisionLoss();
         for (Element el : symbolicTrace.getTrace()) {
             if (el instanceof BranchElement be) {
                 String constraint;

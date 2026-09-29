@@ -25,6 +25,10 @@ class SymbolicTrace {
     // If true, an invocation occurred that was not instrumented but received symbolic arguments.
     private boolean symbolicContextLoss = false;
 
+    // If true, a model was used that is only approximate, e.g. a sampled transcendental function.
+    // Branch constraints with UFs are detected as precision loss separately.
+    private boolean symbolicPrecisionLoss = false;
+
     // If true, reference equality semantics may have changed due to comparing user-de-interned strings.
     private boolean referenceSemanticChange = false;
 

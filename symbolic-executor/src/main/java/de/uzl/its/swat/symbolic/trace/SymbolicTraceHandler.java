@@ -209,6 +209,13 @@ public class SymbolicTraceHandler {
     }
 
     /**
+     * Records that a symbolic model was only approximate, so an exhausted search proves nothing.
+     */
+    public void recordSymbolicPrecisionLoss() {
+        symbolicTrace.setSymbolicPrecisionLoss(true);
+    }
+
+    /**
      * Records that reference equality semantics may have changed. This happens when Objects.equals
      * is called (via refEquals transformation) on strings where at least one was explicitly created
      * with new String() in user code. In such cases, the original reference equality check would
