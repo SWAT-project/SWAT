@@ -166,7 +166,7 @@ class TargetDriver:
         raise Exception(f'Unknown execution status: {status}')
 
     def retrieve_solution(self):
-        possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id, sa_node=self.sa_graph.entry_node)
+        possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance)
         # possible_branches = possible_branches[::-1]  # Reverse the order to prioritize deeper branches
         logger.info(f'[EXPLORER] Found {len(possible_branches)} possible branches')
         sat = None

@@ -482,3 +482,49 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AssertDistanceTest(unittest.TestCase):
+
+    def graph(self):
+        """
+        e0 -> b1: FALSE -> b2, TRUE -> c
+              b2: FALSE -> x (exit), TRUE -> a2 (assert)
+              c:  FALSE -> d, TRUE -> x;   d: FALSE -> a1 (assert), TRUE -> x
+        """
+        return (GraphBuilder().nodes_('e0', 'b1', 'b2', 'c', 'd')
+                .node('a1', assertion=True).node('a2', assertion=True).node('x', exit=True)
+                .edge('e0', 'b1').branch('b1', 'b2', 'c').branch('b2', 'x', 'a2')
+                .branch('c', 'd', 'x').branch('d', 'a1', 'x').edge('a1', 'x').edge('a2', 'x').load())
+
+    def test_distance_counts_branches_still_to_decide(self):
+        g = self.graph()
+        dist = {id: g.nodes[id].assertDistance for id in ('a1', 'a2', 'd', 'c', 'b2', 'b1', 'e0')}
+        self.assertEqual(dist, {'a1': 0, 'a2': 0, 'd': 1, 'c': 2, 'b2': 1, 'b1': 2, 'e0': 2})
+        self.assertEqual(g.nodes['x'].assertDistance, float('inf'))
+
+    def test_distance_crosses_calls(self):
+        g = (GraphBuilder().nodes_('e0', 'c1', 'r1', 'f0', 'fb').node('fa', assertion=True)
+             .node('fx', exit=True).node('x', exit=True)
+             .edge('e0', 'c1').call('c1', 'f0', 'r1', ['fx']).edge('r1', 'x')
+             .edge('f0', 'fb').branch('fb', 'fx', 'fa').edge('fa', 'fx').load())
+        self.assertEqual(g.nodes['e0'].assertDistance, 1)
+
+    def test_dfs_reports_distance_of_the_unexplored_side(self):
+        g = self.graph()
+        # Executed: b1 FALSE, then b2 FALSE. Unexplored: b1's TRUE side (c, 2 away) and b2's TRUE
+        # side (a2, the assert itself).
+        b2 = branch_node('b2', skipped=leaf())
+        b1 = branch_node('b1', skipped=b2)
+        distances = {}
+        found = dfs(set(), None, b1, set(), set(), g.entry_node, distances=distances)
+        self.assertEqual([n.id for n in found], ['b1', 'b2'])
+        self.assertEqual({n.id: d for n, d in distances.items()}, {'b1': 2, 'b2': 0})
+        found.sort(key=lambda n: distances.get(n, float('inf')))
+        self.assertEqual([n.id for n in found], ['b2', 'b1'])
+
+    def test_dfs_without_sa_reports_no_distances(self):
+        b1 = branch_node('b1', skipped=leaf())
+        distances = {}
+        self.assertEqual([n.id for n in dfs(set(), None, b1, set(), set(), None, distances=distances)], ['b1'])
+        self.assertEqual(distances, {})

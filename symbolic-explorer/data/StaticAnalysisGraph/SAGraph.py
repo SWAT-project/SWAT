@@ -1,7 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
+from collections import deque
 import json
+import math
 
 # The walk's call stack: a persistent linked-list stack of call-site nodes, innermost call on top, each
 # cell also carrying the stack's depth. `None` is the empty stack, i.e. the walk is in main's
@@ -57,6 +59,10 @@ class SANode:
     # and the handler each caught exception type resumes at if the callee throws.
     return_site: SANode | None = field(default=None, repr=False)
     handlers: dict[str, SANode] = field(default_factory=dict, repr=False)
+    # How many branches must still be decided on the shortest path from here to an assertion point,
+    # counting this node if it is a branch. Computed by compute_assert_distances(). Context-
+    # insensitive, so only a heuristic for ordering the search; pruning never depends on it.
+    assertDistance: float = math.inf
 
     def has_fallthrough_child(self):
         return self.next_fallthrough is not None
@@ -305,6 +311,31 @@ def mark_assertion_path(node: SANode):
         worklist.extend(prev for prev in current.prev if not prev.reachesAssertSameLevel)
 
 
+def compute_assert_distances(nodes) -> None:
+    """
+    Sets each node's assertDistance: the fewest branches on any path from the node to an assertion
+    point, following every edge kind (calls, returns and exceptional edges included) and ignoring
+    the call stack. A 0-1 BFS backwards over `prev`: leaving a branch node costs 1, anything else 0.
+    """
+    worklist = deque()
+    for n in nodes:
+        n.assertDistance = math.inf
+        if n.isAssert:
+            n.assertDistance = 0
+            worklist.append(n)
+    while worklist:
+        current = worklist.popleft()
+        for pred in current.prev:
+            cost = 1 if pred.is_branch() else 0
+            d = current.assertDistance + cost
+            if d < pred.assertDistance:
+                pred.assertDistance = d
+                if cost == 0:
+                    worklist.appendleft(pred)
+                else:
+                    worklist.append(pred)
+
+
 # Edge types that continue within the method along the one fall-through slot. THROW is an explicit
 # throw to where it provably goes; SWAT reports no branch for an ATHROW, so it walks like NORMAL.
 FALLTHROUGH_EDGES = {"NORMAL", "FALSE_BRANCH", "PHANTOM_FALSE_BRANCH", "THROW"}
@@ -391,6 +422,7 @@ class SAGraph:
                     mark_assertion_path(node)
         else:
             compute_summaries(list(self.nodes.values()))
+        compute_assert_distances(list(self.nodes.values()))
 
 
 

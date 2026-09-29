@@ -1,4 +1,5 @@
 import json
+import math
 import logging
 import time
 
@@ -20,7 +21,13 @@ class StrategyService:
         db = Database.instance()
         tree = db.get_tree(endpoint_id)
         visited = set()
-        possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches(), kwargs.get("sa_node", None))
+        # With rank_by_distance, the branches are tried closest-to-an-assert first. Only the order
+        # changes, so which branches exist, and hence the verdict, does not. The sort is stable:
+        # ties, and branches without SA information (ranked last), keep their DFS order.
+        distances = {} if kwargs.get("rank_by_distance", False) else None
+        possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches(), kwargs.get("sa_node", None), distances=distances)
+        if distances:
+            possible_branches.sort(key=lambda n: distances.get(n, math.inf))
         
         # # If possible_branches is empty, try again without sa_node to prevent false SAFE classifications.
         # if not possible_branches:

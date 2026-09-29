@@ -35,7 +35,7 @@ def is_port_available(port: int) -> bool:
         return False
 
 
-def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, wait_for_sa: bool = False) -> list[str]:
+def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, wait_for_sa: bool = False, sa_rank_distance: bool = False) -> list[str]:
 
 
     test_case_dir = ver_task['file_path'].parent
@@ -56,6 +56,7 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     ([] if no_sa else ["--sa-path", str(sa_path)]) + \
                     (["--sa-retry-without"] if sa_retry_without and not no_sa else []) + \
                     (["--wait-for-sa"] if wait_for_sa and not no_sa else []) + \
+                    (["--sa-rank-distance"] if sa_rank_distance and not no_sa else []) + \
                     ["--classpath"]
 
     cp: list[str] = []
@@ -89,7 +90,7 @@ def write_run_info(run_dir: Path, **settings) -> Path:
     return path
 
 
-def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, wait_for_sa: bool = False) -> list[VerificationTask]:
+def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, wait_for_sa: bool = False, sa_rank_distance: bool = False) -> list[VerificationTask]:
 
     port = 9000
     skipped_ports = []
@@ -135,7 +136,7 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
             'target_dir': target_dir,
             'target': target,
             'log_dir': logging_dir,
-            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, wait_for_sa=wait_for_sa)
+            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, wait_for_sa=wait_for_sa, sa_rank_distance=sa_rank_distance)
         }
         ver_task['command'] = command
         port += 1

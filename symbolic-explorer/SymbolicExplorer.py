@@ -134,6 +134,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--sa-file", help="Path to a file with static pre-analysis results for informing branch exploration (optional)")
     parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
     parser.add_argument("--sa-retry-without", action="store_true", help="On a SAFE verdict reached with static pre-analysis, disable it and explore again (guards against false SAFE from incomplete SA)", default=False)
+    parser.add_argument("--sa-rank-distance", action="store_true", help="Try branches closest to an assert (by static pre-analysis graph distance) first, instead of in plain DFS order", default=False)
     parser.add_argument("--wait-for-sa", action="store_true", help="Wait for the static pre-analysis before exploring (sv-comp mode). By default it runs in the background and is used once it is ready", default=False)
 
     # HTTP-specific arguments
