@@ -10,6 +10,8 @@ class TraceItem(BaseModel):
     branched: bool
     type: str
     inst: Optional[str] = None
+    # A branch the executor records only to mirror a guard of the SA graph; never a solver target.
+    concreteOnly: bool = False
 class UFItem(BaseModel):
     definition: str 
 

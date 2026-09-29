@@ -129,7 +129,7 @@ class DTOBuilder {
                         symbolicPrecisionLoss = true;
                     }
                 }
-                trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched()));
+                trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), be.isConcreteOnly()));
             } else if (el instanceof SpecialElement se) {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }

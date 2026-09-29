@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 
 import org.sosy_lab.java_smt.api.BooleanFormula;
+import org.sosy_lab.java_smt.api.BooleanFormulaManager;
 import org.sosy_lab.java_smt.api.FormulaManager;
 
 /**
@@ -51,6 +52,21 @@ public class SymbolicTraceHandler {
         // check if the path constraint contains a free/ symbolic variable
 
         symbolicTrace.addTraceElement(current);
+    }
+
+    /**
+     * Records a branch without a symbolic constraint, whose outcome is known only concretely. Used
+     * where the static pre-analysis graph has a branch that SWAT has no symbolic value for (e.g. the
+     * bounds check of an untracked array): the explorer walks that graph in step with the trace, by
+     * position, so the branch must be in the trace, but it is never a target for the solver.
+     *
+     * @param result Whether the branch was taken
+     * @param iid The iid of the branching instruction
+     */
+    public void addConcreteBranch(boolean result, long iid) throws NoThreadContextException {
+        BooleanFormulaManager bmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId())
+                .getFormulaManager().getBooleanFormulaManager();
+        symbolicTrace.addTraceElement(new BranchElement(result, bmgr.makeTrue(), iid, true));
     }
 
     /**

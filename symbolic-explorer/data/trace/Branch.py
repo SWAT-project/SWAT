@@ -13,7 +13,7 @@ class Branch:
         constraint (any): The constraint or condition associated with the branch.
     """
 
-    def __init__(self, id: int, trace_id: str, has_branched: bool, constraint: str):
+    def __init__(self, id: int, trace_id: str, has_branched: bool, constraint: str, concrete_only: bool = False):
         """
         Initializes a new instance of the Branch class.
 
@@ -27,6 +27,9 @@ class Branch:
         self.trace_id = trace_id
         self.has_branched = has_branched
         self.constraint = constraint
+        # Recorded only to keep the SA walk in step (e.g. the bounds check of an untracked array):
+        # it has no symbolic constraint and is never worth solving.
+        self.concrete_only = concrete_only
         
     def __str__(self):
         return f'[(B) - {self.id} - ({"T" if self.has_branched else "F"})]'

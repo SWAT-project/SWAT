@@ -103,6 +103,7 @@ def branch_node(name, skipped=None, branched=None):
     n.trace_id = name
     n.gid = name
     n.kind = 'Branch'
+    n.concrete_only = False
     n.inst = None
     n.constraint = {}
     n.skipped = skipped
@@ -528,3 +529,19 @@ class AssertDistanceTest(unittest.TestCase):
         distances = {}
         self.assertEqual([n.id for n in dfs(set(), None, b1, set(), set(), None, distances=distances)], ['b1'])
         self.assertEqual(distances, {})
+
+
+class ConcreteOnlyBranchTest(unittest.TestCase):
+
+    def test_concrete_only_guard_keeps_the_walk_in_step_but_is_no_candidate(self):
+        # e0 -> g: a phantom bounds guard (in bounds: b, out of bounds: u, which leaves main)
+        #       b: FALSE -> x (exit), TRUE -> a (assert)
+        g = (GraphBuilder().nodes_('e0', 'g', 'b').node('u', chain=AIOOBE_CHAIN)
+             .node('a', assertion=True).node('x', exit=True)
+             .edge('e0', 'g').branch('g', 'u', 'b', phantom=True).branch('b', 'x', 'a').edge('a', 'x').load())
+        # The executor records the guard of an untracked array as a concrete-only branch: in bounds,
+        # so taken. Without it, b would be paired with g and its FALSE side (u) pruned.
+        b = branch_node('b', skipped=leaf())
+        guard = branch_node('g', branched=b)
+        guard.concrete_only = True
+        self.assertEqual(candidates(guard, g), {'b'})

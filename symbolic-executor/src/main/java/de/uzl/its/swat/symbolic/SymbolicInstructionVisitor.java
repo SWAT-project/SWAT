@@ -120,6 +120,20 @@ public class SymbolicInstructionVisitor implements IVisitor {
         return true; // false;
     }
 
+    /**
+     * Records the bounds check of an access to an array SWAT does not track, e.g. one returned by an
+     * uninstrumented call. The static pre-analysis graph has a guard branch for every array access,
+     * and the explorer walks it in step with the trace by position, so the check has to be in the
+     * trace even without a symbolic array: as a concrete-only branch, taken iff the access completed
+     * normally. (Any exception it throws counts as out of bounds, which is all the graph models.)
+     *
+     * @param inst The array load or store instruction
+     */
+    private void recordUntrackedBoundsCheck(Instruction inst) throws NoThreadContextException {
+        boolean completed = (getNextInst() instanceof SPECIAL special && special.i == 0) || getNextInst() instanceof CLINIT;
+        symbolicTraceHandler.addConcreteBranch(completed, determineIid(inst.iid));
+    }
+
     public boolean checkArrayBounds(Value<?, ?> ref, IntValue idx, long iid) throws NoThreadContextException {
         SWATAssert.check(ref instanceof AbstractArrayValue || ref instanceof ObjectArrayValue, "Unknown array type!");
 
@@ -171,6 +185,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 stack.pushOperand(
                         ref.getName() != null
                                 ? PlaceHolder.symbolicInstance
@@ -215,6 +230,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[AASTORE]: Unknown array type: {}", ref.getClass().getSimpleName());
             }
         } catch (Throwable t) {
@@ -371,6 +387,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[BALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -408,6 +425,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[BASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -446,6 +464,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[CALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -476,6 +495,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[CASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -571,6 +591,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[DALOAD]: Unknown array type");
                 stack.pushWideOperand(
                         arr.getName() != null
@@ -601,6 +622,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[DASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -956,6 +978,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[FALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -986,6 +1009,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[FASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -1615,6 +1639,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[IALOAD]: Unknown array type");
                 stack.pushOperand(
                         ref.getName() != null
@@ -1661,6 +1686,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[IASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -2593,6 +2619,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[LALOAD]: Unknown array type");
                 stack.pushWideOperand(
                         arr.getName() != null
@@ -2639,6 +2666,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[LASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -3317,6 +3345,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[SALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -3347,6 +3376,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst);
                 logger.warn("[SASTORE]: Unknown array type");
             }
         } catch (Throwable t) {

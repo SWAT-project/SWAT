@@ -15,11 +15,18 @@ public class BranchDTO {
 
     @SuppressWarnings("unused")
     private String inst;
+    @SuppressWarnings("unused")
+    private boolean concreteOnly;
 
     public BranchDTO(long iid, String constraint, boolean branched) {
+        this(iid, constraint, branched, false);
+    }
+
+    public BranchDTO(long iid, String constraint, boolean branched, boolean concreteOnly) {
         this.iid = iid;
         this.constraint = constraint;
         this.branched = branched;
+        this.concreteOnly = concreteOnly;
         this.type = "Branch";
     }
 

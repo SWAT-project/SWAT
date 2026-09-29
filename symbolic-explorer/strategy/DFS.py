@@ -51,7 +51,8 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         if (node.skipped is None and skip_is_interesting) or (node.branched is None and branch_is_interesting):
             if node.gid not in solved_branches \
             and node.gid not in unsat_branch_ids \
-            and node.kind != "Special":
+            and node.kind != "Special" \
+            and not node.concrete_only:
                 possible_nodes.append(node)
                 if distances is not None and sa_node and not mask_sa_node:
                     unexplored = sa_node.get_fallthrough_child() if node.skipped is None else sa_node.get_branched_child()
