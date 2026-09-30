@@ -23,6 +23,7 @@ libs/jacoco/report
 targets/applications/openhospital/oh_build/restler_working_dir/Compile
 targets/applications/openhospital/oh_build/restler_working_dir/RestlerResults
 targets/sv-comp/sv-benchmarks/
+targets/sv-comp/sv-benchmarks-*/
 targets/sv-comp/wit4java/
 **/__pycache__
 **/.venv/*

@@ -77,5 +77,12 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   10 s). A branch that runs out is retried later with 5x the limit, after the cheaper queries; a
   lone retry runs unlimited. Off by default. Each query's time and rlimit use are in the
   `[SOLVER]` debug lines of `explorer.log`.
+- **Benchmarks:** `targets/sv-comp/sv-benchmarks/` is a sparse checkout of `java/` from
+  SWAT-project/SV-Benchmarks, which mirrors upstream sv-benchmarks with precompiled `.class` files;
+  `.last_sv_commit` names the upstream commit. Older suites are kept next to it as
+  `sv-benchmarks-<date>/` (currently `sv-benchmarks-2025-11-03`, which all runs before the switch on 2026-09-30
+  used); select one with `--benchmark-dir`, and only compare scores of runs on the same
+  suite. To update: move the current suite aside, then `./scripts/svcomp setup checkout-benchmarks`
+  (`--source <local clone>` if GitHub is not reachable over SSH).
 - **Verdicts:** false SAFE (`violation -> safe`) is the outcome that matters most, and a pruning
   bug causes exactly that. Check any new one before trusting a run.
