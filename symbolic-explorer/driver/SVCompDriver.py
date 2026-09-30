@@ -29,6 +29,11 @@ verdict_logger = log.get_verdict_logger()
 import platform
 
 
+# With --solver-rlimit, each time a branch's query runs out of its resource limit, the limit for
+# that branch grows by this factor, up to MAX_RLIMIT (the largest value Z3 accepts).
+RLIMIT_GROWTH = 5
+MAX_RLIMIT = 2**32 - 1
+
 # The (unique) endpoint ID for the SV-COMP target. As each target is handled separately, this ID is always 0.
 ENDPOINT_ID = 0 
     
@@ -82,6 +87,9 @@ class SVCompDriver:
         self.sa_adopted_round: int | None = None
         self.round_idx = 0
         self.nr_solver_calls = 0
+        self.solver_limit_hits = 0 # queries that ran out of their resource limit
+        # How often each branch (by gid) ran out of its resource limit; each time multiplies it.
+        self.rlimit_level: dict[int, int] = {}
     
     @contextmanager
     def pushd(self, dirname):
@@ -307,49 +315,86 @@ class SVCompDriver:
             self.sa_graph = graph
             self.sa_adopted_round = self.round_idx
 
+    def solver_rlimit_for(self, branch: Node) -> int | None:
+        """The resource limit for the next query of this branch: the base limit, grown by
+        RLIMIT_GROWTH for each time the branch already ran out of it (None: unlimited)."""
+        if not self.args.solver_rlimit:
+            return None
+        return min(self.args.solver_rlimit * RLIMIT_GROWTH ** self.rlimit_level.get(branch.gid, 0), MAX_RLIMIT)
+
+    def solve_candidates(self, candidates: list[Node]) -> tuple[Node | None, dict, bool]:
+        """Solves the candidate branches until one is SAT.
+
+        Returns the branch and its solution, or (None, {}, gave_up) if none is SAT, where gave_up
+        says whether the solver failed to decide some branch, so that no SAFE verdict may follow.
+
+        With a solver rlimit, a branch that runs out of it is skipped for now and retried with a
+        larger limit once every cheaper query has been tried: branches are taken in order of how
+        often they ran out already (a stable sort, so DFS order otherwise), and after a full pass
+        the ones that ran out are tried again, until one is SAT or all are decided. A branch that
+        runs out even at MAX_RLIMIT is given up on.
+
+        The limit only serves to let other branches go first. So once a retry pass is left with a
+        single branch, that one is solved without a limit: escalating it step by step would only
+        redo the same work at each step.
+        """
+        gave_up = False
+        pending = sorted(candidates, key=lambda b: self.rlimit_level.get(b.gid, 0))
+        retry = False
+        while pending:
+            limited = []
+            alone = retry and len(pending) == 1
+            for branch in pending:
+                rlimit = None if alone else self.solver_rlimit_for(branch)
+                sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit)
+                self.nr_solver_calls += 1
+                if sat == SATResult.SAT:
+                    return branch, sol, gave_up
+                if sat == SATResult.LIMIT:
+                    self.solver_limit_hits += 1
+                    if rlimit is None or rlimit >= MAX_RLIMIT:
+                        logger.info(f'[SYMBOLIC EXPLORATION] Branch {branch.id} exceeds even the largest resource limit, giving up on it')
+                        gave_up = True
+                        continue
+                    self.rlimit_level[branch.gid] = self.rlimit_level.get(branch.gid, 0) + 1
+                    logger.info(f'[SYMBOLIC EXPLORATION] Branch {branch.id} ran out of resource limit {rlimit}, retrying later with {self.solver_rlimit_for(branch)}')
+                    limited.append(branch)
+                elif sat == SATResult.UNKNOWN:
+                    logger.info(f'[SYMBOLIC EXPLORATION] Solver could not decide branch {branch.id}')
+                    gave_up = True
+                else:
+                    logger.debug(f'[SYMBOLIC EXPLORATION] No solution ({sat}) found for branch {branch.id}')
+            pending = limited
+            retry = True
+        return None, {}, gave_up
+
     def retrieve_solution(self):
         self.adopt_sa_graph()
         possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance)
         logger.info(f'[SYMBOLIC EXPLORATION] Found {len(possible_branches)} possible branches')
         logger.info(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
-        symbolic_vars = None
-        sat = None
-        branch_found = False
-        for branch in possible_branches:
-            #logger.info(f'[SYMBOLIC EXPLORATION] Checking branch {branch.id}, kind={branch.kind}')
-            if not StrategyService.is_symbolic_branch(branch):
-                #logger.info(f'[SYMBOLIC EXPLORATION] Skipping non-symbolic branch {branch.id}, constraint has no symbolic vars')
-                continue
-            branch_found = True
-            #logger.info(f'[SYMBOLIC EXPLORATION] Solving for branch {branch.id}')
-            sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None)
-            self.nr_solver_calls += 1
-             
-            if sat == SATResult.SAT:
-                logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
-                symbolic_vars = branch.inputs
-                # remember which branch we want to explore
-                self.state.branch_to_explore = branch
-                self.state.solution_is_guess = Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id)
-                break
-            logger.debug(f'[SYMBOLIC EXPLORATION] No solution ({sat}) found for branch {branch.id}')
-            
-            # TODO: should we remember any SATResult.UNKNOWN and then downgrade SAFE verdicts?
-       
-        if not branch_found or sat == SATResult.UNSAT:
-            self.state.verdict = Verdict.SAFE
-            logger.info(f'[SYMBOLIC EXPLORATION] No symbolic branch found or UNSAT')
+        candidates = [b for b in possible_branches if StrategyService.is_symbolic_branch(b)]
+        branch, sol, solver_gave_up = self.solve_candidates(candidates)
+
+        if branch is None:
+            if solver_gave_up:
+                # Some branch might still be feasible, the solver just could not tell.
+                logger.info(f'[SYMBOLIC EXPLORATION] No solution found, but the solver gave up on some branch')
+                self.state.verdict = Verdict.UNKNOWN
+            else:
+                logger.info(f'[SYMBOLIC EXPLORATION] No symbolic branch found or UNSAT')
+                self.state.verdict = Verdict.SAFE
             return Action.REPORTVERDICT
-        
-        if sat == SATResult.UNKNOWN:
-            logger.info(f'[SYMBOLIC EXPLORATION] SAT result is UNKNOWN')
-            self.state.verdict = Verdict.UNKNOWN
-            return Action.REPORTVERDICT
-        
+
+        logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
+        # remember which branch we want to explore
+        self.state.branch_to_explore = branch
+        self.state.solution_is_guess = Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id)
+
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
         logger.info(f'[SYMBOLIC EXPLORATION] SAT solution: {sol}')
         logger.info(f'[SYMBOLIC EXPLORATION] Found new solution: {sol_viz}')
-        self.symbolicStorage.register_vars(symbolic_vars)
+        self.symbolicStorage.register_vars(branch.inputs)
         self.symbolicStorage.store_solution(sol)
         return Action.SYMBOLICNEXT
         
@@ -408,7 +453,8 @@ class SVCompDriver:
         # invocations and the context-loss subset) so the analysis can rely on structured data.
         stats_file = os.path.join(log_dir, 'stats.json')
         write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
-                             self.round_idx, self.nr_solver_calls, self.sa.stats(self.sa_adopted_round))
+                             self.round_idx, self.nr_solver_calls, self.sa.stats(self.sa_adopted_round),
+                             self.solver_limit_hits)
 
         self.kill_current_process()
         

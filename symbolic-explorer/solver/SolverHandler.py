@@ -17,7 +17,24 @@ class SATResult(Enum):
     SAT = 'sat'
     UNSAT = 'unsat'
     UNKNOWN = 'unknown'
+    # The solver ran out of the resource limit (rlimit) it was given. Unlike UNKNOWN, a larger
+    # limit may still decide the query. Only returned when solve() is given an rlimit.
+    LIMIT = 'limit'
     
+# The shared Z3 context's cumulative resource count after the last check. Checks run one at a time,
+# so the difference to the count after the next one is what that check used (see _rlimit_used).
+_last_rlimit_count = 0
+
+
+def _rlimit_used(solver) -> int:
+    """The resources (Z3 rlimit units) the check just run on `solver` used."""
+    global _last_rlimit_count
+    stats = solver.statistics()
+    count = next((stats.get_key_value(k) for k in stats.keys() if k == 'rlimit count'), _last_rlimit_count)
+    used, _last_rlimit_count = count - _last_rlimit_count, count
+    return used
+
+
 class Z3Handler:
     """Class to handle symbolic solving and related tasks."""
 
@@ -358,7 +375,7 @@ class Z3Handler:
         return filepath
 
     @staticmethod
-    def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000) -> Tuple[SATResult, Dict[str, Any]]:
+    def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000, rlimit: int | None = None) -> Tuple[SATResult, Dict[str, Any]]:
         """
         Solve for the given node and path constraints using ConstraintCache (modern approach).
 
@@ -368,6 +385,9 @@ class Z3Handler:
         Args:
         - node (Any): The node for which to solve.
         - path_constraints (list): List of path constraint SMT strings.
+        - timeout_ms: Wall-clock limit for the check, or None.
+        - rlimit: Z3 resource limit for the check, or None. Unlike a timeout it is deterministic:
+          the same query gets as far regardless of machine load. Running out of it gives LIMIT.
 
         Returns:
         - Tuple[SATResult, Dict[str, Any]]: Tuple containing SAT result and solution dictionary.
@@ -439,10 +459,14 @@ class Z3Handler:
 
         if timeout_ms is not None:
             solver.set("timeout", timeout_ms)
+        if rlimit is not None:
+            # Z3 gives each check this much on top of what the (shared) context has used already.
+            solver.set("rlimit", rlimit)
         t_start = time.perf_counter()
         res = solver.check()
         t_check = time.perf_counter() - t_start
         TimingManager.instance().record_solver_time(t_check)
+        rlimit_used = _rlimit_used(solver)
 
 
         if str(res) == SATResult.SAT.value:
@@ -477,11 +501,20 @@ class Z3Handler:
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
             t_encode = time.perf_counter() - t_start
             TimingManager.instance().record_solver_time(t_encode, count=False)
-            logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s model={t_encode:.3f}s")
+            logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s model={t_encode:.3f}s rlimit={rlimit_used}")
             return SATResult.SAT, encoded_sol
         else:
-            logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s ({res})")
-            return SATResult.UNSAT if str(res) == SATResult.UNSAT.value else SATResult.UNKNOWN, {}
+            logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s rlimit={rlimit_used} ({res})")
+            if str(res) == SATResult.UNSAT.value:
+                return SATResult.UNSAT, {}
+            # With only an rlimit set, a check cut short is reported as "canceled" (older Z3:
+            # "max. resource limit exceeded"); anything else is the solver giving up for good.
+            reason = solver.reason_unknown()
+            if rlimit is not None and timeout_ms is None and ('canceled' in reason or 'resource' in reason):
+                logger.debug(f"[SOLVER] resource limit {rlimit} exhausted after {t_check:.3f}s")
+                return SATResult.LIMIT, {}
+            logger.debug(f"[SOLVER] unknown: {reason}")
+            return SATResult.UNKNOWN, {}
 
     @staticmethod
     def solve_with_optimization(node: Any, path_constraints: list) -> Tuple[SATResult, Dict[str, Any]]:

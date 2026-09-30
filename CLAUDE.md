@@ -60,7 +60,7 @@ spot a walk that has fallen out of step with the execution.
 
 ```bash
 cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --categories valid-assert.prp
-./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --parallel-sa, --sa-rank-distance, --testcase-timeout-s ...
+./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --parallel-sa, --sa-rank-distance, --solver-rlimit, --testcase-timeout-s ...
 ```
 
 - **Duration:** a full valid-assert run takes about 40 min with the default 900 s timeout, and
@@ -72,5 +72,10 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   `symbolic-explorer/` and uses `../cfg-extraction/build/libs/`. Ports are pre-assigned upward
   from 9000 when a run starts. So don't start a run while another still has live tasks (check
   `ps --ppid <svcomp.py pid>`), and remember that editing either repo affects a run in progress.
+- **Solver limits:** `--solver-rlimit N` gives each branch's first query N Z3 resource units
+  (deterministic, unlike a timeout; slow queries run at about 2.5M units/s, so 25000000 is about
+  10 s). A branch that runs out is retried later with 5x the limit, after the cheaper queries; a
+  lone retry runs unlimited. Off by default. Each query's time and rlimit use are in the
+  `[SOLVER]` debug lines of `explorer.log`.
 - **Verdicts:** false SAFE (`violation -> safe`) is the outcome that matters most, and a pruning
   bug causes exactly that. Check any new one before trusting a run.

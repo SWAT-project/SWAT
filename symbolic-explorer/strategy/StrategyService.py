@@ -95,7 +95,10 @@ class StrategyService:
         return uf_definitions
 
     @staticmethod
-    def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000):
+    def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000,
+                     solver_rlimit: int | None = None):
+        """Solves for the unexplored side of the branch. LIMIT (the rlimit ran out) records nothing,
+        so the branch stays a candidate and can be retried with a larger limit."""
         db = Database.instance()
 
         path_constraints = StrategyService.collect_path_constrains(possible_branch)
@@ -106,7 +109,7 @@ class StrategyService:
 
         inputs = possible_branch.inputs
 
-        sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms)
+        sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms, rlimit=solver_rlimit)
 
         if sat == SATResult.SAT:
             db.add_solution(branch_id=possible_branch.gid, sol=sol, inputs=inputs, endpoint_id=endpoint_id)

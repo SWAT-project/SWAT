@@ -135,6 +135,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
     parser.add_argument("--sa-retry-without", action="store_true", help="On a SAFE verdict reached with static pre-analysis, disable it and explore again (guards against false SAFE from incomplete SA)", default=False)
     parser.add_argument("--sa-rank-distance", action="store_true", help="Try branches closest to an assert (by static pre-analysis graph distance) first, instead of in plain DFS order", default=False)
+    parser.add_argument("--solver-rlimit", type=int, default=0, help="Z3 resource limit (rlimit) for the first query of each branch in sv-comp mode; a branch that runs out is retried later with a growing limit. 0 (default): unlimited")
     parser.add_argument("--parallel-sa", action="store_true", help="Run the static pre-analysis in the background and use it once it is ready (sv-comp mode). By default exploration waits for it: running it in parallel makes runs nondeterministic", default=False)
 
     # HTTP-specific arguments

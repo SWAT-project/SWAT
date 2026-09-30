@@ -35,7 +35,7 @@ def is_port_available(port: int) -> bool:
         return False
 
 
-def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False) -> list[str]:
+def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, solver_rlimit: int = 0) -> list[str]:
 
 
     test_case_dir = ver_task['file_path'].parent
@@ -57,6 +57,7 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     (["--sa-retry-without"] if sa_retry_without and not no_sa else []) + \
                     (["--parallel-sa"] if parallel_sa and not no_sa else []) + \
                     (["--sa-rank-distance"] if sa_rank_distance and not no_sa else []) + \
+                    (["--solver-rlimit", str(solver_rlimit)] if solver_rlimit else []) + \
                     ["--classpath"]
 
     cp: list[str] = []
@@ -90,7 +91,7 @@ def write_run_info(run_dir: Path, **settings) -> Path:
     return path
 
 
-def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False) -> list[VerificationTask]:
+def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, solver_rlimit: int = 0) -> list[VerificationTask]:
 
     port = 9000
     skipped_ports = []
@@ -136,7 +137,7 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
             'target_dir': target_dir,
             'target': target,
             'log_dir': logging_dir,
-            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance)
+            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, solver_rlimit=solver_rlimit)
         }
         ver_task['command'] = command
         port += 1
