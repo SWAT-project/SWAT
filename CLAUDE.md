@@ -89,5 +89,10 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   task's `.yml`. A fresh checkout drops them, so re-apply any that upstream has not fixed yet:
   - `argv-tasks/ReverseInterpolator_true`: valid-assert is false (float rounding, e.g. input
     16.84626f); upstream MR 1730 is still open.
+  - `argv-tasks/PieSegment_true`: valid-assert is false (`angle % 360` is negative for negative
+    angles); upstream MR 1675 is still open.
+  - `argv-tasks/AlbersProjection_true`: valid-assert is false (the early return for small `Te`
+    skips the finite check, e.g. qs = 0, Te = 0 returns 0); no upstream MR yet (MR 1703 was
+    undone by commit b4857700).
 - **Verdicts:** false SAFE (`violation -> safe`) is the outcome that matters most, and a pruning
   bug causes exactly that. Check any new one before trusting a run.
