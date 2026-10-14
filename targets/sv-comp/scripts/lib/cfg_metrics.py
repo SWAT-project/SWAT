@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, TypedDict, Any
 
 from .dtypes import VerificationTask
-from .selection import extract_testcases
+from .selection import extract_testcases, task_rel_dir
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -109,18 +109,7 @@ def generate_cfg_command(
                 java_files.append(potential_file)
 
     # Create output directory based on task structure (similar to logs)
-    # Get relative path from sv-benchmarks/java/
-    try:
-        sv_benchmarks_java = Path('sv-benchmarks') / 'java'
-        # Find the sv-benchmarks parent directory
-        parts = list(test_case_dir.parts)
-        if 'sv-benchmarks' in parts:
-            sb_index = parts.index('sv-benchmarks')
-            rel_target_path = Path(*parts[sb_index+2:])  # Skip sv-benchmarks/java
-        else:
-            rel_target_path = Path(ver_task['file_path'].stem)
-    except (ValueError, IndexError):
-        rel_target_path = Path(ver_task['file_path'].stem)
+    rel_target_path = task_rel_dir(ver_task)
 
     target_name = ver_task['file_path'].stem
     category_suffix = ver_task['category'].value.replace('.prp', '')

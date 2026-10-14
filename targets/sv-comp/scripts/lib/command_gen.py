@@ -1,4 +1,4 @@
-from .selection import extract_testcases
+from .selection import extract_testcases, task_rel_dir
 import datetime
 import json
 import logging
@@ -116,9 +116,8 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
         # Extract unique identifier for the target (based on its relative path and the name of the .yml file)
         target_dir = ver_task['file_path'].parent
 
-        # Get relative path from sv-benchmarks/java/
-        sv_benchmarks_java = Path('sv-benchmarks') / 'java'
-        rel_target_path = target_dir.relative_to(target_dir.parents[len(target_dir.parts) - list(target_dir.parts).index('sv-benchmarks') - 1] / sv_benchmarks_java)
+        # Relative path below the benchmark dir's java/ folder
+        rel_target_path = task_rel_dir(ver_task)
 
         target_name = ver_task['file_path'].stem
         target = rel_target_path / target_name
