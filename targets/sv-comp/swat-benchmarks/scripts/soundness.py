@@ -923,6 +923,256 @@ AB        int r;
 """
 
 
+# --- narrowing tasks (added after the first runs) ------------------------------------------------
+# The lambda and reflection pairs above lose the symbolic argument in the JDK frames between the
+# call and the callee, so SWAT misses the violation even without pruning. These variants pass the
+# input through a static field instead, which keeps it symbolic, to separate that executor
+# limitation from what pruning does.
+
+@task('lambda-static-field-noarg')
+def _():
+    """IMPORT
+// The assert is inside a no-argument lambda stored in a static field; it reads the input from a
+// static field, so no argument passes through JDK frames.
+public class Main {
+    static int input;
+
+    static final Runnable CHECK = () -> {
+        if (@HIT(input)@) assert false;
+    };
+
+    public static void main(String[] args) {
+AB        input = a;
+        if (b == 7) CHECK.run();
+        if (a > 3) a--;
+    }
+}
+"""
+
+
+@task('lambda-local-noarg')
+def _():
+    """IMPORT
+// As lambda-static-field-noarg, but the lambda is created in main (invokedynamic in the graph).
+public class Main {
+    static int input;
+
+    public static void main(String[] args) {
+AB        input = a;
+        Runnable check = () -> {
+            if (@HIT(input)@) assert false;
+        };
+        if (b == 7) check.run();
+        if (a > 3) a--;
+    }
+}
+"""
+
+
+@task('reflection-noarg')
+def _():
+    """import java.lang.reflect.Method;
+IMPORT
+// The asserting no-argument method is called through Method.invoke; it reads the input from a
+// static field.
+public class Main {
+    static int input;
+
+    public static void check() {
+        if (@HIT(input)@) assert false;
+    }
+
+    public static void main(String[] args) throws Exception {
+AB        input = a;
+        Method m = Main.class.getMethod("check");
+        if (b == 7) {
+            m.invoke(null);
+        }
+        if (a > 3) a--;
+    }
+}
+"""
+
+
+# Exceptions thrown where the graph has no edge for them, caught by the application.
+
+@task('library-throw-catch')
+def _():
+    """IMPORT
+// A JDK method (Integer.parseInt) throws, and the application catches it: the usual way CLI tools
+// handle a malformed argument. The assert is in the handler.
+public class Main {
+    public static void main(String[] args) {
+AB        String arg = b == 7 ? "x7" : "12";
+        int v;
+        try {
+            v = Integer.parseInt(arg);
+        } catch (NumberFormatException e) {
+            if (@HIT(a)@) assert false;
+            v = 0;
+        }
+        if (v > 5) v--;
+    }
+}
+"""
+
+
+@task('cce-catch-up1')
+def _():
+    """IMPORT
+// The assert is in a catch (ClassCastException) one frame above the cast.
+public class Main {
+    static class A {
+    }
+
+    static class B extends A {
+        int v = 3;
+    }
+
+    static int unwrap(A o) {
+        B bb = (B) o;
+        int r = bb.v;
+        if (r > 2) r--;
+        return r;
+    }
+
+    public static void main(String[] args) {
+AB        A o = b == 7 ? new A() : new B();
+        int r;
+        try {
+            r = unwrap(o);
+        } catch (ClassCastException e) {
+            if (@HIT(a)@) assert false;
+            r = 0;
+        }
+        if (r > 50) r--;
+    }
+}
+"""
+
+
+@task('explicit-throw-generic-catch')
+def _():
+    """IMPORT
+// Control: an explicit throw of IllegalStateException one frame down, caught as RuntimeException.
+// The graph models explicit throws, so this one must work.
+public class Main {
+    static int check(int b) {
+        if (b == 7) throw new IllegalStateException();
+        return b;
+    }
+
+    public static void main(String[] args) {
+AB        int r;
+        try {
+            r = check(b);
+        } catch (RuntimeException e) {
+            if (@HIT(a)@) assert false;
+            r = 0;
+        }
+        if (r > 50) r--;
+    }
+}
+"""
+
+
+@task('clinit-unconditional')
+def _():
+    """IMPORT
+// Control for the clinit pairs: the class is first used on every path, so its <clinit> runs in
+// the first round, inside the masked part of the walk. Only the input-dependent first use fails.
+public class Main {
+CLINIT
+    public static void main(String[] args) {
+AB        input = a;
+        int r = Late.get();
+        if (b == 7) r++;
+        if (r > 3) r--;
+    }
+}
+"""
+
+
+# Executor limitations that give false SAFE verdicts without pruning too (controls: both
+# configurations must agree on them).
+
+@task('exec-system-exit')
+def _():
+    """IMPORT
+// The first run (b = 0) ends in System.exit before the assert.
+public class Main {
+    public static void main(String[] args) {
+AB        if (b != 7) {
+            System.exit(0);
+        }
+        if (@HIT(a)@) assert false;
+    }
+}
+"""
+
+
+@task('exec-system-exit-late')
+def _():
+    """IMPORT
+// As exec-system-exit, but a branch on the input is recorded before the exit.
+public class Main {
+    static int cnt;
+
+    public static void main(String[] args) {
+AB        if (a > 3) cnt++;
+        if (b != 7) {
+            System.exit(0);
+        }
+        if (@HIT(a)@) assert false;
+    }
+}
+"""
+
+
+@task('exec-object-array-index', witness=ints([1001, 2]))
+def _():
+    """IMPORT
+// An object read from an array at an input-dependent index decides whether the assert is reached.
+public class Main {
+    static class C {
+        final int k;
+
+        C(int k) {
+            this.k = k;
+        }
+    }
+
+    static final C[] TABLE = {new C(0), new C(0), new C(7)};
+
+    public static void main(String[] args) {
+AB        if (b >= 0 && b < TABLE.length) {
+            if (TABLE[b].k == 7) {
+                if (@HIT(a)@) assert false;
+            }
+        }
+    }
+}
+"""
+
+
+@task('exec-int-array-index', witness=ints([1001, 2]))
+def _():
+    """IMPORT
+// Control for exec-object-array-index: the same with an int array.
+public class Main {
+    static final int[] TABLE = {0, 0, 7};
+
+    public static void main(String[] args) {
+AB        if (b >= 0 && b < TABLE.length) {
+            if (TABLE[b] == 7) {
+                if (@HIT(a)@) assert false;
+            }
+        }
+    }
+}
+"""
+
+
 def render(src: str, safe: bool) -> str:
     src = src.replace('IMPORT\n', IMPORT).replace('CLINIT\n', CLINIT)
     src = re.sub(r'^AB', AB, src, flags=re.M)
