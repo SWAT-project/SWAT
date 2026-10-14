@@ -5,7 +5,7 @@
 set -euo pipefail
 SV_COMP="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SV_COMP"
-if pgrep -f "svcomp.py test run" > /dev/null; then
+if pgrep -f "python3? .*svcomp.py test run" > /dev/null; then
     echo "Another SV-COMP run is live; not starting." >&2
     exit 1
 fi

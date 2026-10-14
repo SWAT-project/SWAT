@@ -39,7 +39,7 @@ def explorer_stats(log: Path) -> dict:
                         none += 1
                     if 'False' in (m.group(2), m.group(3)):
                         pruned += 1
-                elif '] ROUND (' in line:
+                elif ' ROUND (' in line:
                     rounds += 1
     return {'visits': visits, 'pruned': pruned, 'none': none, 'log_rounds': rounds}
 

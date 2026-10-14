@@ -6,7 +6,7 @@ from pathlib import Path
 YML = '''format_version: '2.0'
 input_files:
   - ../common/
-  - {name}/
+{libs}  - {name}/
 properties:
   - property_file: ../properties/valid-assert.prp
     expected_verdict: {verdict}
@@ -31,6 +31,7 @@ class Task:
     witness: list
     safe_reason: str   # why the SAFE variant is safe
     extra_files: dict = None  # further sources next to Main.java: {file name: text}
+    libs: tuple = ()          # library folders of the suite on the task's input_files, e.g. lib-getopt
 
     @property
     def name(self) -> str:
@@ -51,5 +52,6 @@ class Task:
         for fname, text in (self.extra_files or {}).items():
             (task_dir / fname).write_text(text)
         (suite_dir / f'{self.name}.yml').write_text(
-            YML.format(name=self.name, verdict='true' if self.safe else 'false'))
+            YML.format(name=self.name, verdict='true' if self.safe else 'false',
+                       libs=''.join(f'  - {lib}/\n' for lib in self.libs)))
         return task_dir

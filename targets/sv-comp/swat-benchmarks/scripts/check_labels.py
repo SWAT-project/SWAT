@@ -20,7 +20,8 @@ JAVA_DIR = HERE.parent / 'java'
 
 
 def run(task_dir: Path, stub: Path, inputs: str) -> str:
-    cmd = ['java', '-ea', f'-Dinputs={inputs}', '-cp', f'{stub}:{JAVA_DIR / "common"}:{task_dir}', 'Main']
+    libs = ''.join(f':{d}' for d in sorted(task_dir.parent.glob('lib-*')))
+    cmd = ['java', '-ea', f'-Dinputs={inputs}', '-cp', f'{stub}:{JAVA_DIR / "common"}{libs}:{task_dir}', 'Main']
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if 'java.lang.AssertionError' in p.stderr:
         return 'assert'
@@ -30,7 +31,7 @@ def run(task_dir: Path, stub: Path, inputs: str) -> str:
 def check(task_dir: Path, stub: Path) -> str | None:
     src = (task_dir / 'Main.java').read_text()
     m = re.search(r'(?:Violating inputs \(nondet call order\)|Paired VIOLATION inputs \(must not fail here\)): (.*)', src)
-    inputs = ','.join(m.group(1).split())
+    inputs = '\n'.join(m.group(1).split())
     safe = task_dir.name.endswith('_true')
     exits = 'System.exit' in src  # the gauntlet's exit variant ends the program on rejection
     got = run(task_dir, stub, inputs)
@@ -47,7 +48,7 @@ def main(suites):
         stub = Path(tmp)
         subprocess.run(['javac', '-nowarn', '-d', str(stub), '-cp', str(JAVA_DIR / 'common'),
                         str(HERE / 'stub/org/sosy_lab/sv_benchmarks/Verifier.java')], check=True)
-        dirs = sorted(d for d in JAVA_DIR.glob('*/*') if (d / 'Main.java').exists()
+        dirs = sorted(d for d in JAVA_DIR.glob('*/*') if (d / 'Main.java').exists() and not d.name.startswith('lib-')
                       and (not suites or d.parent.name in suites))
         with ThreadPoolExecutor(32) as pool:
             problems = [p for p in pool.map(lambda d: check(d, stub), dirs) if p]

@@ -1173,6 +1173,23 @@ AB        if (b >= 0 && b < TABLE.length) {
 """
 
 
+@task('exec-string-char', witness=[('string', '-'), ('int', 1001)])
+def _():
+    """IMPORT
+// Z3 may solve s.charAt(0) == '-' with a supplementary code point (e.g. U+2002D): the executor
+// encodes charAt as the code point truncated to 16 bits, and String inputs have no range bound,
+// so the next run diverges.
+public class Main {
+    public static void main(String[] args) {
+        String s = Verifier.nondetString();
+        int a = Verifier.nondetInt();
+        if (s.length() == 1 && s.charAt(0) == '-') {
+            if (@HIT(a)@) assert false;
+        }
+    }
+}
+"""
+
 def render(src: str, safe: bool) -> str:
     src = src.replace('IMPORT\n', IMPORT).replace('CLINIT\n', CLINIT)
     src = re.sub(r'^AB', AB, src, flags=re.M)

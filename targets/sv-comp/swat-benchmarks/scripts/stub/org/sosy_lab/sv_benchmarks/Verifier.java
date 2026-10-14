@@ -1,12 +1,12 @@
 package org.sosy_lab.sv_benchmarks;
 
 /**
- * Replays chosen inputs, for checking task labels: -Dinputs=int:1001,int:7,string:stop gives the
+ * Replays chosen inputs, for checking task labels: -Dinputs="int:1001\nint:7\nstring:stop" (newline-separated) gives the
  * values in nondet call order; once they run out, every call returns 0 / false / "".
  */
 public final class Verifier {
   private static final String[] INPUTS =
-      System.getProperty("inputs", "").isEmpty() ? new String[0] : System.getProperty("inputs").split(",");
+      System.getProperty("inputs", "").isEmpty() ? new String[0] : System.getProperty("inputs").split("\n");
   private static int next;
 
   private static String take(String type) {
