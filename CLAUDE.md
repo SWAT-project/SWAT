@@ -84,6 +84,10 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   used); select one with `--benchmark-dir`, and only compare scores of runs on the same
   suite. To update: move the current suite aside, then `./scripts/svcomp setup checkout-benchmarks`
   (`--source <local clone>` if GitHub is not reachable over SSH).
+- **SA benchmarks:** `targets/sv-comp/swat-benchmarks/` holds generated tasks that measure SA
+  pruning, and `sa-soundness`, SAFE/VIOLATION pairs where pruning can go wrong (run with
+  `--benchmark-dir swat-benchmarks --suite sa-soundness`). See its README and RESULTS.md, which
+  also lists the known SA and executor false SAFEs.
 - **Local label fixes:** tasks whose upstream label is wrong are fixed in the suite checkout
   itself, as commits there (`git -C targets/sv-comp/sv-benchmarks log`) with a comment in the
   task's `.yml`. A fresh checkout drops them, so re-apply any that upstream has not fixed yet:
