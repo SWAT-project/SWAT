@@ -6,6 +6,7 @@ import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.logging.GlobalLogger;
+import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.coverage.CoverageType;
 import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
@@ -13,7 +14,9 @@ import de.uzl.its.swat.metadata.ClassDepot;
 import de.uzl.its.swat.metadata.ClassDepotRuntime;
 import de.uzl.its.swat.symbolic.SymbolicInstructionVisitor;
 import de.uzl.its.swat.symbolic.instruction.*;
+import de.uzl.its.swat.symbolic.shadow.Frame;
 import de.uzl.its.swat.symbolic.shadow.ShadowContext;
+import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.thread.ThreadHandler;
 
 import java.util.*;
@@ -254,6 +257,14 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
                 boolean isInitialFrame =
                         expectedCname.equals(ShadowContext.getINITIAL_FRAME_NAME());
 
+                if (!isInUnknownSpace && !isInitialFrame && !isLambdaFrame
+                        && !(actualClassNameIsExpectedClassName && actualMethodNameIsExpectedMethodName)
+                        && adoptLambdaFrame(visitor.getStack(), expectedCnameFull,
+                                actualClassNameFull, actualMethodIdentifier, logger)) {
+                    actualClassNameIsExpectedClassName = true;
+                    actualMethodNameIsExpectedMethodName = true;
+                }
+
                 if ((actualClassNameIsExpectedClassName && actualMethodNameIsExpectedMethodName) || isInitialFrame) {
                     if (isInUnknownSpace) {
                         logger.info("Leaving unknown space.");
@@ -299,6 +310,13 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
                     }
                 } else {
                     String unknownSpaceState = !isInUnknownSpace ? "Entering" : "In";
+                    if (!isInUnknownSpace) {
+                        // Instrumented code is running that no tracked invocation led to (e.g. a
+                        // callback from library code). Its instructions are skipped, so whatever
+                        // it branches on or writes is lost to the symbolic state.
+                        recordUnknownSpaceContextLoss(id, expectedCnameFull, expectedMethodName,
+                                actualMethodIdentifier, logger);
+                    }
                     isInUnknownSpace = true;
                     logger.info(Util.DIVIDER);
                     logger.info("Stack mismatch! {} unknown space.", unknownSpaceState);
@@ -327,6 +345,83 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
             ThreadHandler.checkThreadContextAbortTimer(id);
         }
         isActive = false;
+    }
+
+    /**
+     * Lets a lambda body run as the interface method it implements.
+     *
+     * <p>Calling an interface method on a lambda goes through a class the JVM generates at run
+     * time, which is not instrumented, into the synthetic {@code lambda$...} method that holds the
+     * body. The frame pushed for the call is named after the interface method, so without this the
+     * body would not match it and be skipped. For a lambda that captures nothing (a static
+     * {@code lambda$...} method taking exactly the interface method's arguments) the generated
+     * class only forwards the arguments, so the frame is replaced by one for the body with the
+     * same arguments. Capturing lambdas are left alone: their captured values are not on the
+     * frame.
+     *
+     * @return whether the frame was replaced
+     */
+    private boolean adoptLambdaFrame(ShadowContext stack, String expectedClassFull, String actualClassFull,
+            String actualMethodIdentifier, Logger logger) {
+        if (Util.shouldInstrument(expectedClassFull) || !Util.shouldInstrument(actualClassFull)) {
+            return false;
+        }
+        String[] parts = actualMethodIdentifier.split(Util.METHOD_DIVIDER);
+        if (parts.length != 3 || !parts[1].startsWith("lambda$")) {
+            return false;
+        }
+        String name = parts[1];
+        String desc = parts[2];
+        if (!isStaticMethod(actualClassFull, name, desc)) {
+            return false;
+        }
+        Frame expected = stack.getActiveFrame();
+        List<Value<?, ?>> locals = expected.getLocals();
+        int argSlots = 0;
+        for (org.objectweb.asm.Type t : org.objectweb.asm.Type.getArgumentTypes(desc)) {
+            argSlots += t.getSize();
+        }
+        // The interface call's frame holds the lambda object, then the arguments.
+        if (locals.size() - 1 != argSlots
+                || org.objectweb.asm.Type.getReturnType(desc).getSize() != expected.nReturnWords) {
+            return false;
+        }
+        Frame body = new Frame(actualClassFull, name, expected.nReturnWords);
+        for (Value<?, ?> local : locals.subList(1, locals.size())) {
+            body.addLocal(local);
+        }
+        stack.popFrame();
+        stack.pushFrame(body);
+        logger.info("Running lambda body {} as {}:{}", actualMethodIdentifier, expectedClassFull,
+                expected.getMethodName());
+        return true;
+    }
+
+    private static boolean isStaticMethod(String classFull, String name, String desc) {
+        try {
+            Class<?> cls = Class.forName(classFull.replace('/', '.'), false, ClassLoader.getSystemClassLoader());
+            for (java.lang.reflect.Method m : cls.getDeclaredMethods()) {
+                if (m.getName().equals(name) && org.objectweb.asm.Type.getMethodDescriptor(m).equals(desc)) {
+                    return java.lang.reflect.Modifier.isStatic(m.getModifiers());
+                }
+            }
+        } catch (Throwable t) {
+            // Not resolvable here: do not adopt.
+        }
+        return false;
+    }
+
+    private void recordUnknownSpaceContextLoss(long threadId, String expectedClassFull, String expectedMethodName,
+            String actualMethodIdentifier, Logger logger) {
+        try {
+            logger.warn("Untracked instrumented code ({}) runs inside {}:{}: recording symbolic context loss",
+                    actualMethodIdentifier, expectedClassFull, expectedMethodName);
+            ThreadHandler.getSymbolicTraceHandler(threadId).recordSymbolicContextLoss();
+            ThreadHandler.recordContextLossInvocation(threadId, new InvocationEntry(
+                    expectedClassFull, expectedMethodName, "", true, -1, true));
+        } catch (Throwable t) {
+            new ErrorHandler().handleException("Error recording context loss", t);
+        }
     }
 
     private boolean handleInvokeStack(Instruction currentInstruction, Logger logger) {
