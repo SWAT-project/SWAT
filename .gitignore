@@ -24,12 +24,13 @@ targets/applications/openhospital/oh_build/restler_working_dir/Compile
 targets/applications/openhospital/oh_build/restler_working_dir/RestlerResults
 targets/sv-comp/sv-benchmarks/
 targets/sv-comp/wit4java/
-targets/sv-comp/WitnessCreator/
 **/__pycache__
 **/.venv/*
 /.vscode/
 **/smt_files/
 **/witness/
+# ... but not the witness packages of the executor sources
+!symbolic-executor/src/**/witness/
 **/sv-comp/results/
 **/analysis/
 !targets/sv-comp/scripts/lib/analysis

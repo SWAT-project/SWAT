@@ -1,174 +1,185 @@
 package de.uzl.its.swat.witness;
 
-import java.math.BigDecimal;
-import java.util.Base64;
+import de.uzl.its.swat.symbolic.trace.dto.FrameDTO;
+import de.uzl.its.swat.symbolic.trace.dto.NondetReturnDTO;
+import de.uzl.its.swat.symbolic.trace.dto.ViolationDTO;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
- * Emits the witness markers that WitnessCreator turns into an SV-COMP violation witness.
- *
- * <p>Two kinds of markers are printed to stdout:
+ * Records the data an SV-COMP violation witness is built from. The data travels to the explorer as
+ * part of the trace ({@code TraceDTO.nondetReturns} and {@code TraceDTO.violation}); nothing is
+ * printed for it.
  *
  * <ul>
- *   <li>{@code [WITNESS] <base64>} for every value returned by a {@code Verifier.nondet*()} call.
- *       The payload is {@code
- *       value@@@line@@@className@@@methodDesc@@@callIndex@@@typeDesc@@@sourceFile}, where {@code
- *       callIndex} is the (0-based) index of the call among the nondet calls on the same source
- *       line of the class (bytecode order, which follows the left-to-right evaluation order),
- *       {@code typeDesc} is the JVM descriptor of the returned type and {@code sourceFile} the
- *       SourceFile attribute of the class (empty if unknown).
- *   <li>{@code [WITNESS_TARGET] <base64>} once for the uncaught throwable that ends the run. The
- *       payload is {@code throwableClass@@@frame;frame;...} with frames encoded as {@code
- *       className@@fileName@@line}, innermost first.
+ *   <li>{@link #recordValue} is invoked by the SV-COMP instrumentation right after every {@code
+ *       Verifier.nondet*()} call with the returned value and the location of the call: the class,
+ *       its SourceFile attribute, the line and the index of the call among the nondet calls on that
+ *       line (bytecode order, which follows the left-to-right evaluation order).
+ *   <li>{@link #recordTarget} is invoked by the surrounding try/catch of the entry method with the
+ *       throwable that escaped it; its stack trace locates the violating statement.
  * </ul>
+ *
+ * <p>The state is static: every execution of the target runs in its own JVM, and the recording
+ * calls may happen before a thread context exists (e.g. in static initializers).
  */
-public class Witness {
-    private static final String SEPARATOR = "@@@";
-    private static final int MAX_TARGET_FRAMES = 64;
+public final class Witness {
+    /** Upper bound on the recorded stack frames of the violation (after dropping JDK/SWAT frames). */
+    static final int MAX_FRAMES = 32;
+
+    /** Class name prefixes of frames that cannot be the violating statement of the task. */
+    private static final String[] SKIPPED_FRAME_PREFIXES = {
+        "java.", "javax.", "jdk.", "sun.", "com.sun.", "de.uzl.its.swat.", "shadow.swat."
+    };
+
+    private static final List<NondetReturnDTO> nondetReturns =
+            Collections.synchronizedList(new ArrayList<>());
+    private static volatile ViolationDTO violation = null;
+
+    private Witness() {}
 
     private static void record(
+            String function,
+            String type,
             String value,
-            String typeDesc,
-            int lineNumber,
+            String bits,
             String cname,
-            String desc,
-            int callIndex,
-            String sourceFile) {
-        String witness =
-                value
-                        + SEPARATOR
-                        + lineNumber
-                        + SEPARATOR
-                        + cname
-                        + SEPARATOR
-                        + desc
-                        + SEPARATOR
-                        + callIndex
-                        + SEPARATOR
-                        + typeDesc
-                        + SEPARATOR
-                        + sourceFile;
-        String enc = Base64.getEncoder().encodeToString(witness.getBytes());
-        System.out.println("[WITNESS] " + enc);
+            String sourceFile,
+            int line,
+            int callIndex) {
+        nondetReturns.add(
+                new NondetReturnDTO(
+                        function,
+                        type,
+                        value,
+                        bits,
+                        cname.replace('/', '.'),
+                        sourceFile == null ? "" : sourceFile,
+                        line,
+                        callIndex));
     }
 
     public static void recordValue(
-            boolean value,
-            int lineNumber,
-            String cname,
-            String desc,
-            int callIndex,
-            String sourceFile) {
-        record(String.valueOf(value), "Z", lineNumber, cname, desc, callIndex, sourceFile);
+            boolean value, String function, String cname, String sourceFile, int line, int callIndex) {
+        record(function, "boolean", String.valueOf(value), null, cname, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            byte value, int lineNumber, String cname, String desc, int callIndex, String sourceFile) {
-        record(String.valueOf(value), "B", lineNumber, cname, desc, callIndex, sourceFile);
+            byte value, String function, String cname, String sourceFile, int line, int callIndex) {
+        record(function, "byte", String.valueOf(value), null, cname, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            char value, int lineNumber, String cname, String desc, int callIndex, String sourceFile) {
-        // Chars are transported as their (unsigned) code point, WitnessCreator renders the literal
-        record(String.valueOf((int) value), "C", lineNumber, cname, desc, callIndex, sourceFile);
+            short value, String function, String cname, String sourceFile, int line, int callIndex) {
+        record(function, "short", String.valueOf(value), null, cname, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            short value,
-            int lineNumber,
-            String cname,
-            String desc,
-            int callIndex,
-            String sourceFile) {
-        record(String.valueOf(value), "S", lineNumber, cname, desc, callIndex, sourceFile);
+            char value, String function, String cname, String sourceFile, int line, int callIndex) {
+        // Chars travel as their (unsigned) code point; the witness renders the literal
+        record(function, "char", String.valueOf((int) value), null, cname, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            int value, int lineNumber, String cname, String desc, int callIndex, String sourceFile) {
-        record(String.valueOf(value), "I", lineNumber, cname, desc, callIndex, sourceFile);
+            int value, String function, String cname, String sourceFile, int line, int callIndex) {
+        record(function, "int", String.valueOf(value), null, cname, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            float value,
-            int lineNumber,
-            String cname,
-            String desc,
-            int callIndex,
-            String sourceFile) {
-        // Use BigDecimal to avoid scientific notation (e.g., -2.022784E-6)
-        // but handle special values (NaN, Infinity) which BigDecimal doesn't support
-        String valueStr;
-        if (Float.isNaN(value) || Float.isInfinite(value)) {
-            valueStr = Float.toString(value);
-        } else if (value == 0.0f && 1.0f / value < 0.0f) {
-            valueStr = "-0.0"; // BigDecimal has no negative zero
-        } else {
-            valueStr = BigDecimal.valueOf(value).toPlainString();
-        }
-        record(valueStr, "F", lineNumber, cname, desc, callIndex, sourceFile);
+            long value, String function, String cname, String sourceFile, int line, int callIndex) {
+        record(function, "long", String.valueOf(value), null, cname, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            long value, int lineNumber, String cname, String desc, int callIndex, String sourceFile) {
-        record(String.valueOf(value), "J", lineNumber, cname, desc, callIndex, sourceFile);
-    }
-
-    public static void recordValue(
-            double value,
-            int lineNumber,
-            String cname,
-            String desc,
-            int callIndex,
-            String sourceFile) {
-        // Use BigDecimal to avoid scientific notation (e.g., 1.23E-10)
-        // but handle special values (NaN, Infinity) which BigDecimal doesn't support
-        String valueStr;
-        if (Double.isNaN(value) || Double.isInfinite(value)) {
-            valueStr = Double.toString(value);
-        } else if (value == 0.0 && 1.0 / value < 0.0) {
-            valueStr = "-0.0"; // BigDecimal has no negative zero
-        } else {
-            valueStr = BigDecimal.valueOf(value).toPlainString();
-        }
-        record(valueStr, "D", lineNumber, cname, desc, callIndex, sourceFile);
-    }
-
-    public static void recordValue(
-            String value,
-            int lineNumber,
-            String cname,
-            String desc,
-            int callIndex,
-            String sourceFile) {
+            float value, String function, String cname, String sourceFile, int line, int callIndex) {
+        // Float.toString is exact enough to round-trip (incl. NaN, Infinity, -0.0); the raw bits
+        // let the witness reproduce the value bit for bit.
         record(
-                String.valueOf(value),
-                "Ljava/lang/String;",
-                lineNumber,
+                function,
+                "float",
+                Float.toString(value),
+                "0x" + Integer.toHexString(Float.floatToRawIntBits(value)),
                 cname,
-                desc,
-                callIndex,
-                sourceFile);
+                sourceFile,
+                line,
+                callIndex);
+    }
+
+    public static void recordValue(
+            double value, String function, String cname, String sourceFile, int line, int callIndex) {
+        record(
+                function,
+                "double",
+                Double.toString(value),
+                "0x" + Long.toHexString(Double.doubleToRawLongBits(value)),
+                cname,
+                sourceFile,
+                line,
+                callIndex);
+    }
+
+    public static void recordValue(
+            String value, String function, String cname, String sourceFile, int line, int callIndex) {
+        record(function, "String", value == null ? "" : value, null, cname, sourceFile, line, callIndex);
     }
 
     /**
-     * Records the throwable that escaped the entry method and prints its stack trace. The stack
-     * trace locates the violating statement for the witness' target waypoint.
+     * Records the throwable that escaped the entry method and prints its stack trace (the explorer
+     * derives the verdict from that output). The frames locate the violating statement for the
+     * witness' target waypoint.
      *
      * @param throwable the uncaught throwable
      */
     public static void recordTarget(Throwable throwable) {
         throwable.printStackTrace();
-        StringBuilder sb = new StringBuilder(throwable.getClass().getName()).append(SEPARATOR);
-        StackTraceElement[] frames = throwable.getStackTrace();
-        for (int i = 0; i < frames.length && i < MAX_TARGET_FRAMES; i++) {
-            if (i > 0) sb.append(';');
-            StackTraceElement frame = frames[i];
-            sb.append(frame.getClassName())
-                    .append("@@")
-                    .append(frame.getFileName() == null ? "" : frame.getFileName())
-                    .append("@@")
-                    .append(frame.getLineNumber());
+        violation = describe(throwable);
+    }
+
+    /**
+     * Builds the violation entry for a throwable: its class name and its stack frames, innermost
+     * first, without the JDK and SWAT frames (which cannot be the violating statement), capped at
+     * {@link #MAX_FRAMES}.
+     *
+     * @param throwable the throwable
+     * @return the violation entry
+     */
+    public static ViolationDTO describe(Throwable throwable) {
+        List<FrameDTO> frames = new ArrayList<>();
+        for (StackTraceElement frame : throwable.getStackTrace()) {
+            if (frames.size() >= MAX_FRAMES) break;
+            if (isSkipped(frame.getClassName())) continue;
+            frames.add(
+                    new FrameDTO(
+                            frame.getClassName(),
+                            frame.getFileName() == null ? "" : frame.getFileName(),
+                            frame.getLineNumber()));
         }
-        String enc = Base64.getEncoder().encodeToString(sb.toString().getBytes());
-        System.out.println("[WITNESS_TARGET] " + enc);
+        return new ViolationDTO(throwable.getClass().getName(), frames);
+    }
+
+    private static boolean isSkipped(String className) {
+        for (String prefix : SKIPPED_FRAME_PREFIXES) {
+            if (className.startsWith(prefix)) return true;
+        }
+        return false;
+    }
+
+    /** The recorded nondet return values in execution order (a copy). */
+    public static ArrayList<NondetReturnDTO> getNondetReturns() {
+        synchronized (nondetReturns) {
+            return new ArrayList<>(nondetReturns);
+        }
+    }
+
+    /** The recorded violation, or null if no throwable escaped the entry method (yet). */
+    public static ViolationDTO getViolation() {
+        return violation;
+    }
+
+    /** Clears the recorded data (for tests; a target execution never needs this). */
+    public static void reset() {
+        nondetReturns.clear();
+        violation = null;
     }
 }

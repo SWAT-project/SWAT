@@ -50,15 +50,33 @@ test {
     systemProperty "java.library.path", "../libs/java-library-path"
     // Surface SWAT errors as exceptions instead of halting the test JVM
     systemProperty "exitOnError", "false"
-    
+
     useJUnitPlatform {
         excludeTags "slow"   // skip @Tag("slow") tests
     }
+    // Forked-agent specs need the built agent jar; they run via agentTest
+    exclude '**/*AgentSpec*'
 
     testLogging {
         // Show events for passed, skipped, and failed tests
         events "passed", "failed", "skipped"
         // Enable standard output/error to be shown
+        showStandardStreams = false
+    }
+}
+
+// Forked-agent tests: run a small target with the real agent (solver.mode=PRINT) and check the
+// TraceDTO printed to stdout. Needs the agent jar in lib/, hence the copyJar dependency.
+tasks.register('agentTest', Test) {
+    dependsOn copyJar
+    description = 'Runs the *AgentSpec tests against the built agent jar'
+    group = 'verification'
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching '*AgentSpec'
+    }
+    testLogging {
+        events "passed", "failed", "skipped"
         showStandardStreams = false
     }
 }

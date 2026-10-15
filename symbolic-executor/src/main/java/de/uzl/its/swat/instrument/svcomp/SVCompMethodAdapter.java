@@ -4,6 +4,7 @@ import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.Intrinsics;
 import de.uzl.its.swat.instrument.Transformer;
 import java.util.Map;
+import java.util.Set;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -19,6 +20,10 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
     private final String desc;
     private final String sourceFile;
     private final Map<Integer, Integer> nondetCallsPerLine;
+
+    /** Return type descriptors of the nondet methods whose values are recorded for the witness. */
+    private static final Set<String> WITNESS_VALUE_TYPES =
+            Set.of("Z", "B", "S", "C", "I", "J", "F", "D", "Ljava/lang/String;");
 
     int lineNumber = 0;
     /**
@@ -81,26 +86,29 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
             SVCompTransformer.getPrintBox().addMsg("      => Assigning ID: " + nextId);
             mv.visitLdcInsn(nextId);
             mv.visitMethodInsn(opcode, newOwner, name, newDescriptor, isInterface);
-            if (retType.equals("D") || retType.equals("J")) {
-                visitInsn(Opcodes.DUP2);
-            } else {
-                visitInsn(Opcodes.DUP);
+            if (WITNESS_VALUE_TYPES.contains(retType)) {
+                // Record the returned value with the call location for the witness (trace data)
+                if (retType.equals("D") || retType.equals("J")) {
+                    visitInsn(Opcodes.DUP2);
+                } else {
+                    visitInsn(Opcodes.DUP);
+                }
+                mv.visitLdcInsn(name);
+                mv.visitLdcInsn(cname);
+                mv.visitLdcInsn(sourceFile);
+                mv.visitLdcInsn(lineNumber);
+                mv.visitLdcInsn(callIndex);
+                mv.visitMethodInsn(
+                        Opcodes.INVOKESTATIC,
+                        "de/uzl/its/swat/witness/Witness",
+                        "recordValue",
+                        "("
+                                + retType
+                                + "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;II)V",
+                        false);
+                SVCompTransformer.getPrintBox().addMsg("      => Adding Witness recording");
             }
-            mv.visitLdcInsn(lineNumber);
-            mv.visitLdcInsn(cname);
-            mv.visitLdcInsn(this.name + this.desc);
-            mv.visitLdcInsn(callIndex);
-            mv.visitLdcInsn(sourceFile);
-            mv.visitMethodInsn(
-                    Opcodes.INVOKESTATIC,
-                    "de/uzl/its/swat/witness/Witness",
-                    "recordValue",
-                    "("
-                            + descriptor.substring(2)
-                            + "ILjava/lang/String;Ljava/lang/String;ILjava/lang/String;)V",
-                    false);
             mv.visitLdcInsn(nextId);
-            SVCompTransformer.getPrintBox().addMsg("      => Adding Witness recording");
             /*
             if (descriptor.equals("()D") || descriptor.equals("()J")) {
                 visitInsn(Opcodes.DUP2);
