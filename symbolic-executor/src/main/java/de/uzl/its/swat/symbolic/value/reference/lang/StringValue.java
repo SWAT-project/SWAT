@@ -136,7 +136,13 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      */
     @Override
     public BooleanFormula getBounds(boolean upper) {
-        return context.getFormulaManager().getBooleanFormulaManager().makeBoolean(true);
+        if (!upper) {
+            return context.getFormulaManager().getBooleanFormulaManager().makeBoolean(true);
+        }
+        // SMT strings range over all Unicode code points, Java chars over 16 bits only. Without
+        // this bound the solver may pick a character above U+FFFF, which charAt (the code point
+        // truncated to 16 bits) treats as a different one: the next run then diverges.
+        return smgr.in(formula, smgr.closure(smgr.range('\u0000', '\uffff')));
     }
 
     /**

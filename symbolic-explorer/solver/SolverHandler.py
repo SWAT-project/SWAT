@@ -1,6 +1,7 @@
 import re
 import time
 from svcomp.SymbolicStorage import DataTypes
+import z3
 from z3 import Solver, is_true, Not, Optimize, Z3_OP_UNINTERPRETED, Abs
 from enum import Enum
 from typing import Union, Dict, Tuple, Any
@@ -193,7 +194,11 @@ class Z3Handler:
 
             return str(encoded)
         elif prefix == DataTypes.STRING.value:
-            return value.as_string()
+            # as_string() escapes some characters as \u{...} but prints a backslash as is, so its
+            # output is ambiguous. Read the code points instead.
+            n = z3.simplify(z3.Length(value)).as_long()
+            return ''.join(chr(z3.simplify(z3.StrToCode(z3.SubString(value, i, 1))).as_long())
+                           for i in range(n))
         else:
             raise ValueError(f"Unsupported prefix {prefix} for value {value}")
 

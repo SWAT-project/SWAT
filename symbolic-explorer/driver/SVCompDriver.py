@@ -18,7 +18,7 @@ from data.StaticAnalysisGraph.SAGraph import SAGraph
 from svcomp.StaticPreAnalysis import StaticPreAnalysis
 
 from enum import Enum
-from svcomp.SymbolicStorage import SymbolicStorage
+from svcomp.SymbolicStorage import SymbolicStorage, DataTypes
 from svcomp.TestcaseStats import write_testcase_stats
 from timing.TimingManager import TimingManager
 
@@ -75,6 +75,13 @@ class State:
         self.solution_is_guess: bool = False
     
     
+def escape_java_string(s: str) -> str:
+    """Escapes a String input for the command line, undone by the executor's Verifier.nondetString:
+    a backslash as \\\\, and every character outside printable ASCII as \\uXXXX, so the value does
+    not depend on how the JVM decodes its arguments."""
+    return ''.join('\\\\' if c == '\\' else c if ' ' <= c <= '~' else f'\\u{ord(c):04x}' for c in s)
+
+
 class SVCompDriver:
     def __init__(self, args):
         self.args = args
@@ -122,6 +129,8 @@ class SVCompDriver:
             sym_vars = []
             for var in self.symbolicStorage.vars.values():
                 val = var.newValue if var.newValue is not None else var.value
+                if var.dType == DataTypes.STRING and val is not None:
+                    val = escape_java_string(val)
                 sym_vars.append(f'-Dswat.input.{var.dType.value}_{var.idx}={val}')
             cmd[3:3] = sym_vars
         return cmd
