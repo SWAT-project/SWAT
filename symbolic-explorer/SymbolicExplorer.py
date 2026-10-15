@@ -132,6 +132,17 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--optimize", action="store_true", help="Enable Z3 optimizer to minimize variable values (slower but may produce simpler solutions)", default=False)
     parser.add_argument("--log-smt-formulas", action="store_true", help="Log SMT formulas and models to disk for debugging", default=False)
 
+    # SV-COMP witness arguments: the explorer writes the violation witness from the trace of the
+    # violating execution (needs the task's input files and property file as given to the verifier)
+    parser.add_argument("--witness-dir", default="witness",
+                        help="Directory for witness.yml/witness.graphml, relative to the working directory (sv-comp mode)")
+    parser.add_argument("--witness-input", nargs='+', default=[],
+                        help="The task's input files/directories exactly as given to the verifier")
+    parser.add_argument("--witness-property", help="Path to the property file of the task")
+    parser.add_argument("--witness-base-dir",
+                        help="Directory relative witness input paths are resolved against (default: the working directory)")
+    parser.add_argument("--producer-version", default="unknown", help="Producer version recorded in the witness")
+
     # HTTP-specific arguments
     parser.add_argument("--host", help="HTTP target host", default="localhost")  
     parser.add_argument("--http-port", help="HTTP target port", type=int, default=8080)
