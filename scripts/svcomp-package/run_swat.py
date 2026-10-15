@@ -101,9 +101,8 @@ def generate_command(args, property_file: str):
     library_path = os.path.join(SCRIPT_DIR, 'libs', 'java-library-path')
     logging_dir =  os.path.join(SCRIPT_DIR, 'logs')
 
-    python3_path = os.path.join(SCRIPT_DIR, '.venv_ubuntu_24_04_1__x86_64/bin/python3')
-
-    base_command = [ python3_path, "-u", os.path.join(SCRIPT_DIR, 'symbolic-explorer', 'SymbolicExplorer.py'),
+    # Same interpreter (and PYTHONPATH, via the inherited environment) as run-swat.sh set up.
+    base_command = [ sys.executable, "-u", os.path.join(SCRIPT_DIR, 'symbolic-explorer', 'SymbolicExplorer.py'),
                      "-prp", property_file,
                      "--agent", agent_path,
                      "--config", config_path,

@@ -6,7 +6,11 @@ on:
   workflow_dispatch:
 
 env:
-  SVCOMP_VENV_DIR_NAME: .venv_ubuntu_24_04_1__x86_64
+  # Python of the SV-COMP execution environment (SV-COMP 2027: Ubuntu 26.04).
+  SVCOMP_PYTHON_VERSION: '3.14'
+  SVCOMP_BASE_IMAGE: docker.io/ubuntu:26.04
+  # WitnessCreator release bundled in the SV-COMP ZIP (release tag + SHA-256 of
+  # its witness-creator-<tag>.zip asset); a new release only changes these two.
   WITNESS_CREATOR_VERSION: v0.1.1
   WITNESS_CREATOR_SHA256: 8fc8810237c99bf7d709bdb8692142695e407b5681e818fcfe8b45f9c598d814
 
@@ -148,24 +152,20 @@ jobs:
         } >> "${GITHUB_OUTPUT}"
     - name: Build SV-COMP Python runtime
       env:
-        VENV_DIR: ${{ runner.temp }}/svcomp-runtime/${{ env.SVCOMP_VENV_DIR_NAME }}
-      run: |
-        mkdir -p "$(dirname "${VENV_DIR}")"
-        /usr/bin/python3 -m venv --copies "${VENV_DIR}"
-        "${VENV_DIR}/bin/python3" -m pip install --no-deps -r scripts/svcomp-package/requirements.txt
-        "${VENV_DIR}/bin/python3" -m pip check
-        "${VENV_DIR}/bin/python3" -m pip freeze --all > "${VENV_DIR}/requirements.freeze.txt"
-        "${VENV_DIR}/bin/python3" -c "import fastapi, pydantic, z3"
+        SWAT_SVCOMP_PYTHON_VERSION: ${{ env.SVCOMP_PYTHON_VERSION }}
+      run: scripts/build-svcomp-python-runtime.sh "${RUNNER_TEMP}/svcomp-python"
     - name: Pack SV-COMP ZIP
       env:
         SWAT_SVCOMP_VERSION: ${{ steps.meta.outputs.version }}
         SWAT_SVCOMP_ARTIFACT_DIR: ${{ runner.temp }}/release-jars
-        SWAT_SVCOMP_RUNTIME_DIR: ${{ runner.temp }}/svcomp-runtime
+        SWAT_SVCOMP_PYTHON_DIR: ${{ runner.temp }}/svcomp-python
         SWAT_SVCOMP_WITNESS_CREATOR_DIR: ${{ runner.temp }}/witness-creator-runtime/WitnessCreator
         SWAT_SVCOMP_COMMIT: ${{ github.sha }}
         SWAT_SVCOMP_REF: ${{ github.ref_name }}
         SWAT_SVCOMP_CHANNEL: ${{ steps.meta.outputs.channel }}
       run: scripts/package-svcomp.sh
+    - name: Check SV-COMP ZIP in competition base image
+      run: scripts/check-svcomp-package.sh "build/distributions/${{ steps.meta.outputs.zip-name }}" "${SVCOMP_BASE_IMAGE}"
     - name: Upload SV-COMP ZIP artifact
       uses: actions/upload-artifact@v4
       with:
