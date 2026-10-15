@@ -1230,6 +1230,13 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitGETFIELD(GETFIELD inst) throws SymbolicInstructionException {
         try {
             ObjectValue<?, ?> ref = stack.popOperand().asObjectValue();
+            if (ref.getAddress() == ObjectValue.ADDRESS_NULL) {
+                // The JVM throws a NullPointerException here: follow it like any other throwing
+                // instruction instead of reading a field of null.
+                stack.pushOperand(PlaceHolder.instance);
+                checkAndSetException(inst);
+                return;
+            }
 
             int fieldIndex = classDepot.getFieldIndex(inst.cIdx, inst.name, false);
 
@@ -3357,6 +3364,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 value = stack.popOperand();
             }
             ObjectValue<?, ?> ref = stack.popOperand().asObjectValue();
+            if (ref.getAddress() == ObjectValue.ADDRESS_NULL) {
+                // NullPointerException, see visitGETFIELD
+                checkAndSetException(inst);
+                return;
+            }
             int fieldIndex = classDepot.getFieldIndex(inst.cIdx, inst.name, false);
             try {
                 ref.setField(fieldIndex, value);
