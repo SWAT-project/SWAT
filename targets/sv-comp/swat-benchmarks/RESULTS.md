@@ -24,7 +24,9 @@ suite gave identical results twice); wall times are not.
 
 ## Summary
 
-Over the 194 family tasks:
+The two suites answer different questions, so they are counted separately.
+
+Family tasks (194; they measure what pruning gains):
 
 | | correct | timeouts | false SAFE | total wall time |
 |---|---:|---:|---:|---:|
@@ -32,8 +34,21 @@ Over the 194 family tasks:
 | SA | 174 | 10 | 10 | 7327 s |
 | SA + rank | 175 | 9 | 10 | 6938 s |
 
-(The false SAFEs here are `validation-gauntlet/exit` and `virtual-dispatch/array`, wrong in every
-configuration: executor bugs E1 and E2 below.)
+The 10 false SAFEs are the same tasks in every configuration, `validation-gauntlet/exit` and
+`virtual-dispatch/array`: executor bugs E1 and E2 below. Pruning adds none here.
+
+`sa-soundness` tasks (96; they target the constructs where pruning can go wrong):
+
+| | correct | timeouts | false SAFE |
+|---|---:|---:|---:|
+| no SA | 71 | 0 | 10 |
+| SA | 65 | 0 | 19 |
+
+The 10 false SAFEs without SA are executor bugs (E1-E3) and stay false SAFE with SA. The 9 more
+with SA are pruning bugs (S1-S3), listed in the soundness table below. `--sa-rank-distance` was
+only run on the first 72 tasks of this suite (before the narrowing tasks were added); there it gave
+the same result as SA on every task (11 false SAFE each). It only reorders branches, so it cannot
+change which ones are pruned.
 
 - **Pruning helps exactly when the dead side of a branch has a subtree to skip.** Then the pruned
   search is constant in n while the unpruned one grows linearly (dispatcher, error-handling,
@@ -48,10 +63,10 @@ configuration: executor bugs E1 and E2 below.)
   configurations, SA only skips the dead sides of `target`'s own guards).
 - **Cost:** extraction takes 4-10 s per task (median 5.5 s under load). With ~1.5 s per round SA
   pays off once it saves about four rounds; for tiny tasks it is a net loss of ~5 s.
-- **Soundness: SA turns 9 soundness tasks into false SAFE** that are correct (or UNKNOWN) without
-  it: static initializers on an input-dependent path, exceptions without an edge in the graph
-  (ClassCastException, NullPointerException across frames, exceptions thrown inside the JDK), and
-  reflection. Separately, the executor gives false SAFE without any pruning for `System.exit`,
+- **Soundness: SA turns 9 `sa-soundness` tasks into false SAFE** (10 -> 19) that are correct (or
+  UNKNOWN) without it: static initializers on an input-dependent path, exceptions without an edge
+  in the graph (ClassCastException, NullPointerException across frames, exceptions thrown inside
+  the JDK), and reflection. Separately, the executor gives false SAFE without any pruning for `System.exit`,
   object-array reads at a symbolic index, and lambda bodies. Details and reproducers below.
 - **`--sa-rank-distance` never hurt here** and fixed the VIOLATION cases with long paths
   (dispatcher/loop: 5 rounds for every n instead of 8-36 and a timeout at n = 32;
