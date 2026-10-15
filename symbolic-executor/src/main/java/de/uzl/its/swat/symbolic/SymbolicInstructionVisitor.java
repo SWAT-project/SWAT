@@ -2378,6 +2378,19 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEVIRTUAL(INVOKEVIRTUAL inst) throws SymbolicInstructionException {
         try {
+            if (previousWasUnpack && isStaticMethod(inst.owner, inst.name, inst.desc)) {
+                // A static method called through Method.invoke: the instrumentation invokes it like
+                // an instance method, with Method.invoke's (null) receiver below the arguments.
+                // The callee has no receiver, so the frame must not have one either.
+                previousWasUnpack = false;
+                stack.newStackFrame(inst.desc, inst.owner, inst.name, false);
+                Frame callee = stack.popFrame();
+                stack.popOperand(); // the null receiver
+                stack.pushFrame(callee);
+                symbolicTraceHandler.recordInvocation(determineIid(inst.iid), inst.getClass().getCanonicalName());
+                return;
+            }
+            previousWasUnpack = false;
             stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
@@ -3091,19 +3104,44 @@ public class SymbolicInstructionVisitor implements IVisitor {
         // checkAndSetException(inst);
     }
 
+    /** Whether the last instruction unpacked Method.invoke's arguments for the invoke that follows. */
+    private boolean previousWasUnpack = false;
+
+    private static boolean isStaticMethod(String owner, String name, String desc) {
+        try {
+            Class<?> cls = Class.forName(owner.replace('/', '.'), false, ClassLoader.getSystemClassLoader());
+            for (java.lang.reflect.Method m : cls.getDeclaredMethods()) {
+                if (m.getName().equals(name) && Type.getMethodDescriptor(m).equals(desc)) {
+                    return java.lang.reflect.Modifier.isStatic(m.getModifiers());
+                }
+            }
+        } catch (Throwable t) {
+            // Not resolvable: treat as an instance method, as before.
+        }
+        return false;
+    }
+
     public void visitUNPACK_INVOKE_PARAMETER(UNPACK_INVOKE_PARAMETER inst) throws SymbolicInstructionException {
         try {
             Value<?, ?> top = stack.popOperand();
             if (top instanceof ObjectArrayValue param) {
                 SolverContext context = ThreadHandler.getSolverContext(currentThread().getId());
+                // Method.invoke passes primitives boxed; the invoke that follows takes them unboxed.
+                Type[] paramTypes = stack.getNextInst() instanceof INVOKEVIRTUAL next
+                        ? Type.getArgumentTypes(next.desc) : new Type[0];
                 for (int i = 0; i < param.getSize().concrete; i++) {
                     Value<?, ?> v = param.getElement(new IntValue(context, i));
+                    if (i < paramTypes.length && paramTypes[i].getSort() <= Type.DOUBLE
+                            && v instanceof BoxedValue<?> boxed && boxed.getVal() != null) {
+                        v = boxed.getVal();
+                    }
                     if (v instanceof LongValue || v instanceof DoubleValue) {
                         stack.pushWideOperand(v);
                     } else {
                         stack.pushOperand(v);
                     }
                 }
+                previousWasUnpack = true;
             } else {
                 throw new SymbolicInstructionException(inst, "Unpacking of ObjectArray requires an Array of Objects.");
             }
