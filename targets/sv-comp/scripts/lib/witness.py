@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import os
 import enum
 import logging
-import shutil
+import shlex
 import subprocess
 import time
 from typing import List, Optional, Tuple
@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 SCRIPT_DIR = Path(__file__).resolve().parent.parent  # Now in lib/, so go up one more level
 WITNESS_CREATION_PATH = (SCRIPT_DIR.parent / 'WitnessCreator' / 'build' / 'libs' / 'WitnessCreator.jar')
 WITNESS_VALIDATION_PATH = (SCRIPT_DIR.parent / 'wit4java' / 'bin' / 'wit4java')
+# Output lines carrying witness information: nondet values and the violating location
+WITNESS_MARKERS = ("[WITNESS]", "[WITNESS_TARGET]")
+# Optional: command prefix of WitnessLint (e.g. "/path/venv/bin/python /path/witnesslinter.py");
+# when set, the YAML witness is linted after creation. Proper validator setup is tracked in #47.
+WITNESSLINT_ENV = 'SWAT_WITNESSLINT'
 
 class ExecutionStatus(enum.Enum):
     SUCCESS = "success"
@@ -38,24 +43,41 @@ def generate_and_validate_witness(ver_task: VerificationTask, output: List[str])
     }
 
     out = extract_last_round(output)
-    witnesses = extract_markers(out, "[WITNESS]")
+    witnesses = extract_markers(out, WITNESS_MARKERS)
     if not witnesses:
         logger.debug("No witnesses found in output")
         return None, 0.0, 0.0
 
-    witness_dir = assemble_files(info)
+    witness_dir = Path(info['log_dir']) / 'witness'
+    witness_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Generating witness files")
     generation_start = time.perf_counter()
-    generate_witness(witness_dir, "\n".join(witnesses))
+    generate_witness(witness_dir, "\n".join(witnesses), input_dirs(info), property_file(ver_task))
     generation_time = time.perf_counter() - generation_start
 
     logger.info("Validating witness")
     validation_start = time.perf_counter()
+    lint_witness(witness_dir / 'witness.yml', input_dirs(info))
     validation_result = validate_witness(info)
     validation_time = time.perf_counter() - validation_start
 
     return validation_result, generation_time, validation_time
+
+
+def input_dirs(info: dict) -> List[str]:
+    """The task's source directories (classpath entries that are directories)."""
+    try:
+        classpath_index = info['command'].index('--classpath')
+        classpath_entries = info['command'][classpath_index + 1:]
+    except ValueError:
+        classpath_entries = []
+    return [folder for folder in classpath_entries if Path(folder).is_dir()]
+
+
+def property_file(ver_task: VerificationTask) -> Path:
+    """The property file of the task, e.g. sv-benchmarks/java/properties/valid-assert.prp."""
+    return ver_task['file_path'].parent.parent / 'properties' / ver_task['category'].value
 
 
 def log_output(output: List[str]):
@@ -115,15 +137,18 @@ def extract_last_round(out: List[str], marker: str = "==========================
 
 
 
-def extract_markers(out: str, marker: str) -> List[str]:
+def extract_markers(out: str, markers) -> List[str]:
+    if isinstance(markers, str):
+        markers = (markers,)
     res: List[str] = []
     for line in out.split("\n"):
         logger.debug(line)
-        if marker in line:
+        if any(marker in line for marker in markers):
             res.append(line)
     return res
 
-def generate_witness(witness_dir: str, witness: str) -> None:
+def generate_witness(witness_dir: Path, witness: str, inputs: List[str], prp: Path) -> None:
+    """Create witness.yml (format 2.3) and witness.graphml in `witness_dir` from the marker lines."""
     with pushd(str(SCRIPT_DIR.parent / 'WitnessCreator')):
         # base64 encode the string
         enc = base64.b64encode(witness.encode()).decode()
@@ -132,12 +157,29 @@ def generate_witness(witness_dir: str, witness: str) -> None:
             '-jar',
             str(WITNESS_CREATION_PATH),
             enc,
-            str(witness_dir)
+            '--out', str(witness_dir),
+            '--property', str(prp),
+            '--producer-version', 'local',
         ]
+        for folder in inputs:
+            cmd.extend(['--input', folder])
         logger.info(f"Running witness creator: {cmd}")
         _, output = run_command_with_timeout(cmd)
         logger.info("Witness created")
         log_output(output)
+
+def lint_witness(witness_file: Path, inputs: List[str]) -> Optional[bool]:
+    """Run WitnessLint on the YAML witness if SWAT_WITNESSLINT is set; True iff the witness is well-formed."""
+    linter = os.environ.get(WITNESSLINT_ENV)
+    if not linter or not witness_file.exists():
+        return None
+    cmd = shlex.split(linter) + ['--expectViolationWitness', '--expectedWitnessVersion', '2',
+                                 '--witness', str(witness_file)] + inputs
+    status, output = run_command_with_timeout(cmd)
+    log_output(output)
+    ok = status == ExecutionStatus.SUCCESS and any('finished with exit code 0' in line for line in output)
+    logger.info(f"WitnessLint: {'well-formed' if ok else 'FAULTY'} ({witness_file})")
+    return ok
 
 def run_command_with_timeout(cmd: list[str], timeout: int = 180) -> tuple[ExecutionStatus, list[str]]:
     """Executes the given command and returns output from both STDOUT and STDERR."""
@@ -172,28 +214,3 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 180) -> tuple[Execut
             return ExecutionStatus.ERROR, output + [str(e)]
 
 
-def assemble_files(info: dict) -> str:
-    witness_dir = Path(info['log_dir']) / 'witness'
-    witness_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        classpath_index = info['command'].index('--classpath')
-        classpath_entries = info['command'][classpath_index + 1:]
-    except ValueError:
-        classpath_entries = []
-
-    for folder in classpath_entries:
-        folder_path = Path(folder)
-        if not folder_path.exists():
-            continue
-        for src in folder_path.rglob('*.java'):
-            # Preserve relative path structure (package directories) for WitnessCreator
-            rel_path = src.relative_to(folder_path)
-            dst = witness_dir / rel_path
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Copying {src} to {dst}")
-            shutil.copy(str(src), str(dst))
-
-    return str(witness_dir)
-    
-    

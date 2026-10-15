@@ -7,7 +7,11 @@ from typing import List, Optional
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-WITNESS_PATH = os.path.join(SCRIPT_DIR, 'WitnessCreator/build/libs/WitnessCreator.jar')
+ORIGINAL_CWD = os.getcwd()
+WITNESS_DIR = os.path.join(SCRIPT_DIR, 'WitnessCreator')
+WITNESS_PATH = os.path.join(WITNESS_DIR, 'build/libs/WitnessCreator.jar')
+# Output lines carrying witness information: nondet values and the violating location
+WITNESS_MARKERS = ('[WITNESS]', '[WITNESS_TARGET]')
 
 
 class ExecutionStatus(enum.Enum):
@@ -145,30 +149,50 @@ def extract_last_round(out, marker="============================== ROUND"):
     return "\n ".join(out).split(marker)[-1]
 
 
-def extract_markers(out, marker):
+def extract_markers(out, markers):
+    if isinstance(markers, str):
+        markers = (markers,)
     res = []
     for line in out.split("\n"):
         print(line)
-        if marker in line:
+        if any(marker in line for marker in markers):
             res.append(line)
     return res
 
-def generate_witness(witness):
-    witness_dir = os.path.join(SCRIPT_DIR, 'WitnessCreator/')
-    with pushd(witness_dir):
-        # base64 encode the string
-        enc = base64.b64encode(witness.encode())
-        cmd = [
-            'java',
-            '-jar',
-            WITNESS_PATH,
-            enc,
-            witness_dir
-        ]
-        print(cmd)
+def swat_version():
+    """The package version from BUILD_INFO.txt, written by scripts/package-svcomp.sh."""
+    try:
+        with open(os.path.join(SCRIPT_DIR, 'BUILD_INFO.txt')) as f:
+            for line in f:
+                if line.startswith('version='):
+                    return line[len('version='):].strip()
+    except OSError:
+        pass
+    return 'unknown'
+
+def generate_witness(witness, property_path, input_paths):
+    """Create witness.yml (format 2.3) and witness.graphml in the WitnessCreator directory.
+
+    `property_path` and `input_paths` are the verifier's arguments as given by BenchExec;
+    they are resolved against the original working directory and end up in the witness.
+    """
+    enc = base64.b64encode(witness.encode()).decode()
+    cmd = [
+        'java',
+        '-jar',
+        WITNESS_PATH,
+        enc,
+        '--out', WITNESS_DIR,
+        '--property', property_path,
+        '--producer-version', swat_version(),
+    ]
+    for path in input_paths:
+        cmd.extend(['--input', path])
+    print(cmd)
+    with pushd(ORIGINAL_CWD):
         _, output = run_command_with_timeout(cmd)
-        print("WITNESS CREATED")
-        print(output)
+    print("WITNESS CREATED")
+    log_output(output)
 
 def log_output(output: List[str]):
     for line in output:
@@ -180,9 +204,11 @@ if __name__ == "__main__":
     # Look for property file in arguments
     # SV-COMP framework passes the .prp file directly as first argument
     property_file = None
+    property_path = None
     for arg in sys.argv[1:]:
         if arg.endswith('.prp'):
             property_file = os.path.basename(arg)
+            property_path = arg
             logger.info(f"Found property file in arguments: {property_file}")
             break
 
@@ -192,6 +218,9 @@ if __name__ == "__main__":
         exit(1)
 
     logger.info(f"Using property file: {property_file}")
+
+    # The task's input files/directories, as given (everything but the property file)
+    input_paths = [arg for arg in sys.argv[1:] if arg != property_path]
 
     target_dir = sys.argv[-1]
     cmd = generate_command(sys.argv[1:], property_file)
@@ -218,12 +247,12 @@ if __name__ == "__main__":
         out = extract_last_round(output)
         verdict = extract_markers(out, f'[VERDICT {property_file}]')
         if "== ERROR" in str(verdict):
-            witnesses = extract_markers(out, '[WITNESS]')
-            generate_witness("\n".join(witnesses))
+            witnesses = extract_markers(out, WITNESS_MARKERS)
+            generate_witness("\n".join(witnesses), property_path, input_paths)
             print(f'Witnesses:\n {witnesses}')
 
             # Print the generated witness file contents for validation on benchmark server
-            witness_file_path = os.path.join(SCRIPT_DIR, 'WitnessCreator', 'witness.graphml')
+            witness_file_path = os.path.join(WITNESS_DIR, 'witness.yml')
             if os.path.exists(witness_file_path):
                 print("\n" + "="*80)
                 print("WITNESS FILE CONTENTS:")
