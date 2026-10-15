@@ -61,6 +61,12 @@ scripts/
 ./svcomp setup all
 ```
 
+Witnesses of violation results are written by WitnessCreator (expected at
+`../WitnessCreator/{build/libs/WitnessCreator.jar,witnesses/}`) to the testcase's
+`logs/witness/` as `witness.yml` (YAML format 2.3) and `witness.graphml` (legacy, validated with
+wit4java). To additionally lint the YAML witness, point `SWAT_WITNESSLINT` at a WitnessLint
+command, e.g. `SWAT_WITNESSLINT="/path/venv/bin/python /path/witnesslint/witnesslinter.py"`.
+
 ### Test Commands
 
 ```bash

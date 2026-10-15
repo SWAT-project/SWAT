@@ -23,37 +23,7 @@ if [ -f "$second_last_path/Main.java" ]; then
     set -- "${@:1:$(($#-2))}" "$last_path" "$second_last_path"
 fi
 
-# Loop through all provided paths and copy Java files preserving directory structure
-for path in "$@"; do
-  if [ -d "$path" ]; then
-    # Find all Java files and preserve relative directory structure
-    find "$path" -type f -name "*.java" | while read src; do
-      rel_path="${src#$path/}"
-      dst_dir="./WitnessCreator/$(dirname "$rel_path")"
-      mkdir -p "$dst_dir"
-      cp "$src" "$dst_dir/"
-    done
-    echo "Java files from $path copied successfully to ./WitnessCreator/"
-  elif [ -f "$path" ] && [[ "$path" == *.java ]]; then
-    # If the argument is a single Java file, copy it
-    cp "$path" ./WitnessCreator/
-    echo "File $path copied successfully to ./WitnessCreator/"
-  fi
-done
-
-# # copy Main.java for Witness creation
-# last_path="${@: -1}"
-# file_to_copy="${last_path}/Main.java"
-#
-# # Check if the file exists
-# if [ -f "$file_to_copy" ]; then
-#     # Copy the Main.java file to the current directory
-#     cp "$file_to_copy" ./WitnessCreator/.
-#     echo "File copied successfully to ./WitnessCreator/"
-# else
-#     echo "Error: File not found."
-# fi
-
+# The witness is created by run_swat.py directly from the given input paths.
 
 # Python dependencies are shipped in libs/python (built for one CPython
 # minor version, recorded in libs/python/PYTHON_VERSION) and used with the
