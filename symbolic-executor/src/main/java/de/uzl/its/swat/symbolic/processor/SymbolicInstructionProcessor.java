@@ -39,6 +39,8 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
     private boolean isInDelegation = false; // Track when delegation from non-instrumented to instrumented code occurs
 
     private final Stack<Long> openInvokeIds = new Stack<>();
+    /** The open invokes that are static initializers (CLINIT). */
+    private final Set<Long> clinitInvokeIds = new HashSet<>();
 
     /**
      * Returns whether we're currently in a delegation context (non-instrumented → instrumented).
@@ -287,7 +289,7 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
 
                 boolean isActiveClinit = currentInstruction instanceof CLINIT && !isInUnknownSpace;
 
-                boolean closeOpenInvoke = handleInvokeStack(currentInstruction, logger);
+                boolean closeOpenInvoke = handleInvokeStack(currentInstruction, visitor.getStack(), logger);
 
                 // ToDo: Is handling for nested CLINIT necessary?
                 if ((!isInUnknownSpace
@@ -424,7 +426,30 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
         }
     }
 
-    private boolean handleInvokeStack(Instruction currentInstruction, Logger logger) {
+    /**
+     * A static initializer left by an exception emits no INVOKECLINIT_END, so its invoke and its
+     * shadow frame stay open. When the end (or exception) of an invoke below it arrives, the
+     * initializer is certainly over: close it first, as the JVM did when it unwound it.
+     */
+    private void unwindAbandonedClinits(long invokeId, ShadowContext stack, Logger logger) {
+        if (openInvokeIds.empty() || openInvokeIds.peek() == invokeId || !openInvokeIds.contains(invokeId)) {
+            return;
+        }
+        List<Long> above = openInvokeIds.subList(openInvokeIds.lastIndexOf(invokeId) + 1, openInvokeIds.size());
+        if (!clinitInvokeIds.containsAll(above)) {
+            return; // not only initializers: leave it to the consistency check below
+        }
+        while (openInvokeIds.peek() != invokeId) {
+            long clinit = openInvokeIds.pop();
+            clinitInvokeIds.remove(clinit);
+            if (stack.getActiveFrame().getMethodName().equals("<clinit>")) {
+                stack.popFrame();
+            }
+            logger.info("Closing static initializer (invoke {}) left by an exception", clinit);
+        }
+    }
+
+    private boolean handleInvokeStack(Instruction currentInstruction, ShadowContext stack, Logger logger) {
 
         boolean closeOpenInvoke = false;
         boolean currentInstructionIsInvokeX =
@@ -444,9 +469,13 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
 
         if (!isInUnknownSpace && currentInstructionIsInvokeX) {
             openInvokeIds.push(((InvokeIdInstruction) currentInstruction).invokeId);
+            if (currentInstruction instanceof CLINIT) {
+                clinitInvokeIds.add(((InvokeIdInstruction) currentInstruction).invokeId);
+            }
         }
 
         if (currentInstructionIsMethodEndOrException) {
+            unwindAbandonedClinits(((InvokeIdInstruction) currentInstruction).invokeId, stack, logger);
             if (!openInvokeIds.empty()
                     && openInvokeIds.peek() > 0
                     && openInvokeIds.peek()
