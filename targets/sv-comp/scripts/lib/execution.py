@@ -9,7 +9,7 @@ from pprint import pformat
 from .dtypes import Verdict, ExpectedVerdict, VerificationCategory, VerificationTask, Command
 from .utils import ci_print
 from .command_gen import extract_testcases, generate_commands, new_run_timestamp, run_dir as make_run_dir
-from .witness import generate_and_validate_witness
+from .witness import validate_witness
 from collections import Counter
 from pathlib import Path
 
@@ -194,9 +194,10 @@ def target_execution(ver_task: VerificationTask, create_witness: bool = True) ->
             'case': case
         }
 
-        # Generate and validate witness (with timing)
+        # Validate the witness the explorer wrote for the violation verdict (with timing); the
+        # generation time is taken from the explorer's timing data below.
         if 'violation' in case and create_witness:
-            validated, witness_generation_time, witness_validation_time = generate_and_validate_witness(ver_task, output)
+            validated, witness_validation_time = validate_witness(ver_task)
 
     elapsed_time = time.perf_counter() - start_time
 
@@ -208,7 +209,8 @@ def target_execution(ver_task: VerificationTask, create_witness: bool = True) ->
             with open(timing_file, 'r') as f:
                 timing_data = json.load(f)
                 timing_breakdown = timing_data.get('aggregates', {})
-                # Update witness timing from our measurements
+                # Add the witness validation time measured here (generation is timed by the explorer)
+                witness_generation_time = timing_breakdown.get('witness_generation', witness_generation_time)
                 timing_breakdown['witness_generation'] = witness_generation_time
                 timing_breakdown['witness_validation'] = witness_validation_time
 

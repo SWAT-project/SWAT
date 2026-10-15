@@ -49,14 +49,23 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     "-z3", str(library_path),
                     "--logdir", str(logging_dir),
                     "--mode", "sv-comp",
-                    '--port', str(port),
-                    "--classpath"]
+                    '--port', str(port)]
 
     cp: list[str] = []
+    inputs: list[str] = []
     for input_file in ver_task['input_files']:
-        cp.append(str((test_case_dir / input_file).resolve()))
+        inputs.append(str((test_case_dir / input_file).resolve()))
+        cp.append(inputs[-1])
         cp.append(str(BASE_PATH / 'libs' / 'java-library-path' / 'com.microsoft.z3.jar'))
-    return base_command + cp 
+
+    # The explorer writes the violation witness (witness.yml/witness.graphml) to <logging_dir>/witness
+    # from the trace of the violating execution; it needs the task's input files and property file.
+    property_path = test_case_dir.parent / 'properties' / ver_task['category'].value
+    witness_args: list[str] = ["--witness-dir", "witness",
+                               "--witness-property", str(property_path.resolve()),
+                               "--producer-version", "local",
+                               "--witness-input"] + inputs
+    return base_command + witness_args + ["--classpath"] + cp
 
 
 
