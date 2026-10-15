@@ -23,7 +23,7 @@ if [ -f "$second_last_path/Main.java" ]; then
     set -- "${@:1:$(($#-2))}" "$last_path" "$second_last_path"
 fi
 
-# The witness is created by run_swat.py directly from the given input paths.
+# The violation witness is written by the explorer to witness/ from the given input paths.
 
 # Python dependencies are shipped in libs/python (built for one CPython
 # minor version, recorded in libs/python/PYTHON_VERSION) and used with the

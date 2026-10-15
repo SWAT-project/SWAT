@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-import logging, os, enum, subprocess, sys, base64, uuid
+import logging, os, enum, shutil, subprocess, sys, uuid
 
 import concurrent.futures, json, datetime
 from typing import List, Optional
@@ -8,10 +8,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ORIGINAL_CWD = os.getcwd()
-WITNESS_DIR = os.path.join(SCRIPT_DIR, 'WitnessCreator')
-WITNESS_PATH = os.path.join(WITNESS_DIR, 'build/libs/WitnessCreator.jar')
-# Output lines carrying witness information: nondet values and the violating location
-WITNESS_MARKERS = ('[WITNESS]', '[WITNESS_TARGET]')
+# The explorer writes the violation witness (witness.yml, witness.graphml) here; BenchExec collects
+# it via the `**/witness.*` result-files pattern of the benchmark definition.
+WITNESS_DIR = os.path.join(SCRIPT_DIR, 'witness')
 
 
 class ExecutionStatus(enum.Enum):
@@ -97,7 +96,9 @@ def run_command_with_timeout(cmd: list[str], timeout: int | None = None) -> tupl
 
 
 
-def generate_command(args, property_file: str):
+def generate_command(args, property_file: str, property_path: str, input_paths: List[str]):
+    """The explorer command; `property_path` and `input_paths` are the verifier's arguments as given
+    by BenchExec (relative to the original working directory) and end up in the witness."""
     config_file = 'sv-comp.cfg'
 
     agent_path = os.path.join(SCRIPT_DIR, 'symbolic-executor', 'lib', 'symbolic-executor.jar')
@@ -114,6 +115,11 @@ def generate_command(args, property_file: str):
                      "--logdir", logging_dir,
                      "--mode", "sv-comp",
                      '--port', "8000",
+                     "--witness-dir", WITNESS_DIR,
+                     "--witness-property", property_path,
+                     "--witness-base-dir", ORIGINAL_CWD,
+                     "--producer-version", swat_version(),
+                     "--witness-input", *input_paths,
                      "--classpath"]
     print("CP args: " + str(args))
     for arg in args[1:]:
@@ -153,7 +159,6 @@ def extract_markers(out, markers):
         markers = (markers,)
     res = []
     for line in out.split("\n"):
-        print(line)
         if any(marker in line for marker in markers):
             res.append(line)
     return res
@@ -169,29 +174,20 @@ def swat_version():
         pass
     return 'unknown'
 
-def generate_witness(witness, property_path, input_paths):
-    """Create witness.yml (format 2.3) and witness.graphml in the WitnessCreator directory.
-
-    `property_path` and `input_paths` are the verifier's arguments as given by BenchExec;
-    they are resolved against the original working directory and end up in the witness.
-    """
-    enc = base64.b64encode(witness.encode()).decode()
-    cmd = [
-        'java',
-        '-jar',
-        WITNESS_PATH,
-        enc,
-        '--out', WITNESS_DIR,
-        '--property', property_path,
-        '--producer-version', swat_version(),
-    ]
-    for path in input_paths:
-        cmd.extend(['--input', path])
-    print(cmd)
-    with pushd(ORIGINAL_CWD):
-        _, output = run_command_with_timeout(cmd)
-    print("WITNESS CREATED")
-    log_output(output)
+def print_witness():
+    """Print the witness file contents for validation on the benchmark server."""
+    witness_file_path = os.path.join(WITNESS_DIR, 'witness.yml')
+    if os.path.exists(witness_file_path):
+        print("\n" + "="*80)
+        print("WITNESS FILE CONTENTS:")
+        print("="*80)
+        with open(witness_file_path, 'r') as f:
+            print(f.read())
+        print("="*80)
+        print("END OF WITNESS FILE")
+        print("="*80 + "\n")
+    else:
+        print(f"WARNING: Witness file not found at {witness_file_path}")
 
 def log_output(output: List[str]):
     for line in output:
@@ -222,7 +218,9 @@ if __name__ == "__main__":
     input_paths = [arg for arg in sys.argv[1:] if arg != property_path]
 
     target_dir = sys.argv[-1]
-    cmd = generate_command(sys.argv[1:], property_file)
+    cmd = generate_command(sys.argv[1:], property_file, property_path, input_paths)
+    # Exactly one witness per run: drop whatever an earlier run left behind
+    shutil.rmtree(WITNESS_DIR, ignore_errors=True)
     local_target_dir = copy_target(target_dir)
     compile_target(sys.argv[1:], local_target_dir)
 
@@ -246,22 +244,6 @@ if __name__ == "__main__":
         out = extract_last_round(output)
         verdict = extract_markers(out, f'[VERDICT {property_file}]')
         if "== ERROR" in str(verdict):
-            witnesses = extract_markers(out, WITNESS_MARKERS)
-            generate_witness("\n".join(witnesses), property_path, input_paths)
-            print(f'Witnesses:\n {witnesses}')
-
-            # Print the generated witness file contents for validation on benchmark server
-            witness_file_path = os.path.join(WITNESS_DIR, 'witness.yml')
-            if os.path.exists(witness_file_path):
-                print("\n" + "="*80)
-                print("WITNESS FILE CONTENTS:")
-                print("="*80)
-                with open(witness_file_path, 'r') as f:
-                    witness_content = f.read()
-                    print(witness_content)
-                print("="*80)
-                print("END OF WITNESS FILE")
-                print("="*80 + "\n")
-            else:
-                print(f"WARNING: Witness file not found at {witness_file_path}")
+            # The explorer wrote the witness from the trace of the violating execution
+            print_witness()
         print(f'Verdict:\n {verdict}')

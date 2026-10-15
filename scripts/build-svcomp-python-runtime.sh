@@ -16,6 +16,9 @@ set -euo pipefail
 #   SWAT_SVCOMP_PYTHON_VERSION  target CPython "major.minor" (default: 3.14,
 #                               the python3 of Ubuntu 26.04 / SV-COMP 2027)
 #   SWAT_SVCOMP_PIP             pip command to use (default: "python3 -m pip")
+#   SWAT_SVCOMP_WITNESSCREATOR  replaces the pinned witnesscreator requirement
+#                               (git tag) with a local source directory or
+#                               wheel, for builds against an unreleased version
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REQUIREMENTS="${ROOT_DIR}/scripts/svcomp-package/requirements.txt"
@@ -31,6 +34,14 @@ if [[ -e "$OUT_DIR" ]] && [[ -n "$(ls -A "$OUT_DIR")" ]]; then
   exit 1
 fi
 mkdir -p "$OUT_DIR"
+
+# witnesscreator (pure Python, stdlib only) is pinned to a git tag and built from
+# source below; everything else comes as wheels for the target interpreter.
+WHEEL_REQUIREMENTS="$(mktemp "${TMPDIR:-/tmp}/swat-svcomp-requirements.XXXXXX")"
+trap 'rm -f "$WHEEL_REQUIREMENTS"' EXIT
+grep -v '^witnesscreator' "$REQUIREMENTS" > "$WHEEL_REQUIREMENTS"
+WITNESSCREATOR_REQ="${SWAT_SVCOMP_WITNESSCREATOR:-$(grep '^witnesscreator' "$REQUIREMENTS")}"
+[[ -n "$WITNESSCREATOR_REQ" ]] || { echo "error: no witnesscreator requirement in ${REQUIREMENTS}" >&2; exit 1; }
 
 # --no-deps: requirements.txt is a complete, pinned closure.
 # --only-binary: never compile on the build host (would target the wrong ABI).
@@ -52,7 +63,17 @@ $PIP_CMD install \
   --platform manylinux_2_34_x86_64 \
   --platform any \
   --target "$OUT_DIR" \
-  -r "$REQUIREMENTS"
+  -r "$WHEEL_REQUIREMENTS"
+
+# Pure-Python package: built on the host, valid for any CPython >= 3.10.
+# shellcheck disable=SC2086
+$PIP_CMD install \
+  --disable-pip-version-check \
+  --no-cache-dir \
+  --no-compile \
+  --no-deps \
+  --target "$OUT_DIR" \
+  "$WITNESSCREATOR_REQ"
 
 # Console-script wrappers carry the build host's interpreter path; unused.
 rm -rf "${OUT_DIR}/bin"

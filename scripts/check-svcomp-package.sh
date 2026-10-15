@@ -38,13 +38,14 @@ docker run --rm -v "${tool_dir}:/tool" -w /tool -e UBUNTU_PACKAGES="$UBUNTU_PACK
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $UBUNTU_PACKAGES > /dev/null
   echo "python3: $(python3 --version)"
   echo "java: $(java -version 2>&1 | head -n 1)"
-  PYTHONPATH=libs/python python3 -c "import fastapi, pydantic, uvicorn, requests, yaml, z3; print(\"z3:\", z3.get_version_string())"
+  PYTHONPATH=libs/python python3 -c "import fastapi, pydantic, uvicorn, requests, yaml, z3, witnesscreator; print(\"z3:\", z3.get_version_string())"
   version="$(./run-swat.sh --version)"
   echo "version: ${version}"
   [ -n "$version" ] && [ "$(printf "%s\n" "$version" | wc -l)" -eq 1 ] || { echo "error: --version must print one non-empty line" >&2; exit 1; }
   [ "$(./run-swat.sh -v)" = "$version" ] || { echo "error: -v and --version differ" >&2; exit 1; }
   ./smoketest.sh > smoketest.out 2>&1 || { cat smoketest.out; exit 1; }
   echo "smoketest stdout: $(wc -c < smoketest.out) bytes"
+  [ -f witness/witness.yml ] && [ -f witness/witness.graphml ] || { echo "error: smoketest left no witness/witness.yml + witness.graphml" >&2; exit 1; }
   tail -n 1 smoketest.out
 '
 echo "SV-COMP package check passed."

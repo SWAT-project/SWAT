@@ -10,17 +10,10 @@ set -euo pipefail
 #
 # - symbolic-executor/lib/symbolic-executor.jar
 #
-# Set SWAT_SVCOMP_WITNESS_CREATOR_DIR to the extracted WitnessCreator runtime
-# root from https://github.com/SWAT-project/WitnessCreator. The root must
-# contain:
-#
-# - build/libs/WitnessCreator.jar
-# - witnesses/default_violation.st
-# - witnesses/witness.st
-#
 # Set SWAT_SVCOMP_PYTHON_DIR to the Python dependency directory produced by
-# scripts/build-svcomp-python-runtime.sh. It is shipped as libs/python/ and
-# used with the competition machine's system python3 (no bundled venv).
+# scripts/build-svcomp-python-runtime.sh (it includes the witnesscreator
+# package that writes the witnesses). It is shipped as libs/python/ and used
+# with the competition machine's system python3 (no bundled venv).
 #
 # Z3 and JavaSMT are taken from the vendored files in this repository.
 #
@@ -38,17 +31,12 @@ DIST_DIR="${ROOT_DIR}/build/distributions"
 SUPPORT_DIR="${ROOT_DIR}/scripts/svcomp-package"
 ARTIFACT_DIR="$(cd "${SWAT_SVCOMP_ARTIFACT_DIR:-$ROOT_DIR}" && pwd)"
 PYTHON_DIR="${SWAT_SVCOMP_PYTHON_DIR:-}"
-WITNESS_CREATOR_DIR="${SWAT_SVCOMP_WITNESS_CREATOR_DIR:-}"
 LINUX_Z3_DIST="z3-4.15.4-x64-glibc-2.39"
 LINUX_Z3_ZIP="${ROOT_DIR}/libs/${LINUX_Z3_DIST}.zip"
 JAVA_SMT_JAR="${ROOT_DIR}/libs/java-library-path/java-smt-latest.jar"
 
 if [[ -n "$PYTHON_DIR" ]]; then
   PYTHON_DIR="$(cd "$PYTHON_DIR" && pwd)"
-fi
-
-if [[ -n "$WITNESS_CREATOR_DIR" ]]; then
-  WITNESS_CREATOR_DIR="$(cd "$WITNESS_CREATOR_DIR" && pwd)"
 fi
 
 fail() {
@@ -141,12 +129,6 @@ copy_artifact_file "$EXECUTOR_JAR" "$PACKAGE_DIR/symbolic-executor/lib/symbolic-
 
 copy_tree_files symbolic-explorer "$PACKAGE_DIR/symbolic-explorer"
 
-[[ -n "$WITNESS_CREATOR_DIR" ]] || fail "SWAT_SVCOMP_WITNESS_CREATOR_DIR must point to the extracted WitnessCreator runtime root"
-[[ -f "$WITNESS_CREATOR_DIR/build/libs/WitnessCreator.jar" ]] || fail "missing WitnessCreator JAR: ${WITNESS_CREATOR_DIR}/build/libs/WitnessCreator.jar"
-[[ -f "$WITNESS_CREATOR_DIR/witnesses/default_violation.st" ]] || fail "missing WitnessCreator template: ${WITNESS_CREATOR_DIR}/witnesses/default_violation.st"
-[[ -f "$WITNESS_CREATOR_DIR/witnesses/witness.st" ]] || fail "missing WitnessCreator template: ${WITNESS_CREATOR_DIR}/witnesses/witness.st"
-copy_artifact_tree "$WITNESS_CREATOR_DIR" "$PACKAGE_DIR/WitnessCreator"
-
 install_z3_runtime_file z3 0755
 install_z3_runtime_file libz3.so
 install_z3_runtime_file libz3java.so
@@ -159,6 +141,7 @@ copy_tree_files "$SUPPORT_DIR/smoketest" "$PACKAGE_DIR/smoketest"
 
 [[ -n "$PYTHON_DIR" ]] || fail "SWAT_SVCOMP_PYTHON_DIR must point to the output of scripts/build-svcomp-python-runtime.sh"
 [[ -f "$PYTHON_DIR/PYTHON_VERSION" ]] || fail "missing ${PYTHON_DIR}/PYTHON_VERSION; build it with scripts/build-svcomp-python-runtime.sh"
+[[ -d "$PYTHON_DIR/witnesscreator" ]] || fail "missing witnesscreator package in ${PYTHON_DIR}; build it with scripts/build-svcomp-python-runtime.sh"
 copy_artifact_tree "$PYTHON_DIR" "${PACKAGE_DIR}/libs/python"
 
 mkdir -p "$DIST_DIR"
