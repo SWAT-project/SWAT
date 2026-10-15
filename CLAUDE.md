@@ -25,6 +25,9 @@ and used in `strategy/DFS.py`.
   information, and `dfs` treats everything as interesting. That fallback is always safe.
 - **`<clinit>` is masked:** static initializers are not in the graph, so the walk is frozen inside
   them.
+- **Asserts are only the first target:** pruning aims at assertion points for now because they
+  are easy to test (SV-COMP's valid-assert). Later targets include shell calls, SQL statement
+  building and uncaught exceptions, so prefer changes that work for any kind of target point.
 - **SA runs before exploring by default:** in sv-comp mode exploration waits for
   `svcomp/StaticPreAnalysis.py`, so the graph is used from round 0 and runs are deterministic.
   `--parallel-sa` instead runs the extractor in a thread while exploration starts unpruned;
