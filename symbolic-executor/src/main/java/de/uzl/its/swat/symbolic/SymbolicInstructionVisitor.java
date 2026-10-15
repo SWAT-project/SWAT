@@ -130,9 +130,12 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The array load or store instruction
      */
-    private void recordUntrackedBoundsCheck(Instruction inst) throws NoThreadContextException {
+    private void recordUntrackedBoundsCheck(Instruction inst, IntValue idx) throws NoThreadContextException, NotImplementedException {
         boolean completed = (getNextInst() instanceof SPECIAL special && special.i == 0) || getNextInst() instanceof CLINIT;
         symbolicTraceHandler.addConcreteBranch(completed, determineIid(inst.iid));
+        // Neither the bounds nor the element of an untracked array depend on the index here, so
+        // with a symbolic index other indices are never tried.
+        recordConcreteObjectIndex(idx);
     }
 
     public boolean checkArrayBounds(Value<?, ?> ref, IntValue idx, long iid) throws NoThreadContextException {
@@ -166,6 +169,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             if (ref instanceof ObjectArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
+                    recordConcreteObjectIndex(idx);
                     stack.pushOperand(arr.getElement(idx));
                 } else {
                     enforceException();
@@ -186,7 +190,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 stack.pushOperand(
                         ref.getName() != null
                                 ? PlaceHolder.symbolicInstance
@@ -203,6 +207,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ASTORE instruction
      */
+    /**
+     * Object arrays are indexed by the concrete index only (ObjectArrayValue), and untracked arrays
+     * not at all, so with a symbolic index no other element is ever tried. An exhausted search
+     * then proves nothing.
+     */
+    private void recordConcreteObjectIndex(IntValue idx) throws NotImplementedException {
+        if (idx.isSymbolic()) {
+            logger.warn("Object array accessed at a symbolic index; only the concrete element is tracked");
+            symbolicTraceHandler.recordSymbolicPrecisionLoss();
+        }
+    }
+
     public void visitAASTORE(AASTORE inst) throws SymbolicInstructionException {
         try {
             ObjectValue<?, ?> val = stack.popOperand().asObjectValue();
@@ -211,6 +227,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             if (ref instanceof ObjectArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
+                    recordConcreteObjectIndex(idx);
                     arr.storeElement(idx, val);
                 } else {
                     enforceException();
@@ -231,7 +248,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[AASTORE]: Unknown array type: {}", ref.getClass().getSimpleName());
             }
         } catch (Throwable t) {
@@ -388,7 +405,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[BALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -426,7 +443,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[BASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -465,7 +482,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[CALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -496,7 +513,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[CASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -592,7 +609,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[DALOAD]: Unknown array type");
                 stack.pushWideOperand(
                         arr.getName() != null
@@ -623,7 +640,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[DASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -979,7 +996,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[FALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -1010,7 +1027,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[FASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -1640,7 +1657,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[IALOAD]: Unknown array type");
                 stack.pushOperand(
                         ref.getName() != null
@@ -1687,7 +1704,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[IASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -2667,7 +2684,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[LALOAD]: Unknown array type");
                 stack.pushWideOperand(
                         arr.getName() != null
@@ -2714,7 +2731,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[LASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -3418,7 +3435,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[SALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -3449,7 +3466,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst);
+                recordUntrackedBoundsCheck(inst, idx);
                 logger.warn("[SASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
