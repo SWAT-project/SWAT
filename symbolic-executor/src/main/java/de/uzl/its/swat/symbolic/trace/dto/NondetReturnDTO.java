@@ -17,6 +17,8 @@ public class NondetReturnDTO {
     private String bits;
     // The class containing the call (dotted name)
     private String className;
+    // The method containing the call as name + descriptor, e.g. main([Ljava/lang/String;)V
+    private String method;
     // The SourceFile attribute of that class, empty if unknown
     private String sourceFile;
     // The source line of the call
@@ -30,6 +32,7 @@ public class NondetReturnDTO {
             String value,
             String bits,
             String className,
+            String method,
             String sourceFile,
             int line,
             int callIndex) {
@@ -38,6 +41,7 @@ public class NondetReturnDTO {
         this.value = value;
         this.bits = bits;
         this.className = className;
+        this.method = method;
         this.sourceFile = sourceFile;
         this.line = line;
         this.callIndex = callIndex;
@@ -67,6 +71,10 @@ public class NondetReturnDTO {
         return className;
     }
 
+    public String getMethod() {
+        return method;
+    }
+
     public String getSourceFile() {
         return sourceFile;
     }
@@ -90,6 +98,8 @@ public class NondetReturnDTO {
                 + (bits == null ? "" : " (" + bits + ")")
                 + " at "
                 + className
+                + "."
+                + method
                 + "("
                 + sourceFile
                 + ":"

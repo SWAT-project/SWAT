@@ -45,6 +45,7 @@ class SvcompWitnessAgentSpec extends Specification {
         trace.nondetReturns*.type == ["int", "int", "double", "String"]
         trace.nondetReturns*.value == ["3", "4", "0.0", "fixed"]
         trace.nondetReturns*.className == ["Main"] * 4
+        trace.nondetReturns*.method == ["main([Ljava/lang/String;)V"] * 4
         trace.nondetReturns*.sourceFile == ["Main.java"] * 4
         trace.nondetReturns*.line == [14, 14, 15, 16]
         trace.nondetReturns*.callIndex == [0, 1, 0, 0]

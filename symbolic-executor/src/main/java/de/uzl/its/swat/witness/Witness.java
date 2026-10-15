@@ -15,8 +15,9 @@ import java.util.List;
  * <ul>
  *   <li>{@link #recordValue} is invoked by the SV-COMP instrumentation right after every {@code
  *       Verifier.nondet*()} call with the returned value and the location of the call: the class,
- *       its SourceFile attribute, the line and the index of the call among the nondet calls on that
- *       line (bytecode order, which follows the left-to-right evaluation order).
+ *       the calling method (name + descriptor), the class' SourceFile attribute, the line and the
+ *       index of the call among the nondet calls on that line (bytecode order, which follows the
+ *       left-to-right evaluation order).
  *   <li>{@link #recordTarget} is invoked by the surrounding try/catch of the entry method with the
  *       throwable that escaped it; its stack trace locates the violating statement.
  * </ul>
@@ -45,6 +46,7 @@ public final class Witness {
             String value,
             String bits,
             String cname,
+            String method,
             String sourceFile,
             int line,
             int callIndex) {
@@ -55,44 +57,45 @@ public final class Witness {
                         value,
                         bits,
                         cname.replace('/', '.'),
+                        method,
                         sourceFile == null ? "" : sourceFile,
                         line,
                         callIndex));
     }
 
     public static void recordValue(
-            boolean value, String function, String cname, String sourceFile, int line, int callIndex) {
-        record(function, "boolean", String.valueOf(value), null, cname, sourceFile, line, callIndex);
+            boolean value, String function, String cname, String method, String sourceFile, int line, int callIndex) {
+        record(function, "boolean", String.valueOf(value), null, cname, method, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            byte value, String function, String cname, String sourceFile, int line, int callIndex) {
-        record(function, "byte", String.valueOf(value), null, cname, sourceFile, line, callIndex);
+            byte value, String function, String cname, String method, String sourceFile, int line, int callIndex) {
+        record(function, "byte", String.valueOf(value), null, cname, method, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            short value, String function, String cname, String sourceFile, int line, int callIndex) {
-        record(function, "short", String.valueOf(value), null, cname, sourceFile, line, callIndex);
+            short value, String function, String cname, String method, String sourceFile, int line, int callIndex) {
+        record(function, "short", String.valueOf(value), null, cname, method, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            char value, String function, String cname, String sourceFile, int line, int callIndex) {
+            char value, String function, String cname, String method, String sourceFile, int line, int callIndex) {
         // Chars travel as their (unsigned) code point; the witness renders the literal
-        record(function, "char", String.valueOf((int) value), null, cname, sourceFile, line, callIndex);
+        record(function, "char", String.valueOf((int) value), null, cname, method, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            int value, String function, String cname, String sourceFile, int line, int callIndex) {
-        record(function, "int", String.valueOf(value), null, cname, sourceFile, line, callIndex);
+            int value, String function, String cname, String method, String sourceFile, int line, int callIndex) {
+        record(function, "int", String.valueOf(value), null, cname, method, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            long value, String function, String cname, String sourceFile, int line, int callIndex) {
-        record(function, "long", String.valueOf(value), null, cname, sourceFile, line, callIndex);
+            long value, String function, String cname, String method, String sourceFile, int line, int callIndex) {
+        record(function, "long", String.valueOf(value), null, cname, method, sourceFile, line, callIndex);
     }
 
     public static void recordValue(
-            float value, String function, String cname, String sourceFile, int line, int callIndex) {
+            float value, String function, String cname, String method, String sourceFile, int line, int callIndex) {
         // Float.toString is exact enough to round-trip (incl. NaN, Infinity, -0.0); the raw bits
         // let the witness reproduce the value bit for bit.
         record(
@@ -101,27 +104,29 @@ public final class Witness {
                 Float.toString(value),
                 "0x" + Integer.toHexString(Float.floatToRawIntBits(value)),
                 cname,
+                method,
                 sourceFile,
                 line,
                 callIndex);
     }
 
     public static void recordValue(
-            double value, String function, String cname, String sourceFile, int line, int callIndex) {
+            double value, String function, String cname, String method, String sourceFile, int line, int callIndex) {
         record(
                 function,
                 "double",
                 Double.toString(value),
                 "0x" + Long.toHexString(Double.doubleToRawLongBits(value)),
                 cname,
+                method,
                 sourceFile,
                 line,
                 callIndex);
     }
 
     public static void recordValue(
-            String value, String function, String cname, String sourceFile, int line, int callIndex) {
-        record(function, "String", value == null ? "" : value, null, cname, sourceFile, line, callIndex);
+            String value, String function, String cname, String method, String sourceFile, int line, int callIndex) {
+        record(function, "String", value == null ? "" : value, null, cname, method, sourceFile, line, callIndex);
     }
 
     /**

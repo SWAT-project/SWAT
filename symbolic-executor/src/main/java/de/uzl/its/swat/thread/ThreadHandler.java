@@ -17,7 +17,10 @@ import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
 import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.Value;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.LogRecord;
 import java.util.logging.SimpleFormatter;
@@ -163,7 +166,7 @@ public final class ThreadHandler {
             }
             if(!config.isCoverageOnly()) {
                 ConstraintRequest.sendConstraints(
-                        symbolicStateHandler.getTraceDTO(context.getStatsStorage()), endpointID, traceID);
+                        symbolicStateHandler.getTraceDTO(context.getStatsStorage(), id), endpointID, traceID);
             }
 
         } else {
@@ -173,6 +176,20 @@ public final class ThreadHandler {
 
     public static int getThreadCount() {
         return threadContextHashMap.size();
+    }
+
+    /**
+     * The ids of the target threads whose symbolic execution has started and not been terminated
+     * (the context of the instrumentation itself, id -1, is left out).
+     */
+    public static List<Long> getActiveThreadContextIds() {
+        List<Long> ids = new ArrayList<>();
+        for (Map.Entry<Long, ThreadContext> e : threadContextHashMap.entrySet()) {
+            if (e.getKey() != -1 && !e.getValue().isDisabled()) {
+                ids.add(e.getKey());
+            }
+        }
+        return ids;
     }
 
     public static void removeSolverContext(long id) throws NoThreadContextException  {

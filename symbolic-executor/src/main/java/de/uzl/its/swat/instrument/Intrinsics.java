@@ -4,7 +4,9 @@ import ch.qos.logback.classic.Logger;
 import com.sap.fontus.taintaware.unified.IASString;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.SWATException;
 import de.uzl.its.swat.common.exceptions.ThreadAlreadyDisabledException;
@@ -138,7 +140,7 @@ public class Intrinsics {
                     break;
                 case PRINT:
                     if (!ThreadHandler.isThreadContextAborted(currentThread().getId())) {
-                        System.out.println(ThreadHandler.getSymbolicVisitor(currentThread().getId()).getSymbolicTraceHandler().getTraceDTO(ThreadHandler.getStatsStorage(currentThread().getId())));
+                        printTrace(currentThread().getId());
                     }
                     break;
                 case NONE:
@@ -159,6 +161,44 @@ public class Intrinsics {
         } catch (Throwable t) {
             // The ErrorHandler has to be here as this method transfers control to the target domain
             new ErrorHandler().handleException("Error terminating symbolic tracking", t);
+        }
+    }
+
+    private static void printTrace(long threadId) throws NoThreadContextException, NotImplementedException, JsonProcessingException {
+        System.out.println(ThreadHandler.getSymbolicVisitor(threadId).getSymbolicTraceHandler().getTraceDTO(ThreadHandler.getStatsStorage(threadId), threadId));
+    }
+
+    /**
+     * Sends (HTTP) or prints (PRINT) the traces of target threads whose symbolic execution is still
+     * active when the JVM shuts down, i.e. the target ended the run abruptly (System.exit) before
+     * reaching the instrumented end of its entry method. Executions that terminated normally have
+     * removed their context already, so this is a no-op for them. Runs in the shutdown hook
+     * registered by the Transformer, hence on another thread than the target; errors are logged
+     * only.
+     */
+    public static void terminateOnShutdown() {
+        for (long threadId : ThreadHandler.getActiveThreadContextIds()) {
+            try {
+                logger.warn(
+                        "JVM shutdown with an active symbolic execution (thread {}), e.g. System.exit in the target: sending its trace",
+                        threadId);
+                ThreadHandler.disableThreadContext(threadId);
+                if (ThreadHandler.isThreadContextAborted(threadId)) {
+                    continue;
+                }
+                switch (config.getSolverMode()) {
+                    case HTTP:
+                        ThreadHandler.sendData(threadId);
+                        break;
+                    case PRINT:
+                        printTrace(threadId);
+                        break;
+                    default:
+                        break;
+                }
+            } catch (Throwable t) {
+                logger.error("Error sending the trace of thread {} on shutdown", threadId, t);
+            }
         }
     }
 

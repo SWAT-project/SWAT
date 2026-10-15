@@ -43,13 +43,16 @@ class NondetReturnItem(BaseModel):
     ``value`` is the witness string form (integers decimal, char as code point, float/double as
     Java's ``Float/Double.toString``, boolean ``true``/``false``, String raw); ``bits`` carries the
     exact IEEE-754 bits of a float/double as ``0x``-prefixed hex. ``callIndex`` is the 0-based
-    index among the nondet calls on that source line of that class, in evaluation order.
+    index among the nondet calls on that source line of that class, in evaluation order;
+    ``method`` is the calling method (name + descriptor).
     """
     function: str
     type: str
     value: str
     bits: Optional[str] = None
     className: str
+    # The calling method as name + descriptor, e.g. main([Ljava/lang/String;)V
+    method: Optional[str] = None
     sourceFile: str = ""
     line: int
     callIndex: int = 0

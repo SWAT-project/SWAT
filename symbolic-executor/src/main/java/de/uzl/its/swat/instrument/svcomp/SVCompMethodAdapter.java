@@ -95,6 +95,7 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
                 }
                 mv.visitLdcInsn(name);
                 mv.visitLdcInsn(cname);
+                mv.visitLdcInsn(this.name + this.desc);
                 mv.visitLdcInsn(sourceFile);
                 mv.visitLdcInsn(lineNumber);
                 mv.visitLdcInsn(callIndex);
@@ -104,7 +105,7 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
                         "recordValue",
                         "("
                                 + retType
-                                + "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;II)V",
+                                + "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;II)V",
                         false);
                 SVCompTransformer.getPrintBox().addMsg("      => Adding Witness recording");
             }

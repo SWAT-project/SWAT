@@ -74,7 +74,8 @@ def _write(witness_data: Optional[dict], input_files: List[str], property_file: 
             type=nr['type'],
             value=nr['value'],
             location=Location(class_name=nr['className'], source_file=nr.get('sourceFile') or None,
-                              line=nr['line'], call_index=nr.get('callIndex', 0)),
+                              line=nr['line'], call_index=nr.get('callIndex', 0),
+                              method=nr.get('method')),
             bits=nr.get('bits'),
         ))
 

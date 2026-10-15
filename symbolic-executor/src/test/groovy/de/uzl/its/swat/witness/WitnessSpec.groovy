@@ -20,7 +20,7 @@ class WitnessSpec extends Specification {
 
     def "a nondet return value is recorded with its call location"() {
         when:
-        Witness.recordValue(42, "nondetInt", "pkg/Main", "Main.java", 12, 1)
+        Witness.recordValue(42, "nondetInt", "pkg/Main", "main([Ljava/lang/String;)V", "Main.java", 12, 1)
         List<NondetReturnDTO> recorded = Witness.getNondetReturns()
 
         then:
@@ -31,6 +31,7 @@ class WitnessSpec extends Specification {
             value == "42"
             bits == null
             className == "pkg.Main"
+            method == "main([Ljava/lang/String;)V"
             sourceFile == "Main.java"
             line == 12
             callIndex == 1
@@ -49,29 +50,29 @@ class WitnessSpec extends Specification {
 
         where:
         description     | args                                                                     | type      | expectedValue  | expectedBits
-        "true"          | [true, "nondetBoolean", "Main", "Main.java", 1, 0]                       | "boolean" | "true"         | null
-        "negative"      | [(byte) -5, "nondetByte", "Main", "Main.java", 1, 0]                     | "byte"    | "-5"           | null
-        "min"           | [Short.MIN_VALUE, "nondetShort", "Main", "Main.java", 1, 0]              | "short"   | "-32768"       | null
-        "code point"    | [(char) 'A', "nondetChar", "Main", "Main.java", 1, 0]                    | "char"    | "65"           | null
-        "high code"     | [(char) 0xFFFF, "nondetChar", "Main", "Main.java", 1, 0]                 | "char"    | "65535"        | null
-        "min"           | [Integer.MIN_VALUE, "nondetInt", "Main", "Main.java", 1, 0]              | "int"     | "-2147483648"  | null
-        "max"           | [Long.MAX_VALUE, "nondetLong", "Main", "Main.java", 1, 0]                | "long"    | "9223372036854775807" | null
-        "plain"         | [0.1f, "nondetFloat", "Main", "Main.java", 1, 0]                         | "float"   | "0.1"          | "0x3dcccccd"
-        "small"         | [-2.022784E-6f, "nondetFloat", "Main", "Main.java", 1, 0]                | "float"   | "-2.022784E-6" | "0x" + Integer.toHexString(Float.floatToRawIntBits(-2.022784E-6f))
-        "negative zero" | [-0.0f, "nondetFloat", "Main", "Main.java", 1, 0]                        | "float"   | "-0.0"         | "0x80000000"
-        "NaN"           | [Float.NaN, "nondetFloat", "Main", "Main.java", 1, 0]                    | "float"   | "NaN"          | "0x7fc00000"
-        "infinity"      | [Float.NEGATIVE_INFINITY, "nondetFloat", "Main", "Main.java", 1, 0]      | "float"   | "-Infinity"    | "0xff800000"
-        "plain"         | [1.23E-10d, "nondetDouble", "Main", "Main.java", 1, 0]                   | "double"  | "1.23E-10"     | "0x" + Long.toHexString(Double.doubleToRawLongBits(1.23E-10d))
-        "negative zero" | [-0.0d, "nondetDouble", "Main", "Main.java", 1, 0]                       | "double"  | "-0.0"         | "0x8000000000000000"
-        "infinity"      | [Double.POSITIVE_INFINITY, "nondetDouble", "Main", "Main.java", 1, 0]    | "double"  | "Infinity"     | "0x7ff0000000000000"
-        "raw"           | ["a \"quoted\"\\n", "nondetString", "Main", "Main.java", 1, 0]           | "String"  | "a \"quoted\"\\n" | null
-        "null"          | [(String) null, "nondetString", "Main", "Main.java", 1, 0]               | "String"  | ""             | null
+        "true"          | [true, "nondetBoolean", "Main", "main()V", "Main.java", 1, 0]                       | "boolean" | "true"         | null
+        "negative"      | [(byte) -5, "nondetByte", "Main", "main()V", "Main.java", 1, 0]                     | "byte"    | "-5"           | null
+        "min"           | [Short.MIN_VALUE, "nondetShort", "Main", "main()V", "Main.java", 1, 0]              | "short"   | "-32768"       | null
+        "code point"    | [(char) 'A', "nondetChar", "Main", "main()V", "Main.java", 1, 0]                    | "char"    | "65"           | null
+        "high code"     | [(char) 0xFFFF, "nondetChar", "Main", "main()V", "Main.java", 1, 0]                 | "char"    | "65535"        | null
+        "min"           | [Integer.MIN_VALUE, "nondetInt", "Main", "main()V", "Main.java", 1, 0]              | "int"     | "-2147483648"  | null
+        "max"           | [Long.MAX_VALUE, "nondetLong", "Main", "main()V", "Main.java", 1, 0]                | "long"    | "9223372036854775807" | null
+        "plain"         | [0.1f, "nondetFloat", "Main", "main()V", "Main.java", 1, 0]                         | "float"   | "0.1"          | "0x3dcccccd"
+        "small"         | [-2.022784E-6f, "nondetFloat", "Main", "main()V", "Main.java", 1, 0]                | "float"   | "-2.022784E-6" | "0x" + Integer.toHexString(Float.floatToRawIntBits(-2.022784E-6f))
+        "negative zero" | [-0.0f, "nondetFloat", "Main", "main()V", "Main.java", 1, 0]                        | "float"   | "-0.0"         | "0x80000000"
+        "NaN"           | [Float.NaN, "nondetFloat", "Main", "main()V", "Main.java", 1, 0]                    | "float"   | "NaN"          | "0x7fc00000"
+        "infinity"      | [Float.NEGATIVE_INFINITY, "nondetFloat", "Main", "main()V", "Main.java", 1, 0]      | "float"   | "-Infinity"    | "0xff800000"
+        "plain"         | [1.23E-10d, "nondetDouble", "Main", "main()V", "Main.java", 1, 0]                   | "double"  | "1.23E-10"     | "0x" + Long.toHexString(Double.doubleToRawLongBits(1.23E-10d))
+        "negative zero" | [-0.0d, "nondetDouble", "Main", "main()V", "Main.java", 1, 0]                       | "double"  | "-0.0"         | "0x8000000000000000"
+        "infinity"      | [Double.POSITIVE_INFINITY, "nondetDouble", "Main", "main()V", "Main.java", 1, 0]    | "double"  | "Infinity"     | "0x7ff0000000000000"
+        "raw"           | ["a \"quoted\"\\n", "nondetString", "Main", "main()V", "Main.java", 1, 0]           | "String"  | "a \"quoted\"\\n" | null
+        "null"          | [(String) null, "nondetString", "Main", "main()V", "Main.java", 1, 0]               | "String"  | ""             | null
     }
 
     def "float and double strings round-trip to the recorded value"() {
         when:
-        Witness.recordValue(f, "nondetFloat", "Main", "Main.java", 1, 0)
-        Witness.recordValue(d, "nondetDouble", "Main", "Main.java", 1, 0)
+        Witness.recordValue(f, "nondetFloat", "Main", "main()V", "Main.java", 1, 0)
+        Witness.recordValue(d, "nondetDouble", "Main", "main()V", "Main.java", 1, 0)
         def recorded = Witness.getNondetReturns()
 
         then:
@@ -85,9 +86,9 @@ class WitnessSpec extends Specification {
 
     def "nondet returns keep their execution order"() {
         when:
-        Witness.recordValue(1, "nondetInt", "Main", "Main.java", 5, 0)
-        Witness.recordValue(2, "nondetInt", "Main", "Main.java", 5, 1)
-        Witness.recordValue(3L, "nondetLong", "Main", "Main.java", 6, 0)
+        Witness.recordValue(1, "nondetInt", "Main", "main()V", "Main.java", 5, 0)
+        Witness.recordValue(2, "nondetInt", "Main", "main()V", "Main.java", 5, 1)
+        Witness.recordValue(3L, "nondetLong", "Main", "main()V", "Main.java", 6, 0)
 
         then:
         Witness.getNondetReturns()*.value == ["1", "2", "3"]
