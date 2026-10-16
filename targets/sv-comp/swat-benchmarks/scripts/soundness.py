@@ -1210,6 +1210,41 @@ public class Main {
 """
 
 
+@task('exec-equal-string-inputs', witness=[('string', ''), ('string', 'x'), ('int', 1001)])
+def _():
+    """IMPORT
+// Two String inputs that the solver may set to the same value (here both empty at first): each
+// must keep its own symbolic variable.
+public class Main {
+    public static void main(String[] args) {
+        String s = Verifier.nondetString();
+        String t = Verifier.nondetString();
+        int a = Verifier.nondetInt();
+        if (s.length() == 0 && t.length() == 1) {
+            if (@HIT(a)@) assert false;
+        }
+    }
+}
+"""
+
+
+@task('exec-indexof-negative-from', witness=[('string', 'a'), ('int', -6), ('int', 1001)])
+def _():
+    """IMPORT
+// String.indexOf(String, int) treats a negative fromIndex as 0.
+public class Main {
+    public static void main(String[] args) {
+        String s = Verifier.nondetString();
+        int from = Verifier.nondetInt();
+        int a = Verifier.nondetInt();
+        if (from < -5 && s.indexOf("a", from) == 0) {
+            if (@HIT(a)@) assert false;
+        }
+    }
+}
+"""
+
+
 def render(src: str, safe: bool) -> str:
     src = src.replace('IMPORT\n', IMPORT).replace('CLINIT\n', CLINIT)
     src = re.sub(r'^AB', AB, src, flags=re.M)
