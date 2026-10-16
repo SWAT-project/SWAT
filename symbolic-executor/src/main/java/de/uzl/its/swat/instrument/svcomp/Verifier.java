@@ -438,7 +438,9 @@ public class Verifier {
             printBox.addMsg("Requested ID: " + newId);
             if (inputs.containsKey(prefix + newId) && !inputs.get(prefix + newId).isEmpty()) {
                 printBox.addMsg("Predetermined value available!");
-                var val = unescape(inputs.get(prefix + newId).peek());
+                // A fresh object: SWAT tracks Strings by identity, and unescape("") is the interned
+                // "", so two empty inputs would otherwise be one object and share one variable.
+                var val = new String(unescape(inputs.get(prefix + newId).peek()));
                 printBox.addMsg("Returning: " + val);
                 logger.info(printBox.toString());
                 return val;
