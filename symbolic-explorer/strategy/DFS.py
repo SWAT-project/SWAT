@@ -5,6 +5,10 @@ from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, is_interesting
 import log
 logger = log.get_logger()
 
+# The executor's marker for an exception the SA graph does not model
+# (SymbolicInstructionVisitor.UNMODELLED_EXCEPTION).
+UNMODELLED_EXCEPTION = "UNMODELLED_EXCEPTION"
+
 def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0, sa_stack: CallStack = None, distances: dict[Node, float] | None = None) -> list[Node]:
     # sa_node and sa_stack together are where the SA walk stands: the node, and the call stack of
     # call sites the walk entered to get there. The same graph node means different things under
@@ -30,6 +34,11 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             clinit_depth -= 1
 
         if node.kind == "Special": # skip over Special nodes (includes CLINIT / INVOKECLINIT_END)
+            if node.inst == UNMODELLED_EXCEPTION:
+                # The executor saw an exception the graph does not model (a null dereference, a
+                # cast, a library call that threw, an Error): the graph cannot say where execution
+                # went, so from here on the walk has no information, as when it gives up.
+                sa_node, sa_stack = None, None
             possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node, clinit_depth, sa_stack, distances))
             return possible_nodes
         else:

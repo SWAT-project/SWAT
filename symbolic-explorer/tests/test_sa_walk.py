@@ -111,6 +111,14 @@ def branch_node(name, skipped=None, branched=None):
     return n
 
 
+def special_node(name, branched=None, inst=None):
+    """A tree node for a special (non-branch) event; dfs passes through to `branched`."""
+    n = branch_node(name, branched=branched)
+    n.kind = 'Special'
+    n.inst = inst
+    return n
+
+
 def leaf():
     lf = Leaf.__new__(Leaf)
     lf.parent = None
@@ -294,6 +302,20 @@ class DfsTest(unittest.TestCase):
         n2 = branch_node('n2', skipped=n3, branched=leaf())
         n1 = branch_node('n1', skipped=n2, branched=leaf())
         self.assertEqual(candidates(n1, g), {'n3'})
+
+    def test_unmodelled_exception_makes_everything_after_it_interesting(self):
+        # main: if (b1) exit; if (b2) exit; assert. b2's TRUE side cannot reach the assert, so it is
+        # pruned -- unless the executor reported an exception the graph does not model before b2:
+        # from there on the walk has no information.
+        g = (GraphBuilder()
+             .nodes_('e0', 'b1', 'b2').node('a', assertion=True).node('x', exit=True)
+             .edge('e0', 'b1').branch('b1', 'b2', 'x').branch('b2', 'a', 'x').edge('a', 'x')
+             .load())
+        n2 = branch_node('n2', skipped=leaf(), branched=None)
+        n1 = branch_node('n1', skipped=n2, branched=leaf())
+        self.assertEqual(candidates(n1, g), set())
+        n1.skipped = special_node('x', branched=n2, inst='UNMODELLED_EXCEPTION')
+        self.assertEqual(candidates(n1, g), {'n2'})
 
     def test_guard_failure_is_followed_into_callers_handler(self):
         # Events: the guard in test() fails (skipped), then the branch in main's handler. Its TRUE

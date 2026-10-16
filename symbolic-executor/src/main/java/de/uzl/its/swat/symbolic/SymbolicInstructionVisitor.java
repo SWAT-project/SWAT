@@ -87,11 +87,29 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The (next) instruction/ special marker after the instruction that could have
      *     caused an exception
      */
+    /**
+     * Marks, in the trace, an exception the static pre-analysis graph does not model precisely: one
+     * SWAT reports no branch for (a null dereference, a cast, a library call that throws, an
+     * Error). The explorer stops trusting the graph for the rest of such a path, because the graph
+     * cannot say where the execution continues.
+     */
+    public static final String UNMODELLED_EXCEPTION = "UNMODELLED_EXCEPTION";
+
+    private void recordUnmodelledException(long iid) {
+        symbolicTraceHandler.addSpecialElement(determineIid(iid), UNMODELLED_EXCEPTION);
+    }
+
     private void checkAndSetException(Instruction inst) throws NoThreadContextException {
         symbolicTraceHandler.addSpecialElement(determineIid(inst.iid), inst.getClass().getName());
+        boolean arrayAccess = untrackedAccessModelled;
+        untrackedAccessModelled = false;
         if (!((getNextInst() instanceof SPECIAL) && ((SPECIAL) getNextInst()).i == 0)
                 && !(getNextInst() instanceof CLINIT)) {
             logger.info("Registered exception: {}", inst.getClass().getName());
+            // An explicit throw and a failed access to a non-null array are modelled; the rest not.
+            if (!(inst instanceof ATHROW) && !arrayAccess) {
+                recordUnmodelledException(inst.iid);
+            }
             stack.clearOperandStack();
             stack.pushOperand(PlaceHolder.instance); // ToDo: add more specific placeholder
         }
@@ -130,7 +148,15 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The array load or store instruction
      */
-    private void recordUntrackedBoundsCheck(Instruction inst, IntValue idx) throws NoThreadContextException, NotImplementedException {
+    /** Whether a failed access to an untracked array is the one the graph models (see checkAndSetException). */
+    private boolean untrackedAccessModelled = false;
+
+    private void recordUntrackedBoundsCheck(Instruction inst, IntValue idx, ObjectValue<?, ?> array) throws NoThreadContextException, NotImplementedException {
+        // If it fails, the graph has it as the bounds guard's failure, an
+        // ArrayIndexOutOfBoundsException. That is right unless the array is null (a
+        // NullPointerException) or an AASTORE stores a value of the wrong type (an
+        // ArrayStoreException).
+        untrackedAccessModelled = array.getAddress() != ObjectValue.ADDRESS_NULL && !(inst instanceof AASTORE);
         boolean completed = (getNextInst() instanceof SPECIAL special && special.i == 0) || getNextInst() instanceof CLINIT;
         symbolicTraceHandler.addConcreteBranch(completed, determineIid(inst.iid));
         // Neither the bounds nor the element of an untracked array depend on the index here, so
@@ -190,7 +216,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 stack.pushOperand(
                         ref.getName() != null
                                 ? PlaceHolder.symbolicInstance
@@ -248,7 +274,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[AASTORE]: Unknown array type: {}", ref.getClass().getSimpleName());
             }
         } catch (Throwable t) {
@@ -405,7 +431,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[BALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -443,7 +469,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[BASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -482,7 +508,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[CALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -513,7 +539,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[CASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -609,7 +635,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[DALOAD]: Unknown array type");
                 stack.pushWideOperand(
                         arr.getName() != null
@@ -640,7 +666,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[DASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -996,7 +1022,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[FALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -1027,7 +1053,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[FASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -1664,7 +1690,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[IALOAD]: Unknown array type");
                 stack.pushOperand(
                         ref.getName() != null
@@ -1711,7 +1737,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[IASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -2271,7 +2297,10 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * on symbolic arguments, a branch nothing in the trace captures. With symbolic arguments the
      * search past this call is therefore incomplete, which is recorded as a context loss.
      */
-    private void recordThrowingCall(String owner, String name, String desc, long invokeId, boolean isInstance) throws NoThreadContextException {
+    private void recordThrowingCall(long iid, String owner, String name, String desc, long invokeId, boolean isInstance) throws NoThreadContextException {
+        // Thrown by uninstrumented code, or before the callee ran (a null receiver, an Error):
+        // nothing the graph models.
+        recordUnmodelledException(iid);
         boolean symbolic;
         try {
             Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), isInstance);
@@ -2314,7 +2343,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 stack.setReturnValue(retVal);
 
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
-                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, true);
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2349,7 +2378,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         instance);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
-                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, true);
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2383,7 +2412,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         null);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
-                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, false);
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, false);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2431,7 +2460,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         instance);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
-                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, true);
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2465,7 +2494,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         null);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
-                recordThrowingCall(inst.owner, inst.name, inst.desc, inst.invokeId, false);
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, false);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2691,7 +2720,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[LALOAD]: Unknown array type");
                 stack.pushWideOperand(
                         arr.getName() != null
@@ -2738,7 +2767,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[LASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -3447,7 +3476,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[SALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -3478,7 +3507,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
-                recordUntrackedBoundsCheck(inst, idx);
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[SASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
