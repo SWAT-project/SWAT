@@ -107,3 +107,11 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
     undone by commit b4857700).
 - **Verdicts:** false SAFE (`violation -> safe`) is the outcome that matters most, and a pruning
   bug causes exactly that. Check any new one before trusting a run.
+- **String inputs:** the explorer passes solved Strings as `-Dswat.input...` escaped by
+  `escape_java_string` (`driver/SVCompDriver.py`), and the executor's `Verifier.nondetString`
+  undoes it (`unescape`). Change both together. Solved Strings are read from Z3 by code point
+  (`SolverHandler.encode_value`); `as_string()` output is ambiguous.
+- **Soundness flags that downgrade SAFE to UNKNOWN:** symbolic context loss is also recorded when
+  instrumented code runs untracked ("unknown space", e.g. a callback from library code), and
+  precision loss when an object array or an untracked array is indexed symbolically (both only
+  track the concrete element).
