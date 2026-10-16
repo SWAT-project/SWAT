@@ -691,10 +691,16 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     private Value<?, ?> invokeIndexOf(StringValue str, IntValue fromIndex) {
+        // Java clamps fromIndex into [0, length]; str.indexof returns -1 outside that range.
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        NumeralFormula.IntegerFormula from = fromIndex.asIntegerFormula();
+        NumeralFormula.IntegerFormula length = smgr.length(formula);
+        NumeralFormula.IntegerFormula clamped = bmgr.ifThenElse(imgr.lessThan(from, imgr.makeNumber(0)),
+                imgr.makeNumber(0), bmgr.ifThenElse(imgr.greaterThan(from, length), length, from));
         return new IntValue(
                 context,
                 concrete.indexOf(str.concrete, fromIndex.concrete),
-                smgr.indexOf(formula, str.formula, fromIndex.asIntegerFormula()));
+                smgr.indexOf(formula, str.formula, clamped));
     }
 
     private Value<?, ?> invokeIndexOf(IntValue ch) {
