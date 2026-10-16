@@ -1342,6 +1342,72 @@ AB        Box box = b == 7 ? null : new Box();
 """
 
 
+@task('npe-recursive-catch')
+def _():
+    """IMPORT
+// A recursive method dereferences null at depth 3 (b == 7); only the activation at depth 2 has a
+// handler around its recursive call, with the assert. Resuming the walk must pick that frame.
+public class Main {
+    static class Box {
+        int v = 3;
+    }
+
+    static int rec(int depth, int a, int b) {
+        if (depth == 3) {
+            Box x = b == 7 ? null : new Box();
+            return x.v;
+        }
+        if (depth == 2) {
+            try {
+                return rec(depth + 1, a, b);
+            } catch (NullPointerException e) {
+                if (@HIT(a)@) assert false;
+                return 0;
+            }
+        }
+        return rec(depth + 1, a, b) + 1;
+    }
+
+    public static void main(String[] args) {
+AB        int r = rec(0, a, b);
+        if (r > 50) r--;
+    }
+}
+"""
+
+
+@task('npe-handler-in-callee')
+def _():
+    """IMPORT
+// The last branch before the null dereference is in main, but the handler is in a callee entered
+// after it: the walk cannot know that callee's call site and must give up instead.
+public class Main {
+    static class Box {
+        int v = 3;
+    }
+
+    static int read(Box box) {
+        return box.v;
+    }
+
+    static int guarded(Box box, int a) {
+        try {
+            return read(box);
+        } catch (NullPointerException e) {
+            if (@HIT(a)@) assert false;
+            return 0;
+        }
+    }
+
+    public static void main(String[] args) {
+AB        Box box = b == 7 ? null : new Box();
+        int r = guarded(box, a);
+        if (r > 50) r--;
+    }
+}
+"""
+
+
 def render(src: str, safe: bool) -> str:
     src = src.replace('IMPORT\n', IMPORT).replace('CLINIT\n', CLINIT)
     src = re.sub(r'^AB', AB, src, flags=re.M)
