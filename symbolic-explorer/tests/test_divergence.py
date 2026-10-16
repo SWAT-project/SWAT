@@ -50,6 +50,16 @@ class CheckDivergenceTest(unittest.TestCase):
             self.driver.check_divergence([trace_branch(7, True)])
         self.assertEqual(self.tree.expected_divergences, 0)
 
+    def test_repeated_id_is_matched_by_position(self):
+        # The target is at depth 2; the same id also occurs at depth 0 (e.g. a switch whose case
+        # numbers wrap), taken the other way. Only the element at the target's depth counts.
+        root = SimpleNamespace(parent=None)
+        middle = SimpleNamespace(parent=root)
+        self.driver.state.branch_to_explore = SimpleNamespace(id=7, branched=None, parent=middle)
+        with self.assertNoLogs(svcomp.logger, level='INFO'):
+            self.driver.check_divergence([trace_branch(7, False), trace_branch(3, True), trace_branch(7, True)])
+        self.assertEqual(self.tree.execution_errors, [])
+
     def test_divergence_of_an_exact_solution_is_an_error(self):
         out = self.check([trace_branch(7, False)])
         self.assertIn('ERROR', out)

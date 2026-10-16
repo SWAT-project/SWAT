@@ -298,12 +298,18 @@ class SVCompDriver:
         marker the harness counts as an internal error, and counted in the tree's statistics.
         """
         target = self.state.branch_to_explore
-        for branch in trace:
-            if branch.id == target.id:
-                if branch.has_branched != (target.branched is not None):
-                    return
-                reason = 'Branch unexpectedly taken/skipped.'
-                break
+        # The tree has one level per trace element, so the target is at its depth in the trace.
+        # Matching by id alone would be wrong: ids repeat within a trace (all keys of a
+        # LOOKUPSWITCH share one, TABLESWITCH case numbers wrap at 16, loops, recursion).
+        depth = 0
+        node = getattr(target, 'parent', None)
+        while node is not None:
+            depth += 1
+            node = node.parent
+        if depth < len(trace) and trace[depth].id == target.id:
+            if trace[depth].has_branched != (target.branched is not None):
+                return
+            reason = 'Branch unexpectedly taken/skipped.'
         else:
             reason = 'Branch does not appear in trace.'
         if self.state.solution_is_guess:
