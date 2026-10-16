@@ -367,6 +367,8 @@ public interface IVisitor {
 
     void visitUNPACK_INVOKE_PARAMETER(UNPACK_INVOKE_PARAMETER inst) throws SymbolicInstructionException;
 
+    void visitHANDLER_ENTRY(HANDLER_ENTRY inst) throws SymbolicInstructionException;
+
     void visitSET_FIELD_REFLECTION(SET_FIELD_REFLECTION inst) throws SymbolicInstructionException;
 
     void visitGET_FIELD_REFLECTION(GET_FIELD_REFLECTION inst) throws SymbolicInstructionException;

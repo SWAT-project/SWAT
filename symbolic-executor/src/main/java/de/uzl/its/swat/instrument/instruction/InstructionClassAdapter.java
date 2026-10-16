@@ -23,8 +23,16 @@ public class InstructionClassAdapter extends ClassVisitor {
      * @param cv Parent ClassVisitor
      */
     public InstructionClassAdapter(ClassVisitor cv, String cname) {
+        this(cv, cname, java.util.Map.of());
+    }
+
+    /** Per method (name + descriptor): the handler key of each try-catch block, see HandlerKeys. */
+    private final java.util.Map<String, java.util.List<String>> handlerKeys;
+
+    public InstructionClassAdapter(ClassVisitor cv, String cname, java.util.Map<String, java.util.List<String>> handlerKeys) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
+        this.handlerKeys = handlerKeys;
     }
 
     @Override
@@ -82,6 +90,7 @@ public class InstructionClassAdapter extends ClassVisitor {
                             name,
                             desc,
                             cname);
+            ima.setHandlerKeys(handlerKeys.getOrDefault(name + desc, java.util.List.of()));
             return ima;
         }
 

@@ -91,6 +91,8 @@ public interface InstructionProcessor {
 
     void UNPACK_INVOKE_PARAMETER(long iid);
 
+    void HANDLER_ENTRY(long iid, String key);
+
     void SET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, boolean isWideOperand, int modifiers, long iid, long invokeId);
 
     void GET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, int modifiers, long iid, long invokeId);

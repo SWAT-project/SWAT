@@ -847,6 +847,13 @@ public final class SymbolicInstructionDispatcher {
     }
 
     @SuppressWarnings("unused")
+    public static void HANDLER_ENTRY(long iid, String key) {
+        InstructionProcessor instructionProcessor =
+                ThreadHandler.getProcessor(Thread.currentThread().getId());
+        instructionProcessor.HANDLER_ENTRY(iid, key);
+    }
+
+    @SuppressWarnings("unused")
     public static void SET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, boolean isWideOperand, int modifiers, long iid, long invokeId) {
         InstructionProcessor instructionProcessor =
                 ThreadHandler.getProcessor(Thread.currentThread().getId());

@@ -846,6 +846,12 @@ public final class InstructionLoggingDispatcher {
     logger.info("UNPACK_INVOKE_PARAMETER {}", iid);
 }
 
+    @SuppressWarnings("unused")
+    public static void HANDLER_ENTRY(long iid, String key) throws NoThreadContextException {
+    Logger logger = ThreadHandler.getShadowStateLogger(-1);
+    logger.info("HANDLER_ENTRY {} {}", iid, key);
+}
+
 
     @SuppressWarnings("unused")
     public static void SET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, boolean isWideOperand, int modifiers, long iid, long invokeId) throws NoThreadContextException {

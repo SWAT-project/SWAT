@@ -52,6 +52,18 @@ public class SymbolicTraceHandler {
         // check if the path constraint contains a free/ symbolic variable
 
         symbolicTrace.addTraceElement(current);
+        lastBranchDepth = frameDepth();
+    }
+
+    /**
+     * The depth of the shadow frame stack when the last branch was recorded. A handler entry
+     * reports its depth relative to it, so that the explorer's walk, which knows the frames at the
+     * last branch, can tell which frame the handler belongs to (see visitHANDLER_ENTRY).
+     */
+    @lombok.Getter private int lastBranchDepth = 0;
+
+    private static int frameDepth() throws NoThreadContextException {
+        return ThreadHandler.getSymbolicVisitor(Thread.currentThread().getId()).getStack().getFrameStack().size();
     }
 
     /**
@@ -67,6 +79,7 @@ public class SymbolicTraceHandler {
         BooleanFormulaManager bmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId())
                 .getFormulaManager().getBooleanFormulaManager();
         symbolicTrace.addTraceElement(new BranchElement(result, bmgr.makeTrue(), iid, true));
+        lastBranchDepth = frameDepth();
     }
 
     /**
