@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.setrecursionlimit(100000)
 
 from data.StaticAnalysisGraph import SAGraph as sagraph
-from data.StaticAnalysisGraph.SAGraph import SAGraph, push, pop, depth, unwind
+from data.StaticAnalysisGraph.SAGraph import SAGraph, push, pop, depth, unwind, is_pseudo, unwind_pseudo
 
 ORACLE_DEPTH = 6
 ORACLE_STATES = 200_000
@@ -58,9 +58,12 @@ def oracle(node, stack):
             frame, below = pop(st)
             worklist.append((frame.return_site, below))
         if n.exceptionChain is not None and st is not None:
-            resumed = unwind(n.exceptionChain, st)
-            if resumed is not None:
-                worklist.append(resumed)
+            if is_pseudo(n.exceptionChain):
+                worklist.extend(unwind_pseudo(n.exceptionChain[0], st))
+            else:
+                resumed = unwind(n.exceptionChain, st)
+                if resumed is not None:
+                    worklist.append(resumed)
     return None if truncated else False
 
 

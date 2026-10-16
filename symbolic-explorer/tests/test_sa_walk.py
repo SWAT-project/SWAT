@@ -439,6 +439,58 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
         self.assertTrue(sagraph.is_interesting(n['u'], stack))
         self.assertFalse(sagraph.is_interesting(n['ix'], stack))
 
+    def unknown_exception_graph(self, unknown_handlers, middle=False):
+        """
+        main calls f (through middle() if `middle`) inside a try whose handler h asserts.
+        f: if (..) { deref (may throw an exception of unknown type) } -- like npe-catch-up1.
+        """
+        b = (GraphBuilder()
+             .nodes_('e0', 'c1', 'r1', 'h').node('a', assertion=True).node('mx', exit=True)
+             .nodes_('k0', 'kb', 'kd').node('kx', exit=True).node('ku', chain=['?Exception']))
+        callee = 'k0'
+        if middle:
+            b.nodes_('m0', 'c2').node('mret', exit=True).node('mu', chain=['?Exception'])
+            callee = 'm0'
+        b.edge('e0', 'c1')
+        b.call('c1', callee, 'r1', ['mret'] if middle else ['kx'],
+               handlers={'java.lang.NullPointerException': 'h'})
+        next(e for e in b.edges if e['source'] == 'c1' and e['type'] == 'CALL')['unknownHandlers'] = unknown_handlers
+        b.edge('r1', 'mx').edge('h', 'a').edge('a', 'mx')
+        if middle:
+            b.edge('m0', 'c2').call('c2', 'k0', 'mret', ['kx'])
+        b.edge('k0', 'kb').branch('kb', 'kd', 'kx').edge('kd', 'kx').edge('kd', 'ku', 'EXCEPTION')
+        return b.load()
+
+    def test_unknown_exception_reaches_a_listed_handler_in_the_caller(self):
+        n = self.unknown_exception_graph({'?Exception': ['h']}).nodes
+        stack = sagraph.push(None, n['c1'])
+        self.assertTrue(sagraph.is_interesting(n['kd'], stack))   # may throw into main's handler
+        self.assertFalse(sagraph.is_interesting(n['kx'], stack))  # cannot
+        self.assertEqual(n['kd'].escapes, frozenset({('?Exception',)}))
+        self.assertTrue(n['c1'].reachesAssertSameLevel)
+
+    def test_unknown_exception_is_not_caught_by_an_unlisted_handler(self):
+        n = self.unknown_exception_graph({}).nodes
+        self.assertFalse(sagraph.is_interesting(n['kd'], sagraph.push(None, n['c1'])))
+        self.assertFalse(n['c1'].reachesAssertSameLevel)
+
+    def test_unknown_exception_unwinds_through_frames_without_handlers(self):
+        n = self.unknown_exception_graph({'?Exception': ['h']}, middle=True).nodes
+        stack = sagraph.push(sagraph.push(None, n['c1']), n['c2'])
+        self.assertTrue(sagraph.is_interesting(n['kd'], stack))
+        self.assertFalse(sagraph.is_interesting(n['kx'], stack))
+        self.assertIn(('?Exception',), n['c2'].escapes)  # middle has no handler: it escapes
+        self.assertTrue(n['c1'].reachesAssertSameLevel)
+
+    def test_unknown_exception_also_escapes_past_a_listed_handler(self):
+        # A listed handler might not catch it, so the escape stays in the call site's summary.
+        n = self.unknown_exception_graph({'?Exception': ['h']}).nodes
+        self.assertIn(('?Exception',), n['c1'].escapes)
+
+    def test_walk_gives_up_at_an_unknown_exception_escape(self):
+        n = self.unknown_exception_graph({'?Exception': ['h']}).nodes
+        self.assertIsNone(n['ku'].walk_till_branch(sagraph.push(None, n['c1'])))
+
     def test_recursive_summaries_converge(self):
         # f(): fb: FALSE -> call f() (returns to fr) -> fr -> fx ; TRUE -> fx.
         # main: call f() -> r -> bm: FALSE -> a (assert), TRUE -> x.

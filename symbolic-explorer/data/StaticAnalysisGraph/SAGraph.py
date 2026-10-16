@@ -59,6 +59,10 @@ class SANode:
     # and the handler each caught exception type resumes at if the callee throws.
     return_site: SANode | None = field(default=None, repr=False)
     handlers: dict[str, SANode] = field(default_factory=dict, repr=False)
+    # Only for a call site: for each pseudo exception type (see is_pseudo), the handlers of the call
+    # site that might catch it. An exception of a pseudo type is not known precisely, so it may be
+    # caught by any of them or by none and unwind further.
+    unknown_handlers: dict[str, list[SANode]] = field(default_factory=dict, repr=False)
     # How many branches must still be decided on the shortest path from here to an assertion point,
     # counting this node if it is a branch. Computed by compute_assert_distances(). Context-
     # insensitive, so only a heuristic for ordering the search; pruning never depends on it.
@@ -118,6 +122,8 @@ class SANode:
                 node = frame.return_site
                 continue
             if node.exceptionChain is not None:
+                if is_pseudo(node.exceptionChain):
+                    return None # where an exception of unknown type goes is not known
                 resumed = unwind(node.exceptionChain, stack)
                 if resumed is None: # the exception leaves main
                     return None
@@ -174,6 +180,25 @@ def unwind(exception_chain: tuple[str, ...], stack: CallStack) -> tuple[SANode, 
     return None
 
 
+def is_pseudo(exception_chain: tuple[str, ...]) -> bool:
+    """
+    Whether an escape is of a pseudo exception type: an exception the graph knows may occur but not
+    its type -- "?Exception" (unguarded: a null dereference, a cast, anything a library call
+    throws) and "?Error". The extractor lists which handlers of each call site might catch one
+    (SANode.unknown_handlers). It may be caught by any of them, or by none.
+    """
+    return exception_chain[0].startswith("?")
+
+
+def unwind_pseudo(pseudo_type: str, stack: CallStack) -> list[tuple[SANode, CallStack]]:
+    """Every handler an exception of a pseudo type may resume at, with the stack below its frame."""
+    resumed = []
+    while stack is not None:
+        frame, stack = pop(stack)
+        resumed.extend((handler, stack) for handler in frame.unknown_handlers.get(pseudo_type, []))
+    return resumed
+
+
 def is_interesting(node: SANode, stack: CallStack) -> bool:
     """
     Whether an assert is reachable from `node` when the walk is there with `stack`.
@@ -201,6 +226,9 @@ def is_interesting(node: SANode, stack: CallStack) -> bool:
         if current.canReturn:
             worklist.append((frame.return_site, below))
         for chain in current.escapes:
+            if is_pseudo(chain):
+                worklist.extend(unwind_pseudo(chain[0], current_stack))
+                continue
             resumed = unwind(chain, current_stack)
             if resumed is not None:
                 worklist.append(resumed)
@@ -221,6 +249,8 @@ def compute_summaries(nodes) -> None:
         escapes(N)    = {T} at an uncaught[T] node; at a call site the exceptions in escapes(E) no
                         handler of N catches, plus escapes(R) if canReturn(E), plus escapes(h) of
                         each handler reached; otherwise the union over intraprocedural successors.
+                        A pseudo type (is_pseudo) reaches every handler that might catch it and
+                        always escapes further too.
 
     (Reps-Horwitz-Sagiv same-level realizable paths.) The call summaries make it mutually
     recursive through callee entries, so recursion makes it cyclic; it is solved with a worklist,
@@ -246,7 +276,8 @@ def compute_summaries(nodes) -> None:
         for s in successors(n):
             dependents[id(s)].append(n)
         if n.is_call_site():
-            for s in [n.next_fallthrough, n.return_site, *n.handlers.values()]:
+            unknown = [h for hs in n.unknown_handlers.values() for h in hs]
+            for s in [n.next_fallthrough, n.return_site, *n.handlers.values(), *unknown]:
                 dependents[id(s)].append(n)
 
     def evaluate(n: SANode) -> tuple[bool, bool, frozenset]:
@@ -269,6 +300,14 @@ def compute_summaries(nodes) -> None:
                 cr = cr or ret.canReturn
                 esc |= ret.escapes
             for chain in entry.escapes:
+                if is_pseudo(chain):
+                    # Caught by any of the candidate handlers, or by none: then it escapes further.
+                    for handler in n.unknown_handlers.get(chain[0], []):
+                        ras = ras or handler.reachesAssertSameLevel
+                        cr = cr or handler.canReturn
+                        esc |= handler.escapes
+                    esc.add(chain)
+                    continue
                 handler = next((n.handlers[t] for t in chain if t in n.handlers), None)
                 if handler is None:
                     esc.add(chain)
@@ -386,6 +425,8 @@ class SAGraph:
                 if "returnSite" in json_edge:
                     source.return_site = self.nodes[json_edge["returnSite"]]
                     source.handlers = {t: self.nodes[h] for t, h in json_edge.get("handlers", {}).items()}
+                    source.unknown_handlers = {t: [self.nodes[h] for h in hs]
+                                               for t, hs in json_edge.get("unknownHandlers", {}).items()}
                 else:
                     legacy_calls = True
 
