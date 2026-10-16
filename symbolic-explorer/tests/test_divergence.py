@@ -25,10 +25,13 @@ def trace_branch(id, has_branched):
 class CheckDivergenceTest(unittest.TestCase):
 
     def setUp(self):
-        self.tree = SimpleNamespace(expected_divergences=0)
+        self.tree = SimpleNamespace(expected_divergences=0, execution_errors=[])
         def record_expected_divergence(endpoint_id):
             self.tree.expected_divergences += 1
-        db = SimpleNamespace(record_expected_divergence=record_expected_divergence)
+        def record_execution_error(endpoint_id, kind, message):
+            self.tree.execution_errors.append({'kind': kind, 'message': message})
+        db = SimpleNamespace(record_expected_divergence=record_expected_divergence,
+                             record_execution_error=record_execution_error)
         patcher = mock.patch.object(svcomp.Database, 'instance', return_value=db)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -52,6 +55,8 @@ class CheckDivergenceTest(unittest.TestCase):
         self.assertIn('ERROR', out)
         self.assertIn('SWAT Assertion failed', out)
         self.assertEqual(self.tree.expected_divergences, 0)
+        # Recorded, so that the run cannot end SAFE
+        self.assertEqual([e['kind'] for e in self.tree.execution_errors], ['unexpected_divergence'])
 
     def test_divergence_of_a_guess_is_expected(self):
         self.driver.state.solution_is_guess = True
@@ -59,6 +64,7 @@ class CheckDivergenceTest(unittest.TestCase):
         self.assertNotIn('SWAT Assertion failed', out)
         self.assertNotIn('ERROR', out)
         self.assertEqual(self.tree.expected_divergences, 1)
+        self.assertEqual(self.tree.execution_errors, [])
 
     def test_missing_branch_of_a_guess_is_expected(self):
         self.driver.state.solution_is_guess = True

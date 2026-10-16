@@ -311,6 +311,9 @@ class SVCompDriver:
             logger.info(f'[SVCOMP] Diverged from branch {target.id}: its solution relied on an approximate model (expected). {reason}')
         else:
             logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {target.id} as expected! {reason}')
+            # The branch counts as solved now, so its unexplored side is never tried again: an
+            # exhausted search no longer proves anything (see run()).
+            Database.instance().record_execution_error(ENDPOINT_ID, 'unexpected_divergence', f'branch {target.id}: {reason}')
 
     def adopt_sa_graph(self):
         """Switches branch selection to the pre-analysis graph once it is ready (at most once).
@@ -435,6 +438,11 @@ class SVCompDriver:
 
         if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).symbolic_precision_loss:
             logger.warning(f'[SVCOMP] Found symbolic precision loss')
+            verdict = Verdict.UNKNOWN
+
+        if (verdict == Verdict.SAFE) and any(e.get('kind') == 'unexpected_divergence'
+                                              for e in Database.instance().get_tree(ENDPOINT_ID).execution_errors):
+            logger.warning(f'[SVCOMP] A solution did not reach the side of the branch it was solved for')
             verdict = Verdict.UNKNOWN
 
         if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).uncaught_exceptions > 0:
