@@ -434,6 +434,73 @@ public class Main {{
     return Task('irrelevant-prefix', f'{variant}_n{n:02d}', safe, src, ints(witness), SAFE_REASON)
 
 
+# --- exception-dispatch ----------------------------------------------------------------------
+# Measures what SA loses after an exception it does not model. The command is parsed from input
+# t; for t < 0 parsing throws and the handler derives the command from t as well, so both paths
+# lead into the same dispatcher as in dispatcher/switch (only the last command reaches the
+# assert).
+#   npe:      a NullPointerException (no SWAT guard: after it the walk gives up for the path, so
+#             the dead handlers behind the exception path are not pruned)
+#   explicit: control, an explicit IllegalArgumentException, which the graph models precisely
+
+EXCEPTION_DISPATCH_VARIANTS = ['npe', 'explicit']
+
+
+def exception_dispatch(variant: str, n: int, safe: bool) -> Task:
+    k = 4
+    inputs = ['t', 'a', 'b', 'c', 'd']
+    witness = [-n] + TARGET_WITNESS + [0, 0]  # t = -n: the exception path, then cmd = n - 1
+    if variant == 'npe':
+        parse = '''    static int parse(int t) {
+        Holder h = t < 0 ? null : HOLDER;
+        return h.base + t;
+    }
+'''
+        caught = 'NullPointerException'
+    else:
+        parse = '''    static int parse(int t) {
+        if (t < 0) throw new IllegalArgumentException();
+        return HOLDER.base + t;
+    }
+'''
+        caught = 'IllegalArgumentException'
+    handlers = ''.join(handler(i, k) for i in range(n - 1))
+    cases = ''.join(f'            case {i}: r = handler{i}(a, b, c, d); break;\n' for i in range(n - 1))
+    src = f'''{HEADER}// exception-dispatch/{variant}: the command is parsed from t; for t < 0 parsing throws
+// ({caught}) and the handler derives the command as -t - 1. Only command {n - 1} reaches the assert.
+public class Main {{
+    static class Holder {{
+        int base = 0;
+    }}
+
+    static final Holder HOLDER = new Holder();
+
+{parse}
+    public static void main(String[] args) {{
+{read_inputs(inputs)}        int cmd;
+        try {{
+            cmd = parse(t);
+        }} catch ({caught} e) {{
+            cmd = -t - 1;
+        }}
+        dispatch(cmd, a, b, c, d);
+    }}
+
+    static int dispatch(int cmd, int a, int b, int c, int d) {{
+        int r;
+        switch (cmd) {{
+{cases}            case {n - 1}: target(a, b); r = 0; break;
+            default: r = -1;
+        }}
+        return r;
+    }}
+
+{handlers}
+{target(safe)}}}
+'''
+    return Task('exception-dispatch', f'{variant}_n{n:02d}', safe, src, ints(witness), SAFE_REASON)
+
+
 FAMILIES = {
     'dispatcher': (dispatcher, DISPATCHER_VARIANTS, [2, 4, 8, 16, 32]),
     'validation-gauntlet': (gauntlet, GAUNTLET_VARIANTS, [2, 4, 8, 16, 32]),
@@ -441,6 +508,7 @@ FAMILIES = {
     'dead-callees': (dead_callees, DEAD_VARIANTS, [1, 2, 3, 4, 5, 6]),
     'virtual-dispatch': (virtual_dispatch, VIRTUAL_VARIANTS, [2, 4, 8, 16, 32]),
     'irrelevant-prefix': (irrelevant_prefix, PREFIX_VARIANTS, [2, 4, 6, 8]),
+    'exception-dispatch': (exception_dispatch, EXCEPTION_DISPATCH_VARIANTS, [2, 4, 8, 16, 32]),
 }
 
 
