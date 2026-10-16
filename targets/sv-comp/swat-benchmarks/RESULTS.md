@@ -24,6 +24,9 @@ suite gave identical results twice); wall times are not.
 
 ## Summary
 
+This summary and the sections up to "Bugs found" describe the runs of 2026-10-14, before the
+fixes; for the state after them see "Fixes (2026-10-15/16)".
+
 The two suites answer different questions, so they are counted separately.
 
 Family tasks (194; they measure what pruning gains):
@@ -153,6 +156,8 @@ and `<clinit>` that runs on every path.
 
 ## Bugs found
 
+Status as of 2026-10-16: all fixed except S2, see "Fixes (2026-10-15/16)" below.
+
 Each has a minimal reproducing task in `java/sa-soundness/` (VIOLATION variant `_false`). None is
 fixed here: the SA ones need extractor changes beyond a local fix, the executor ones an executor
 rebuild and SV-COMP re-validation.
@@ -188,7 +193,8 @@ rebuild and SV-COMP re-validation.
   SAFE once E3 is fixed. Fix direction: treat interface calls on functional interfaces as
   incomplete when the program has lambda bodies.
 
-A cheap stop-gap in SWAT for S1, S3 and S4: do not use a graph that has no assertion point
+(Superseded: S1, S3 and S4 are now fixed in the extractor.) A cheap stop-gap in SWAT for S1, S3
+and S4: do not use a graph that has no assertion point
 (`metadata.assertionPointIds` empty) while the program has an assert; all of those reproducers
 have such a graph. It does not cover S2.
 
@@ -223,6 +229,100 @@ have such a graph. It does not cover S2.
 - `svcomp test run --benchmark-dir` crashed for folder names other than `sv-benchmarks`
   (`939933e`).
 
+## Fixes (2026-10-15/16)
+
+The sections above describe the state of 2026-10-14. All bugs found then are fixed except S2,
+which is deferred to the planned trace-event redesign (see "Planned redesign" in the workspace
+`CLAUDE.md`). Fixing them turned up more bugs, which are fixed too. SWAT commits are on
+`niklas/dev`, extractor commits on cfg-extraction's `find-assertions`.
+
+| bug | cause | fix | commit |
+|---|---|---|---|
+| S1 static initializers | `<clinit>` is not in the graph, so the path to a class's first use was pruned | statements that may initialize a class whose initializer can reach an assert (`new`, static calls and fields, via superclasses, transitively, also through application overrides of library methods) are assertion points (`ClinitTargets`) | cfg `8facdc9`, `8e2d20f` |
+| S3 reflection | `Method.invoke` counted as a library call with nothing behind it | reflective calls (`Method.invoke`, `newInstance`, `Class.forName`, `MethodHandle.invoke*`) are incomplete | cfg `39a20fc`, `8e2d20f` |
+| S4 lambdas in fields | lambda classes are not in the view, so an untraceable receiver had "only library targets" | untraceable receivers of an interface a lambda implements are unresolved, so incomplete | cfg `5ae7bf6` |
+| S2 unguarded exceptions | see above | **not fixed** (deferred) | |
+| E1 `System.exit` | the trace was never sent | `System.exit`, `Runtime.exit`/`halt` send the trace first | `90fd881` |
+| E2 symbolic object-array index | only the concrete element is tracked | sound only: records precision loss (UNKNOWN instead of false SAFE) | `d612f78` |
+| E3 lambdas | the body ran in "unknown space", skipped silently | non-capturing lambda bodies run as the interface method; untracked instrumented code records context loss | `b67695d` |
+| E3 reflection | `Method.invoke` arguments arrived boxed, and static targets got a receiver | arguments are unboxed, static targets get no receiver, `Object[]` arguments are checked for symbolic content | `45c2cd6` |
+| E4 String chars | String inputs had no 16-bit bound | inputs are bounded to `\u0000-￿` | `16303f1` |
+| E5 NPE on `GETFIELD` | the executor halted | the exception is followed like any other | `3b2b979` |
+| E6 input name collision | solutions were matched to inputs by index (`[I_0` overwrote `I_0`) | matched by name; non-inputs ignored | `b6573fb` |
+| E7 initializer left by an exception | its invoke stayed open | closed when the invoke below it ends | `f1ee845` |
+| new: solved Strings | Z3's `as_string()` output is escaped (and ambiguous), and was passed on verbatim | read by code point, escaped for the command line, unescaped by `Verifier` | `16303f1` |
+| new: String precision check | constraints on `java/lang/String_N` counted as precision loss (name pattern), so no task constraining a String symbolically could be SAFE | trace inputs are accepted by name | `afbd1db` |
+| new: equal String inputs | `unescape("")` returned the interned `""`, so two empty inputs were one object and shared one variable (two false SAFEs on SV-COMP before this fix) | every String input is a fresh object | `5c0fdec` |
+| new: `String.indexOf(String, int)` | modelled without Java's clamping of `fromIndex` | clamped into `[0, length]` | `34cd826` |
+| new: `StringBuilder.setLength` | not modelled: any reused builder halted the executor | modelled for concrete lengths | `1a05ac4` |
+| new: divergence ended in SAFE | a solution that did not reach its branch still marked the branch solved; nothing was left to try | an unexpected divergence makes a SAFE verdict UNKNOWN | `18b0af7` |
+| new: divergence check by id | the check took the first trace element with the target's id, but ids repeat (all keys of a `LOOKUPSWITCH` share one, `TABLESWITCH` case numbers wrap at 16), so it reported divergences that did not happen | the target is found at its depth in the tree | `fc8e88e` |
+
+Reproducers are in `sa-soundness` (`exec-*` and the pairs named in the bug lists above), except
+for the two divergence fixes, which are covered by `symbolic-explorer/tests/test_divergence.py`
+and by `dispatcher/switch_n32` and `instance_n32` and `virtual-dispatch/local_n32` (32-case
+switches). The two reproducers added last (`exec-equal-string-inputs`,
+`exec-indexof-negative-from`) were not checked against the code before their fixes.
+
+### Results after the fixes
+
+swat-benchmarks (300 tasks; the 2026-10-14 runs had 266, without the narrowing tasks and real
+tools). Final runs `run_20261016_094623` (SA), `_095359` (no SA), `_100453` (rank), with the
+three n = 32 SAFE tasks that the id-based divergence check had turned UNKNOWN rerun after
+`fc8e88e` (all SAFE again, in both SA configurations):
+
+| | 2026-10-14: correct / false SAFE | 2026-10-16: correct / false SAFE |
+|---|---|---|
+| no SA | 203 / 15 (of 266) | 238 / 0 (of 300) |
+| SA | 227 / 21 | 259 / 5 |
+| SA + rank | 228 / 21 | 262 / 5 |
+
+- Without SA there is no false SAFE left. The five with SA are all S2: `cce-catch`,
+  `cce-catch-up1`, `library-throw-catch`, `npe-catch-local`, `npe-catch-up1`.
+- The families behave as on 2026-10-14 (constant rounds with SA for dispatcher, error-handling,
+  dead-callees, virtual-dispatch/local), except: `validation-gauntlet/exit` is now correct (E1;
+  no gain from SA, as the graph treats `exit` as a call that returns), and
+  `virtual-dispatch/array` is UNKNOWN instead of a false SAFE (E2). A few tasks that took
+  250-300 s on 2026-10-14 now time out at 300 s; the machine was busier (see below).
+
+
+SV-COMP (current suite, valid-assert, SA, 300 s, 50 workers): baseline = the code from before
+these fixes (`939933e` with the jars of 2026-09-26/29), in a separate worktree.
+
+| | points | correct | false SAFE | false VIOLATION |
+|---|---:|---:|---:|---:|
+| baseline (`run_20261016_083422`) | 879 | 710 | 0 | 0 |
+| fixed (`run_20261016_092145`) | 889 | 718 | 0 | 0 |
+
+- 13 tasks now correct that were not: `NullPointerException2-4`, `StaticCharMethods02/06`,
+  `char1`, `StringBuilderConstructors01`, `startswith` (jbmc/jdart), `Pred9`, `Refl4` (S1 via
+  `Class.forName`), String `compareTo`, `BinaryTreeSearch-MemUnsat02`, `Trie-MemUnsat01`.
+- 5 correct before, not now; none is a false SAFE:
+  - `Trie-FunSat01`, `Trie-MemSat01`: SAFE -> UNKNOWN. They index an object array with a symbolic
+    char (`x.next[c]`); the baseline's SAFE was right by luck (E2).
+  - `Piecewise_true`: SAFE -> UNKNOWN: a solution did not reach its branch, so the search was not
+    exhaustive; the baseline reported SAFE regardless.
+  - `Long_shortValue`, `TCAS_prop1`: timeouts. They took 282 s and 264 s in the baseline already;
+    the final run was on a busier machine (load ~150; executor rounds 1.5x slower, and the barely
+    changed extractor equally). Run one at a time, the old and the new executor take the same time
+    on these tasks.
+- `Optimization4` and `UnsatAckermann01` are wrong in both (UNKNOWN before, timeout now);
+  `UnsatAckermann01` ended early in the baseline only because of an executor error.
+- One more false SAFE pair appeared on the way (`autostub` String `length` and
+  `indexOf(String, int)`), caused by the String fixes themselves; both are fixed
+  (`5c0fdec`, `34cd826`) and covered by reproducers.
+
+### Still open
+
+- S2 (deferred). Fixing E5 made `npe-catch-local_false` a false SAFE with SA (it was UNKNOWN
+  only because the executor halted); `npe-catch-up1`, `cce-catch*` and `library-throw-catch` stay
+  false SAFE with SA. All are correct without SA.
+- Fresh arrays have a free base variable (`[I_0`), which counts as precision loss: SAFE tasks that
+  read an array at a symbolic index stay UNKNOWN (`bounds-catch-*_true`, `exec-int-array-index_true`).
+  A constant-array base for `newarray` would fix it, but changes array modelling everywhere.
+- Real tools still time out: getopt and opencsv get through ~13 instead of ~5 rounds; opencsv
+  loses context in `ArrayList.add` of the parsed fields.
+
 ## Real tools (step 4)
 
 | task | no SA | SA |
@@ -248,10 +348,10 @@ are excluded from instrumentation by `sv-comp.cfg`, and JSON parsers mostly read
 
 ## Recommendations
 
-1. Do not trust SA SAFE verdicts on code with static initializers, reflection, or catch handlers
-   for unguarded or JDK exceptions until S1-S3 are fixed; the zero-assertion-point stop-gap covers
-   S1 and S3 cheaply. Add the `sa-soundness` suite to the regression runs: it takes about a minute
-   per configuration.
+1. S1, S3 and S4 are fixed in the extractor (2026-10-15/16), so the zero-assertion-point stop-gap
+   is no longer needed. SA SAFE verdicts are still not trustworthy for programs that catch
+   unguarded or JDK exceptions (S2, deferred to the trace-event redesign). Add the `sa-soundness`
+   suite to the regression runs: it takes about a minute per configuration.
 2. Pruning pays off for programs whose dead branches lead into substantial code: dispatchers and
    command handlers, error handling and reporting, helpers called only on rejected paths. That is
    the shape of security-sink reachability or crash reproduction at a single site in a
