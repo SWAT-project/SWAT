@@ -27,7 +27,7 @@ Benefit families (`scripts/families.py`), each variant for n in {2, 4, 8, 16, 32
 | `dead-callees` | n helpers with 2 branches each, on paths that cannot reach `target` | `suffix` (after `target`), `guarded` (`if (mode == 1) {...; return;}`), `shared` (the same helper is also called before `target`: needs a context-sensitive walk) |
 | `virtual-dispatch` | `cmd` selects one of n subclasses; only the last `run()` calls `target` | `local` (`new Ci().run()`: exact receiver), `factory` (receiver returned by a switch: ambiguous call), `array` (receiver read from an array) |
 | `irrelevant-prefix` | control: n independent `if (x_i > 0) count++;` before `target` | `count` |
-| `exception-dispatch` | the command is parsed from input `t`; for `t < 0` parsing throws, the handler derives the command from `t` too, then a `dispatcher/switch` (measures what SA loses after an exception it does not model) | `npe` (a NullPointerException: SA gives up after it), `explicit` (control: an explicit throw, modelled precisely) |
+| `exception-dispatch` | the command is parsed from input `t`; for `t < 0` parsing throws, the handler derives the command from `t` too, then a `dispatcher/switch` (measures what SA loses after an exception it does not model) | `npe` (a NullPointerException: SA resumes at the handler from a trace event), `explicit` (control: an explicit throw, modelled precisely) |
 
 `sa-soundness` (`scripts/soundness.py`): hand-written SAFE/VIOLATION pairs around constructs where
 the graph and the executor can disagree (arrays from JDK calls, implicit and unguarded exceptions

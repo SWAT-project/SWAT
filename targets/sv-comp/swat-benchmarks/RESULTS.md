@@ -156,7 +156,7 @@ and `<clinit>` that runs on every path.
 
 ## Bugs found
 
-Status as of 2026-10-16: all fixed, see "Fixes (2026-10-15/16)" and "S2" below.
+Status as of 2026-10-16: all fixed, see "Fixes (2026-10-15/16)", "S2" and "S2 precision" below.
 
 Each has a minimal reproducing task in `java/sa-soundness/` (VIOLATION variant `_false`). None is
 fixed here: the SA ones need extractor changes beyond a local fix, the executor ones an executor
@@ -339,12 +339,38 @@ oracle (`check_marking_on_graphs.py`) finds no unsound marking on all 636 SV-COM
 of pruned branch sides drops from 8.6% to 8.3%, all of it in `algorithms` (16.1% -> 11.5%), whose
 handlers lead to asserts. Graphs grew by 11% in nodes and 63% in edges.
 
+### S2 precision: resuming at the handler (design C, 2026-10-16)
+
+With B, every unmodelled exception ends pruning for the rest of the path. Measured on the
+`exception-dispatch` family (input-dependent dispatch after the handler), the `npe` variant needed
+26, 58, 122 rounds for n = 2, 4, 8 and timed out above that, while `explicit` (same program, an
+explicit throw) stays at 10 rounds for every n.
+
+- **Executor:** at the start of every catch handler the instrumentation records a
+  `HANDLER_ENTRY d key` special event: `d` is the frame depth relative to the last branch, `key` is
+  `owner.name(desc)|caught types|protected lines` (`HandlerKeys`), built from content because
+  SootUp keeps neither bytecode offsets nor the exception table's order.
+- **Extractor:** handler entry nodes carry the same key (`handlerKey`); keys that are not unique in
+  their method (javac's copies of a `finally` handler) are left out.
+- **Walk:** after `UNMODELLED_EXCEPTION`, `dfs` remembers where it was; at the next
+  `HANDLER_ENTRY` it pops `-d` frames off its own call stack and resumes at the handler node, if
+  the key is known and the handler is in the method of that frame. Anything else (unknown or
+  ambiguous key, a handler in a callee entered after the last branch, `d > 0`) keeps giving up,
+  which is always safe.
+
+Results: `npe` now matches `explicit` exactly (6 rounds VIOLATION, 10 SAFE, for every n).
+New reproducers `npe-recursive-catch` (the handler is in one activation of a recursive method) and
+`npe-handler-in-callee` (must give up) are correct in all configurations. swat-benchmarks
+(330 tasks): SA 296 correct / 0 false SAFE, SA + rank 297 / 0, no SA 258 / 0; apart from the new
+tasks only `validation-gauntlet/exit_n32` changed (it sits at the 300 s limit). SV-COMP: 890
+points, 719 correct, 0 false SAFE (`run_20261016_205345`; the two changed tasks are solver-time
+noise at the timeout). Graph structure is unchanged on all 636 SV-COMP graphs; 190 of them carry
+handler keys. Commits: cfg `726a144`, SWAT `6fb7464`, `50ce3ff`, `7f6aa4c`.
+
 ### Still open
 
-- S2 precision: after an unmodelled exception the walk gives up for the rest of the path.
-  Resuming at the handler needs a handler key executor and extractor agree on; SootUp keeps no
-  exception-table order, and a content key (caught types + protected lines) is ambiguous for
-  javac's copies of `finally` blocks.
+- Handler resumption gives up for `finally` copies (ambiguous keys) and for handlers in methods
+  entered after the last branch; both would need the call/return events of the planned redesign.
 - Fresh arrays have a free base variable (`[I_0`), which counts as precision loss: SAFE tasks that
   read an array at a symbolic index stay UNKNOWN (`bounds-catch-*_true`, `exec-int-array-index_true`).
   A constant-array base for `newarray` would fix it, but changes array modelling everywhere.
@@ -378,7 +404,7 @@ are excluded from instrumentation by `sv-comp.cfg`, and JSON parsers mostly read
 
 1. S1, S3 and S4 are fixed in the extractor (2026-10-15/16), so the zero-assertion-point stop-gap
    is no longer needed. SA SAFE verdicts are still not trustworthy for programs that catch
-   unguarded or JDK exceptions (S2, deferred to the trace-event redesign). Add the `sa-soundness`
+   unguarded or JDK exceptions (S2, fixed by designs B and C). Add the `sa-soundness`
    suite to the regression runs: it takes about a minute per configuration.
 2. Pruning pays off for programs whose dead branches lead into substantial code: dispatchers and
    command handlers, error handling and reporting, helpers called only on rejected paths. That is
