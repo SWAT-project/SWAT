@@ -63,6 +63,12 @@ class SANode:
     # site that might catch it. An exception of a pseudo type is not known precisely, so it may be
     # caught by any of them or by none and unwind further.
     unknown_handlers: dict[str, list[SANode]] = field(default_factory=dict, repr=False)
+    # The method this node belongs to (the extractor's "method: <signature>" metadata), and for a
+    # catch handler's entry its key as the executor reports it (see resume_at_handler).
+    method: str | None = None
+    handler_key: str | None = None
+    # The graph's handler entries by key, shared by all nodes of a graph.
+    handler_index: dict = field(default_factory=dict, repr=False)
     # How many branches must still be decided on the shortest path from here to an assertion point,
     # counting this node if it is a branch. Computed by compute_assert_distances(). Context-
     # insensitive, so only a heuristic for ordering the search; pruning never depends on it.
@@ -197,6 +203,30 @@ def unwind_pseudo(pseudo_type: str, stack: CallStack) -> list[tuple[SANode, Call
         frame, stack = pop(stack)
         resumed.extend((handler, stack) for handler in frame.unknown_handlers.get(pseudo_type, []))
     return resumed
+
+
+def resume_at_handler(node: SANode, stack: CallStack, depth: int, key: str) -> tuple[SANode, CallStack] | None:
+    """
+    Where the walk resumes after an exception the graph does not model, at the catch handler the
+    executor reports it entered (a HANDLER_ENTRY event), or None if that cannot be said exactly.
+
+    `node` and `stack` are where the walk stood after the last branch, `depth` the handler's frame
+    depth relative to that branch (0: the same frame, -n: n frames further down) and `key` its name.
+    A handler in a frame entered after the last branch (depth > 0) has an unknown call site; a key
+    the graph does not have (not unique in its method, or not extracted) is unknown too.
+    """
+    handler = node.handler_index.get(key)
+    if handler is None or depth > 0:
+        return None
+    method = node.method
+    for _ in range(-depth):
+        if stack is None:
+            return None
+        frame, stack = pop(stack)
+        method = frame.method
+    if method is None or handler.method != method:
+        return None
+    return handler, stack
 
 
 def is_interesting(node: SANode, stack: CallStack) -> bool:
@@ -397,6 +427,13 @@ class SAGraph:
             # Older graphs carry no isIncomplete field; absent means the node is faithful.
             self.nodes[id] = SANode(id, isIncomplete=json_node.get("isIncomplete", False),
                                     exceptionChain=tuple(chain) if chain is not None else None)
+            metadata = json_node.get("metadata")
+            if isinstance(metadata, str) and metadata.startswith("method: "):
+                self.nodes[id].method = metadata[len("method: "):]
+            self.nodes[id].handler_key = json_node.get("handlerKey")
+        handler_index = {n.handler_key: n for n in self.nodes.values() if n.handler_key is not None}
+        for n in self.nodes.values():
+            n.handler_index = handler_index
 
         for exit_id in self.json_graph.get("exitNodeIds", []):
             self.nodes[exit_id].isExit = True

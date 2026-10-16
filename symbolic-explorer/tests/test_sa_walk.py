@@ -317,6 +317,59 @@ class DfsTest(unittest.TestCase):
         n1.skipped = special_node('x', branched=n2, inst='UNMODELLED_EXCEPTION')
         self.assertEqual(candidates(n1, g), {'n2'})
 
+    def handler_resume_graph(self):
+        """
+        main: if (b1) exit; c = f(); [handler h: if (b2) exit; assert];  f: if (bf) ...; return
+        h is the handler of main's call to f, keyed 'K'; b2's TRUE side cannot reach the assert.
+        """
+        g = (GraphBuilder()
+             .nodes_('e0', 'b1', 'c1', 'r1', 'h', 'b2').node('a', assertion=True).node('x', exit=True)
+             .nodes_('f0', 'bf', 'fd').node('fx', exit=True).node('fu', chain=['?Exception'])
+             .edge('e0', 'b1').branch('b1', 'c1', 'x')
+             .call('c1', 'f0', 'r1', ['fx'], handlers={'java.lang.Throwable': 'h'})
+             .edge('r1', 'x').edge('h', 'b2').branch('b2', 'a', 'x').edge('a', 'x')
+             .edge('f0', 'bf').branch('bf', 'fd', 'fx').edge('fd', 'fx').edge('fd', 'fu', 'EXCEPTION'))
+        next(e for e in g.edges if e['type'] == 'CALL')['unknownHandlers'] = {'?Exception': ['h']}
+        for n in g.nodes:
+            n['metadata'] = 'method: ' + ('f' if n['id'].startswith('f') or n['id'] == 'bf' else 'main')
+            if n['id'] == 'h':
+                n['handlerKey'] = 'K'
+        return g.load()
+
+    def tree_through_exception(self, events, after_branch_in_f=True):
+        """b1 (skipped), [bf in f], then `events` (special nodes), then b2 with its TRUE side unexplored."""
+        n2 = branch_node('n2', skipped=leaf(), branched=None)
+        nxt = n2
+        for name, inst in reversed(events):
+            nxt = special_node(name, branched=nxt, inst=inst)
+        if after_branch_in_f:
+            nxt = branch_node('nf', skipped=nxt, branched=leaf())
+        return branch_node('n1', skipped=nxt, branched=leaf())
+
+    def test_walk_resumes_at_the_reported_handler(self):
+        g = self.handler_resume_graph()
+        # The last branch is bf in f; the handler is one frame further down, in main.
+        tree = self.tree_through_exception([('u', 'UNMODELLED_EXCEPTION'), ('h', 'HANDLER_ENTRY -1 K')])
+        self.assertEqual(candidates(tree, g), set())  # b2's TRUE side is pruned again
+
+    def test_without_the_handler_event_the_walk_gives_up(self):
+        g = self.handler_resume_graph()
+        tree = self.tree_through_exception([('u', 'UNMODELLED_EXCEPTION')])
+        self.assertEqual(candidates(tree, g), {'n2'})
+
+    def test_unknown_key_or_frame_keeps_the_give_up(self):
+        g = self.handler_resume_graph()
+        for event in ('HANDLER_ENTRY -1 other', 'HANDLER_ENTRY 0 K', 'HANDLER_ENTRY 1 K'):
+            # wrong key; depth 0 would be f's frame, but K is main's handler; a callee's frame
+            tree = self.tree_through_exception([('u', 'UNMODELLED_EXCEPTION'), ('h', event)])
+            self.assertEqual(candidates(tree, g), {'n2'}, event)
+
+    def test_handler_event_without_an_unmodelled_exception_is_ignored(self):
+        g = self.handler_resume_graph()
+        # A modelled exception: the walk follows it itself; the event must not move it.
+        tree = self.tree_through_exception([('h', 'HANDLER_ENTRY -1 K')])
+        self.assertEqual(candidates(tree, g), candidates(self.tree_through_exception([]), g))
+
     def test_guard_failure_is_followed_into_callers_handler(self):
         # Events: the guard in test() fails (skipped), then the branch in main's handler. Its TRUE
         # side skips the assert, so the unexplored branched side is uninteresting -- which the walk
