@@ -28,10 +28,13 @@ and used in `strategy/DFS.py`.
 - **Asserts are only the first target:** pruning aims at assertion points for now because they
   are easy to test (SV-COMP's valid-assert). Later targets include shell calls, SQL statement
   building and uncaught exceptions, so prefer changes that work for any kind of target point.
-- **Deferred redesign:** recording more events in the trace (handler entry, calls, returns) and
-  pairing trace events with graph nodes by id is planned for later; see "Planned redesign" in
-  `../CLAUDE.md`. Until then, don't patch the unguarded-exception problems (bug S2 in
-  `targets/sv-comp/swat-benchmarks/RESULTS.md`) piecemeal; only fix obvious local bugs.
+- **Exceptions the graph does not model** (null dereferences, casts, library calls, Errors): the
+  extractor gives them pseudo types (`?Exception`, `?Error`) whose escapes SAGraph treats as
+  caught by any handler listed for them (`unknown_handlers`), so paths into such handlers stay
+  interesting. When one actually happens, the executor records an `UNMODELLED_EXCEPTION` special
+  event and `dfs` stops trusting the graph for the rest of that path. Resuming the walk at the
+  handler instead is the next step of the planned redesign (see "Planned redesign" in
+  `../CLAUDE.md`).
 - **SA runs before exploring by default:** in sv-comp mode exploration waits for
   `svcomp/StaticPreAnalysis.py`, so the graph is used from round 0 and runs are deterministic.
   `--parallel-sa` instead runs the extractor in a thread while exploration starts unpruned;

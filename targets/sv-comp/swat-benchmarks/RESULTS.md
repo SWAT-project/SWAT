@@ -156,7 +156,7 @@ and `<clinit>` that runs on every path.
 
 ## Bugs found
 
-Status as of 2026-10-16: all fixed except S2, see "Fixes (2026-10-15/16)" below.
+Status as of 2026-10-16: all fixed, see "Fixes (2026-10-15/16)" and "S2" below.
 
 Each has a minimal reproducing task in `java/sa-soundness/` (VIOLATION variant `_false`). None is
 fixed here: the SA ones need extractor changes beyond a local fix, the executor ones an executor
@@ -241,7 +241,7 @@ which is deferred to the planned trace-event redesign (see "Planned redesign" in
 | S1 static initializers | `<clinit>` is not in the graph, so the path to a class's first use was pruned | statements that may initialize a class whose initializer can reach an assert (`new`, static calls and fields, via superclasses, transitively, also through application overrides of library methods) are assertion points (`ClinitTargets`) | cfg `8facdc9`, `8e2d20f` |
 | S3 reflection | `Method.invoke` counted as a library call with nothing behind it | reflective calls (`Method.invoke`, `newInstance`, `Class.forName`, `MethodHandle.invoke*`) are incomplete | cfg `39a20fc`, `8e2d20f` |
 | S4 lambdas in fields | lambda classes are not in the view, so an untraceable receiver had "only library targets" | untraceable receivers of an interface a lambda implements are unresolved, so incomplete | cfg `5ae7bf6` |
-| S2 unguarded exceptions | see above | **not fixed** (deferred) | |
+| S2 unguarded exceptions | see above | fixed on 2026-10-16, see "S2" below | |
 | E1 `System.exit` | the trace was never sent | `System.exit`, `Runtime.exit`/`halt` send the trace first | `90fd881` |
 | E2 symbolic object-array index | only the concrete element is tracked | sound only: records precision loss (UNKNOWN instead of false SAFE) | `d612f78` |
 | E3 lambdas | the body ran in "unknown space", skipped silently | non-capturing lambda bodies run as the interface method; untracked instrumented code records context loss | `b67695d` |
@@ -312,11 +312,39 @@ these fixes (`939933e` with the jars of 2026-09-26/29), in a separate worktree.
   `indexOf(String, int)`), caused by the String fixes themselves; both are fixed
   (`5c0fdec`, `34cd826`) and covered by reproducers.
 
+### S2 (2026-10-16)
+
+Design "B" of the planned redesign (see the workspace `CLAUDE.md`):
+
+- **Marking** (extractor, `PseudoExceptions`): statements that may throw an exception SWAT has no
+  guard for (calls, instance field and array accesses, casts, array lengths, monitors, throws)
+  get EXCEPTION edges to every local handler that might catch it and to an
+  `uncaught[?Exception]` node; with Error handlers in the program, every statement does the same
+  for `?Error` (only handlers for `Throwable`, `Error` or its subclasses). CALL edges list their
+  candidate handlers (`unknownHandlers`). SAGraph treats a pseudo escape as caught by any listed
+  handler, or by none. Commits: cfg `3b1fdf2`, SWAT `9ce3d15`.
+- **Walk** (executor + `dfs`): when an exception happens that the graph does not model precisely
+  (anything but a guard failure or an explicit `throw`), the executor records an
+  `UNMODELLED_EXCEPTION` special event, and `dfs` stops trusting the graph for the rest of that
+  path (`552bcc0`). Guarded and explicit exceptions keep their precise walk, so the
+  error-handling family keeps its pruning.
+- Found on the way: a static initializer left by an exception that was triggered by a field
+  access stayed open, so the handler below ran as untracked code (`86c0da2`).
+
+Results: the five S2 pairs and three new reproducers (`npe-in-callee-branch`,
+`error-in-initializer-catch`, `finally-npe`) are correct with and without SA. swat-benchmarks
+(306 tasks): SA 270 correct / 0 false SAFE (before: 256 / 5), SA + rank 271 / 0, no SA 241 / 0.
+SV-COMP: unchanged at 889 points, 718 correct, 0 false SAFE (`run_20261016_143432`). The marking
+oracle (`check_marking_on_graphs.py`) finds no unsound marking on all 636 SV-COMP graphs; the share
+of pruned branch sides drops from 8.6% to 8.3%, all of it in `algorithms` (16.1% -> 11.5%), whose
+handlers lead to asserts. Graphs grew by 11% in nodes and 63% in edges.
+
 ### Still open
 
-- S2 (deferred). Fixing E5 made `npe-catch-local_false` a false SAFE with SA (it was UNKNOWN
-  only because the executor halted); `npe-catch-up1`, `cce-catch*` and `library-throw-catch` stay
-  false SAFE with SA. All are correct without SA.
+- S2 precision: after an unmodelled exception the walk gives up for the rest of the path.
+  Resuming at the handler needs a handler key executor and extractor agree on; SootUp keeps no
+  exception-table order, and a content key (caught types + protected lines) is ambiguous for
+  javac's copies of `finally` blocks.
 - Fresh arrays have a free base variable (`[I_0`), which counts as precision loss: SAFE tasks that
   read an array at a symbolic index stay UNKNOWN (`bounds-catch-*_true`, `exec-int-array-index_true`).
   A constant-array base for `newarray` would fix it, but changes array modelling everywhere.
