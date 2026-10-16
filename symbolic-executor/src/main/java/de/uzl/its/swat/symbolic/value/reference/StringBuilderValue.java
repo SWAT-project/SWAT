@@ -761,18 +761,26 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeSetLength(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        // ToDo this does not work! Null bytes need to be append to fill the sequence!
-        /*
+    private Value<?, ?> invokeSetLength(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc)
+            throws NotImplementedException, ValueConversionException {
         IntValue newLength = args[0].asIntValue();
-        this.stringValue.formula = this.smgr.substring(this.stringValue.formula, new IntValue(this.context, 0).formula, newLength.formula);
-        // Does this behave correctly for newLength > length(concrete) and for newLength == 0?
-        this.stringValue.concrete = this.stringValue.concrete.substring(0, newLength.concrete);
-
-         */
-        return PlaceHolder.instance;
+        if (newLength.isSymbolic() || newLength.concrete < 0) {
+            return PlaceHolder.instance; // a symbolic length is not modelled
+        }
+        int n = newLength.concrete;
+        int length = this.stringValue.concrete.length();
+        if (n <= length) {
+            // Truncation, e.g. setLength(0) to reuse the builder
+            this.stringValue.formula = this.smgr.substring(this.stringValue.formula,
+                    new IntValue(context, 0).asIntegerFormula(), newLength.asIntegerFormula());
+            this.stringValue.concrete = this.stringValue.concrete.substring(0, n);
+        } else {
+            // Growing pads with null characters
+            String padding = "\0".repeat(n - length);
+            this.stringValue.formula = this.smgr.concat(this.stringValue.formula, this.smgr.makeString(padding));
+            this.stringValue.concrete = this.stringValue.concrete + padding;
+        }
+        return VoidValue.instance;
     }
 
     /**
