@@ -217,6 +217,8 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
                 ThreadHandler.setNextInstruction(id, nextInstruction); // Needs to be moved down?
                 visitor.setNextInst(ThreadHandler.getNextInstruction(id));
 
+                closeClinitsLeftByException(visitor.getStack(), currentInstruction, logger);
+
                 String expectedCnameFull = Util.formatClassName(visitor.getStack().getActiveFrame().getClassName());
                 String expectedCname = Util.extractBaseCname(expectedCnameFull);
                 String expectedMethodName = visitor.getStack().getActiveFrame().getMethodName();
@@ -423,6 +425,42 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
                     expectedClassFull, expectedMethodName, "", true, -1, true));
         } catch (Throwable t) {
             new ErrorHandler().handleException("Error recording context loss", t);
+        }
+    }
+
+    /**
+     * Closes static initializers that an exception left, once an instruction of the frame below
+     * them runs. unwindAbandonedClinits only catches this when an invoke below ends; an
+     * initializer triggered by a field access or {@code new} has none, and the next instruction
+     * already belongs to the handler of the frame below. Without this, that handler would run as
+     * untracked code inside the initializer's frame.
+     */
+    private void closeClinitsLeftByException(ShadowContext stack, Instruction inst, Logger logger) {
+        if (isInUnknownSpace || inst.iid == -1) {
+            return;
+        }
+        int cid = (int) GlobalStateForInstrumentation.extractCid(inst.iid);
+        int mid = (int) GlobalStateForInstrumentation.extractMid(inst.iid);
+        String actualClass = Util.formatClassName(classDepot.getClassName(cid));
+        String actualMethod = Util.extractMethodName(classDepot.getMethodIdentifier(cid, mid));
+        Stack<Frame> frames = stack.getFrameStack();
+        while (frames.size() > 1 && stack.getActiveFrame().getMethodName().equals("<clinit>")
+                && !openInvokeIds.empty() && clinitInvokeIds.contains(openInvokeIds.peek())) {
+            Frame below = frames.get(frames.size() - 2);
+            // main runs in the initial frame, which matches any instruction (see process())
+            boolean belowIsInitial = Util.extractBaseCname(Util.formatClassName(below.getClassName()))
+                    .equals(ShadowContext.getINITIAL_FRAME_NAME());
+            if (!belowIsInitial && (!Util.formatClassName(below.getClassName()).equals(actualClass)
+                    || !below.getMethodName().equals(actualMethod))) {
+                return;
+            }
+            if (belowIsInitial && actualMethod.equals("<clinit>")) {
+                return; // still inside an initializer
+            }
+            long clinit = openInvokeIds.pop();
+            clinitInvokeIds.remove(clinit);
+            stack.popFrame();
+            logger.info("Closing static initializer (invoke {}) left by an exception", clinit);
         }
     }
 
