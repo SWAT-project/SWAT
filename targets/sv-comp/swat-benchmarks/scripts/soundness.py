@@ -1245,6 +1245,103 @@ public class Main {
 """
 
 
+@task('npe-in-callee-branch')
+def _():
+    """IMPORT
+// Whether the callee dereferences null is decided by a branch inside the callee; the
+// NullPointerException is caught in main, where the assert is.
+public class Main {
+    static class Box {
+        int v = 3;
+    }
+
+    static int read(Box box, int b) {
+        Box x = b == 7 ? null : box;
+        int v = x.v;
+        if (v > 2) v--;
+        return v;
+    }
+
+    public static void main(String[] args) {
+AB        int r;
+        try {
+            r = read(new Box(), b);
+        } catch (NullPointerException e) {
+            if (@HIT(a)@) assert false;
+            r = 0;
+        }
+        if (r > 50) r--;
+    }
+}
+"""
+
+
+@task('error-in-initializer-catch')
+def _():
+    """IMPORT
+// A static initializer throws on b == 7; the ExceptionInInitializerError (an Error) is caught as
+// Error in main, where the assert is.
+public class Main {
+    static int input;
+
+    static class Late {
+        static int K;
+
+        static {
+            if (Main.input == 7) throw new IllegalStateException();
+            K = 1;
+        }
+    }
+
+    public static void main(String[] args) {
+AB        input = b;
+        int r;
+        try {
+            r = Late.K;
+        } catch (Error e) {
+            if (@HIT(a)@) assert false;
+            r = 0;
+        }
+        if (r > 50) r--;
+    }
+}
+"""
+
+
+@task('finally-npe')
+def _():
+    """IMPORT
+// A NullPointerException leaves a try block with a finally (a catch-any handler in bytecode); the
+// assert is in the finally block. main catches the exception afterwards.
+public class Main {
+    static class Box {
+        int v = 3;
+    }
+
+    static int read(Box box, int a) {
+        try {
+            return box.v;
+        } finally {
+            if (box == null) {
+                if (@HIT(a)@) assert false;
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+AB        Box box = b == 7 ? null : new Box();
+        int r;
+        try {
+            r = read(box, a);
+        } catch (NullPointerException e) {
+            r = 0;
+        }
+        if (r > 50) r--;
+    }
+}
+"""
+
+
 def render(src: str, safe: bool) -> str:
     src = src.replace('IMPORT\n', IMPORT).replace('CLINIT\n', CLINIT)
     src = re.sub(r'^AB', AB, src, flags=re.M)
