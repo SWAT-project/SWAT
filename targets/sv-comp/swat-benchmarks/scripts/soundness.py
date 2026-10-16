@@ -1190,6 +1190,26 @@ public class Main {
 }
 """
 
+@task('exec-stringbuilder-setlength', witness=[('string', 'ab'), ('int', 1001)])
+def _():
+    """IMPORT
+// A StringBuilder is reused with setLength(0), as parsers do between fields.
+public class Main {
+    public static void main(String[] args) {
+        String s = Verifier.nondetString();
+        int a = Verifier.nondetInt();
+        StringBuilder sb = new StringBuilder();
+        sb.append(s);
+        sb.setLength(0);
+        sb.append('x');
+        if (sb.length() == 1 && s.length() == 2) {
+            if (@HIT(a)@) assert false;
+        }
+    }
+}
+"""
+
+
 def render(src: str, safe: bool) -> str:
     src = src.replace('IMPORT\n', IMPORT).replace('CLINIT\n', CLINIT)
     src = re.sub(r'^AB', AB, src, flags=re.M)
