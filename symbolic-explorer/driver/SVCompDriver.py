@@ -451,6 +451,11 @@ class SVCompDriver:
             logger.warning(f'[SVCOMP] A solution did not reach the side of the branch it was solved for')
             verdict = Verdict.UNKNOWN
 
+        if (verdict == Verdict.SAFE) and any(e.get('kind') == 'sa_desync'
+                                              for e in Database.instance().get_tree(ENDPOINT_ID).execution_errors):
+            logger.warning(f'[SVCOMP] The SA walk fell out of step with the execution (see [DFS] SA desync)')
+            verdict = Verdict.UNKNOWN
+
         if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).uncaught_exceptions > 0:
             logger.warning(f'[SVCOMP] Found uncaught exceptions during symbolic execution')
             verdict = Verdict.UNKNOWN

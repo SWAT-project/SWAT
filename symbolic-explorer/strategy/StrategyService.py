@@ -28,6 +28,10 @@ class StrategyService:
         possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches(), kwargs.get("sa_node", None), distances=distances)
         if distances:
             possible_branches.sort(key=lambda n: distances.get(n, math.inf))
+        # dfs records where the SA walk fell out of step on its tree, which is a copy.
+        for error in tree.execution_errors:
+            if error['kind'] == 'sa_desync':
+                db.record_execution_error(endpoint_id, error['kind'], error['message'])
         
         # # If possible_branches is empty, try again without sa_node to prevent false SAFE classifications.
         # if not possible_branches:

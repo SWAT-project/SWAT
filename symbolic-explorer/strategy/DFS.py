@@ -1,6 +1,7 @@
 from data.BinaryExecutionTree.Node import Node
 from data.BinaryExecutionTree.Leaf import Leaf
-from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, is_interesting, resume_at_handler
+from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, is_interesting, resume_at_handler, \
+    apply_stack_delta, check_branch, resync
 
 import log
 logger = log.get_logger()
@@ -10,14 +11,18 @@ logger = log.get_logger()
 UNMODELLED_EXCEPTION = "UNMODELLED_EXCEPTION"
 HANDLER_ENTRY = "HANDLER_ENTRY "
 
-def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0, sa_stack: CallStack = None, distances: dict[Node, float] | None = None, pending=None) -> list[Node]:
+def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0, sa_stack: CallStack = None, distances: dict[Node, float] | None = None, pending=None, sa_index=None, trace_stack=None) -> list[Node]:
     # sa_node and sa_stack together are where the SA walk stands: the node, and the call stack of
     # call sites the walk entered to get there. The same graph node means different things under
     # different stacks -- a method's exit returns to whichever call site is on top.
     # If `distances` is given, it receives each returned node's SA distance to an assertion point
     # along its unexplored side; nodes without SA information are left out.
+    # sa_index and trace_stack: the graph's keys, and the call stack as the trace reports it (see
+    # SAGraph.apply_stack_delta), against which every branch of the walk is checked.
     assert clinit_depth >= 0
     possible_nodes = []
+    if sa_index is None and sa_node is not None:
+        sa_index = sa_node.graph_index
     
     if node is not None \
       and node not in visited \
@@ -52,10 +57,14 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
                 if resumed is not None:
                     sa_node, sa_stack = resumed
                 pending = None
-            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node, clinit_depth, sa_stack, distances, pending))
+            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node, clinit_depth, sa_stack, distances, pending, sa_index, trace_stack))
             return possible_nodes
         else:
             assert node.kind == "Branch"
+
+        # The frames entered and left since the previous branch, which happened before this one.
+        if sa_index is not None:
+            trace_stack = apply_stack_delta(trace_stack, node.pops, node.pushes, sa_index)
         
         # If clinit_depth > 0, we do not have corresponding SA information, so pretend that there is no SA and DON'T WALK the SA graph
         mask_sa_node = clinit_depth > 0
@@ -64,6 +73,22 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         if sa_node and not mask_sa_node:
             walked = sa_node.walk_till_branch(sa_stack) # idempotent
             sa_node, sa_stack = walked if walked is not None else (None, None)
+            if sa_node is not None:
+                in_step = check_branch(sa_node, sa_stack, node.key, trace_stack)
+                if in_step is False:
+                    # The walk paired this branch with the wrong graph node: its pruning so far on
+                    # this path may be wrong too where a branch could not be checked, so the
+                    # verdict cannot be SAFE (SVCompDriver).
+                    logger.warning(f"[DFS] SA desync @{node.id}: trace {node.key}, graph {sa_node.id} {sa_node.key}")
+                    tree.record_execution_error('sa_desync', f'trace {node.key}, graph {sa_node.key}')
+                    sa_node, sa_stack = None, None
+                elif in_step is not None:
+                    trace_stack = sa_stack # the same frames; sharing the cells keeps later checks cheap
+        if sa_node is None and not mask_sa_node and sa_index is not None:
+            resumed = resync(node.key, trace_stack, sa_index)
+            if resumed is not None:
+                sa_node, sa_stack = resumed
+                pending = None
         skip_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_fallthrough_child(), sa_stack)
         branch_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_branched_child(), sa_stack)
         
@@ -94,8 +119,8 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         # A branch after an unmodelled exception but before its handler was reported: the kept
         # position no longer says where the walk is (pending is not passed on).
         if skip_is_interesting:
-            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_skipped, clinit_depth, sa_stack, distances))
+            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_skipped, clinit_depth, sa_stack, distances, None, sa_index, trace_stack))
         if branch_is_interesting:
-            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_branched, clinit_depth, sa_stack, distances))
+            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_branched, clinit_depth, sa_stack, distances, None, sa_index, trace_stack))
     
     return possible_nodes

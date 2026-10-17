@@ -95,7 +95,7 @@ class GraphBuilder:
             os.unlink(path)
 
 
-def branch_node(name, skipped=None, branched=None):
+def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=()):
     """A tree node for one branch event; `None` children are unexplored sides."""
     n = Node.__new__(Node)
     n.parent = None
@@ -105,6 +105,9 @@ def branch_node(name, skipped=None, branched=None):
     n.kind = 'Branch'
     n.concrete_only = False
     n.inst = None
+    n.key = key
+    n.pops = pops
+    n.pushes = pushes
     n.constraint = {}
     n.skipped = skipped
     n.branched = branched
@@ -446,6 +449,101 @@ def precision_graph():
             .branch('bm', 'a', 'x').edge('a', 'x')
             .edge('k0', 'kb').branch('kb', 'kx1', 'kx2'))
 
+
+
+class FakeTree:
+    """Collects what dfs records (record_execution_error)."""
+    def __init__(self):
+        self.execution_errors = []
+
+    def record_execution_error(self, kind, message):
+        self.execution_errors.append({'kind': kind, 'message': message})
+
+
+class KeyCheckTest(unittest.TestCase):
+    """Branch keys and stack deltas: dfs checks its walk against the trace, and finds the graph again."""
+
+    B1, CALL, BF, B2 = 'M|1|if|0', 'M|2|call:f()I|0', 'F|10|if|0', 'M|3|if|0'
+
+    def graph(self):
+        """As DfsTest.handler_resume_graph, with keys on the branches and the call site."""
+        g = DfsTest.handler_resume_graph(self)
+        g.nodes['b1'].key, g.nodes['c1'].key, g.nodes['bf'].key, g.nodes['b2'].key = \
+            self.B1, self.CALL, self.BF, self.B2
+        index = g.entry_node.graph_index
+        index.keys.update({n.key: n for n in g.nodes.values() if n.key is not None})
+        return g
+
+    THROUGH_HANDLER = (('u', 'UNMODELLED_EXCEPTION'), ('h', 'HANDLER_ENTRY -1 K'))
+
+    def tree(self, b2_key=None, b2_pops=1, bf_key=None, bf_pushes=None, events=THROUGH_HANDLER):
+        """
+        n1 (b1, skipped), nf (bf in f, skipped), `events`, n2 (b2, TRUE side unexplored). b2 is
+        only reached through main's handler: by default f throws and the handler is reported.
+        """
+        n2 = branch_node('n2', skipped=leaf(), branched=None, key=b2_key or self.B2, pops=b2_pops)
+        nxt = n2
+        for name, inst in reversed(events):
+            nxt = special_node(name, branched=nxt, inst=inst)
+        nf = branch_node('nf', skipped=nxt, branched=leaf(), key=bf_key or self.BF,
+                         pushes=bf_pushes if bf_pushes is not None else (self.CALL,))
+        return branch_node('n1', skipped=nf, branched=leaf(), key=self.B1)
+
+    def run_dfs(self, tree, g):
+        fake = FakeTree()
+        found = {n.id for n in dfs(set(), fake, tree, set(), set(), g.entry_node)}
+        return found, [e for e in fake.execution_errors if e['kind'] == 'sa_desync']
+
+    def test_walk_in_step_is_not_flagged(self):
+        g = self.graph()
+        found, desyncs = self.run_dfs(self.tree(), g)
+        self.assertEqual(found, set())  # b2's TRUE side cannot reach the assert
+        self.assertEqual(desyncs, [])
+
+    def test_wrong_key_is_a_desync(self):
+        g = self.graph()
+        found, desyncs = self.run_dfs(self.tree(b2_key='M|3|if|1'), g)
+        self.assertEqual(found, {'n2'})  # the walk gives up there
+        self.assertEqual(len(desyncs), 1)
+
+    def test_wrong_stack_is_a_desync(self):
+        g = self.graph()
+        # The trace says bf runs two frames up, the walk entered one.
+        found, desyncs = self.run_dfs(self.tree(bf_pushes=(self.CALL, self.CALL)), g)
+        self.assertEqual(len(desyncs), 1)
+
+    def test_missing_keys_are_not_checked(self):
+        g = self.graph()
+        g.nodes['b2'].key = None
+        found, desyncs = self.run_dfs(self.tree(b2_key='M|3|if|1'), g)
+        self.assertEqual(desyncs, [])
+
+    def test_resync_after_an_unmodelled_exception(self):
+        g = self.graph()
+        # No handler event: the walk is lost after the exception, and finds b2 again by its key,
+        # with the stack from the trace (f's frame popped).
+        found, desyncs = self.run_dfs(self.tree(events=[('u', 'UNMODELLED_EXCEPTION')]), g)
+        self.assertEqual(found, set())
+        self.assertEqual(desyncs, [])
+
+    def test_no_resync_when_the_stack_does_not_lead_to_the_branch(self):
+        g = self.graph()
+        # The trace still has f's frame (no pop), but b2 is in main: the stack and the key disagree.
+        found, _ = self.run_dfs(self.tree(b2_pops=0, events=[('u', 'UNMODELLED_EXCEPTION')]), g)
+        self.assertEqual(found, {'n2'})
+
+    def test_no_resync_through_an_unknown_call_site(self):
+        g = self.graph()
+        found, _ = self.run_dfs(self.tree(b2_pops=0, bf_pushes=(None,), events=[('u', 'UNMODELLED_EXCEPTION')]), g)
+        self.assertEqual(found, {'n2'})
+
+    def test_open_ordinal_matches_any_on_its_line(self):
+        g = self.graph()
+        g.nodes['b2'].key = 'M|3|if|*'
+        _, desyncs = self.run_dfs(self.tree(b2_key='M|3|if|1'), g)
+        self.assertEqual(desyncs, [])
+        _, desyncs = self.run_dfs(self.tree(b2_key='M|4|if|0'), g)
+        self.assertEqual(len(desyncs), 1)
 
 class ContextSensitiveMarkingTest(unittest.TestCase):
 

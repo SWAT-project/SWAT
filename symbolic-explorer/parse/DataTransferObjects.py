@@ -12,6 +12,11 @@ class TraceItem(BaseModel):
     inst: Optional[str] = None
     # A branch the executor records only to mirror a guard of the SA graph; never a solver target.
     concreteOnly: bool = False
+    # Where the branch is (see the executor's BranchKeys): its key, and how the frame stack changed
+    # since the previous branch -- frames popped, then the call sites (keys) of the frames pushed.
+    key: Optional[str] = None
+    pops: int = 0
+    pushes: list[Optional[str]] = []
 class UFItem(BaseModel):
     definition: str 
 

@@ -69,6 +69,10 @@ class SANode:
     handler_key: str | None = None
     # The graph's handler entries by key, shared by all nodes of a graph.
     handler_index: dict = field(default_factory=dict, repr=False)
+    # For a branch or a call site, its key as the executor reports it (see check_branch), and the
+    # graph's keys and root method, shared by all nodes of a graph.
+    key: str | None = None
+    graph_index: GraphIndex | None = field(default=None, repr=False)
     # How many branches must still be decided on the shortest path from here to an assertion point,
     # counting this node if it is a branch. Computed by compute_assert_distances(). Context-
     # insensitive, so only a heuristic for ordering the search; pruning never depends on it.
@@ -227,6 +231,125 @@ def resume_at_handler(node: SANode, stack: CallStack, depth: int, key: str) -> t
     if method is None or handler.method != method:
         return None
     return handler, stack
+
+
+@dataclass(eq=False)
+class GraphIndex:
+    """The nodes of a graph by key (branches and call sites; see check_branch), and main's method."""
+    keys: dict[str, SANode]
+    root_method: str | None
+
+
+# The executor's view of the call stack at a branch, as the walk tracks it from the trace (each
+# branch carries the frames popped and pushed since the previous one): a CallStack whose cells hold
+# the graph's call site for each frame, or None for a frame the graph has no call site for (a
+# library call, a call the extractor gave no key). LOST once the trace popped more frames than are
+# known, e.g. returning from a frame entered before tracing began.
+LOST = "LOST"
+
+
+def apply_stack_delta(stack, pops: int, pushes: tuple, index: GraphIndex | None):
+    """`stack` (a trace stack, see LOST) after `pops` frames were popped and `pushes` pushed."""
+    if stack is LOST:
+        return LOST
+    for _ in range(pops):
+        if stack is None:
+            return LOST
+        stack = stack[1]
+    for key in pushes:
+        call_site = index.keys.get(key) if index is not None and key is not None else None
+        if call_site is not None and not call_site.is_call_site():
+            call_site = None
+        stack = push(stack, call_site)
+    return stack
+
+
+def same_stacks(walk: CallStack, trace) -> bool | None:
+    """
+    Whether the walk's call stack is the one the trace reports: True, False, or None where the
+    trace stack has frames without a call site (and agrees everywhere else). Compares from the top
+    down to the first cell the two share, so after the walk's stack has been adopted for the trace
+    (see dfs) this costs only the frames changed since.
+    """
+    if trace is LOST:
+        return None
+    known = True
+    while walk is not trace:
+        if walk is None or trace is None or walk[2] != trace[2]:
+            return False
+        if trace[0] is None:
+            known = False
+        elif trace[0] is not walk[0]:
+            return False
+        walk, trace = walk[1], trace[1]
+    return True if known else None
+
+
+def keys_match(graph_key: str, trace_key: str) -> bool:
+    """
+    Whether a graph node's key names the trace's instruction. A graph key may leave the ordinal
+    open (`...|kind|*`, where the extractor could not tell same-kind instructions on a line apart):
+    it then matches any ordinal.
+    """
+    if "|*" not in graph_key:
+        return graph_key == trace_key
+    prefix, rest = graph_key.split("|*", 1)
+    if not trace_key.startswith(prefix + "|"):
+        return False
+    tail = trace_key[len(prefix) + 1:]
+    digits = len(tail) - len(tail.lstrip("0123456789"))
+    return digits > 0 and tail[digits:] == rest
+
+
+def check_branch(node: SANode, stack: CallStack, key: str | None, trace_stack):
+    """
+    Whether the walk is still in step with the execution at a branch: the graph's branch `node`,
+    reached with call stack `stack`, against the branch the trace reports there (its `key`) and the
+    trace's call stack. False when they provably differ (a desync); None when it cannot be told (a
+    key is missing on either side, or a frame has no call site); True otherwise.
+
+    Keys name a branch by method, source line, kind and position on that line (see the executor's
+    and the extractor's BranchKeys), so a pairing that slipped by one branch is caught at that very
+    branch, before its pruning decision is made.
+    """
+    if key is None:
+        return None # nothing to check against (also: a trace from before keys and stack deltas)
+    if node.key is not None and not keys_match(node.key, key):
+        return False
+    stacks = same_stacks(stack, trace_stack)
+    if stacks is False:
+        return False
+    if node.key is None or stacks is None:
+        return None
+    return True
+
+
+def resync(key: str | None, trace_stack, index: GraphIndex | None) -> tuple[SANode, CallStack] | None:
+    """
+    Where the walk resumes after it lost the graph, at a branch: the graph's branch with the trace's
+    `key`, under the trace's call stack -- or None unless every frame of that stack maps to a call
+    site and each one, from main up, calls the method the next one is in.
+    """
+    if key is None or index is None or trace_stack is LOST:
+        return None
+    node = index.keys.get(key)
+    if node is None or not node.is_branch():
+        return None
+    frames = []
+    s = trace_stack
+    while s is not None:
+        if s[0] is None:
+            return None
+        frames.append(s[0])
+        s = s[1]
+    method = index.root_method
+    for call_site in reversed(frames):
+        if method is None or call_site.method != method:
+            return None
+        method = call_site.get_fallthrough_child().method # the CALL edge's callee
+    if method is None or node.method != method:
+        return None
+    return node, trace_stack
 
 
 def is_interesting(node: SANode, stack: CallStack) -> bool:
@@ -431,9 +554,19 @@ class SAGraph:
             if isinstance(metadata, str) and metadata.startswith("method: "):
                 self.nodes[id].method = metadata[len("method: "):]
             self.nodes[id].handler_key = json_node.get("handlerKey")
+            self.nodes[id].key = json_node.get("key")
         handler_index = {n.handler_key: n for n in self.nodes.values() if n.handler_key is not None}
         for n in self.nodes.values():
             n.handler_index = handler_index
+        keys: dict[str, SANode] = {}
+        duplicates = set()
+        for n in self.nodes.values():
+            if n.key is not None and "|*" not in n.key: # an open ordinal names no one node
+                if n.key in keys:
+                    duplicates.add(n.key)
+                keys[n.key] = n
+        for k in duplicates: # cannot tell which one is meant
+            del keys[k]
 
         for exit_id in self.json_graph.get("exitNodeIds", []):
             self.nodes[exit_id].isExit = True
@@ -483,6 +616,9 @@ class SAGraph:
 
 
         self.entry_node = self.nodes[self.json_graph["entryNodeId"]]
+        graph_index = GraphIndex(keys, self.entry_node.method)
+        for n in self.nodes.values():
+            n.graph_index = graph_index
 
         for assertion_point_id in self.json_graph["metadata"]["assertionPointIds"]:
             self.nodes[assertion_point_id].isAssert = True

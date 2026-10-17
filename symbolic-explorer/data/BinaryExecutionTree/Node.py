@@ -56,6 +56,11 @@ class Node:
         self.constraint = {}
         self.inst = None  # Only set for Special nodes
         self.concrete_only = False  # A branch recorded only to keep the SA walk in step, see Branch
+        # Only for 'Branch' nodes: its key, and the frame stack change since the previous branch
+        # (see Branch). The same on every trace through the node, since its path is the same.
+        self.key = None
+        self.pops = 0
+        self.pushes = ()
 
         # Validate trace argument
         if trace is None or len(trace) == 0:
@@ -82,6 +87,9 @@ class Node:
         else:
             self.kind = "Branch"
             self.concrete_only = branch.concrete_only
+            self.key = branch.key
+            self.pops = branch.pops
+            self.pushes = branch.pushes
             self.constraint[branch.trace_id] = branch.constraint
             # Determine whether the branch was taken or skipped and assign child
             if branch.has_branched:

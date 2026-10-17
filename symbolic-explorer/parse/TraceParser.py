@@ -19,7 +19,10 @@ class Parser:
                                      trace_id=trace_id,
                                      has_branched=branch.branched,
                                      constraint=sanitized_constraint,
-                                     concrete_only=branch.concreteOnly))
+                                     concrete_only=branch.concreteOnly,
+                                     key=branch.key,
+                                     pops=branch.pops,
+                                     pushes=tuple(branch.pushes)))
             else:
                 _trace.append(Special(id=branch.iid,
                                       trace_id=trace_id,
