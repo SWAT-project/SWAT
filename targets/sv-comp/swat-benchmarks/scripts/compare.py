@@ -49,6 +49,8 @@ def load_run(run: Path) -> dict:
     mode = info.get('sa_mode', '?')
     if info.get('sa_rank_distance'):
         mode += '+rank'
+    if info.get('sa_callback_targets') is False and mode != 'none':
+        mode += '-cb'
     tasks = {}
     for f in glob.glob(str(run / 'results' / 'results_valid-assert.prp_*.json')):
         for name, r in json.load(open(f))['results'].items():

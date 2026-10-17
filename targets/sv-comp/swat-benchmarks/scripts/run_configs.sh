@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs swat-benchmarks once per configuration, one run after the other, and prints the run dirs.
 # Usage: ./run_configs.sh [svcomp test run options...]   e.g. --suite dispatcher
-# Env: CONFIGS (default "sa nosa rank"), TIMEOUT (default 300), WORKERS (default 48)
+# Env: CONFIGS (default "sa nosa rank"; also "nocb": SA without callback targets), TIMEOUT (default 300), WORKERS (default 48)
 set -euo pipefail
 SV_COMP="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SV_COMP"
@@ -15,6 +15,7 @@ for cfg in ${CONFIGS:-sa nosa rank}; do
         sa) flags="" ;;
         nosa) flags="--no-sa" ;;
         rank) flags="--sa-rank-distance" ;;
+        nocb) flags="--sa-no-callback-targets" ;;
         *) echo "unknown config $cfg" >&2; exit 1 ;;
     esac
     ./scripts/svcomp test run --mode parallel --no-witness --categories valid-assert.prp \

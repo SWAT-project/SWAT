@@ -129,7 +129,8 @@ class StaticPreAnalysis:
     def _run_extractor(self) -> bool:
         """Runs the extractor; False if it was cancelled or timed out."""
         cmd = ["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
-               ':'.join(os.path.abspath(p) for p in self.args.classpath), self.args.logdir, self.args.target, "main", "inter"]
+               ':'.join(os.path.abspath(p) for p in self.args.classpath), self.args.logdir, self.args.target, "main", "inter"] \
+              + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else [])
         with self._lock:
             if self._cancelled.is_set():
                 self.status = SAStatus.CANCELLED
@@ -155,6 +156,7 @@ class StaticPreAnalysis:
         return {
             'enabled': self.enabled,
             'mode': 'parallel' if self.args.parallel_sa else 'sequential',
+            'callback_targets': not getattr(self.args, "sa_no_callback_targets", False),
             'status': self.status.value,
             'failed': self.status in (SAStatus.FAILED, SAStatus.TIMEOUT),
             'timed_out': self.status == SAStatus.TIMEOUT,
