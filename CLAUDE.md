@@ -29,8 +29,9 @@ and used in `strategy/DFS.py`.
   after `dfs`.
 - **Walker giving up is safe:** when `walk_till_branch` returns `None`, the walker has no
   information, and `dfs` treats everything as interesting. That fallback is always safe.
-- **`<clinit>` is masked:** static initializers are not in the graph, so the walk is frozen inside
-  them.
+- **`<clinit>` and callbacks are masked:** static initializers are not in the graph, and neither is
+  application code that library code calls back (the executor flags those branches `callback`,
+  see `ShadowContext.inCallback`), so the walk is frozen inside them.
 - **Asserts are only the first target:** pruning aims at assertion points for now because they
   are easy to test (SV-COMP's valid-assert). Later targets include shell calls, SQL statement
   building and uncaught exceptions, so prefer changes that work for any kind of target point.

@@ -1408,6 +1408,96 @@ AB        Box box = b == 7 ? null : new Box();
 """
 
 
+@task('library-callback')
+def _():
+    """import java.io.IOException;
+import java.io.PushbackReader;
+import java.io.Reader;
+IMPORT
+// Library code calls back into application code: PushbackReader.read() calls the application's
+// Reader, whose read() branches. The graph has the call as a plain library call, so the walk has
+// to step over the callback's branches (from nanoxml, java-ranger-regression).
+public class Main {
+    static class Chars extends Reader {
+        private final int[] data;
+        private int next = 0;
+
+        Chars(int[] data) {
+            this.data = data;
+        }
+
+        public int read() {
+            if (next >= data.length) {
+                return -1;
+            }
+            int c = data[next];
+            next = next + 1;
+            return c > 100 ? 100 : c;
+        }
+
+        public int read(char[] buf, int off, int len) {
+            return -1;
+        }
+
+        public void close() {
+        }
+    }
+
+    public static void main(String[] args) throws IOException {
+AB        PushbackReader in = new PushbackReader(new Chars(new int[] {b, 5}));
+        int c = in.read();
+        if (c == 7) {
+            if (@HIT(a)@) assert false;
+        }
+        if (c > 50) c--;
+    }
+}
+"""
+
+
+@task('library-callback-throw')
+def _():
+    """import java.io.IOException;
+import java.io.PushbackReader;
+import java.io.Reader;
+IMPORT
+// As library-callback, but the callback throws: the exception comes out of the library call into
+// the application's handler, where the assert is. (The input is read from a static field: an
+// object handed to library code with symbolic fields counts as context loss.)
+public class Main {
+    static int first;
+
+    static class Chars extends Reader {
+        public int read() throws IOException {
+            if (first == 7) {
+                throw new IOException("end");
+            }
+            return first > 100 ? 100 : first;
+        }
+
+        public int read(char[] buf, int off, int len) {
+            return -1;
+        }
+
+        public void close() {
+        }
+    }
+
+    public static void main(String[] args) {
+AB        first = b;
+        int c;
+        try {
+            c = new PushbackReader(new Chars()).read();
+        } catch (IOException e) {
+            if (@HIT(a)@) assert false;
+            c = 0;
+        }
+        if (c > 50) c--;
+    }
+}
+"""
+
+
 def render(src: str, safe: bool) -> str:
     src = src.replace('IMPORT\n', IMPORT).replace('CLINIT\n', CLINIT)
     src = re.sub(r'^AB', AB, src, flags=re.M)

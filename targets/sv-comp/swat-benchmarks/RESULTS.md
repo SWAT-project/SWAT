@@ -413,11 +413,34 @@ rounds or unpaired visits on `exception-dispatch` and `sa-soundness`, and on SV-
 both, `run_20261017_100011`); the two tasks that differ are solver-time noise at the timeout.
 Commits: cfg `6b5ee5a`, SWAT `1568fec`, `fc817ee`. Design C was removed afterwards.
 
+### Library callbacks (2026-10-17)
+
+Library code calling back into application code (a JDK `PushbackReader` around the application's
+`Reader` in `nanoxml`/`printtokens`) runs in the library call's frame (the executor's
+"delegation"), and its branches are in the trace but not in the graph, which has the call as a
+plain library call.
+
+- **Executor:** when delegation is detected, the library frame is marked as a callback frame, and
+  every branch recorded while one is on the stack is flagged `callback`. A call by the application
+  itself through a library type (`Runnable.run()` on an application class) is not a callback: the
+  running class is a subtype of the frame's class. An exception leaving a library frame now records
+  `UNMODELLED_EXCEPTION` too (before, only one thrown before any application code ran in it).
+- **Walk:** `dfs` masks callback branches like `<clinit>`: the walk holds its place, and checks and
+  resync are skipped; the stack deltas still apply.
+
+Results: no desync left on swat-benchmarks or SV-COMP. `nanoxml` and `printtokens` keep their
+graph through the callbacks (unpaired visits 50 -> 0, 670 -> 0). New pairs `library-callback` and
+`library-callback-throw` are correct with and without SA. swat-benchmarks (334 tasks): SA 300,
+SA + rank 301, no SA 266 correct, 0 false SAFE; SV-COMP 891 points, 720 correct, 0 false SAFE
+(`run_20261017_145000`). Six Juliet tasks lose the graph after a failing socket call (an exception
+out of library code), which the walk used to step over.
+
+Not done (on purpose): marking library calls that may call back as possibly reaching an assert.
+A callback that reaches an assert on an unexplored path is not seen by the pruning; a callback that
+runs still records context loss, so SAFE becomes UNKNOWN then.
+
 ### Still open
 
-- Library code calling back into application code (e.g. `PushbackReader` around an application
-  `Reader`): the graph does not model it; the walk now detects the desync, but the extractor could
-  mark such library calls incomplete.
 - Calls the extractor cannot resolve (ambiguous receivers) have no CALL edge, so a frame entered
   through one cannot be rebuilt and resync stays off inside it (`virtual-dispatch/factory`).
 - Fresh arrays have a free base variable (`[I_0`), which counts as precision loss: SAFE tasks that
