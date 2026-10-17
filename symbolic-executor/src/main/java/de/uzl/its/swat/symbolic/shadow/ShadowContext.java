@@ -83,6 +83,25 @@ public class ShadowContext {
     private int poppedSinceBranch = 0;
     private final ArrayList<Frame> pushedSinceBranch = new ArrayList<>();
 
+    /** How many frames on the stack are library frames that application code was called back in. */
+    private int callbackFrames = 0;
+
+    /**
+     * Marks the active frame, a library frame, as running application code that the library
+     * called back (a delegation).
+     */
+    public void markActiveFrameCallback() {
+        if (!activeFrame.isCallback()) {
+            activeFrame.markCallback();
+            callbackFrames++;
+        }
+    }
+
+    /** Whether application code runs inside a library call, i.e. a callback is on the stack. */
+    public boolean inCallback() {
+        return callbackFrames > 0;
+    }
+
     /** The change of the frame stack since the last call, as frames popped and frames pushed. */
     public record StackDelta(int popped, List<Frame> pushed) {
     }
@@ -103,6 +122,9 @@ public class ShadowContext {
     public Frame popFrame() {
         assert !frameStack.isEmpty() : "[SWAT] Unable to remove method frame, as no stack frames are left";
         Frame oldFrame = frameStack.pop();
+        if (oldFrame.isCallback()) {
+            callbackFrames--;
+        }
         if (isSwatHelper(oldFrame)) {
             // not counted on push either
         } else if (pushedSinceBranch.isEmpty()) {

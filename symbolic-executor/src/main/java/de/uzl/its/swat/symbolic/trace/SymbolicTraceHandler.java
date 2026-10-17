@@ -71,8 +71,9 @@ public class SymbolicTraceHandler {
     private static void place(BranchElement branch, long iid, String suffix) throws NoThreadContextException {
         String key = BranchKeys.keyOf(iid);
         branch.setKey(key == null ? null : key + suffix);
-        ShadowContext.StackDelta delta = ThreadHandler.getSymbolicVisitor(Thread.currentThread().getId())
-                .getStack().takeStackDelta();
+        ShadowContext stack = ThreadHandler.getSymbolicVisitor(Thread.currentThread().getId()).getStack();
+        branch.setCallback(stack.inCallback());
+        ShadowContext.StackDelta delta = stack.takeStackDelta();
         branch.setPops(delta.popped());
         List<String> pushes = new ArrayList<>(delta.pushed().size());
         for (Frame frame : delta.pushed()) {

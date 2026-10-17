@@ -17,6 +17,8 @@ class TraceItem(BaseModel):
     key: Optional[str] = None
     pops: int = 0
     pushes: list[Optional[str]] = []
+    # Recorded in application code that library code called back: not in the SA graph.
+    callback: bool = False
 class UFItem(BaseModel):
     definition: str 
 

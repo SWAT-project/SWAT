@@ -140,7 +140,7 @@ class DTOBuilder {
                     }
                 }
                 trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), be.isConcreteOnly())
-                        .place(be.getKey(), be.getPops(), be.getPushes()));
+                        .place(be.getKey(), be.getPops(), be.getPushes(), be.isCallback()));
             } else if (el instanceof SpecialElement se) {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }

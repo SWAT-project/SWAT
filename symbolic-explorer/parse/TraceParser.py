@@ -22,7 +22,8 @@ class Parser:
                                      concrete_only=branch.concreteOnly,
                                      key=branch.key,
                                      pops=branch.pops,
-                                     pushes=tuple(branch.pushes)))
+                                     pushes=tuple(branch.pushes),
+                                     callback=branch.callback))
             else:
                 _trace.append(Special(id=branch.iid,
                                       trace_id=trace_id,

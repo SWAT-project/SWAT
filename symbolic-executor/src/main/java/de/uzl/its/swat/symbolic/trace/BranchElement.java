@@ -29,6 +29,8 @@ final class BranchElement extends Element {
     @lombok.Setter private String key;
     @lombok.Setter private int pops;
     @lombok.Setter private java.util.List<String> pushes = java.util.List.of();
+    // Recorded in application code that library code called back (see ShadowContext.inCallback).
+    @lombok.Setter private boolean callback;
 
     /**
      * Constructs a branch element.

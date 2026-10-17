@@ -6,6 +6,7 @@ import static java.lang.Thread.currentThread;
 
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.*;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.coverage.BranchCoverage;
@@ -94,6 +95,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * cannot say where the execution continues.
      */
     public static final String UNMODELLED_EXCEPTION = "UNMODELLED_EXCEPTION";
+
+    /** A frame of an uninstrumented (library) method, not one of SWAT's own helpers. */
+    private static boolean isLibraryFrame(Frame frame) {
+        String cname = frame.getClassName();
+        return cname != null && !cname.startsWith("de/uzl/its/swat/") && !cname.equals("LambdaFrame")
+                && !cname.equals(ShadowContext.getINITIAL_FRAME_NAME())
+                && !Util.shouldInstrument(Util.formatClassName(cname));
+    }
 
     private void recordUnmodelledException(long iid) {
         symbolicTraceHandler.addSpecialElement(determineIid(iid), UNMODELLED_EXCEPTION);
@@ -3553,7 +3562,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 Intrinsics.terminate();
                 return;
             }
-            stack.popFrame();
+            Frame callee = stack.popFrame();
+            if (isLibraryFrame(callee)) {
+                // The exception comes out of library code that ran application code first (a
+                // callback): the graph has the call as a plain library call, so it cannot say
+                // where this goes. (One thrown before any application code ran is recorded at the
+                // call, see recordThrowingCall.)
+                recordUnmodelledException(inst.iid);
+            }
             stack.pushOperand(
                     PlaceHolder.instance); // placeholder for the exception object ToDo: More specific
             // placeholder

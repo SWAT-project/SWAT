@@ -280,6 +280,14 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
                     }
                 }
 
+                if (isDelegation && !hasAncestor(actualClassNameFull, expectedCname)) {
+                    // Library code called back into application code, which runs in the library
+                    // call's frame: its branches are not in the static pre-analysis graph. (An
+                    // application class implementing the frame's library type was called by the
+                    // application itself through that type, e.g. Runnable.run(): the graph has it.)
+                    visitor.getStack().markActiveFrameCallback();
+                }
+
                 // Track when we enter delegation context
                 if (isDelegation && !isInDelegation) {
                     logger.info("Entering delegation context (non-instrumented → instrumented).");

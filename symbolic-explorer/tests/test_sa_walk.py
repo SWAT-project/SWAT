@@ -95,7 +95,7 @@ class GraphBuilder:
             os.unlink(path)
 
 
-def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=()):
+def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=(), callback=False):
     """A tree node for one branch event; `None` children are unexplored sides."""
     n = Node.__new__(Node)
     n.parent = None
@@ -108,6 +108,7 @@ def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=()):
     n.key = key
     n.pops = pops
     n.pushes = pushes
+    n.callback = callback
     n.constraint = {}
     n.skipped = skipped
     n.branched = branched
@@ -521,6 +522,26 @@ class KeyCheckTest(unittest.TestCase):
         g = self.graph()
         found, _ = self.run_dfs(self.tree(b2_pops=0, bf_pushes=(None,)), g)
         self.assertEqual(found, {'n2'})
+
+    def test_callback_branches_are_masked(self):
+        g = self.graph()
+        plain, _ = self.run_dfs(self.tree(), g)
+        # Before f is called, library code called back into application code: two branches the
+        # graph does not have, in a frame pushed by a library call. Unmasked, they would be a desync.
+        tree = self.tree()
+        nf = tree.skipped
+        cb2 = branch_node('cb2', skipped=nf, branched=leaf(), key='App.cb()V|7|if|1', callback=True)
+        cb1 = branch_node('cb1', skipped=cb2, branched=leaf(), key='App.cb()V|7|if|0',
+                          pushes=('M|1|call:read()I|0',), callback=True)
+        tree.skipped = cb1
+        nf.pops = 1
+        found, desyncs = self.run_dfs(tree, g)
+        self.assertEqual(desyncs, [])
+        self.assertEqual(found, plain)  # b2 is still pruned after the callback
+        for n in (cb1, cb2):
+            n.callback = False
+        _, desyncs = self.run_dfs(tree, g)
+        self.assertEqual(len(desyncs), 1)
 
     def test_open_ordinal_matches_any_on_its_line(self):
         g = self.graph()

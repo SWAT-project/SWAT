@@ -35,6 +35,18 @@ public class Frame {
     /** The method name of the method that is invoked */
     @Getter
     private final String methodName;
+    /**
+     * Whether application code runs in this library frame: library code called back into it (a
+     * delegation, see SymbolicInstructionProcessor). Its branches, and those of whatever it calls,
+     * are not in the static pre-analysis graph (see ShadowContext.inCallback).
+     */
+    @Getter
+    private boolean callback = false;
+
+    void markCallback() {
+        callback = true;
+    }
+
     /** The iid of the call instruction that pushed this frame, or -1 (see BranchKeys). */
     @Getter @lombok.Setter
     private long callSite = -1;

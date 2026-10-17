@@ -28,10 +28,15 @@ public class BranchDTO {
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
     private java.util.List<String> pushes;
 
-    public BranchDTO place(String key, int pops, java.util.List<String> pushes) {
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private boolean callback;
+
+    public BranchDTO place(String key, int pops, java.util.List<String> pushes, boolean callback) {
         this.key = key;
         this.pops = pops;
         this.pushes = pushes;
+        this.callback = callback;
         return this;
     }
 
