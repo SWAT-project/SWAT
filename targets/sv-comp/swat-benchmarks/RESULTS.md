@@ -156,7 +156,7 @@ and `<clinit>` that runs on every path.
 
 ## Bugs found
 
-Status as of 2026-10-17: all fixed (see "Fixes (2026-10-15/16)", "S2" and the sections after it) except the library-callback false SAFE ("Library callbacks", "Still open").
+Status as of 2026-10-17: all fixed (see "Fixes (2026-10-15/16)", "S2" and the sections after it).
 
 Each has a minimal reproducing task in `java/sa-soundness/` (VIOLATION variant `_false`). None is
 fixed here: the SA ones need extractor changes beyond a local fix, the executor ones an executor
@@ -435,20 +435,44 @@ SA + rank 301, no SA 266 correct, 0 false SAFE; SV-COMP 891 points, 720 correct,
 (`run_20261017_145000`). Six Juliet tasks lose the graph after a failing socket call (an exception
 out of library code), which the walk used to step over.
 
-Not done: marking library calls that may call back as possibly reaching an assert. A callback
+Not done at first (since fixed, see "Callback targets" below): marking library calls that may call back as possibly reaching an assert. A callback
 that runs is handled correctly (a tracked one is explored symbolically with its branches never
 pruned; an untracked one records context loss). But an assert in a callback on a pruned path is a
 **false SAFE** with SA: the graph does not have the callback, so the path to the library call is
 pruned and never runs (`library-callback-assert_false`: false SAFE with SA, correct without).
 
+### Callback targets, multi-target calls, a solver cache bug (2026-10-17)
+
+- **Callback targets** (fixes the `library-callback-assert` false SAFE). The extractor collects the
+  application methods library code may call back: overrides of library methods and lambda or
+  method-reference targets (`CallbackTargets`). If one may reach an assert, every library call site
+  becomes an assertion point. On SV-COMP this fires only on securibench (its harness overrides
+  `PrintWriter.println` with the check), where it costs nothing (same rounds and pruning with and
+  without it). `--sa-no-callback-targets` turns it off.
+- **Z3 on the extractor's classpath.** The harness puts Z3's jar on the target's classpath, and the
+  extractor treated Z3 as application code: its `toString()` methods assert, so the callback rule
+  fired on every task. `StaticPreAnalysis` now leaves the jar out.
+- **Multi-target calls.** A call site whose dispatch is exact but has several targets, all
+  application methods, gets a CALL edge to each instead of being marked incomplete. The walk stops
+  there and resyncs inside the callee that ran; summaries take the union. `virtual-dispatch/factory`
+  now solves every n (n = 8 SAFE: 117 -> 11 rounds; n = 16, 32: timeout -> correct in 19 / 35
+  rounds). On SV-COMP only two call sites qualify.
+- **Solver cache bug (false SAFE, also without SA).** The explorer's constraint cache was keyed by
+  `(iid, trace)`; two branches of one trace share an iid when a switch has cases 16 apart or a loop
+  runs 64 iterations apart, and one got the other's constraint (unsat), so the branch was never
+  flipped. Found through `local_n32_false` turning SAFE once pruning explored more cases; reproducer
+  `exec-loop-iid-wrap` (false SAFE without SA before the fix). Fixed by keying by tree node. Several
+  32-case tasks without SA went from timeout to correct.
+
+Results: swat-benchmarks (338 tasks) SA 308 correct, no SA 277 correct, 0 false SAFE, no desync;
+SV-COMP 891 points, 720 correct, 0 false SAFE (`run_20261017_163713`). The marking oracle finds no
+unsound marking on the 636 SV-COMP graphs. Commits: cfg `eb658a9`, `85a07db`; SWAT `6ced24e`,
+`f6197d3`, `9046cd0`, `69c6b83`, `98eb95d`.
+
 ### Still open
 
-- False SAFE: an assert in application code that library code calls back, on a path pruning cuts
-  (`library-callback-assert`, see "Library callbacks"). A sound fix for asserts: if an application
-  method overriding a library method can reach an assert, treat every library call as possibly
-  reaching one.
-- Calls the extractor cannot resolve (ambiguous receivers) have no CALL edge, so a frame entered
-  through one cannot be rebuilt and resync stays off inside it (`virtual-dispatch/factory`).
+- Call sites whose targets are not all known (an untraceable receiver of a library type, a lambda)
+  stay incomplete, and resync stays off inside a frame entered through one.
 - Fresh arrays have a free base variable (`[I_0`), which counts as precision loss: SAFE tasks that
   read an array at a symbolic index stay UNKNOWN (`bounds-catch-*_true`, `exec-int-array-index_true`).
   A constant-array base for `newarray` would fix it, but changes array modelling everywhere.

@@ -29,6 +29,12 @@ and used in `strategy/DFS.py`.
   after `dfs`.
 - **Walker giving up is safe:** when `walk_till_branch` returns `None`, the walker has no
   information, and `dfs` treats everything as interesting. That fallback is always safe.
+- **Call sites with several callees** (exact dispatch to known overrides): `walk_till_branch`
+  stops there, and the walk resyncs inside whichever callee ran; summaries take the union.
+- **Library callbacks that may reach an assert** make the extractor count every library call as
+  an assertion point; `--sa-no-callback-targets` (and `svcomp test run --sa-no-callback-targets`)
+  turns that off, which is unsound. The extractor gets the target's classpath without Z3's jar
+  (`StaticPreAnalysis._is_swat_library`): its classes would count as application code.
 - **`<clinit>` and callbacks are masked:** static initializers are not in the graph, and neither is
   application code that library code calls back (the executor flags those branches `callback`,
   see `ShadowContext.inCallback`), so the walk is frozen inside them.
