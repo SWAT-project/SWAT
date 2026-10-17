@@ -126,10 +126,20 @@ class StaticPreAnalysis:
             logger.info(f'[EXPLORER] Static pre-analysis finished with status {self.status.value} after {self.duration:.2f}s.')
             self._done.set()
 
+    @staticmethod
+    def _is_swat_library(path: str) -> bool:
+        """
+        A library SWAT itself puts on the target's classpath (Z3's Java bindings). It is not part of
+        the program, and the extractor would treat its classes as application code: their
+        toString() methods, which assert, would count as callbacks that may reach an assert.
+        """
+        return os.path.basename(path) == "com.microsoft.z3.jar"
+
     def _run_extractor(self) -> bool:
         """Runs the extractor; False if it was cancelled or timed out."""
         cmd = ["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
-               ':'.join(os.path.abspath(p) for p in self.args.classpath), self.args.logdir, self.args.target, "main", "inter"] \
+               ':'.join(os.path.abspath(p) for p in self.args.classpath if not self._is_swat_library(p)),
+               self.args.logdir, self.args.target, "main", "inter"] \
               + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else [])
         with self._lock:
             if self._cancelled.is_set():
