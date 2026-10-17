@@ -367,10 +367,58 @@ points, 719 correct, 0 false SAFE (`run_20261016_205345`; the two changed tasks 
 noise at the timeout). Graph structure is unchanged on all 636 SV-COMP graphs; 190 of them carry
 handler keys. Commits: cfg `726a144`, SWAT `6fb7464`, `50ce3ff`, `7f6aa4c`.
 
+### Branch keys, desync detection and resync (2026-10-17)
+
+The rest of the planned redesign: the walk is still positional, but every branch is now checked
+against the trace, and the walk finds the graph again after losing it.
+
+- **Keys.** Every branch and call site is named `owner.name(desc)|line|kind|ordinal` (kind: `if`,
+  `switch`, `arr`, `newarr`, `div`, `call:name(desc)`; ordinal: position among that kind on the
+  line, in bytecode order; `#value` / `#n` for a switch case / an array dimension). The executor
+  names instructions while instrumenting (`instrument/BranchKeys`), the extractor names graph nodes
+  (`BranchKeys`). SootUp keeps no bytecode offsets, so the extractor reads the class file with ASM
+  and keeps an exact ordinal only where it can prove it: SootUp's `getStmts()` order is wrong for a
+  switch on a String, `getBlocksSorted()` order is wrong for javac's `finally` copies. Same-kind
+  instructions on a line whose signatures (an `if`'s operator and constant, a call's constant
+  argument, load/store) do not tell them apart get an open ordinal (`|*`, matching any); lines
+  whose kinds differ from the bytecode get no key. On the 636 SV-COMP graphs 93% of branch nodes
+  have a key, 22% of those with an open ordinal.
+- **Stack deltas.** Each trace branch also carries the frames popped and the call sites (keys)
+  pushed since the previous branch. Frames of SWAT's own helpers (`UtilInstrumented.refEquals`)
+  are left out, since the graph has their branches inline.
+- **Desync detection.** At every branch `dfs` checks the graph node's key and its call stack
+  against the trace (`check_branch`). A mismatch stops the walk on that path and records
+  `sa_desync`, which turns SAFE into UNKNOWN: an unkeyed branch before it may already have been
+  mispaired.
+- **Resync.** Whenever the walk has no graph node (after an unmodelled exception, a desync, an
+  incomplete node), `dfs` looks up the next branch by key and rebuilds the call stack from the
+  trace's call sites (`resync`), provided every frame maps to a call site whose callee is the next
+  frame's method.
+
+Results: swat-benchmarks unchanged in verdicts (SA 296, SA + rank 297, no SA 262 of 330 correct,
+0 false SAFE, no desync); resync removes most unpaired visits in `lambda-*`, `reflection-*`,
+`finally-*`, `npe-handler-in-callee`, `anonymous-static-field`, and several SAFE tasks need fewer
+rounds (`lambda-consumer_true` 5 -> 3). SV-COMP: 891 points, 720 correct, 0 false SAFE
+(`run_20261017_102120`). Detection found one real desync class: in `nanoxml` and `printtokens`
+(java-ranger-regression) a JDK `PushbackReader` calls back into the application's `IntReader.read()`;
+the graph walks over the library call, so the old walk silently paired the callback's branches with
+`StdXMLReader.atEOF()`. The verdicts were already UNKNOWN (context loss). Key mismatches found on
+the way (string switches, `finally` copies, the `refEquals` helper frame) are fixed.
+
+Design C compared with resync alone (handler resumption switched off): no difference in verdicts,
+rounds or unpaired visits on `exception-dispatch` and `sa-soundness`, and on SV-COMP (891 points
+both, `run_20261017_100011`); the two tasks that differ are solver-time noise at the timeout.
+Commits: cfg `6b5ee5a`, SWAT `1568fec`, `fc817ee`.
+
 ### Still open
 
-- Handler resumption gives up for `finally` copies (ambiguous keys) and for handlers in methods
-  entered after the last branch; both would need the call/return events of the planned redesign.
+- Library code calling back into application code (e.g. `PushbackReader` around an application
+  `Reader`): the graph does not model it; the walk now detects the desync, but the extractor could
+  mark such library calls incomplete.
+- Calls the extractor cannot resolve (ambiguous receivers) have no CALL edge, so a frame entered
+  through one cannot be rebuilt and resync stays off inside it (`virtual-dispatch/factory`).
+- Design C (`HANDLER_ENTRY`) is subsumed by resync in all measurements; whether to remove it is
+  open.
 - Fresh arrays have a free base variable (`[I_0`), which counts as precision loss: SAFE tasks that
   read an array at a symbolic index stay UNKNOWN (`bounds-catch-*_true`, `exec-int-array-index_true`).
   A constant-array base for `newarray` would fix it, but changes array modelling everywhere.

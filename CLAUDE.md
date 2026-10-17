@@ -14,11 +14,17 @@ The explorer can prune its search with a control-flow graph from the extractor i
 and used in `strategy/DFS.py`.
 
 - **Lockstep walk:** `dfs` walks the execution tree and the SA graph together, pairing branch for
-  branch **by position**. Tree ids (executor iids) and graph node ids are never compared, and there
-  is no resynchronisation. If the two disagree on how many branches a path has, pruning silently
-  uses the wrong nodes and can produce false SAFE verdicts. Any change to what the executor
-  reports as a branch, including the transformers under `symbolic-executor/.../instrument/`, needs
-  a matching change in the extractor.
+  branch **by position**. If the two disagree on how many branches a path has, pruning uses the
+  wrong nodes and can produce false SAFE verdicts. Any change to what the executor reports as a
+  branch, including the transformers under `symbolic-executor/.../instrument/`, needs a matching
+  change in the extractor.
+- **Keys check the walk:** every trace branch carries a key (`owner.name(desc)|line|kind|ordinal`,
+  `instrument/BranchKeys.java`, named in `InstructionMethodAdapter.nameInstruction`) and the frame
+  stack change since the previous branch (`ShadowContext.takeStackDelta`). `dfs` compares them with
+  the graph node's key and its own call stack (`SAGraph.check_branch`): a mismatch logs
+  `[DFS] SA desync`, stops the walk on that path and records `sa_desync`, which turns SAFE into
+  UNKNOWN. When the walk has no node, `SAGraph.resync` finds the next branch by key, with the call
+  stack rebuilt from the trace. The extractor computes the same keys; change both together.
 - **Concrete branches count:** they are in the tree too. Filtering to symbolic branches happens
   after `dfs`.
 - **Walker giving up is safe:** when `walk_till_branch` returns `None`, the walker has no
@@ -32,7 +38,7 @@ and used in `strategy/DFS.py`.
   extractor gives them pseudo types (`?Exception`, `?Error`) whose escapes SAGraph treats as
   caught by any handler listed for them (`unknown_handlers`), so paths into such handlers stay
   interesting. When one actually happens, the executor records an `UNMODELLED_EXCEPTION` special
-  event and `dfs` stops trusting the graph until the handler is entered: every catch handler records a
+  event and `dfs` stops trusting the graph until the handler is entered (or resyncs at a later branch): every catch handler records a
   `HANDLER_ENTRY <depth> <key>` event, and `dfs` resumes at the graph node with the same
   `handlerKey` (`SAGraph.resume_at_handler`). The key is built from content
   (`instrument/instruction/HandlerKeys.java` and the extractor's `annotateHandlerKeys`); change
