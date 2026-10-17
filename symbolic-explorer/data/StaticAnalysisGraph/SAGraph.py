@@ -55,8 +55,11 @@ class SANode:
     # marking of paths that lead to an assert.
     next_returns: list[SANode] = field(default_factory=list, repr=False)
     next_exceptional_returns: list[SANode] = field(default_factory=list, repr=False)
-    # Only for a call site with a CALL edge: where the caller resumes after the callee returns,
-    # and the handler each caught exception type resumes at if the callee throws.
+    # Only for a call site with a CALL edge: the entries of the methods it may call (one, or
+    # several known overrides; with one it is also next_fallthrough, which the walk follows),
+    # where the caller resumes after the callee returns, and the handler each caught exception
+    # type resumes at if the callee throws.
+    callees: list[SANode] = field(default_factory=list, repr=False)
     return_site: SANode | None = field(default=None, repr=False)
     handlers: dict[str, SANode] = field(default_factory=dict, repr=False)
     # Only for a call site: for each pseudo exception type (see is_pseudo), the handlers of the call
@@ -113,6 +116,10 @@ class SANode:
             if node.is_branch():
                 return node, stack
             if node.is_call_site():
+                if len(node.callees) != 1:
+                    # Several possible callees: which one runs only the trace can say, so the walk
+                    # stops here and finds its place again inside the callee (resync).
+                    return None
                 if depth(stack) >= MAX_STACK_DEPTH:
                     return None
                 stack = push(stack, node)
@@ -314,12 +321,12 @@ def resync(key: str | None, trace_stack, index: GraphIndex | None) -> tuple[SANo
             return None
         frames.append(s[0])
         s = s[1]
-    method = index.root_method
+    methods = {index.root_method}
     for call_site in reversed(frames):
-        if method is None or call_site.method != method:
+        if call_site.method is None or call_site.method not in methods:
             return None
-        method = call_site.get_fallthrough_child().method # the CALL edge's callee
-    if method is None or node.method != method:
+        methods = {callee.method for callee in call_site.callees} # the CALL edges' callees
+    if node.method is None or node.method not in methods:
         return None
     return node, trace_stack
 
@@ -402,7 +409,7 @@ def compute_summaries(nodes) -> None:
             dependents[id(s)].append(n)
         if n.is_call_site():
             unknown = [h for hs in n.unknown_handlers.values() for h in hs]
-            for s in [n.next_fallthrough, n.return_site, *n.handlers.values(), *unknown]:
+            for s in [*n.callees, n.return_site, *n.handlers.values(), *unknown]:
                 dependents[id(s)].append(n)
 
     def evaluate(n: SANode) -> tuple[bool, bool, frozenset]:
@@ -418,28 +425,29 @@ def compute_summaries(nodes) -> None:
             cr = cr or s.canReturn
             esc |= s.escapes
         if n.is_call_site():
-            entry, ret = n.next_fallthrough, n.return_site
-            ras = ras or entry.reachesAssertSameLevel
-            if entry.canReturn:
-                ras = ras or ret.reachesAssertSameLevel
-                cr = cr or ret.canReturn
-                esc |= ret.escapes
-            for chain in entry.escapes:
-                if is_pseudo(chain):
-                    # Caught by any of the candidate handlers, or by none: then it escapes further.
-                    for handler in n.unknown_handlers.get(chain[0], []):
+            ret = n.return_site
+            for entry in n.callees: # any of them may run
+                ras = ras or entry.reachesAssertSameLevel
+                if entry.canReturn:
+                    ras = ras or ret.reachesAssertSameLevel
+                    cr = cr or ret.canReturn
+                    esc |= ret.escapes
+                for chain in entry.escapes:
+                    if is_pseudo(chain):
+                        # Caught by any of the candidate handlers, or by none: then it escapes further.
+                        for handler in n.unknown_handlers.get(chain[0], []):
+                            ras = ras or handler.reachesAssertSameLevel
+                            cr = cr or handler.canReturn
+                            esc |= handler.escapes
+                        esc.add(chain)
+                        continue
+                    handler = next((n.handlers[t] for t in chain if t in n.handlers), None)
+                    if handler is None:
+                        esc.add(chain)
+                    else:
                         ras = ras or handler.reachesAssertSameLevel
                         cr = cr or handler.canReturn
                         esc |= handler.escapes
-                    esc.add(chain)
-                    continue
-                handler = next((n.handlers[t] for t in chain if t in n.handlers), None)
-                if handler is None:
-                    esc.add(chain)
-                else:
-                    ras = ras or handler.reachesAssertSameLevel
-                    cr = cr or handler.canReturn
-                    esc |= handler.escapes
         return ras, cr, frozenset(esc)
 
     worklist = list(nodes)
@@ -556,16 +564,17 @@ class SAGraph:
                 source.add_branched_child(target)
 
             elif etype == "CALL":
-                source.add_fallthrough_child(target)
                 # Graphs from before the call stack carry no return address. Their call sites then
                 # walk like a plain fall-through, their exits find an empty stack and give up, and
                 # they are marked context-insensitively.
                 if "returnSite" in json_edge:
+                    source.callees.append(target)
                     source.return_site = self.nodes[json_edge["returnSite"]]
                     source.handlers = {t: self.nodes[h] for t, h in json_edge.get("handlers", {}).items()}
                     source.unknown_handlers = {t: [self.nodes[h] for h in hs]
                                                for t, hs in json_edge.get("unknownHandlers", {}).items()}
                 else:
+                    source.add_fallthrough_child(target)
                     legacy_calls = True
 
             elif etype == "RETURN":
@@ -582,6 +591,11 @@ class SAGraph:
 
             target.prev.append(source)
 
+
+        # A call site with one callee walks into it like a fall-through.
+        for n in self.nodes.values():
+            if len(n.callees) == 1:
+                n.add_fallthrough_child(n.callees[0])
 
         self.entry_node = self.nodes[self.json_graph["entryNodeId"]]
         graph_index = GraphIndex(keys, self.entry_node.method)

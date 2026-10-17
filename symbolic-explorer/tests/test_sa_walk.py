@@ -551,6 +551,69 @@ class KeyCheckTest(unittest.TestCase):
         _, desyncs = self.run_dfs(self.tree(bf_key='F|11|if|0'), g)
         self.assertEqual(len(desyncs), 1)
 
+
+class MultiCalleeTest(unittest.TestCase):
+    """A call site with several known callees: summaries take the union, the walk resyncs inside."""
+
+    CALL, BF, BG, B2 = 'M|2|call:run()V|0', 'F|10|if|0', 'G|20|if|0', 'M|3|if|0'
+
+    def graph(self):
+        """
+        main: c1 = x.run() -- F.run or G.run; then if (b2) ...;  F.run: if (bf) assert;
+        G.run: if (bg) ...  (no assert). Keys on the branches and the call site.
+        """
+        g = (GraphBuilder()
+             .nodes_('e0', 'c1', 'r1', 'b2', 'x2').node('mx', exit=True)
+             .nodes_('f0', 'bf', 'fd').node('fa', assertion=True).node('fx', exit=True)
+             .nodes_('g0', 'bg', 'gd').node('gx', exit=True)
+             .edge('e0', 'c1')
+             .call('c1', 'f0', 'r1', ['fx']).call('c1', 'g0', 'r1', ['gx'])
+             .edge('r1', 'b2').branch('b2', 'mx', 'x2').edge('x2', 'mx')
+             .edge('f0', 'bf').branch('bf', 'fd', 'fa').edge('fa', 'fx').edge('fd', 'fx')
+             .edge('g0', 'bg').branch('bg', 'gd', 'gx').edge('gd', 'gx'))
+        for n in g.nodes:
+            n['metadata'] = 'method: ' + ('F' if n['id'] in ('f0', 'bf', 'fd', 'fa', 'fx')
+                                          else 'G' if n['id'] in ('g0', 'bg', 'gd', 'gx') else 'main')
+            n['key'] = {'c1': self.CALL, 'bf': self.BF, 'bg': self.BG, 'b2': self.B2}.get(n['id'])
+            if n['key'] is None:
+                del n['key']
+        return g.load()
+
+    def run_dfs(self, tree, g):
+        fake = FakeTree()
+        found = {n.id for n in dfs(set(), fake, tree, set(), set(), g.entry_node)}
+        return found, [e for e in fake.execution_errors if e['kind'] == 'sa_desync']
+
+    def test_summaries_take_the_union(self):
+        g = self.graph()
+        self.assertTrue(g.nodes['c1'].reachesAssertSameLevel)  # through F.run
+        self.assertTrue(g.nodes['e0'].reachesAssertSameLevel)
+        self.assertFalse(g.nodes['r1'].reachesAssertSameLevel)
+
+    def test_walk_stops_at_the_call_site(self):
+        g = self.graph()
+        self.assertIsNone(g.nodes['c1'].walk_till_branch(None))
+
+    def test_resync_in_the_callee_that_ran(self):
+        g = self.graph()
+        # G.run ran: its branch bg is found by key, under the call site c1. Neither side of bg
+        # reaches an assert, so its unexplored side is pruned.
+        ng = branch_node('ng', skipped=leaf(), branched=None, key=self.BG, pushes=(self.CALL,))
+        found, desyncs = self.run_dfs(ng, g)
+        self.assertEqual(found, set())
+        self.assertEqual(desyncs, [])
+        # F.run ran: bf's TRUE side reaches the assert.
+        nf = branch_node('nf', skipped=leaf(), branched=None, key=self.BF, pushes=(self.CALL,))
+        found, _ = self.run_dfs(nf, g)
+        self.assertEqual(found, {'nf'})
+
+    def test_no_resync_into_a_method_the_call_site_cannot_call(self):
+        g = self.graph()
+        g.nodes['c1'].callees = [g.nodes['f0'], g.nodes['fx']]  # G.run is not a callee any more
+        ng = branch_node('ng', skipped=leaf(), branched=None, key=self.BG, pushes=(self.CALL,))
+        found, _ = self.run_dfs(ng, g)
+        self.assertEqual(found, {'ng'})  # no information
+
 class ContextSensitiveMarkingTest(unittest.TestCase):
 
     def test_callee_branch_is_interesting_only_in_the_asserting_context(self):

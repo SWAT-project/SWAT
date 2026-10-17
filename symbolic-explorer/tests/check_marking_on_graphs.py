@@ -50,7 +50,7 @@ def oracle(node, stack):
             if depth(st) >= ORACLE_DEPTH + depth(stack):
                 truncated = True
             else:
-                worklist.append((n.next_fallthrough, push(st, n)))
+                worklist.extend((callee, push(st, n)) for callee in n.callees)
         elif n.next_fallthrough is not None:
             succ.append(n.next_fallthrough)
         worklist.extend((s, st) for s in succ)
