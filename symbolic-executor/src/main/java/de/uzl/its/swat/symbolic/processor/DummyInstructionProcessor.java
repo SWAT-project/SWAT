@@ -93,8 +93,6 @@ public class DummyInstructionProcessor implements InstructionProcessor {
 
     public void UNPACK_INVOKE_PARAMETER(long iid) {}
 
-    public void HANDLER_ENTRY(long iid, String key) {}
-
     public void SET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, boolean isWideOperand, int modifiers, long iid, long invokeId) {}
 
     public void GET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, int modifiers, long iid, long invokeId) {}

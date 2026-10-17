@@ -320,10 +320,10 @@ class DfsTest(unittest.TestCase):
         n1.skipped = special_node('x', branched=n2, inst='UNMODELLED_EXCEPTION')
         self.assertEqual(candidates(n1, g), {'n2'})
 
-    def handler_resume_graph(self):
+    def exception_graph(self):
         """
         main: if (b1) exit; c = f(); [handler h: if (b2) exit; assert];  f: if (bf) ...; return
-        h is the handler of main's call to f, keyed 'K'; b2's TRUE side cannot reach the assert.
+        h is the handler of main's call to f; b2's TRUE side cannot reach the assert.
         """
         g = (GraphBuilder()
              .nodes_('e0', 'b1', 'c1', 'r1', 'h', 'b2').node('a', assertion=True).node('x', exit=True)
@@ -335,8 +335,6 @@ class DfsTest(unittest.TestCase):
         next(e for e in g.edges if e['type'] == 'CALL')['unknownHandlers'] = {'?Exception': ['h']}
         for n in g.nodes:
             n['metadata'] = 'method: ' + ('f' if n['id'].startswith('f') or n['id'] == 'bf' else 'main')
-            if n['id'] == 'h':
-                n['handlerKey'] = 'K'
         return g.load()
 
     def tree_through_exception(self, events, after_branch_in_f=True):
@@ -349,29 +347,11 @@ class DfsTest(unittest.TestCase):
             nxt = branch_node('nf', skipped=nxt, branched=leaf())
         return branch_node('n1', skipped=nxt, branched=leaf())
 
-    def test_walk_resumes_at_the_reported_handler(self):
-        g = self.handler_resume_graph()
-        # The last branch is bf in f; the handler is one frame further down, in main.
-        tree = self.tree_through_exception([('u', 'UNMODELLED_EXCEPTION'), ('h', 'HANDLER_ENTRY -1 K')])
-        self.assertEqual(candidates(tree, g), set())  # b2's TRUE side is pruned again
-
-    def test_without_the_handler_event_the_walk_gives_up(self):
-        g = self.handler_resume_graph()
+    def test_after_an_unmodelled_exception_the_walk_gives_up(self):
+        g = self.exception_graph()
+        # Without keys the walk cannot find the graph again (see KeyCheckTest for resync).
         tree = self.tree_through_exception([('u', 'UNMODELLED_EXCEPTION')])
         self.assertEqual(candidates(tree, g), {'n2'})
-
-    def test_unknown_key_or_frame_keeps_the_give_up(self):
-        g = self.handler_resume_graph()
-        for event in ('HANDLER_ENTRY -1 other', 'HANDLER_ENTRY 0 K', 'HANDLER_ENTRY 1 K'):
-            # wrong key; depth 0 would be f's frame, but K is main's handler; a callee's frame
-            tree = self.tree_through_exception([('u', 'UNMODELLED_EXCEPTION'), ('h', event)])
-            self.assertEqual(candidates(tree, g), {'n2'}, event)
-
-    def test_handler_event_without_an_unmodelled_exception_is_ignored(self):
-        g = self.handler_resume_graph()
-        # A modelled exception: the walk follows it itself; the event must not move it.
-        tree = self.tree_through_exception([('h', 'HANDLER_ENTRY -1 K')])
-        self.assertEqual(candidates(tree, g), candidates(self.tree_through_exception([]), g))
 
     def test_guard_failure_is_followed_into_callers_handler(self):
         # Events: the guard in test() fails (skipped), then the branch in main's handler. Its TRUE
@@ -466,20 +446,21 @@ class KeyCheckTest(unittest.TestCase):
     B1, CALL, BF, B2 = 'M|1|if|0', 'M|2|call:f()I|0', 'F|10|if|0', 'M|3|if|0'
 
     def graph(self):
-        """As DfsTest.handler_resume_graph, with keys on the branches and the call site."""
-        g = DfsTest.handler_resume_graph(self)
+        """As DfsTest.exception_graph, with keys on the branches and the call site."""
+        g = DfsTest.exception_graph(self)
         g.nodes['b1'].key, g.nodes['c1'].key, g.nodes['bf'].key, g.nodes['b2'].key = \
             self.B1, self.CALL, self.BF, self.B2
         index = g.entry_node.graph_index
         index.keys.update({n.key: n for n in g.nodes.values() if n.key is not None})
         return g
 
-    THROUGH_HANDLER = (('u', 'UNMODELLED_EXCEPTION'), ('h', 'HANDLER_ENTRY -1 K'))
+    THROWS = (('u', 'UNMODELLED_EXCEPTION'),)
 
-    def tree(self, b2_key=None, b2_pops=1, bf_key=None, bf_pushes=None, events=THROUGH_HANDLER):
+    def tree(self, b2_key=None, b2_pops=1, bf_key=None, bf_pushes=None, events=THROWS):
         """
         n1 (b1, skipped), nf (bf in f, skipped), `events`, n2 (b2, TRUE side unexplored). b2 is
-        only reached through main's handler: by default f throws and the handler is reported.
+        only reached through main's handler: by default f throws an exception the graph does not
+        model, so the walk is lost after nf and can only find b2 by resync.
         """
         n2 = branch_node('n2', skipped=leaf(), branched=None, key=b2_key or self.B2, pops=b2_pops)
         nxt = n2
@@ -496,14 +477,12 @@ class KeyCheckTest(unittest.TestCase):
 
     def test_walk_in_step_is_not_flagged(self):
         g = self.graph()
-        found, desyncs = self.run_dfs(self.tree(), g)
-        self.assertEqual(found, set())  # b2's TRUE side cannot reach the assert
+        _, desyncs = self.run_dfs(self.tree(), g)
         self.assertEqual(desyncs, [])
 
     def test_wrong_key_is_a_desync(self):
         g = self.graph()
-        found, desyncs = self.run_dfs(self.tree(b2_key='M|3|if|1'), g)
-        self.assertEqual(found, {'n2'})  # the walk gives up there
+        _, desyncs = self.run_dfs(self.tree(bf_key='F|10|if|1'), g)
         self.assertEqual(len(desyncs), 1)
 
     def test_wrong_stack_is_a_desync(self):
@@ -514,35 +493,41 @@ class KeyCheckTest(unittest.TestCase):
 
     def test_missing_keys_are_not_checked(self):
         g = self.graph()
-        g.nodes['b2'].key = None
-        found, desyncs = self.run_dfs(self.tree(b2_key='M|3|if|1'), g)
+        g.nodes['bf'].key = None
+        _, desyncs = self.run_dfs(self.tree(bf_key='F|10|if|1'), g)
         self.assertEqual(desyncs, [])
 
     def test_resync_after_an_unmodelled_exception(self):
         g = self.graph()
-        # No handler event: the walk is lost after the exception, and finds b2 again by its key,
-        # with the stack from the trace (f's frame popped).
-        found, desyncs = self.run_dfs(self.tree(events=[('u', 'UNMODELLED_EXCEPTION')]), g)
+        # The walk is lost after the exception and finds b2 again by its key, with the stack from
+        # the trace (f's frame popped): b2's TRUE side cannot reach the assert.
+        found, desyncs = self.run_dfs(self.tree(), g)
         self.assertEqual(found, set())
         self.assertEqual(desyncs, [])
+
+    def test_no_resync_without_a_key(self):
+        g = self.graph()
+        del g.entry_node.graph_index.keys[self.B2]
+        found, _ = self.run_dfs(self.tree(), g)
+        self.assertEqual(found, {'n2'})
 
     def test_no_resync_when_the_stack_does_not_lead_to_the_branch(self):
         g = self.graph()
         # The trace still has f's frame (no pop), but b2 is in main: the stack and the key disagree.
-        found, _ = self.run_dfs(self.tree(b2_pops=0, events=[('u', 'UNMODELLED_EXCEPTION')]), g)
+        found, _ = self.run_dfs(self.tree(b2_pops=0), g)
         self.assertEqual(found, {'n2'})
 
     def test_no_resync_through_an_unknown_call_site(self):
         g = self.graph()
-        found, _ = self.run_dfs(self.tree(b2_pops=0, bf_pushes=(None,), events=[('u', 'UNMODELLED_EXCEPTION')]), g)
+        found, _ = self.run_dfs(self.tree(b2_pops=0, bf_pushes=(None,)), g)
         self.assertEqual(found, {'n2'})
 
     def test_open_ordinal_matches_any_on_its_line(self):
         g = self.graph()
-        g.nodes['b2'].key = 'M|3|if|*'
-        _, desyncs = self.run_dfs(self.tree(b2_key='M|3|if|1'), g)
+        g.nodes['bf'].key = 'F|10|if|*'
+        _, desyncs = self.run_dfs(self.tree(bf_key='F|10|if|3'), g)
         self.assertEqual(desyncs, [])
-        _, desyncs = self.run_dfs(self.tree(b2_key='M|4|if|0'), g)
+        _, desyncs = self.run_dfs(self.tree(bf_key='F|11|if|0'), g)
         self.assertEqual(len(desyncs), 1)
 
 class ContextSensitiveMarkingTest(unittest.TestCase):

@@ -97,39 +97,6 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         return null;
     }
 
-    /** The handler key of each of the method's try-catch blocks, in order (see HandlerKeys). */
-    private List<String> handlerKeys = List.of();
-    private int tryCatchBlockIndex = 0;
-    /** The original handler labels with their keys; SWAT's own try-catch blocks are not among them. */
-    private final java.util.Map<Label, String> handlerLabels = new java.util.HashMap<>();
-
-    public void setHandlerKeys(List<String> handlerKeys) {
-        this.handlerKeys = handlerKeys;
-    }
-
-    @Override
-    public void visitTryCatchBlock(Label start, Label end, Label handler, String type) {
-        if (tryCatchBlockIndex < handlerKeys.size()) {
-            handlerLabels.putIfAbsent(handler, handlerKeys.get(tryCatchBlockIndex));
-        }
-        tryCatchBlockIndex++;
-        super.visitTryCatchBlock(start, end, handler, type);
-    }
-
-    /** Reports the entry of a catch handler of the original code (HANDLER_ENTRY). */
-    @Override
-    public void visitLabel(Label label) {
-        super.visitLabel(label);
-        String key = handlerLabels.remove(label);
-        if (key != null) {
-            // The caught exception is on the operand stack; the call leaves it there.
-            addJpushInsn(mv, instrumentationState.incAndGetId());
-            mv.visitLdcInsn(key);
-            mv.visitMethodInsn(INVOKESTATIC, config.getInstrumentationDispatcher(), "HANDLER_ENTRY",
-                    "(JLjava/lang/String;)V", false);
-        }
-    }
-
     /** Starts the visit of the method's code, if any (i.e. non abstract method). */
     @Override
     public void visitCode() {

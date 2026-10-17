@@ -723,9 +723,6 @@ public final class NopDispatcher {
     @SuppressWarnings("unused")
     public static void UNPACK_INVOKE_PARAMETER(long iid) {}
 
-    @SuppressWarnings("unused")
-    public static void HANDLER_ENTRY(long iid, String key) {}
-
 
     @SuppressWarnings("unused")
     public static void SET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, boolean isWideOperand, int modifiers, long iid, long invokeId) {}

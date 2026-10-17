@@ -65,7 +65,6 @@ public class SymbolicTraceHandler {
 
         place(current, iid, suffix);
         symbolicTrace.addTraceElement(current);
-        lastBranchDepth = frameDepth();
     }
 
     /** Records where a branch is: its key and the change of the frame stack since the last branch. */
@@ -83,17 +82,6 @@ public class SymbolicTraceHandler {
     }
 
     /**
-     * The depth of the shadow frame stack when the last branch was recorded. A handler entry
-     * reports its depth relative to it, so that the explorer's walk, which knows the frames at the
-     * last branch, can tell which frame the handler belongs to (see visitHANDLER_ENTRY).
-     */
-    @lombok.Getter private int lastBranchDepth = 0;
-
-    private static int frameDepth() throws NoThreadContextException {
-        return ThreadHandler.getSymbolicVisitor(Thread.currentThread().getId()).getStack().getFrameStack().size();
-    }
-
-    /**
      * Records a branch without a symbolic constraint, whose outcome is known only concretely. Used
      * where the static pre-analysis graph has a branch that SWAT has no symbolic value for (e.g. the
      * bounds check of an untracked array): the explorer walks that graph in step with the trace, by
@@ -108,7 +96,6 @@ public class SymbolicTraceHandler {
         BranchElement branch = new BranchElement(result, bmgr.makeTrue(), iid, true);
         place(branch, iid, "");
         symbolicTrace.addTraceElement(branch);
-        lastBranchDepth = frameDepth();
     }
 
     /**

@@ -3174,22 +3174,6 @@ public class SymbolicInstructionVisitor implements IVisitor {
         return false;
     }
 
-    /**
-     * Marks, in the trace, that a catch handler of the original code was entered: "HANDLER_ENTRY
-     * <depth> <key>", where depth is the frame depth relative to the last branch (0: the handler is
-     * in the frame of the last branch, -n: n frames further down) and key names the handler (see
-     * HandlerKeys). After an exception the static pre-analysis graph does not model, the explorer
-     * uses it to resume its walk at the handler.
-     */
-    public void visitHANDLER_ENTRY(HANDLER_ENTRY inst) throws SymbolicInstructionException {
-        try {
-            int depth = stack.getFrameStack().size() - symbolicTraceHandler.getLastBranchDepth();
-            symbolicTraceHandler.addSpecialElement(determineIid(inst.iid), "HANDLER_ENTRY " + depth + " " + inst.key);
-        } catch (Throwable t) {
-            throw new SymbolicInstructionException(inst, t);
-        }
-    }
-
     public void visitUNPACK_INVOKE_PARAMETER(UNPACK_INVOKE_PARAMETER inst) throws SymbolicInstructionException {
         try {
             Value<?, ?> top = stack.popOperand();

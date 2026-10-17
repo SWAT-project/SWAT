@@ -339,7 +339,10 @@ oracle (`check_marking_on_graphs.py`) finds no unsound marking on all 636 SV-COM
 of pruned branch sides drops from 8.6% to 8.3%, all of it in `algorithms` (16.1% -> 11.5%), whose
 handlers lead to asserts. Graphs grew by 11% in nodes and 63% in edges.
 
-### S2 precision: resuming at the handler (design C, 2026-10-16)
+### S2 precision: resuming at the handler (design C, 2026-10-16; removed 2026-10-17)
+
+Superseded by resync (next section), which recovered the same in every measurement; the code was
+removed. Kept here for the measurements.
 
 With B, every unmodelled exception ends pruning for the rest of the path. Measured on the
 `exception-dispatch` family (input-dependent dispatch after the handler), the `npe` variant needed
@@ -408,7 +411,7 @@ the way (string switches, `finally` copies, the `refEquals` helper frame) are fi
 Design C compared with resync alone (handler resumption switched off): no difference in verdicts,
 rounds or unpaired visits on `exception-dispatch` and `sa-soundness`, and on SV-COMP (891 points
 both, `run_20261017_100011`); the two tasks that differ are solver-time noise at the timeout.
-Commits: cfg `6b5ee5a`, SWAT `1568fec`, `fc817ee`.
+Commits: cfg `6b5ee5a`, SWAT `1568fec`, `fc817ee`. Design C was removed afterwards.
 
 ### Still open
 
@@ -417,8 +420,6 @@ Commits: cfg `6b5ee5a`, SWAT `1568fec`, `fc817ee`.
   mark such library calls incomplete.
 - Calls the extractor cannot resolve (ambiguous receivers) have no CALL edge, so a frame entered
   through one cannot be rebuilt and resync stays off inside it (`virtual-dispatch/factory`).
-- Design C (`HANDLER_ENTRY`) is subsumed by resync in all measurements; whether to remove it is
-  open.
 - Fresh arrays have a free base variable (`[I_0`), which counts as precision loss: SAFE tasks that
   read an array at a symbolic index stay UNKNOWN (`bounds-catch-*_true`, `exec-int-array-index_true`).
   A constant-array base for `newarray` would fix it, but changes array modelling everywhere.

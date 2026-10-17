@@ -182,10 +182,6 @@ public abstract class AbstractInstructionProcessor implements InstructionProcess
         processInstruction(new UNPACK_INVOKE_PARAMETER(iid));
     }
 
-    public void HANDLER_ENTRY(long iid, String key) {
-        processInstruction(new HANDLER_ENTRY(iid, key));
-    }
-
     public void SET_FIELD_REFLECTION(String owner, String name, String desc, String reflectFieldName, String reflectObjectOwner, boolean isWideOperand, int modifiers, long iid, long invokeId) {
         processInstruction(new SET_FIELD_REFLECTION(owner, name, desc, reflectFieldName, reflectObjectOwner, isWideOperand, modifiers, iid, invokeId));
     }

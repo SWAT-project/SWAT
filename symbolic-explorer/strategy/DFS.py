@@ -1,17 +1,16 @@
 from data.BinaryExecutionTree.Node import Node
 from data.BinaryExecutionTree.Leaf import Leaf
-from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, is_interesting, resume_at_handler, \
+from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, is_interesting, \
     apply_stack_delta, check_branch, resync
 
 import log
 logger = log.get_logger()
 
-# The executor's markers for an exception the SA graph does not model, and for the entry of a catch
-# handler (SymbolicInstructionVisitor.UNMODELLED_EXCEPTION, visitHANDLER_ENTRY).
+# The executor's marker for an exception the SA graph does not model
+# (SymbolicInstructionVisitor.UNMODELLED_EXCEPTION).
 UNMODELLED_EXCEPTION = "UNMODELLED_EXCEPTION"
-HANDLER_ENTRY = "HANDLER_ENTRY "
 
-def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0, sa_stack: CallStack = None, distances: dict[Node, float] | None = None, pending=None, sa_index=None, trace_stack=None) -> list[Node]:
+def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0, sa_stack: CallStack = None, distances: dict[Node, float] | None = None, sa_index=None, trace_stack=None) -> list[Node]:
     # sa_node and sa_stack together are where the SA walk stands: the node, and the call stack of
     # call sites the walk entered to get there. The same graph node means different things under
     # different stacks -- a method's exit returns to whichever call site is on top.
@@ -40,24 +39,13 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             clinit_depth -= 1
 
         if node.kind == "Special": # skip over Special nodes (includes CLINIT / INVOKECLINIT_END)
-            if node.inst == UNMODELLED_EXCEPTION and clinit_depth == 0:
+            if node.inst == UNMODELLED_EXCEPTION:
                 # The executor saw an exception the graph does not model (a null dereference, a
                 # cast, a library call that threw, an Error): the graph cannot say where execution
-                # went, so the walk has no information -- until the handler it went to is reported
-                # (below). Where the walk stood is kept for that.
-                if sa_node is not None:
-                    pending = (sa_node, sa_stack)
+                # went, so the walk has no information -- until it finds the graph again at a
+                # later branch by key (resync, below).
                 sa_node, sa_stack = None, None
-            elif node.inst == UNMODELLED_EXCEPTION:
-                sa_node, sa_stack = None, None
-            elif node.inst is not None and node.inst.startswith(HANDLER_ENTRY) and pending is not None \
-                    and clinit_depth == 0:
-                _, depth, key = node.inst.split(" ", 2)
-                resumed = resume_at_handler(pending[0], pending[1], int(depth), key)
-                if resumed is not None:
-                    sa_node, sa_stack = resumed
-                pending = None
-            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node, clinit_depth, sa_stack, distances, pending, sa_index, trace_stack))
+            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node, clinit_depth, sa_stack, distances, sa_index, trace_stack))
             return possible_nodes
         else:
             assert node.kind == "Branch"
@@ -88,7 +76,6 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             resumed = resync(node.key, trace_stack, sa_index)
             if resumed is not None:
                 sa_node, sa_stack = resumed
-                pending = None
         skip_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_fallthrough_child(), sa_stack)
         branch_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_branched_child(), sa_stack)
         
@@ -116,11 +103,9 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             sa_branched = sa_node.get_branched_child()
 
         # Only walk the tree further if the path is interesting (leads to an assert) or if we don't have information (sa_node is None)
-        # A branch after an unmodelled exception but before its handler was reported: the kept
-        # position no longer says where the walk is (pending is not passed on).
         if skip_is_interesting:
-            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_skipped, clinit_depth, sa_stack, distances, None, sa_index, trace_stack))
+            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_skipped, clinit_depth, sa_stack, distances, sa_index, trace_stack))
         if branch_is_interesting:
-            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_branched, clinit_depth, sa_stack, distances, None, sa_index, trace_stack))
+            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_branched, clinit_depth, sa_stack, distances, sa_index, trace_stack))
     
     return possible_nodes

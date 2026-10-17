@@ -38,11 +38,8 @@ and used in `strategy/DFS.py`.
   extractor gives them pseudo types (`?Exception`, `?Error`) whose escapes SAGraph treats as
   caught by any handler listed for them (`unknown_handlers`), so paths into such handlers stay
   interesting. When one actually happens, the executor records an `UNMODELLED_EXCEPTION` special
-  event and `dfs` stops trusting the graph until the handler is entered (or resyncs at a later branch): every catch handler records a
-  `HANDLER_ENTRY <depth> <key>` event, and `dfs` resumes at the graph node with the same
-  `handlerKey` (`SAGraph.resume_at_handler`). The key is built from content
-  (`instrument/instruction/HandlerKeys.java` and the extractor's `annotateHandlerKeys`); change
-  both together.
+  event and `dfs` stops trusting the graph until it finds it again at a later branch by key
+  (resync, see below).
 - **SA runs before exploring by default:** in sv-comp mode exploration waits for
   `svcomp/StaticPreAnalysis.py`, so the graph is used from round 0 and runs are deterministic.
   `--parallel-sa` instead runs the extractor in a thread while exploration starts unpruned;

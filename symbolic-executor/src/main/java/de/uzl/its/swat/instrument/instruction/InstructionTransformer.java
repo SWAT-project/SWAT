@@ -73,7 +73,7 @@ public class InstructionTransformer implements ClassFileTransformer {
             ClassWriter cw =
                     new SafeClassWriter(
                             cr, loader, ClassWriter.COMPUTE_FRAMES);
-            ClassVisitor cv = new InstructionClassAdapter(new CheckClassAdapter(cw, true), cname, HandlerKeys.compute(cbuf));
+            ClassVisitor cv = new InstructionClassAdapter(new CheckClassAdapter(cw, true), cname);
             try {
                 cr.accept(cv, ClassReader.SKIP_FRAMES);
 
