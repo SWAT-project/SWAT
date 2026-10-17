@@ -35,6 +35,9 @@ public class Frame {
     /** The method name of the method that is invoked */
     @Getter
     private final String methodName;
+    /** The iid of the call instruction that pushed this frame, or -1 (see BranchKeys). */
+    @Getter @lombok.Setter
+    private long callSite = -1;
 
     /**
      * Constructor for Frame

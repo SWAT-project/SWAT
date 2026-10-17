@@ -391,6 +391,7 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
             return false;
         }
         Frame body = new Frame(actualClassFull, name, expected.nReturnWords);
+        body.setCallSite(expected.getCallSite());
         for (Value<?, ?> local : locals.subList(1, locals.size())) {
             body.addLocal(local);
         }

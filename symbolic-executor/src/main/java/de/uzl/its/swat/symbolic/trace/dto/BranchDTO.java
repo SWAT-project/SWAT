@@ -17,6 +17,23 @@ public class BranchDTO {
     private String inst;
     @SuppressWarnings("unused")
     private boolean concreteOnly;
+    // See BranchElement: the branch's key and the frame stack change since the previous branch.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String key;
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private int pops;
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+    private java.util.List<String> pushes;
+
+    public BranchDTO place(String key, int pops, java.util.List<String> pushes) {
+        this.key = key;
+        this.pops = pops;
+        this.pushes = pushes;
+        return this;
+    }
 
     public BranchDTO(long iid, String constraint, boolean branched) {
         this(iid, constraint, branched, false);

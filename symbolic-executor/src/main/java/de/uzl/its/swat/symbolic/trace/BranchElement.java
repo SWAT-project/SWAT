@@ -22,6 +22,14 @@ final class BranchElement extends Element {
     // symbolic constraint, so the explorer never tries to flip it.
     private final boolean concreteOnly;
 
+    // Where the branch is, for the explorer to check and resynchronise its walk of the static
+    // pre-analysis graph (see BranchKeys): the branch's key, or null if its instruction has none,
+    // and how the frame stack changed since the previous branch -- the number of frames popped,
+    // then the call sites (keys, null if unknown) of the frames pushed.
+    @lombok.Setter private String key;
+    @lombok.Setter private int pops;
+    @lombok.Setter private java.util.List<String> pushes = java.util.List.of();
+
     /**
      * Constructs a branch element.
      *

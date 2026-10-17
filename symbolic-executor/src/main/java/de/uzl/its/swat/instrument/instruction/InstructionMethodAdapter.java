@@ -69,6 +69,34 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         this.desc = desc;
     }
 
+    /** The current source line, and how many instructions of each kind each line has had (see BranchKeys). */
+    private int line = -1;
+    private final java.util.Map<String, Integer> keyOrdinals = new java.util.HashMap<>();
+
+    /**
+     * Names the instruction being visited for the trace (see {@link de.uzl.its.swat.instrument.BranchKeys}):
+     * every instruction that reports a branch or pushes a frame. Called before its instrumentation
+     * allocates its iid.
+     */
+    private void nameInstruction(String kind) {
+        if (owner.startsWith("de/uzl/its/swat/")) {
+            return; // SWAT's helpers: the graph has their branches inline in the caller, without keys
+        }
+        String group = line + "|" + kind;
+        int ordinal = keyOrdinals.merge(group, 1, Integer::sum) - 1;
+        instrumentationState.setPendingKey(owner + "." + methodName + desc + "|" + group + "|" + ordinal);
+    }
+
+    private static String branchKindOf(int opcode) {
+        if ((opcode >= IALOAD && opcode <= SALOAD) || (opcode >= IASTORE && opcode <= SASTORE)) {
+            return "arr";
+        }
+        if (opcode == IDIV || opcode == IREM || opcode == LDIV || opcode == LREM) {
+            return "div";
+        }
+        return null;
+    }
+
     /** The handler key of each of the method's try-catch blocks, in order (see HandlerKeys). */
     private List<String> handlerKeys = List.of();
     private int tryCatchBlockIndex = 0;
@@ -187,6 +215,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitLineNumber(int lineNumber, Label label) {
+        line = lineNumber;
         mv.visitLineNumber(lineNumber, label);
     }
 
@@ -207,6 +236,10 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitInsn(int opcode) {
+        String kind = branchKindOf(opcode);
+        if (kind != null) {
+            nameInstruction(kind);
+        }
         boolean ex;
         switch (opcode) {
             case NOP:
@@ -766,6 +799,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitIntInsn(int opcode, int operand) {
+        if (opcode == NEWARRAY) {
+            nameInstruction("newarr");
+        }
         String desc = "(JI)V";
         addJpushInsn(mv, instrumentationState.incAndGetId());
 
@@ -824,6 +860,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 calledNew = true;
                 break;
             case ANEWARRAY:
+                nameInstruction("newarr");
                 addTypeInsn(mv, type, opcode, "ANEWARRAY");
                 addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
@@ -1614,6 +1651,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
+        nameInstruction("call:" + name + desc);
         String d = "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
         // increment and pushes the instruction id to the stack using the mv
         addJpushInsn(mv, instrumentationState.incAndGetId());
@@ -1687,6 +1725,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
+        nameInstruction("call:" + name + desc);
         if (opcode == INVOKESPECIAL && name.equals("<init>")) {
             if (isInit) {
                 // This code is already inside an init method.
@@ -1750,6 +1789,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitJumpInsn(int opcode, Label label) {
+        if (opcode != GOTO && opcode != JSR) {
+            nameInstruction("if");
+        }
         long iid3;
         String desc = "(JI)V";
         addJpushInsn(mv, iid3 = instrumentationState.incAndGetId());
@@ -1987,6 +2029,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
+        nameInstruction("switch");
         long iid3;
 
         String desc = "(JIII[I[I)V"; // Add an extra array for case values
@@ -2023,6 +2066,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
+        nameInstruction("switch");
         long iid3;
 
         String desc = "(JI[I[I)V";
@@ -2059,6 +2103,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitMultiANewArrayInsn(String desc, int dims) {
+        nameInstruction("newarr");
         String d = "(JLjava/lang/String;I)V";
         addJpushInsn(mv, instrumentationState.incAndGetId());
 

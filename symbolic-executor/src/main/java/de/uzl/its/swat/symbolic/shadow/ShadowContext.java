@@ -62,6 +62,37 @@ public class ShadowContext {
     public void pushFrame(Frame frame) {
         activeFrame = frame;
         frameStack.push(frame);
+        if (!isSwatHelper(frame)) {
+            pushedSinceBranch.add(frame);
+        }
+    }
+
+    /**
+     * A frame of SWAT's own instrumented helpers (e.g. {@code UtilInstrumented.refEquals}). The
+     * static pre-analysis graph has their branches inline in the caller, so the stack changes the
+     * trace reports leave their frames out.
+     */
+    private static boolean isSwatHelper(Frame frame) {
+        return frame.getClassName() != null && frame.getClassName().startsWith("de/uzl/its/swat/");
+    }
+
+    /**
+     * How the frame stack changed since the last branch (see {@link #takeStackDelta}): the number
+     * of the frames then present that were popped, and the frames pushed since that are still there.
+     */
+    private int poppedSinceBranch = 0;
+    private final ArrayList<Frame> pushedSinceBranch = new ArrayList<>();
+
+    /** The change of the frame stack since the last call, as frames popped and frames pushed. */
+    public record StackDelta(int popped, List<Frame> pushed) {
+    }
+
+    /** Returns how the frame stack changed since the last call, and starts counting anew. */
+    public StackDelta takeStackDelta() {
+        StackDelta delta = new StackDelta(poppedSinceBranch, List.copyOf(pushedSinceBranch));
+        poppedSinceBranch = 0;
+        pushedSinceBranch.clear();
+        return delta;
     }
 
     /**
@@ -72,6 +103,13 @@ public class ShadowContext {
     public Frame popFrame() {
         assert !frameStack.isEmpty() : "[SWAT] Unable to remove method frame, as no stack frames are left";
         Frame oldFrame = frameStack.pop();
+        if (isSwatHelper(oldFrame)) {
+            // not counted on push either
+        } else if (pushedSinceBranch.isEmpty()) {
+            poppedSinceBranch++;
+        } else {
+            pushedSinceBranch.remove(pushedSinceBranch.size() - 1);
+        }
         activeFrame = getActiveFrame();
         return oldFrame;
     }
@@ -318,9 +356,11 @@ public class ShadowContext {
      * @param owner The parent object of the invoked method
      * @param name The name of the method
      * @param isInstance If the method is a static method or an instance of an object
+     * @param callSite The iid of the call instruction
      */
-    public void newStackFrame(String desc, String owner, String name, boolean isInstance) throws NoThreadContextException, NotImplementedException, ValueConversionException {
+    public void newStackFrame(String desc, String owner, String name, boolean isInstance, long callSite) throws NoThreadContextException, NotImplementedException, ValueConversionException {
         Frame newFrame = initializeFrame(owner, name, desc);
+        newFrame.setCallSite(callSite);
 
         Type[] types = Type.getArgumentTypes(desc);
         Value<?, ?>[] arguments = fetchArguments(types);

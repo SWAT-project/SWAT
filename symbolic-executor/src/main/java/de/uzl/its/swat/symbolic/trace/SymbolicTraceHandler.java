@@ -7,6 +7,9 @@ import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.StatsStorage;
+import de.uzl.its.swat.instrument.BranchKeys;
+import de.uzl.its.swat.symbolic.shadow.Frame;
+import de.uzl.its.swat.symbolic.shadow.ShadowContext;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
@@ -41,6 +44,15 @@ public class SymbolicTraceHandler {
      * @param iid The iid of the branch instruction.
      */
     public void checkAndSetBranch(boolean result, BooleanFormula constraint, long iid) throws NoThreadContextException {
+        checkAndSetBranch(result, constraint, iid, "");
+    }
+
+    /**
+     * As {@link #checkAndSetBranch(boolean, BooleanFormula, long)}, for one of several branches an
+     * instruction reports: {@code suffix} tells them apart in the branch's key ({@code #<case
+     * value>} for a switch case, {@code #<n>} for the n-th dimension MULTIANEWARRAY checks).
+     */
+    public void checkAndSetBranch(boolean result, BooleanFormula constraint, long iid, String suffix) throws NoThreadContextException {
 
         long threadId = Thread.currentThread().getId();
         BranchElement current;
@@ -51,8 +63,23 @@ public class SymbolicTraceHandler {
         current = new BranchElement(result, pathConstraint, iid);
         // check if the path constraint contains a free/ symbolic variable
 
+        place(current, iid, suffix);
         symbolicTrace.addTraceElement(current);
         lastBranchDepth = frameDepth();
+    }
+
+    /** Records where a branch is: its key and the change of the frame stack since the last branch. */
+    private static void place(BranchElement branch, long iid, String suffix) throws NoThreadContextException {
+        String key = BranchKeys.keyOf(iid);
+        branch.setKey(key == null ? null : key + suffix);
+        ShadowContext.StackDelta delta = ThreadHandler.getSymbolicVisitor(Thread.currentThread().getId())
+                .getStack().takeStackDelta();
+        branch.setPops(delta.popped());
+        List<String> pushes = new ArrayList<>(delta.pushed().size());
+        for (Frame frame : delta.pushed()) {
+            pushes.add(frame.getCallSite() < 0 ? null : BranchKeys.keyOf(frame.getCallSite()));
+        }
+        branch.setPushes(pushes);
     }
 
     /**
@@ -78,7 +105,9 @@ public class SymbolicTraceHandler {
     public void addConcreteBranch(boolean result, long iid) throws NoThreadContextException {
         BooleanFormulaManager bmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId())
                 .getFormulaManager().getBooleanFormulaManager();
-        symbolicTrace.addTraceElement(new BranchElement(result, bmgr.makeTrue(), iid, true));
+        BranchElement branch = new BranchElement(result, bmgr.makeTrue(), iid, true);
+        place(branch, iid, "");
+        symbolicTrace.addTraceElement(branch);
         lastBranchDepth = frameDepth();
     }
 

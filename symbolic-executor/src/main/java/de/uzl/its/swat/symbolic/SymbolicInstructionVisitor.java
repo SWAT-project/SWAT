@@ -2325,7 +2325,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEINTERFACE(INVOKEINTERFACE inst) throws SymbolicInstructionException {
         try {
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
 
@@ -2362,7 +2362,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKESPECIAL(INVOKESPECIAL inst) throws SymbolicInstructionException {
         try {
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 ObjectValue<?, ?> instance = stack.getInstance();
@@ -2397,7 +2397,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKESTATIC(INVOKESTATIC inst) throws SymbolicInstructionException {
         try {
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, false);
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), false);
@@ -2436,7 +2436,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 // an instance method, with Method.invoke's (null) receiver below the arguments.
                 // The callee has no receiver, so the frame must not have one either.
                 previousWasUnpack = false;
-                stack.newStackFrame(inst.desc, inst.owner, inst.name, false);
+                stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
                 Frame callee = stack.popFrame();
                 stack.popOperand(); // the null receiver
                 stack.pushFrame(callee);
@@ -2444,7 +2444,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 return;
             }
             previousWasUnpack = false;
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 ObjectValue<?, ?> instance = stack.getInstance();
@@ -2479,7 +2479,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEDYNAMIC(INVOKEDYNAMIC inst) throws SymbolicInstructionException {
         try {
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, false);
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), false);
@@ -3148,7 +3148,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitCLINIT(CLINIT inst) throws SymbolicInstructionException {
         try {
             String owner = classDepot.getClassName(inst.cIdx);
-            stack.newStackFrame(inst.desc, owner, inst.name, false);
+            stack.newStackFrame(inst.desc, owner, inst.name, false, inst.iid);
             symbolicTraceHandler.recordInvocation(
                     determineIid(inst.iid), inst.getClass().getCanonicalName());
         } catch (Throwable t) {
@@ -3222,7 +3222,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitSET_FIELD_REFLECTION(SET_FIELD_REFLECTION inst) throws SymbolicInstructionException {
         try {
 
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 String reflectFieldName = inst.reflectFieldName;
@@ -3269,7 +3269,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
     public void visitGET_FIELD_REFLECTION(GET_FIELD_REFLECTION inst) throws SymbolicInstructionException {
         try {
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
 
@@ -3649,7 +3649,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 IntValue i1 = stack.popOperand().asIntValue();
                 BooleanFormula constraint = i1.checkPositive();
                 boolean result = i1.concrete >= 0;
-                symbolicTraceHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
+                symbolicTraceHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid), "#" + i);
                 dims[dims.length - i - 1] = i1;
             }
 
@@ -3678,7 +3678,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         ValueFactory.createNumericalValue(ValueType.intValue, key)
                                 .asIntValue());
                 symbolicTraceHandler.checkAndSetBranch(
-                        i1.concrete == key, result, determineIid(inst.iid));
+                        i1.concrete == key, result, determineIid(inst.iid), "#" + key);
 
                 if (i1.concrete == key)
                     return;
@@ -3702,7 +3702,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         ValueFactory.createNumericalValue(ValueType.intValue, i).asIntValue());
                 symbolicTraceHandler.checkAndSetBranch(
                         i1.concrete == i, result,
-                        GlobalStateForInstrumentation.createSwitchCaseIid(inst.iid, i, inst.min));
+                        GlobalStateForInstrumentation.createSwitchCaseIid(inst.iid, i, inst.min), "#" + i);
 
                 if (i1.concrete == i)
                     return;
