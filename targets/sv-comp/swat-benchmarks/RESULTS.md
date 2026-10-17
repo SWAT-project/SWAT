@@ -156,7 +156,7 @@ and `<clinit>` that runs on every path.
 
 ## Bugs found
 
-Status as of 2026-10-16: all fixed, see "Fixes (2026-10-15/16)", "S2" and "S2 precision" below.
+Status as of 2026-10-17: all fixed (see "Fixes (2026-10-15/16)", "S2" and the sections after it) except the library-callback false SAFE ("Library callbacks", "Still open").
 
 Each has a minimal reproducing task in `java/sa-soundness/` (VIOLATION variant `_false`). None is
 fixed here: the SA ones need extractor changes beyond a local fix, the executor ones an executor
@@ -435,12 +435,18 @@ SA + rank 301, no SA 266 correct, 0 false SAFE; SV-COMP 891 points, 720 correct,
 (`run_20261017_145000`). Six Juliet tasks lose the graph after a failing socket call (an exception
 out of library code), which the walk used to step over.
 
-Not done (on purpose): marking library calls that may call back as possibly reaching an assert.
-A callback that reaches an assert on an unexplored path is not seen by the pruning; a callback that
-runs still records context loss, so SAFE becomes UNKNOWN then.
+Not done: marking library calls that may call back as possibly reaching an assert. A callback
+that runs is handled correctly (a tracked one is explored symbolically with its branches never
+pruned; an untracked one records context loss). But an assert in a callback on a pruned path is a
+**false SAFE** with SA: the graph does not have the callback, so the path to the library call is
+pruned and never runs (`library-callback-assert_false`: false SAFE with SA, correct without).
 
 ### Still open
 
+- False SAFE: an assert in application code that library code calls back, on a path pruning cuts
+  (`library-callback-assert`, see "Library callbacks"). A sound fix for asserts: if an application
+  method overriding a library method can reach an assert, treat every library call as possibly
+  reaching one.
 - Calls the extractor cannot resolve (ambiguous receivers) have no CALL edge, so a frame entered
   through one cannot be rebuilt and resync stays off inside it (`virtual-dispatch/factory`).
 - Fresh arrays have a free base variable (`[I_0`), which counts as precision loss: SAFE tasks that
