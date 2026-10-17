@@ -1535,6 +1535,28 @@ AB        input = a;
 """
 
 
+@task('exec-loop-iid-wrap', witness=ints([1001, 66]))
+def _():
+    """IMPORT
+// A branch in a loop is reported once per iteration, and its iid carries the iteration count,
+// which wraps at 64: iterations 2 and 66 share an iid. Solving iteration 66 must not use iteration
+// 2's constraint (the explorer's constraint cache was keyed by iid).
+public class Main {
+    public static void main(String[] args) {
+AB        int hit = -1;
+        for (int i = 0; i < 70; i++) {
+            if (b == i) {
+                hit = i;
+            }
+        }
+        if (hit == 66) {
+            if (@HIT(a)@) assert false;
+        }
+    }
+}
+"""
+
+
 def render(src: str, safe: bool) -> str:
     src = src.replace('IMPORT\n', IMPORT).replace('CLINIT\n', CLINIT)
     src = re.sub(r'^AB', AB, src, flags=re.M)
