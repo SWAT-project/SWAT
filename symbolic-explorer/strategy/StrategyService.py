@@ -33,10 +33,6 @@ class StrategyService:
             if error['kind'] == 'sa_desync':
                 db.record_execution_error(endpoint_id, error['kind'], error['message'])
         
-        # # If possible_branches is empty, try again without sa_node to prevent false SAFE classifications.
-        # if not possible_branches:
-        #     possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches(), None)
-        
         return possible_branches
         
         
