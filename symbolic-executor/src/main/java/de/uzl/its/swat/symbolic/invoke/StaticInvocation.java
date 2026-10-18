@@ -55,6 +55,8 @@ public final class StaticInvocation {
                     case "java/lang/Double" -> DoubleInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
                     case "java/lang/System" -> SystemInvocation.invokeStaticMethod(name, args, desc);
+                    case "de/uzl/its/swat/common/RefIdentity" -> RefIdentityInvocation.invokeStaticMethod(
+                            name, args, symbolicStateHandler);
                     case "java/util/Objects" -> ObjectsInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
                     default -> PlaceHolder.instance;
