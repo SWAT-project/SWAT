@@ -150,7 +150,12 @@ public class Intrinsics {
             }
 
             SymbolicInstructionDispatcher.flush(); // TODO WTF does that do? calls log(null) <- I think what this does is removing that last symbolic instruction from the pipeline as symbolic execution is always one behind.
-            ThreadHandler.removeSolverContext(currentThread().getId());
+            // An SV-COMP run is one execution per JVM, which exits right after it. Closing the
+            // solver context there only costs time: Z3 frees the terms of the trace one by one,
+            // which takes minutes after a long trace.
+            if (!config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
+                ThreadHandler.removeSolverContext(currentThread().getId());
+            }
             ThreadHandler.removeThreadContext(currentThread().getId());
         } catch (NoThreadContextException | ThreadAlreadyDisabledException e) {
             logger.warn(e.toString());
