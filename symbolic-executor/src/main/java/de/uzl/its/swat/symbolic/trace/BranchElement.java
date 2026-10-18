@@ -31,6 +31,9 @@ final class BranchElement extends Element {
     @lombok.Setter private java.util.List<String> pushes = java.util.List.of();
     // Recorded in application code that library code called back (see ShadowContext.inCallback).
     @lombok.Setter private boolean callback;
+    // The loop-head states the execution reached since the previous branch, in order (see
+    // LoopStateMatcher).
+    @lombok.Setter private java.util.List<String> loopStates = java.util.List.of();
 
     /**
      * Constructs a branch element.

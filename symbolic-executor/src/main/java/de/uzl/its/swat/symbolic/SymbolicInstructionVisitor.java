@@ -15,6 +15,7 @@ import de.uzl.its.swat.instrument.Intrinsics;
 import de.uzl.its.swat.metadata.ClassDepot;
 import de.uzl.its.swat.metadata.ClassDepotRuntime;
 import de.uzl.its.swat.symbolic.instruction.*;
+import de.uzl.its.swat.symbolic.loopstate.LoopStateMatcher;
 import de.uzl.its.swat.symbolic.invoke.InvocationHandler;
 import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
 import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
@@ -3631,6 +3632,24 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     public void visitSPECIAL(SPECIAL inst) throws SymbolicInstructionException {
+    }
+
+    /**
+     * Reports the state at a loop head with the next branch, if it has one (see LoopStateMatcher).
+     *
+     * @param inst The LOOP_HEAD probe
+     */
+    public void visitLOOP_HEAD(LOOP_HEAD inst) throws SymbolicInstructionException {
+        try {
+            long id = currentThread().getId();
+            String state = LoopStateMatcher.stateOf(inst, stack, ThreadHandler.getStaticFields(id),
+                    ThreadHandler.getActiveThreadContextIds().size());
+            if (state != null) {
+                symbolicTraceHandler.addLoopState(state);
+            }
+        } catch (Throwable t) {
+            throw new SymbolicInstructionException(inst, t);
+        }
     }
 
     /**

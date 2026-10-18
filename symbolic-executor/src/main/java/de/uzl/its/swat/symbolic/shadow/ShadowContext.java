@@ -49,6 +49,11 @@ public class ShadowContext {
         heap.put(hashCode, value);
     }
 
+    /** All values of the shadow heap. */
+    public java.util.Collection<Value<?, ?>> heapValues() {
+        return heap.values();
+    }
+
     public Value<?, ?> getFromHeap(int hashCode) {
         return heap.get(hashCode);
     }

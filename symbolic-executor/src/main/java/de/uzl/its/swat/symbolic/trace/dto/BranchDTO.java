@@ -32,6 +32,16 @@ public class BranchDTO {
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
     private boolean callback;
 
+    // See BranchElement: the loop-head states reached since the previous branch.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+    private java.util.List<String> loopStates;
+
+    public BranchDTO loopStates(java.util.List<String> loopStates) {
+        this.loopStates = loopStates;
+        return this;
+    }
+
     public BranchDTO place(String key, int pops, java.util.List<String> pushes, boolean callback) {
         this.key = key;
         this.pops = pops;

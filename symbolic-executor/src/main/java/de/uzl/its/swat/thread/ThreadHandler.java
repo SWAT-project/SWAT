@@ -364,6 +364,16 @@ public final class ThreadHandler {
         }
     }
 
+    /** The shadow values of the static fields, by class: those the thread has accessed so far. */
+    public static java.util.Map<String, Value<?, ?>[]> getStaticFields(long id) throws NoThreadContextException {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            return context.getStaticFields();
+        } else {
+            throw new NoThreadContextException(id);
+        }
+    }
+
     public static Value<?, ?> getStaticField(long id, int classIndex, int runtimeFieldIndex)
             throws ThreadAlreadyEnabledException, ThreadAlreadyDisabledException, NoThreadContextException, ClassNotFoundException {
         ThreadContext context = threadContextHashMap.get(id);

@@ -64,7 +64,23 @@ public class SymbolicTraceHandler {
         // check if the path constraint contains a free/ symbolic variable
 
         place(current, iid, suffix);
+        takeLoopStates(current);
         symbolicTrace.addTraceElement(current);
+    }
+
+    /** The loop-head states reached since the last branch (see LoopStateMatcher). */
+    private final List<String> loopStates = new ArrayList<>();
+
+    /** Records the state at a loop head; it is reported with the next branch. */
+    public void addLoopState(String state) {
+        loopStates.add(state);
+    }
+
+    private void takeLoopStates(BranchElement branch) {
+        if (!loopStates.isEmpty()) {
+            branch.setLoopStates(List.copyOf(loopStates));
+            loopStates.clear();
+        }
     }
 
     /** Records where a branch is: its key and the change of the frame stack since the last branch. */
@@ -96,6 +112,7 @@ public class SymbolicTraceHandler {
                 .getFormulaManager().getBooleanFormulaManager();
         BranchElement branch = new BranchElement(result, bmgr.makeTrue(), iid, true);
         place(branch, iid, "");
+        takeLoopStates(branch);
         symbolicTrace.addTraceElement(branch);
     }
 

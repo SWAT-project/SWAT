@@ -191,6 +191,15 @@ public class ThreadContext {
         statics.get(cIdx)[fIdx] = value;
     }
 
+    /** The shadow values of the static fields accessed so far, keyed by class name. */
+    public java.util.Map<String, Value<?, ?>[]> getStaticFields() {
+        java.util.Map<String, Value<?, ?>[]> byName = new java.util.HashMap<>();
+        for (java.util.Map.Entry<Integer, Value<?, ?>[]> e : statics.entrySet()) {
+            byName.put(classDepot.getClassName(e.getKey()), e.getValue());
+        }
+        return byName;
+    }
+
     public Value<?, ?> getStaticField(int classIndex, int runtimeFieldIndex)
             throws ThreadAlreadyEnabledException, ThreadAlreadyDisabledException, NoThreadContextException, ClassNotFoundException {
         SWATAssert.check(runtimeFieldIndex >= 0, "Field ID must be non-negative");
