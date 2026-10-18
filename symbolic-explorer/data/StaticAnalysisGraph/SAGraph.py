@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 from collections import deque
 import json
 import math
+import re
 
 # The walk's call stack: a persistent linked-list stack of call-site nodes, innermost call on top, each
 # cell also carrying the stack's depth. `None` is the empty stack, i.e. the walk is in main's
@@ -217,6 +218,10 @@ class GraphIndex:
     """The nodes of a graph by key (branches and call sites; see check_branch), and main's method."""
     keys: dict[str, SANode]
     root_method: str | None
+    # Application code that library code may call back can reach an assert (the extractor's
+    # callbacksReachingAssert). Such a callback may also run once main's frame is gone (a shutdown
+    # hook, a finalizer, a thread still running), so leaving main is then interesting too.
+    callbacks_reach_assert: bool = False
 
 
 # The executor's view of the call stack at a branch, as the walk tracks it from the trace (each
@@ -353,6 +358,9 @@ def is_interesting(node: SANode, stack: CallStack) -> bool:
         if current.reachesAssertSameLevel:
             return True
         if current_stack is None: # in main's frame: nothing to return into
+            index = current.graph_index
+            if index is not None and index.callbacks_reach_assert and (current.canReturn or current.escapes):
+                return True # a callback may still run after main (see GraphIndex)
             continue
         frame, below = pop(current_stack)
         if current.canReturn:
@@ -508,6 +516,27 @@ def compute_assert_distances(nodes) -> None:
                     worklist.append(pred)
 
 
+# Library methods that run application code outside the caller's call tree: on another thread,
+# after main (shutdown hooks), or when an exception leaves a thread (uncaught-exception handlers).
+# Matched by name at library call sites only, so an application method of the same name, which
+# the graph expands, does not count.
+ASYNC_ENTRY_METHODS = {
+    "addShutdownHook", "setUncaughtExceptionHandler", "setDefaultUncaughtExceptionHandler",
+    "execute", "submit", "invokeAll", "invokeAny", "schedule", "scheduleAtFixedRate",
+    "scheduleWithFixedDelay", "invokeLater", "invokeAndWait", "startVirtualThread",
+}
+# `<declaring class: return type name(parameters)>` in a Jimple invoke statement.
+INVOKED_METHOD = re.compile(r"<([^:<>]+): ([^ <>]+) ([^ (<>]+)\(([^)]*)\)>")
+
+
+def is_async_entry(declaring_class: str, return_type: str, name: str, params: str) -> bool:
+    if name in ASYNC_ENTRY_METHODS or name.endswith("Async"): # CompletableFuture.runAsync etc.
+        return True
+    if name == "start": # Thread.start, also through a subclass or a Thread.Builder
+        return (return_type == "void" and params == "") or declaring_class.startswith("java.lang.Thread")
+    return declaring_class == "java.lang.ref.Cleaner" and name == "register"
+
+
 # Edge types that continue within the method along the one fall-through slot. THROW is an explicit
 # throw to where it provably goes; SWAT reports no branch for an ATHROW, so it walks like NORMAL.
 FALLTHROUGH_EDGES = {"NORMAL", "FALSE_BRANCH", "PHANTOM_FALSE_BRANCH", "THROW"}
@@ -518,6 +547,22 @@ class SAGraph:
         self.json_graph = {}
         self.nodes: dict[str, SANode] = {}
         self.entry_node: SANode | None = None
+
+    def async_entry_sites(self) -> list[str]:
+        """
+        The library call sites (as `node id: method`) that may run application code outside main's
+        call tree, see ASYNC_ENTRY_METHODS. The walk only follows main's call tree, so an assert
+        reached from such code is on no path it knows of.
+        """
+        expanded = {e["source"] for e in self.json_graph.get("edges", []) if e["type"] == "CALL"}
+        sites = []
+        for json_node in self.json_graph.get("nodes", []):
+            if json_node["id"] in expanded:
+                continue
+            match = INVOKED_METHOD.search(json_node.get("statement") or "")
+            if match is not None and is_async_entry(*match.groups()):
+                sites.append(f'{json_node["id"]}: {match.group(1)}.{match.group(3)}')
+        return sites
 
 
     def load_json_graph(self, path: str):
@@ -598,7 +643,8 @@ class SAGraph:
                 n.add_fallthrough_child(n.callees[0])
 
         self.entry_node = self.nodes[self.json_graph["entryNodeId"]]
-        graph_index = GraphIndex(keys, self.entry_node.method)
+        graph_index = GraphIndex(keys, self.entry_node.method,
+                                 callbacks_reach_assert=bool(self.json_graph["metadata"].get("callbacksReachingAssert")))
         for n in self.nodes.values():
             n.graph_index = graph_index
 

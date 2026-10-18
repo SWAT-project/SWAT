@@ -58,7 +58,11 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         # Likewise for a branch in application code that library code called back: the graph walks
         # over the library call, so the walk holds its place until the callback returns.
         mask_sa_node = clinit_depth > 0 or node.callback
-    
+        # Whether the walk's pairing of this branch with a graph node was checked (check_branch).
+        # A pairing that could not be checked is still followed, so that a later branch can be
+        # checked against the walk, but this branch is not pruned by it.
+        verified = False
+
         # Get information on interesting paths. If sa_node is None, all paths should be considered interesting
         if sa_node and not mask_sa_node:
             walked = sa_node.walk_till_branch(sa_stack) # idempotent
@@ -73,13 +77,16 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
                     tree.record_execution_error('sa_desync', f'trace {node.key}, graph {sa_node.key}')
                     sa_node, sa_stack = None, None
                 elif in_step is not None:
+                    verified = True
                     trace_stack = sa_stack # the same frames; sharing the cells keeps later checks cheap
         if sa_node is None and not mask_sa_node and sa_index is not None:
             resumed = resync(node.key, trace_stack, sa_index)
             if resumed is not None:
                 sa_node, sa_stack = resumed
-        skip_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_fallthrough_child(), sa_stack)
-        branch_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_branched_child(), sa_stack)
+                verified = True # found by the trace's key under the trace's own call stack
+        unpruned = mask_sa_node or (sa_node is None) or not verified
+        skip_is_interesting = unpruned or is_interesting(sa_node.get_fallthrough_child(), sa_stack)
+        branch_is_interesting = unpruned or is_interesting(sa_node.get_branched_child(), sa_stack)
         
         logger.info(f"[DFS] @{node.id}/{("CALLBACK" if node.callback else "CLINIT") if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
         

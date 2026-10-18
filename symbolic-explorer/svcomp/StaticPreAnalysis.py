@@ -8,6 +8,11 @@ while its graph is loaded), and the driver adopts the graph once it is ready.
 The graph is built in a private ``SAGraph`` and only handed out once it is fully loaded, so the
 explorer never sees a half-loaded graph. ``cancel()`` kills the extractor and joins the thread, so
 no Java process outlives the explorer when exploration finishes first.
+
+The graph's only targets are asserts (``new AssertionError`` sites), so pruning by it is only sound
+for the valid-assert property; under any other property the pre-analysis is not run at all. A
+graph whose program may run application code outside main's call tree (another thread, a shutdown
+hook, an uncaught-exception handler) is not used either, see ``SAGraph.async_entry_sites``.
 """
 
 import os
@@ -24,6 +29,9 @@ logger = log.get_logger()
 
 EXTRACTOR_TIMEOUT_S = 120
 
+# The only property whose violations are the graph's targets (assertion points).
+SA_PROPERTY = "valid-assert.prp"
+
 
 class SAStatus(Enum):
     DISABLED = "disabled"
@@ -33,6 +41,7 @@ class SAStatus(Enum):
     FAILED = "failed"
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"  # exploration finished before the pre-analysis
+    REJECTED = "rejected"  # loaded, but pruning by the graph would not be sound (see rejected_reason)
 
 
 class StaticPreAnalysis:
@@ -40,6 +49,7 @@ class StaticPreAnalysis:
         self.args = args
         self.status = SAStatus.NOT_STARTED if self.enabled else SAStatus.DISABLED
         self.duration: float | None = None  # wall time from start until done or cancelled
+        self.rejected_reason: str | None = None
         self._graph: SAGraph | None = None
         self._start: float | None = None
         self._thread: threading.Thread | None = None
@@ -49,12 +59,24 @@ class StaticPreAnalysis:
         self._done = threading.Event()
 
     @property
-    def enabled(self) -> bool:
+    def requested(self) -> bool:
         return bool(self.args.sa_file or self.args.sa_path)
+
+    @property
+    def enabled(self) -> bool:
+        return self.requested and self.property_supported
+
+    @property
+    def property_supported(self) -> bool:
+        return os.path.basename(getattr(self.args, "property", None) or "") == SA_PROPERTY
 
     def start(self):
         if not self.enabled:
-            logger.info(f'[EXPLORER] Static pre-analysis is disabled.')
+            if self.requested:
+                logger.info(f'[EXPLORER] Static pre-analysis is disabled: its graph only targets asserts, '
+                            f'so it cannot prune for property {self.args.property} (only {SA_PROPERTY}).')
+            else:
+                logger.info(f'[EXPLORER] Static pre-analysis is disabled.')
             self._done.set()
             return
         self._start = time.perf_counter()
@@ -108,8 +130,15 @@ class StaticPreAnalysis:
                 logger.info(f'[EXPLORER] Loading static pre-analysis graph...')
                 graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"))
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
+            async_sites = graph.async_entry_sites()
             if self._cancelled.is_set():
                 self.status = SAStatus.CANCELLED
+            elif async_sites:
+                # An assert on another thread or after main's frame is gone is not on any path
+                # the walk follows, so no branch side could be pruned soundly.
+                self.rejected_reason = f'application code may run outside main\'s call tree: {", ".join(async_sites[:5])}'
+                logger.info(f'[EXPLORER] Not using the static pre-analysis graph, {self.rejected_reason}')
+                self.status = SAStatus.REJECTED
             else:
                 self._graph = graph
                 self.status = SAStatus.LOADED
@@ -165,12 +194,15 @@ class StaticPreAnalysis:
     def stats(self, adopted_at_round: int | None) -> dict:
         return {
             'enabled': self.enabled,
+            'requested': self.requested,
+            'property_supported': self.property_supported,
             'mode': 'parallel' if self.args.parallel_sa else 'sequential',
             'callback_targets': not getattr(self.args, "sa_no_callback_targets", False),
             'status': self.status.value,
             'failed': self.status in (SAStatus.FAILED, SAStatus.TIMEOUT),
             'timed_out': self.status == SAStatus.TIMEOUT,
             'cancelled': self.status == SAStatus.CANCELLED,
+            'rejected_reason': self.rejected_reason,
             'duration_s': self.duration,
             # Round whose branch selection first used the graph; None if it never was.
             'adopted_at_round': adopted_at_round,
