@@ -20,6 +20,10 @@ from data.BinaryExecutionTree.Tree import Tree
 from driver import SVCompDriver as svcomp
 
 
+def not_proven():
+    return SimpleNamespace(proven=False, reason=None, run=lambda: None, stats=lambda: {})
+
+
 class FakeDatabase:
     def __init__(self):
         self.tree = Tree(0)
@@ -64,6 +68,7 @@ class DriverTest(unittest.TestCase):
         self.driver.solver_limit_hits = 0
         self.driver.verdict_reported = False
         self.driver.kill_current_process = lambda: None
+        self.driver.precheck = not_proven()
 
     def run_with(self, run_testcase):
         self.driver.run_testcase = run_testcase
@@ -90,6 +95,11 @@ class DriverTest(unittest.TestCase):
                 self.db.tree = Tree(0)
                 self.db.tree.record_execution_error(kind, 'x')
                 self.assertIn('== DONT-KNOW', self.run_with(lambda **kwargs: svcomp.Verdict.SAFE))
+
+    def test_incomplete_search_rules_out_a_proven_safe(self):
+        self.driver.precheck = SimpleNamespace(proven=True, reason='no throw', run=lambda: None, stats=lambda: {})
+        self.db.tree.record_execution_error('trace_ingest_failed', 'x')
+        self.assertIn('== DONT-KNOW', self.run_with(lambda **kwargs: svcomp.Verdict.SAFE))
 
     def test_incomplete_search_keeps_a_violation(self):
         self.db.tree.record_execution_error('tree_mismatch', 'x')
@@ -124,6 +134,7 @@ class NoTraceTest(unittest.TestCase):
         driver.state = svcomp.State()
         driver.state.branch_to_explore = SimpleNamespace(id=7, branched=None, parent=None)
         driver.sa = SimpleNamespace(start=lambda: None)
+        driver.precheck = not_proven()
         driver.symbolicStorage = SimpleNamespace(input_type=None)
         driver.build_command = lambda **kwargs: []
         driver.run_command_with_timeout = lambda cmd: (svcomp.ExecutionStatus.ERROR, [])
