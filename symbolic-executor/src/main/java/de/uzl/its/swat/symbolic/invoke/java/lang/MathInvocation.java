@@ -51,6 +51,9 @@ public class MathInvocation {
             case "toRadians" -> scale(args, 0.017453292519943295, strict ? StrictMath::toRadians : Math::toRadians);
             case "toDegrees" -> scale(args, 57.29577951308232, strict ? StrictMath::toDegrees : Math::toDegrees);
             case "getExponent" -> invokeGetExponent(args);
+            case "signum" -> invokeSignum(args);
+            case "floorDiv" -> invokeFloorDivMod(args, false);
+            case "floorMod" -> invokeFloorDivMod(args, true);
             case "pow" -> SampledMath.binary("pow" + (strict ? "/strict" : ""), args, strict ? StrictMath::pow : Math::pow,
                     // inverses: pow(x, y0) = t at x = t^(1/y0), pow(x0, y) = t at y = log(t) / log(x0)
                     (t, y0) -> y0 == 0 ? Double.NaN : Math.pow(t, 1 / y0),
@@ -185,6 +188,55 @@ public class MathInvocation {
         }
     }
 
+    /** Math.signum: the argument itself for zeros and NaN, otherwise 1.0 with its sign. */
+    private static Value<?, ?> invokeSignum(Value<?, ?>[] args) {
+        if (args.length != 1) return PlaceHolder.instance;
+        if (args[0] instanceof DoubleValue d) {
+            return new DoubleValue(d.context, Math.signum(d.concrete), signum(d.context, d.formula, new DoubleValue(d.context, 1.0).formula));
+        } else if (args[0] instanceof FloatValue f) {
+            return new FloatValue(f.context, Math.signum(f.concrete), signum(f.context, f.formula, new FloatValue(f.context, 1.0f).formula));
+        }
+        return PlaceHolder.instance;
+    }
+
+    private static FloatingPointFormula signum(SolverContext ctx, FloatingPointFormula x, FloatingPointFormula one) {
+        FloatingPointFormulaManager fpfm = ctx.getFormulaManager().getFloatingPointFormulaManager();
+        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
+        return bmgr.ifThenElse(bmgr.or(fpfm.isZero(x), fpfm.isNaN(x)), x,
+                bmgr.ifThenElse(fpfm.isNegative(x), fpfm.negate(one), one));
+    }
+
+    /**
+     * Math.floorDiv and floorMod of two ints or two longs, for a concrete non-zero divisor. With a
+     * symbolic divisor the ArithmeticException for zero would need a branch of its own, so that
+     * case stays unmodelled.
+     */
+    private static Value<?, ?> invokeFloorDivMod(Value<?, ?>[] args, boolean mod) {
+        if (args.length != 2) return PlaceHolder.instance;
+        if (args[0] instanceof LongValue x && args[1] instanceof LongValue y) {
+            if (y.isSymbolic() || y.concrete == 0) return PlaceHolder.instance;
+            BitvectorFormula r = floorDivMod(x.context, x.formula, y.formula, 64, mod);
+            return new LongValue(x.context, mod ? Math.floorMod(x.concrete, y.concrete) : Math.floorDiv(x.concrete, y.concrete), r);
+        } else if (args[0] instanceof IntValue x && args[1] instanceof IntValue y) {
+            if (y.isSymbolic() || y.concrete == 0) return PlaceHolder.instance;
+            BitvectorFormula r = floorDivMod(x.context, x.formula, y.formula, 32, mod);
+            return new IntValue(x.context, mod ? Math.floorMod(x.concrete, y.concrete) : Math.floorDiv(x.concrete, y.concrete), r);
+        }
+        return PlaceHolder.instance;
+    }
+
+    /** As the JDK: q = x / y, minus one if the signs differ and the division is not exact; mod = x - q * y. */
+    private static BitvectorFormula floorDivMod(SolverContext ctx, BitvectorFormula x, BitvectorFormula y, int width, boolean mod) {
+        BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
+        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
+        BitvectorFormula q = bvmgr.divide(x, y, true);
+        BooleanFormula adjust = bmgr.and(
+                bvmgr.lessThan(bvmgr.xor(x, y), bvmgr.makeBitvector(width, 0), true),
+                bmgr.not(bvmgr.equal(bvmgr.multiply(q, y), x)));
+        BitvectorFormula floorQ = bmgr.ifThenElse(adjust, bvmgr.subtract(q, bvmgr.makeBitvector(width, 1)), q);
+        return mod ? bvmgr.subtract(x, bvmgr.multiply(floorQ, y)) : floorQ;
+    }
+
     private static Value<?, ?> invokeAbs(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
         SWATAssert.enforce(args.length == 1, "Wrong argument counts");
         SWATAssert.enforce(args[0] instanceof NumericalValue, "Wrong argument type");
@@ -222,11 +274,9 @@ public class MathInvocation {
         BooleanFormulaManager bfm = args[0].context.getFormulaManager().getBooleanFormulaManager();
 
         if (args[0] instanceof FloatValue v && args[1] instanceof FloatValue w) {
-            FloatingPointFormulaManager fpfm = v.context.getFormulaManager().getFloatingPointFormulaManager();
-            return new FloatValue(v.context, Math.max(v.concrete, w.concrete), fpfm.max(v.formula, w.formula));
+            return new FloatValue(v.context, Math.max(v.concrete, w.concrete), fpMinMax(v.context, v.formula, w.formula, true));
         } else if (args[0] instanceof DoubleValue v && args[1] instanceof DoubleValue w) {
-            FloatingPointFormulaManager fpfm = v.context.getFormulaManager().getFloatingPointFormulaManager();
-            return new DoubleValue(v.context, Math.max(v.concrete, w.concrete), fpfm.max(v.formula, w.formula));
+            return new DoubleValue(v.context, Math.max(v.concrete, w.concrete), fpMinMax(v.context, v.formula, w.formula, true));
         } else if (args[0] instanceof LongValue v && args[1] instanceof LongValue w) {
             BitvectorFormulaManager bvmgr = v.context.getFormulaManager().getBitvectorFormulaManager();
             return new LongValue(v.context, Math.max(v.concrete, w.concrete), bfm.ifThenElse(
@@ -251,11 +301,9 @@ public class MathInvocation {
         BooleanFormulaManager bfm = args[0].context.getFormulaManager().getBooleanFormulaManager();
 
         if (args[0] instanceof FloatValue v && args[1] instanceof FloatValue w) {
-            FloatingPointFormulaManager fpfm = v.context.getFormulaManager().getFloatingPointFormulaManager();
-            return new FloatValue(v.context, Math.min(v.concrete, w.concrete), fpfm.min(v.formula, w.formula));
+            return new FloatValue(v.context, Math.min(v.concrete, w.concrete), fpMinMax(v.context, v.formula, w.formula, false));
         } else if (args[0] instanceof DoubleValue v && args[1] instanceof DoubleValue w) {
-            FloatingPointFormulaManager fpfm = v.context.getFormulaManager().getFloatingPointFormulaManager();
-            return new DoubleValue(v.context, Math.min(v.concrete, w.concrete), fpfm.min(v.formula, w.formula));
+            return new DoubleValue(v.context, Math.min(v.concrete, w.concrete), fpMinMax(v.context, v.formula, w.formula, false));
         } else if (args[0] instanceof LongValue v && args[1] instanceof LongValue w) {
             BitvectorFormulaManager bvmgr = v.context.getFormulaManager().getBitvectorFormulaManager();
             return new LongValue(v.context, Math.min(v.concrete, w.concrete), bfm.ifThenElse(
@@ -271,6 +319,24 @@ public class MathInvocation {
                     v.formula,
                     w.formula));
         }
+    }
+
+    /**
+     * Math.max and min of two floats or doubles as the JDK computes them: NaN if either argument is
+     * NaN, and +0.0 (max) or -0.0 (min) for two zeros of different sign. SMT-LIB's fp.max and fp.min
+     * differ in both: they return the other argument for one NaN and either zero for two zeros.
+     */
+    private static FloatingPointFormula fpMinMax(SolverContext ctx, FloatingPointFormula a, FloatingPointFormula b, boolean max) {
+        FloatingPointFormulaManager fpfm = ctx.getFormulaManager().getFloatingPointFormulaManager();
+        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
+        // max: if (a != a) a; else if (a, b zero and a = -0.0) b; else a >= b ? a : b
+        // min: if (a != a) a; else if (a, b zero and b = -0.0) b; else a <= b ? a : b
+        BooleanFormula negZero = max
+                ? bmgr.and(fpfm.isZero(a), fpfm.isNegative(a))
+                : bmgr.and(fpfm.isZero(b), fpfm.isNegative(b));
+        return bmgr.ifThenElse(fpfm.isNaN(a), a,
+                bmgr.ifThenElse(bmgr.and(fpfm.isZero(a), fpfm.isZero(b), negZero), b,
+                        bmgr.ifThenElse(max ? fpfm.greaterOrEquals(a, b) : fpfm.lessOrEquals(a, b), a, b)));
     }
 
     private static Value<?, ?> invokeSqrt(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
@@ -290,7 +356,7 @@ public class MathInvocation {
      * - NaN returns 0
      * - Negative infinity or values <= MIN_VALUE return MIN_VALUE
      * - Positive infinity or values >= MAX_VALUE return MAX_VALUE
-     * - Otherwise, round to nearest integer
+     * - Otherwise, round to the nearest integer, ties toward positive infinity
      *
      * Note: SMT's fp.to_sbv has undefined behavior for NaN/infinity, so we must
      * explicitly encode Java's semantics with if-then-else.
@@ -329,7 +395,7 @@ public class MathInvocation {
                     fpfm.greaterOrEquals(v.formula, maxThreshold));
 
             // Normal case: round and convert to int
-            FloatingPointFormula rounded = fpfm.round(v.formula, FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
+            FloatingPointFormula rounded = roundHalfUp(v.context, v.formula, new FloatValue(v.context, 0.5f).formula, new FloatValue(v.context, 1.0f).formula);
             BitvectorFormula normalResult = fpfm.castTo(rounded, true, FormulaType.getBitvectorTypeWithSize(32),
                     FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
 
@@ -374,7 +440,7 @@ public class MathInvocation {
                     fpfm.greaterOrEquals(v.formula, maxThreshold));
 
             // Normal case: round and convert to long
-            FloatingPointFormula rounded = fpfm.round(v.formula, FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
+            FloatingPointFormula rounded = roundHalfUp(v.context, v.formula, new DoubleValue(v.context, 0.5).formula, new DoubleValue(v.context, 1.0).formula);
             BitvectorFormula normalResult = fpfm.castTo(rounded, true, FormulaType.getBitvectorTypeWithSize(64),
                     FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN);
 
@@ -392,6 +458,19 @@ public class MathInvocation {
             return PlaceHolder.instance;
         }
     }
+    /**
+     * The integer closest to x, ties toward positive infinity, as Math.round rounds: floor(x), plus
+     * one if x - floor(x) >= 0.5. The difference is exact wherever it can reach 0.5 (Sterbenz; for x
+     * in (-0.5, 0) it is above 0.5 and rounding keeps it there), and beyond 2^52 (2^23) x is
+     * integral, so floor(x) + 1 is only formed where it is exact.
+     */
+    private static FloatingPointFormula roundHalfUp(SolverContext ctx, FloatingPointFormula x, FloatingPointFormula half, FloatingPointFormula one) {
+        FloatingPointFormulaManager fpfm = ctx.getFormulaManager().getFloatingPointFormulaManager();
+        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
+        FloatingPointFormula floor = fpfm.round(x, FloatingPointRoundingMode.TOWARD_NEGATIVE);
+        return bmgr.ifThenElse(fpfm.greaterOrEquals(fpfm.subtract(x, floor), half), fpfm.add(floor, one), floor);
+    }
+
     /*
      * 
      * private static IntValue invokeMax(IntValue a, IntValue b) {
