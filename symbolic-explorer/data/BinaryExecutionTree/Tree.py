@@ -33,7 +33,7 @@ class Tree:
         self.symbolic_context_loss = False
         self.symbolic_precision_loss = False
         self.reference_semantic_change = False
-        # Traces that used an approximate model (a sampled Math function). A solution built from one
+        # Traces that used an approximate model (TraceDTO.approximateModel). A solution built from one
         # is a guess, so the next run may take another path than predicted without anything being wrong.
         self.approximate_traces: Set[str] = set()
         # How often the next run did take another path than such a guessed solution predicted.

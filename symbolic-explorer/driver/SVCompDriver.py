@@ -368,7 +368,8 @@ class SVCompDriver:
             alone = retry and len(pending) == 1
             for branch in pending:
                 rlimit = None if alone else self.solver_rlimit_for(branch)
-                sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit)
+                sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit,
+                                                        approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
                 self.nr_solver_calls += 1
                 if sat == SATResult.SAT:
                     return branch, sol, gave_up
@@ -411,7 +412,13 @@ class SVCompDriver:
         logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
         # remember which branch we want to explore
         self.state.branch_to_explore = branch
-        self.state.solution_is_guess = Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id)
+        # A solution is a guess if its trace used an approximate model, which is precision loss, or
+        # if its query is over a sampled Math function: that function is in a branch constraint of
+        # the trace, so the trace is precision loss as well. In both cases a divergence cannot lead
+        # to a false SAFE. A solution from a trace whose Math results never reach the query is
+        # exact, and a divergence from it is an error.
+        self.state.solution_is_guess = (Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id)
+                                        or StrategyService.is_approximate_query(branch))
 
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
         logger.info(f'[SYMBOLIC EXPLORATION] SAT solution: {sol}')

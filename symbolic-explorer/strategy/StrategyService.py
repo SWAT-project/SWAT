@@ -1,6 +1,8 @@
+import functools
 import json
 import math
 import logging
+import re
 import time
 
 from data.BinaryExecutionTree.Node import Node
@@ -11,6 +13,19 @@ from solver.SolverHandler import SATResult, Z3Handler
 from timing.TimingManager import TimingManager
 
 logger = logging.getLogger(__name__)
+
+# A declaration of a function with at least one argument, i.e. an uninterpreted function rather
+# than a variable: "(declare-fun f (<sort> ...) <sort>)".
+_UF_DECLARATION = re.compile(r'\(declare-fun\s+(\|[^|]*\||[^\s()]+)\s+\(\s*[^\s)]')
+
+# Prefix of the functions the executor builds approximate Math models from (SampledMath.UF_PREFIX).
+APPROXIMATE_UF_PREFIX = 'math_'
+
+
+@functools.lru_cache(maxsize=4096)
+def declared_ufs(smt: str) -> frozenset[str]:
+    """The uninterpreted functions an SMT-LIB string declares."""
+    return frozenset(name.strip("|") for name in _UF_DECLARATION.findall(smt))
 
 
 class StrategyService:
@@ -95,21 +110,87 @@ class StrategyService:
         return uf_definitions
 
     @staticmethod
+    def slice_uf_definitions(definitions: list, query: list) -> tuple[list, set[str]]:
+        """The definitions the query needs, and the uninterpreted functions it then contains.
+
+        A definition is needed if it mentions a function the query or another needed definition
+        contains, or no function at all. The others only constrain functions that occur nowhere
+        else in the query; the executor gives every model call its own function, so each of them
+        can be satisfied by its function's value whatever the inputs, and leaving it out changes
+        neither satisfiability nor the inputs of any model.
+        """
+        needed = set()
+        for smt in query:
+            needed |= declared_ufs(smt)
+        pending = [(d, declared_ufs(d)) for d in definitions]
+        sliced = []
+        changed = True
+        while changed:
+            changed = False
+            rest = []
+            for d, ufs in pending:
+                if not ufs or ufs & needed:
+                    sliced.append(d)
+                    needed |= ufs
+                    changed = True
+                else:
+                    rest.append((d, ufs))
+            pending = rest
+        # Keep the order in which the executor recorded them.
+        order = {d: i for i, d in enumerate(definitions)}
+        sliced.sort(key=lambda d: order[d])
+        return sliced, needed
+
+    @staticmethod
+    def collect_query(node: Node) -> tuple[list, set[str]]:
+        """The constraints of the query for the unexplored side of the branch, besides its own
+        constraint, and the uninterpreted functions the query contains."""
+        path_constraints = StrategyService.collect_path_constrains(node)
+        path_constraints.extend(StrategyService.collect_input_constrains(node))
+        node_constraint = node.constraint.get(node.trace_id, '')
+        definitions, ufs = StrategyService.slice_uf_definitions(
+            StrategyService.collect_uf_definitions(node), path_constraints + [node_constraint])
+        path_constraints.extend(definitions)
+        return path_constraints, ufs
+
+    @staticmethod
+    def is_approximate(ufs) -> bool:
+        """Whether a query with these functions depends on an approximate Math model. Only a branch
+        constraint brings one in, and the executor reports such a trace as precision loss."""
+        return any(uf.startswith(APPROXIMATE_UF_PREFIX) for uf in ufs)
+
+    @staticmethod
+    def is_approximate_query(node: Node) -> bool:
+        """Whether the query for the unexplored side of the branch depends on an approximate Math model."""
+        return StrategyService.is_approximate(StrategyService.collect_query(node)[1])
+
+    @staticmethod
     def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000,
-                     solver_rlimit: int | None = None):
+                     solver_rlimit: int | None = None, approximate_rlimit: int | None = None):
         """Solves for the unexplored side of the branch. LIMIT (the rlimit ran out) records nothing,
-        so the branch stays a candidate and can be retried with a larger limit."""
+        so the branch stays a candidate and can be retried with a larger limit.
+
+        A query over an approximate Math model can only give a guess, and a branch whose search
+        depends on one never ends in SAFE (the executor reports precision loss). With
+        approximate_rlimit, such a query gets at most that resource limit, and running out of it is
+        UNKNOWN (given up), not LIMIT."""
         db = Database.instance()
 
-        path_constraints = StrategyService.collect_path_constrains(possible_branch)
-
-        path_constraints.extend(StrategyService.collect_input_constrains(possible_branch))
-
-        path_constraints.extend(StrategyService.collect_uf_definitions(possible_branch))
+        path_constraints, ufs = StrategyService.collect_query(possible_branch)
 
         inputs = possible_branch.inputs
 
+        capped = False
+        if approximate_rlimit and StrategyService.is_approximate(ufs):
+            if solver_rlimit is None or solver_rlimit >= approximate_rlimit:
+                solver_rlimit = approximate_rlimit
+                capped = True
+
         sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms, rlimit=solver_rlimit)
+
+        if sat == SATResult.LIMIT and capped:
+            logger.info(f'[SOLVER] Query over an approximate model for branch {possible_branch.id} ran out of resource limit {solver_rlimit}, giving up on it')
+            sat = SATResult.UNKNOWN
 
         if sat == SATResult.SAT:
             db.add_solution(branch_id=possible_branch.gid, sol=sol, inputs=inputs, endpoint_id=endpoint_id)

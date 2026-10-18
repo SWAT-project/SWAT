@@ -30,7 +30,7 @@ class FakeSolver:
     def __init__(self, needed, results):
         self.needed, self.results, self.calls = needed, results, []
 
-    def __call__(self, b, solver_timeout_ms=None, solver_rlimit=None):
+    def __call__(self, b, solver_timeout_ms=None, solver_rlimit=None, approximate_rlimit=None):
         self.calls.append((b.gid, solver_rlimit))
         if solver_rlimit is not None and solver_rlimit < self.needed.get(b.gid, 0):
             return SATResult.LIMIT, {}
