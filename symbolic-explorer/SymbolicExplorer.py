@@ -149,6 +149,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--sa-rank-distance", action="store_true", help="Try branches closest to an assert (by static pre-analysis graph distance) first, instead of in plain DFS order", default=False)
     parser.add_argument("--solver-rlimit", type=int, default=0, help="Z3 resource limit (rlimit) for the first query of each branch in sv-comp mode; a branch that runs out is retried later with a growing limit. 0 (default): unlimited")
     parser.add_argument("--no-property-precheck", action="store_true", help="Do not run the static property pre-check (sv-comp mode), which can prove no-runtime-exception (no uncaught RuntimeException is possible) or valid-assert (no AssertionError is ever created) for the whole program", default=False)
+    parser.add_argument("--divergence-retries", type=int, default=3, help="How often a branch is re-solved (with the failed solutions excluded) when the run of its solution does not reach it, before it is given up on, which rules out SAFE (sv-comp mode)")
     parser.add_argument("--parallel-sa", action="store_true", help="Run the static pre-analysis in the background and use it once it is ready (sv-comp mode). By default exploration waits for it: running it in parallel makes runs nondeterministic", default=False)
 
     # SV-COMP witness arguments: the explorer writes the violation witness from the trace of the

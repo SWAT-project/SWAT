@@ -25,7 +25,9 @@ class StrategyService:
         # changes, so which branches exist, and hence the verdict, does not. The sort is stable:
         # ties, and branches without SA information (ranked last), keep their DFS order.
         distances = {} if kwargs.get("rank_by_distance", False) else None
-        possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches(), kwargs.get("sa_node", None), distances=distances)
+        # A branch is not offered again once it is solved, or retired (its solutions kept missing it).
+        solved = db.get_solutions().keys() | db.get_retired_branches()
+        possible_branches = dfs(visited, tree, tree.root, solved, db.get_unsat_branches(), kwargs.get("sa_node", None), distances=distances)
         if distances:
             possible_branches.sort(key=lambda n: distances.get(n, math.inf))
         # dfs records where the SA walk fell out of step on its tree, which is a copy.
@@ -96,9 +98,12 @@ class StrategyService:
 
     @staticmethod
     def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000,
-                     solver_rlimit: int | None = None):
+                     solver_rlimit: int | None = None, extra_exprs: list | None = None):
         """Solves for the unexplored side of the branch. LIMIT (the rlimit ran out) records nothing,
-        so the branch stays a candidate and can be retried with a larger limit."""
+        so the branch stays a candidate and can be retried with a larger limit.
+
+        extra_exprs further restrict the inputs (see Z3Handler.retry_constraints). UNSAT under them
+        does not make the branch infeasible, so it is not recorded either."""
         db = Database.instance()
 
         path_constraints = StrategyService.collect_path_constrains(possible_branch)
@@ -109,12 +114,13 @@ class StrategyService:
 
         inputs = possible_branch.inputs
 
-        sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms, rlimit=solver_rlimit)
+        sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms, rlimit=solver_rlimit,
+                                   extra_exprs=extra_exprs)
 
         if sat == SATResult.SAT:
             db.add_solution(branch_id=possible_branch.gid, sol=sol, inputs=inputs, endpoint_id=endpoint_id)
 
-        elif sat == SATResult.UNSAT:
+        elif sat == SATResult.UNSAT and not extra_exprs:
             db.add_unsat_branch(possible_branch.gid)
 
         return sat, sol

@@ -35,6 +35,8 @@ class Database:
             self.solutions = {}
             self.new_solutions = []
             self.unsat_branches = []
+            # Branches whose solutions repeatedly did not lead the run to them, given up on (by gid)
+            self.retired_branches = set()
             self.endpoints = list()
             self.traces: list[list[Branch | Special]] = list()
             self.instr_coverage = {'total_executed': {}, 'total_instr_count': 0, 'endpoints': {}}
@@ -53,6 +55,8 @@ class Database:
             self.solutions = {}
             self.new_solutions = []
             self.unsat_branches = []
+            # Branches whose solutions repeatedly did not lead the run to them, given up on (by gid)
+            self.retired_branches = set()
             self.endpoints = list()
             self.traces: list[list[Branch | Special]] = list()
             self.instr_coverage = {'total_executed': {}, 'total_instr_count': 0, 'endpoints': {}}
@@ -220,6 +224,23 @@ class Database:
     def clear_new_solutions(self):
         with lock:
             self.new_solutions.clear()
+
+    def drop_solution(self, branch_id: int):
+        """Forgets the solution of the branch, so that it becomes a candidate again."""
+        with lock:
+            self.solutions.pop(branch_id, None)
+            if branch_id in self.new_solutions:
+                self.new_solutions.remove(branch_id)
+
+    def retire_branch(self, branch_id: int):
+        """Takes the branch out of the candidates for good, without claiming it is infeasible."""
+        with lock:
+            self.retired_branches.add(branch_id)
+
+    def get_retired_branches(self):
+        with lock:
+            ret = set(self.retired_branches)
+        return ret
 
     def add_unsat_branch(self, branch_id: int):
         with lock:

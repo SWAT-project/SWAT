@@ -337,6 +337,43 @@ class FloatValueTest extends Specification {
         ].transpose().collect { (it[0] == Float.NaN || it[1] == Float.NaN) ? -1 : (it[0] == it[1] ? 0 : (it[0] > it[1] ? 1 : -1)) }
     }
 
+    def "FCMPG/FCMPL: a symbolic NaN operand gives the unordered result"(boolean greater, int unordered) {
+        given: "0.0f compared with a symbolic x that is currently 1.0f"
+        def zero = new FloatValue(context, 0.0f)
+        def x = new FloatValue(context, 1.0f, fpmgr.makeVariable("x", FloatValue.precision))
+
+        when:
+        def cmp = greater ? zero.FCMPG(x) : zero.FCMPL(x)
+        prover.addConstraint(fpmgr.isNaN(x.formula))
+        prover.addConstraint(bmgr.not(bvmgr.equal(cmp.formula, bvmgr.makeBitvector(32, unordered))))
+
+        then: "no NaN x gives another result"
+        cmp.concrete == -1
+        prover.isUnsat()
+
+        where:
+        greater | unordered
+        true    | 1
+        false   | -1
+    }
+
+    def "FCMPG/FCMPL: signed zeros compare equal"(boolean greater) {
+        given:
+        def pos = new FloatValue(context, 0.0f)
+        def neg = new FloatValue(context, -0.0f)
+
+        when:
+        def cmp = greater ? pos.FCMPG(neg) : pos.FCMPL(neg)
+        prover.addConstraint(bvmgr.equal(cmp.formula, bvmgr.makeBitvector(32, 0)))
+
+        then:
+        cmp.concrete == 0
+        !prover.isUnsat()
+
+        where:
+        greater << [true, false]
+    }
+
     // ========================================================================
     // Float Narrowing Conversions - Testing fpToIntFormula Fix
     // ========================================================================
