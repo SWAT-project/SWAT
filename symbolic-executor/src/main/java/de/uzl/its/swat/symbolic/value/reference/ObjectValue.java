@@ -38,6 +38,8 @@ public class ObjectValue<T, K> extends Value<T, K> {
     // For array object, fields are the content of the array.
     // For plain object, fields are the instance variables.
     @Setter @Getter private Value<?, ?>[] fields;
+    // For uninstrumented JDK containers: the shadow of what modelled calls stored in them.
+    @Setter @Getter private ContainerContents contents;
     @Getter private IntValue nFields;
 
     private BooleanFormulaManager bfm;
@@ -271,9 +273,16 @@ public class ObjectValue<T, K> extends Value<T, K> {
 
     @Override
     public boolean isSymbolic(Set<Value<?, ?>> visited) throws NotImplementedException, RuntimeException {
+        // Strings, boxed values and primitive arrays decide on their formula, not on fields
+        if (OVERRIDES_IS_SYMBOLIC.get(getClass())) {
+            return isSymbolic();
+        }
         // If this object is already being checked, return false to avoid recursion
         if (!visited.add(this)) {
             return false;
+        }
+        if (contents != null && contents.isSymbolic(visited)) {
+            return true;
         }
         return fields != null && Arrays.stream(fields)
                 .filter(Objects::nonNull)
@@ -285,6 +294,18 @@ public class ObjectValue<T, K> extends Value<T, K> {
                     }
                 });
     }
+
+    /** Whether a subclass has its own {@code isSymbolic()}, which the field walk must use. */
+    private static final ClassValue<Boolean> OVERRIDES_IS_SYMBOLIC = new ClassValue<>() {
+        @Override
+        protected Boolean computeValue(Class<?> type) {
+            try {
+                return type.getMethod("isSymbolic").getDeclaringClass() != ObjectValue.class;
+            } catch (NoSuchMethodException e) {
+                return false;
+            }
+        }
+    };
 
     @Override
     public ImmutableSet<String> getSymbolicVariables() throws NotImplementedException, RuntimeException {
