@@ -36,6 +36,19 @@ public class InvocationHandler {
                             "java/io/InputStream",
                             "java/util/Scanner"));
 
+    // The concatenation keeps the ShadowJar relocation from rewriting the owner
+    private static final String OBJECT_FACTORY = "org/".concat("sosy_lab/sv_benchmarks/ObjectFactory");
+
+    /**
+     * Whether this is the factory call that SV-COMP's {@code Verifier.nondetObject} is rewritten to.
+     * If it reaches the uninstrumented path, the factory implementation is not instrumented: its
+     * nondeterministic choices are concrete, so the objects it could have returned are not
+     * explored, which is a context loss even though no argument is symbolic.
+     */
+    public static boolean isUninstrumentedObjectFactory(String owner, String name) {
+        return owner.equals(OBJECT_FACTORY) && name.equals("createObject");
+    }
+
     /**
      * Whether {@code v} is an object array holding a symbolic value, e.g. the boxed arguments of
      * {@code Method.invoke} or of any other varargs method. The array's own formula does not show
@@ -125,9 +138,10 @@ public class InvocationHandler {
             ThreadHandler.recordMissingInvocation(threadId, entry);
 
             if(
-                    (retValue.equals(PlaceHolder.instance) // To detect a missing implementation
+                    ((retValue.equals(PlaceHolder.instance) // To detect a missing implementation
                     || retValue instanceof VoidValue vv && !vv.isSymbolic())  // To detect a missing implementation that returns nothing
-                            && containsSymbolicArgument) {
+                            && containsSymbolicArgument)
+                    || isUninstrumentedObjectFactory(owner, name)) {
                 // Too strict? What about void methods that always have return value PlaceHolder.instance?
                 logger.warn("Invocation of method {} in class {} with arguments {} cases context loss",
                         name,

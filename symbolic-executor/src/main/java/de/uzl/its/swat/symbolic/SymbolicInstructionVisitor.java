@@ -2318,7 +2318,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         } catch (Exception e) {
             symbolic = true; // cannot tell, so assume the worst
         }
-        if (!symbolic) return;
+        if (!symbolic && !InvocationHandler.isUninstrumentedObjectFactory(owner, name)) return;
         logger.warn("Invocation of method {} in class {} with arguments {} threw, causes context loss", name, owner, desc);
         symbolicTraceHandler.recordSymbolicContextLoss();
         long threadId = Thread.currentThread().getId();

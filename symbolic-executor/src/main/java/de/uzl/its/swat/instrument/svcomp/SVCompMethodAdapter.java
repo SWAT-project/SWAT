@@ -70,7 +70,27 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
             final boolean isInterface) {
         // The weird concatenation is needed to avoid the relocation from the ShadowJar plugin to move this owner
         String targetOwner = "org/".concat("sosy_lab/sv_benchmarks/Verifier");
-        if (name.startsWith("nondet") && owner.equals(targetOwner)) {
+        String objectFactory = "org/".concat("sosy_lab/sv_benchmarks/ObjectFactory");
+        if (name.equals("nondetObject")
+                && owner.equals(targetOwner)
+                && descriptor.equals("(Ljava/lang/Class;L" + objectFactory + ";)Ljava/lang/Object;")) {
+            // nondetObject(type, factory) is defined as factory.createObject(); the factory makes its
+            // nondeterministic choices with the primitive nondet methods, which are redirected when
+            // the factory class is instrumented. Calling the factory from here (instead of from the
+            // uninstrumented benchmark Verifier) keeps the call and the returned object tracked, and
+            // every object the factory can return is covered by exploring its nondet values.
+            // The object itself is not recorded for the witness (the factory's nondet values are).
+            Transformer.addInstrumentedClass(cname, InternalTransformerType.SV_COMP);
+            SVCompTransformer.getPrintBox().setContentPresent(true);
+            SVCompTransformer.getPrintBox()
+                    .addMsg("    => Found " + name + " in line " + lineNumber);
+            SVCompTransformer.getPrintBox().addMsg("      => Calling the factory directly");
+            // Stack: type, factory -> factory
+            mv.visitInsn(Opcodes.SWAP);
+            mv.visitInsn(Opcodes.POP);
+            mv.visitMethodInsn(
+                    Opcodes.INVOKEINTERFACE, objectFactory, "createObject", "()Ljava/lang/Object;", true);
+        } else if (name.startsWith("nondet") && owner.equals(targetOwner)) {
             Transformer.addInstrumentedClass(cname, InternalTransformerType.SV_COMP);
             String newOwner = "de/uzl/its/swat/instrument/svcomp/Verifier";
             // Add one long argument into the desc (will be the only argument) old : ()X where x is
