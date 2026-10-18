@@ -227,11 +227,14 @@ class ResourceBudget:
             if self._solver_interrupted:
                 _malloc_trim()
 
-    def _stop_work(self, reason: str) -> bool:
-        """Stops the executor run or the Z3 query in progress. False if there is none."""
+    def _stop_work(self, reason: str) -> bool | None:
+        """Stops the executor run or the Z3 query in progress: True if it was running, None if it
+        is being stopped already, False if there is none."""
         with self._lock:
             proc = self._executor
             if proc is not None and proc.poll() is None:
+                if self._executor_stopped:
+                    return None
                 self._executor_stopped = reason
                 # SIGKILL: on SIGTERM the executor's shutdown hook would send the trace cut short
                 # as if the target had ended there.
@@ -242,6 +245,9 @@ class ResourceBudget:
                         pass
                 return True
             if self._solver_context is not None:
+                if self._solver_interrupted:
+                    self._solver_context.interrupt()  # for a check started since
+                    return None
                 self._solver_interrupted = reason
                 self.solver_interruptions += 1
                 self._solver_context.interrupt()
@@ -282,11 +288,12 @@ class ResourceBudget:
             if time.monotonic() - self.cpu_exceeded_at > GRACE_S:
                 self._emergency(f'the explorer did not stop within {GRACE_S} s of the CPU deadline')
         if rss >= self.memory_threshold:
-            if self._stop_work('memory'):
+            stopped = self._stop_work('memory')
+            if stopped:
                 self.memory_hits += 1
                 logger.warning(f'[BUDGET] Memory {rss // MB} MB reached {self.memory_threshold // MB} MB, '
                                f'stopped the work in progress')
-            else:
+            elif stopped is False:
                 _malloc_trim()
                 if self.usage()[0] >= self.hard_memory_threshold:
                     self._emergency(f'the explorer uses {rss // MB} MB of the {self.memory_limit // MB} MB limit')

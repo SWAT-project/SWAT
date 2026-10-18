@@ -119,7 +119,9 @@ class MonitorTest(unittest.TestCase):
         ctx = mock.Mock()
         with b.solver(ctx) as interrupted_by:
             b.check()
-        ctx.interrupt.assert_called_once()
+            b.check()  # still over: interrupted again, but counted once
+        self.assertEqual(ctx.interrupt.call_count, 2)
+        self.assertEqual(b.memory_hits, 1)
         self.assertEqual(interrupted_by(), 'memory')
         self.assertFalse(b.cpu_exceeded.is_set())
 
