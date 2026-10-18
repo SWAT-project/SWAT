@@ -16,6 +16,7 @@ from data.BinaryExecutionTree.Node import Node
 from strategy.StrategyService import StrategyService
 from data.StaticAnalysisGraph.SAGraph import SAGraph
 from svcomp.StaticPreAnalysis import StaticPreAnalysis
+from svcomp.PropertyPreCheck import PropertyPreCheck
 
 from enum import Enum
 from svcomp.SymbolicStorage import SymbolicStorage, DataTypes
@@ -92,6 +93,7 @@ class SVCompDriver:
         self.verification_category = VerificationCategory(self.args.property)
         self.sa_graph = SAGraph() # static analysis graph, empty until the pre-analysis is adopted
         self.sa = StaticPreAnalysis(args)
+        self.precheck = PropertyPreCheck(args, self.verification_category.value)
         self.sa_adopted_round: int | None = None
         self.round_idx = 0
         self.nr_solver_calls = 0
@@ -216,7 +218,10 @@ class SVCompDriver:
 
     def run_testcase(self, java_path, agentpath: str, configpath: str, z3path, port, cp) -> Verdict:
         """Runs the testcase using the constructed Java command."""
-        
+
+        # Static property pre-check: if it proves the property, round 0 only cross-checks it.
+        self.precheck.run()
+
         # Static pre-analysis: an external Java subprocess plus loading its graph. By default
         # exploration waits for it, and the wait is its own timing stage (otherwise it would be
         # folded into the symbolic explorer residual). With --parallel-sa it runs in the background
@@ -260,6 +265,9 @@ class SVCompDriver:
             self.log_output(output)
             logger.info(f'[STATUS] {status}')
             next_step: Action = self.determine_next_step(status, output)
+            if self.precheck.proven:
+                self.round_idx += 1
+                return self.verdict_with_proof(next_step)
 
             # Visualize DB tree
             # print("Plotting DB Tree...", flush=True)
@@ -293,6 +301,19 @@ class SVCompDriver:
                 
          
             
+
+    def verdict_with_proof(self, next_step: Action) -> Verdict:
+        """The verdict after round 0 once the pre-check proved the property: SAFE, as no execution
+        can violate it, whatever the exploration could model. A violation found in round 0
+        contradicts the proof, and then neither is trusted."""
+        if next_step == Action.REPORTVERDICT and self.state.verdict == Verdict.VIOLATION:
+            logger.error(f'[PRECHECK] Round 0 found a violation of a property the pre-check proved; reporting UNKNOWN')
+            Database.instance().record_execution_error(ENDPOINT_ID, 'precheck_contradiction', self.precheck.reason or '')
+            self.state.verdict = Verdict.UNKNOWN
+        else:
+            logger.info(f'[PRECHECK] Property proven statically: {self.precheck.reason}')
+            self.state.verdict = Verdict.SAFE
+        return self.state.verdict
 
     def check_divergence(self, trace) -> None:
         """Checks that the last run took the side of branch_to_explore its solution was solved for.
@@ -442,25 +463,29 @@ class SVCompDriver:
             if self.sa.duration is not None:
                 TimingManager.instance().record_static_analysis_time(self.sa.duration, blocking=not self.args.parallel_sa)
         
-        if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).symbolic_context_loss:
+        # The soundness downgrades below guard a SAFE that rests on the exploration. A SAFE from the
+        # property pre-check rests on a static proof for all executions instead, so they do not apply.
+        downgrade = not (verdict == Verdict.SAFE and self.precheck.proven)
+
+        if downgrade and (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).symbolic_context_loss:
             logger.warning(f'[SVCOMP] Found symbolic context loss')
             verdict = Verdict.UNKNOWN
 
-        if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).symbolic_precision_loss:
+        if downgrade and (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).symbolic_precision_loss:
             logger.warning(f'[SVCOMP] Found symbolic precision loss')
             verdict = Verdict.UNKNOWN
 
-        if (verdict == Verdict.SAFE) and any(e.get('kind') == 'unexpected_divergence'
+        if downgrade and (verdict == Verdict.SAFE) and any(e.get('kind') == 'unexpected_divergence'
                                               for e in Database.instance().get_tree(ENDPOINT_ID).execution_errors):
             logger.warning(f'[SVCOMP] A solution did not reach the side of the branch it was solved for')
             verdict = Verdict.UNKNOWN
 
-        if (verdict == Verdict.SAFE) and any(e.get('kind') == 'sa_desync'
+        if downgrade and (verdict == Verdict.SAFE) and any(e.get('kind') == 'sa_desync'
                                               for e in Database.instance().get_tree(ENDPOINT_ID).execution_errors):
             logger.warning(f'[SVCOMP] The SA walk fell out of step with the execution (see [DFS] SA desync)')
             verdict = Verdict.UNKNOWN
 
-        if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).uncaught_exceptions > 0:
+        if downgrade and (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).uncaught_exceptions > 0:
             logger.warning(f'[SVCOMP] Found uncaught exceptions during symbolic execution')
             verdict = Verdict.UNKNOWN
 
@@ -490,7 +515,7 @@ class SVCompDriver:
         stats_file = os.path.join(log_dir, 'stats.json')
         write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
                              self.round_idx, self.nr_solver_calls, self.sa.stats(self.sa_adopted_round),
-                             self.solver_limit_hits)
+                             self.solver_limit_hits, self.precheck.stats())
 
         self.kill_current_process()
         
