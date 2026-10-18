@@ -3,7 +3,6 @@ package de.uzl.its.swat.symbolic.invoke.java.lang;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
-import de.uzl.its.swat.symbolic.UFs.SinCosUF;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -12,7 +11,6 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValu
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.LongValue;
-import de.uzl.its.swat.thread.ThreadHandler;
 
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.*;
@@ -37,8 +35,6 @@ public class MathInvocation {
             SymbolicTraceHandler symbolicTraceHandler,
             boolean strict) throws NotImplementedException, ValueConversionException {
         return switch (name) {
-            case "sin" -> invokeSin(args);
-            case "cos" -> invokeCos(args);
             case "abs" -> invokeAbs(args);
             case "max" -> invokeMax(args);
             case "min" -> invokeMin(args);
@@ -102,90 +98,6 @@ public class MathInvocation {
             return new IntValue(f.context, Math.getExponent(f.concrete), bvmgr.subtract(field, bvmgr.makeBitvector(32, Float.MAX_EXPONENT)));
         }
         return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handler for Math.sin(double a).
-     * Uses an UF.
-     *
-     * @see <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Math.html#sin(double)">Math.sin(double a)</a>
-     */
-    private static Value<?, ?> invokeSin(Value<?, ?>[] args) {
-        SWATAssert.enforce(args.length == 1, "Wrong argument counts");
-        SWATAssert.enforce(args[0] instanceof DoubleValue, "Wrong argument type");
-        return sin((DoubleValue) args[0]);
-    }
-
-    /**
-     * Symbolic wrapper for Math.sin(double a).
-     * Uses an UF.
-     *
-     * @see <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Math.html#sin(double)">Math.sin(double a)</a>
-     */
-    private static DoubleValue sin(DoubleValue a) {
-        SolverContext ctx = a.context;
-
-        // Fast path: concrete value only
-        if (!a.isSymbolic()) {
-            return new DoubleValue(ctx, Math.sin(a.concrete));
-            // potentially we could do an addConstraint to remember this concrete case for the UF or other trigonometric UFs
-        }
-
-        try {
-            SinCosUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getSinCosUF();
-
-            // The symbolic result
-            var ufResult = uf.applySin(a.formula);
-
-            // Return with concrete result for concolic steering
-            return new DoubleValue(ctx, Math.sin(a.concrete), ufResult);
-
-        } catch (Exception e) {
-            // Fallback to concrete-only if UF setup fails
-            return new DoubleValue(ctx, Math.sin(a.concrete));
-        }
-    }
-
-    /**
-     * Invocation handler for Math.cos(double a).
-     * Uses an UF.
-     *
-     * @see <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Math.html#cos(double)">Math.cos(double a)</a>
-     */
-    private static Value<?, ?> invokeCos(Value<?, ?>[] args) {
-        SWATAssert.enforce(args.length == 1, "Wrong argument counts");
-        SWATAssert.enforce(args[0] instanceof DoubleValue, "Wrong argument type");
-        return cos((DoubleValue) args[0]);
-    }
-
-    /**
-     * Symbolic wrapper for Math.cos(double a).
-     * Uses an UF.
-     *
-     * @see <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Math.html#cos(double)">Math.cos(double a)</a>
-     */
-    private static DoubleValue cos(DoubleValue a) {
-        SolverContext ctx = a.context;
-
-        // Fast path: concrete value only
-        if (!a.isSymbolic()) {
-            return new DoubleValue(ctx, Math.cos(a.concrete));
-            // potentially we could do an addConstraint to remember this concrete case for the UF or other trigonometric UFs
-        }
-
-        try {
-            SinCosUF uf = ThreadHandler.getUFHandler(Thread.currentThread().getId()).getSinCosUF();
-
-            // The symbolic result
-            var ufResult = uf.applyCos(a.formula);
-
-            // Return with concrete result for concolic steering
-            return new DoubleValue(ctx, Math.cos(a.concrete), ufResult);
-
-        } catch (Exception e) {
-            // Fallback to concrete-only if UF setup fails
-            return new DoubleValue(ctx, Math.cos(a.concrete));
-        }
     }
 
     /** Math.signum: the argument itself for zeros and NaN, otherwise 1.0 with its sign. */

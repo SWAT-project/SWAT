@@ -25,9 +25,10 @@ class SymbolicTrace {
     // If true, an invocation occurred that was not instrumented but received symbolic arguments.
     private boolean symbolicContextLoss = false;
 
-    // If true, a model was used that is only approximate, e.g. a sampled transcendental function.
-    // Branch constraints with UFs are detected as precision loss separately. Also sent on its own
-    // (TraceDTO.approximateModel), so the explorer can expect divergences from such traces.
+    // If true, a model was used that is only approximate, e.g. object array elements tracked at the
+    // concrete index only. Branch constraints with UFs (which include the sampled Math functions)
+    // are detected as precision loss separately. Also sent on its own (TraceDTO.approximateModel),
+    // so the explorer can expect divergences from such traces.
     private boolean symbolicPrecisionLoss = false;
 
     // If true, reference equality semantics may have changed due to comparing user-de-interned strings.
