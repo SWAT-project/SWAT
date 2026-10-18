@@ -31,7 +31,6 @@ import org.sosy_lab.common.ShutdownManager;
 import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.ConfigurationBuilder;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
-import org.sosy_lab.common.log.BasicLogManager;
 import org.sosy_lab.common.log.LogManager;
 import org.sosy_lab.java_smt.SolverContextFactory;
 import org.sosy_lab.java_smt.api.SolverContext;
@@ -116,7 +115,9 @@ public class ThreadContext {
 
         logger.info(SMTConfig.asPropertiesString());
 
-        LogManager logger = BasicLogManager.create(SMTConfig);
+        // java-smt's own log is not read; a BasicLogManager would also register a JMX bean, which
+        // loads the JMX classes in every run
+        LogManager logger = LogManager.createNullLogManager();
         ShutdownManager shutdown = ShutdownManager.create();
 
         // SolverContext is a class wrapping a solver context.

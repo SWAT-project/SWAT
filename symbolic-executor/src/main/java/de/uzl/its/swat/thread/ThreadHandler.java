@@ -27,7 +27,7 @@ import java.util.logging.SimpleFormatter;
 import org.sosy_lab.common.ShutdownManager;
 import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
-import org.sosy_lab.common.log.BasicLogManager;
+import org.sosy_lab.common.log.LogManager;
 import org.sosy_lab.java_smt.SolverContextFactory;
 import org.sosy_lab.java_smt.api.SolverContext;
 
@@ -58,7 +58,7 @@ public final class ThreadHandler {
         solverContext =
                 SolverContextFactory.createSolverContext(
                         Configuration.defaultConfiguration(),
-                        BasicLogManager.create(Configuration.defaultConfiguration()),
+                        LogManager.createNullLogManager(),
                         ShutdownManager.create().getNotifier(),
                         SolverContextFactory.Solvers.Z3);
     }
