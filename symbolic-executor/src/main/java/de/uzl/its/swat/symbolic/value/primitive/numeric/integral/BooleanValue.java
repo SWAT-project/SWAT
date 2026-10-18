@@ -114,11 +114,11 @@ public class BooleanValue extends NumericalValue<BooleanFormula, Boolean> {
 
     @Override
     public IntValue asIntValue() {
-        imgr = context.getFormulaManager().getIntegerFormulaManager();
+        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
         return new IntValue(
                 context,
                 concrete ? 1 : 0,
-                bmgr.ifThenElse(formula, imgr.makeNumber(1), imgr.makeNumber(0)));
+                bmgr.ifThenElse(formula, bvmgr.makeBitvector(32, 1), bvmgr.makeBitvector(32, 0)));
     }
 
     @Override

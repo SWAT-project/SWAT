@@ -130,7 +130,7 @@ public abstract class NumericalValue<T extends Formula, K> extends Value<T, K> {
         BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
 
         // Step 1: Convert integer to signed bitvector
-        BitvectorFormula bv = bvmgr.makeBitvector(sourceBitWidth, intFormula);
+        BitvectorFormula bv = BitvectorEncoding.toBitvector(context.getFormulaManager(), intFormula, sourceBitWidth);
 
         // Step 2: Cast bitvector to floating-point using RNE rounding (Java's default)
         FloatingPointFormula fpFormula = fpmgr.castFrom(

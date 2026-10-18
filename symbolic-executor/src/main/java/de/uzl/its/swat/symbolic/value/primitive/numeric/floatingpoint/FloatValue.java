@@ -12,6 +12,7 @@ import org.sosy_lab.java_smt.api.IntegerFormulaManager;
 import org.sosy_lab.java_smt.api.NumeralFormula;
 import org.sosy_lab.java_smt.api.SolverContext;
 
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ByteValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.CharValue;
@@ -312,13 +313,10 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
     private IntValue FCMP(FloatValue f) {
         int c = concrete.compareTo(f.concrete);
 
-        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
         BooleanFormula eqCond = fmgr.equalWithFPSemantics(formula, f.formula);
         BooleanFormula gtCond = fmgr.greaterThan(formula, f.formula);
-        NumeralFormula.IntegerFormula tmp =
-                bmgr.ifThenElse(gtCond, imgr.makeNumber(1), imgr.makeNumber(-1));
-        NumeralFormula.IntegerFormula res = bmgr.ifThenElse(eqCond, imgr.makeNumber(0), tmp);
+        // Built over bit-vectors: Z3 decides int_to_bv over FP comparisons badly.
+        BitvectorFormula res = BitvectorEncoding.compareResult(context.getFormulaManager(), eqCond, gtCond, 32);
 
         return new IntValue(context, c, res);
     }
