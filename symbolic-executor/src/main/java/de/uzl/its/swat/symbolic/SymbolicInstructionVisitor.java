@@ -3281,8 +3281,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 } else {
                     ObjectValue<?, ?> targetObject = (ObjectValue<?, ?>) stack.getLocal(1);
 
-                    int fieldIndex = classDepot.getFieldIndex(cIdx, inst.name, false);
+                    int fieldIndex = classDepot.getFieldIndex(cIdx, reflectFieldName, false);
                     getObject = targetObject.getField(fieldIndex);
+                }
+                if (inst.name.equals("get")
+                        && !(getObject instanceof ObjectValue<?, ?>)
+                        && !(getObject instanceof PlaceHolder)) {
+                    // Field.get boxes the value of a primitive field
+                    getObject = getObject.asObjectValue();
                 }
                 // if (getObject instanceof DoubleValue || getObject instanceof LongValue) {
                 //     stack.pushWideOperand(getObject);
