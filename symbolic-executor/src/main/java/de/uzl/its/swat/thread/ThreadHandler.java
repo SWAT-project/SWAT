@@ -80,6 +80,35 @@ public final class ThreadHandler {
         }
     }
 
+    /**
+     * Records that an endpoint was entered on a thread whose symbolic execution is already running.
+     *
+     * @param id the thread id
+     */
+    public static void enterNestedEndpoint(long id) throws NoThreadContextException {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            context.setNestedEndpoints(context.getNestedEndpoints() + 1);
+        } else {
+            throw new NoThreadContextException(id);
+        }
+    }
+
+    /**
+     * Leaves a nested endpoint if one is open.
+     *
+     * @param id the thread id
+     * @return true if a nested endpoint was left, false if the outermost endpoint ends
+     */
+    public static boolean leaveNestedEndpoint(long id) {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null && context.getNestedEndpoints() > 0) {
+            context.setNestedEndpoints(context.getNestedEndpoints() - 1);
+            return true;
+        }
+        return false;
+    }
+
     public static void removeThreadContext(long id) throws NoThreadContextException {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {

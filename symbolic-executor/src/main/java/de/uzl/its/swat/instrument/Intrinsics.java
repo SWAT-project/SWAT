@@ -66,6 +66,13 @@ public class Intrinsics {
      */
     public static void init(String endpoint) {
         try {
+            if (ThreadHandler.hasThreadContext(currentThread().getId())) {
+                // An endpoint called from within a running one (e.g. a harness main calling
+                // another main) continues the running symbolic execution.
+                ThreadHandler.enterNestedEndpoint(currentThread().getId());
+                logger.info("Entering nested endpoint {} (Thread: {})", endpoint, currentThread().getId());
+                return;
+            }
             int endpointID;
             if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
                 endpointID = 0;
@@ -108,6 +115,10 @@ public class Intrinsics {
      */
     public static void terminate() {
         try {
+            if (ThreadHandler.leaveNestedEndpoint(currentThread().getId())) {
+                logger.info("Leaving nested endpoint (Thread: {})", currentThread().getId());
+                return;
+            }
             Transformer.logMissedClasses();
             ThreadHandler.disableThreadContext(currentThread().getId());
             logger.info(

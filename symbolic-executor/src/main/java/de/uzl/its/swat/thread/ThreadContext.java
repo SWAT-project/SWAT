@@ -65,6 +65,10 @@ public class ThreadContext {
     @Setter @Getter private int endpointID;
     @Setter @Getter private String endpointName;
 
+    // Number of endpoints entered while this context was already running, e.g. a harness main
+    // that calls another main. Their init/terminate calls only adjust this count.
+    @Getter @Setter private int nestedEndpoints = 0;
+
     // Tracks if liftValue is called multiple times with the same index.
     @Getter private final HashMap<String, Integer> symbolicIdxOccurrence = new java.util.HashMap<>();
     private HashMap<String, Long> SubUid = new HashMap<>();
