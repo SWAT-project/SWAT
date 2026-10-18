@@ -15,7 +15,7 @@ import org.objectweb.asm.tree.analysis.Frame;
  * execution; if it fails, nothing is known.
  *
  * <p>The program is every class on its classpath, entered through {@code Main.main}. The check
- * proves that no RuntimeException can escape {@code main} or any static initializer:
+ * proves that no RuntimeException can escape {@code main} or a static initializer that may run:
  *
  * <ul>
  *   <li>Every instruction that the JVM specification lets throw a RuntimeException (array access
@@ -136,10 +136,7 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
 
         List<Program.Method> roots = new ArrayList<>();
         roots.add(entry);
-        for (ClassNode c : program.appClasses()) {
-            Program.Method clinit = program.method(c.name, "<clinit>", "()V");
-            if (clinit != null) roots.add(clinit);
-        }
+        roots.addAll(initializers(MAIN_CLASS));
         for (ClassNode c : program.appClasses()) {
             // The finalizer thread may run it on any unreachable object, even one whose constructor
             // threw before it assigned its fields.
@@ -152,7 +149,12 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
         String assertion = assertionCreation(reachable);
         boolean assertionFree = assertion == null;
         if (assertionFree) assertion = "no AssertionError is created in code reachable from Main.main or a static initializer";
-        for (Program.Method r : roots) {
+        // Main.main and every static initializer that may run (an exception escaping one surfaces
+        // as an ExceptionInInitializerError, but is still counted).
+        List<Program.Method> mustNotThrow = new ArrayList<>();
+        mustNotThrow.add(entry);
+        for (Program.Method m : reachable) if (m.node.name.equals("<clinit>")) mustNotThrow.add(m);
+        for (Program.Method r : mustNotThrow) {
             if (mayThrow.containsKey(r.key)) return new Result(false, explain(r.key, mayThrow), assertionFree, assertion);
         }
         return new Result(true, "no instruction reachable from Main.main or a static initializer can throw an uncaught RuntimeException",
@@ -186,7 +188,9 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
      * it, with arguments the facts account for. A reachable call that may run unknown code (an
      * unmodelled library method, which could call back into the application) breaks that even if a
      * handler catches what it throws, so it fails the check. Returns why, or null, and collects the
-     * reachable methods.
+     * reachable methods, including the static initializers of every class reachable code may
+     * initialize (new, getstatic, putstatic, invokestatic). Classes are initialized in no other way:
+     * reflection and method handles are not modelled.
      */
     private String openWorldCall(List<Program.Method> roots, Set<Program.Method> reachable) {
         Deque<Program.Method> work = new ArrayDeque<>(roots);
@@ -200,6 +204,10 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
                 if (f[i] == null) continue;
                 if (insns[i] instanceof InvokeDynamicInsnNode && !isStringConcat((InvokeDynamicInsnNode) insns[i]))
                     return m.key + ": line " + line(insns[i]) + ": invokedynamic";
+                int op = insns[i].getOpcode();
+                if (op == NEW) work.addAll(initializers(((TypeInsnNode) insns[i]).desc));
+                else if (op == GETSTATIC || op == PUTSTATIC) work.addAll(initializers(((FieldInsnNode) insns[i]).owner));
+                else if (op == INVOKESTATIC) work.addAll(initializers(((MethodInsnNode) insns[i]).owner));
                 if (!(insns[i] instanceof MethodInsnNode)) continue;
                 MethodInsnNode mi = (MethodInsnNode) insns[i];
                 String reason = openWorldReason(mi, f[i]);
@@ -209,6 +217,20 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
             }
         }
         return null;
+    }
+
+    /**
+     * The static initializers that may run when a class is initialized: its own and those of its
+     * application supertypes (a superset of what the JVM initializes, see JVMS 5.5).
+     */
+    private List<Program.Method> initializers(String className) {
+        List<Program.Method> out = new ArrayList<>();
+        if (!program.isApp(className)) return out;
+        for (String t : program.appSupertypes(className)) {
+            Program.Method clinit = program.method(t, "<clinit>", "()V");
+            if (clinit != null) out.add(clinit);
+        }
+        return out;
     }
 
     /** Follows the may-throw reasons from a root down to the instruction that may throw. */
