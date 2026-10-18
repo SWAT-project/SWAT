@@ -219,13 +219,16 @@ public class ShortValue extends NumericalValue<BitvectorFormula, Short> {
 
     @Override
     public StringValue asStringValue() {
-        // String theory requires IntegerFormula, so convert BV to Int
+        // String theory requires IntegerFormula, so convert BV to Int. str.from_int gives "" for a
+        // negative number, so its digits are those of its absolute value, after a "-".
         NumeralFormula.IntegerFormula intFormula = bvmgr.toIntegerFormula(formula, true);
-        return new StringValue(
-                this.context,
-                String.valueOf(concrete),
-                context.getFormulaManager().getStringFormulaManager().toStringFormula(intFormula),
-                -1);
+        StringFormulaManager smgr = context.getFormulaManager().getStringFormulaManager();
+        IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        StringFormula str = bmgr.ifThenElse(imgr.lessThan(intFormula, imgr.makeNumber(0)),
+                smgr.concat(smgr.makeString("-"), smgr.toStringFormula(imgr.negate(intFormula))),
+                smgr.toStringFormula(intFormula));
+        return new StringValue(this.context, String.valueOf(concrete), str, -1);
     }
 
     /**
