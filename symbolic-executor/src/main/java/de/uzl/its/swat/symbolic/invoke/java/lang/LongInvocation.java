@@ -71,9 +71,15 @@ public class LongInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeBitCount(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "[SWAT] Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        LongValue i = args[0].asLongValue();
+        return new IntValue(i.context, Long.bitCount(i.concrete), toInt(i, BitOps.bitCount(i.context, i.formula, 64)));
+    }
+
+    /** The low 32 bits of a 64-bit count, which is at most 64. */
+    private static BitvectorFormula toInt(LongValue i, BitvectorFormula count) {
+        return i.context.getFormulaManager().getBitvectorFormulaManager().extract(count, 31, 0);
     }
     /**
      * Invocation handler for Long.compare(*), handles argument conversion.
@@ -406,9 +412,10 @@ public class LongInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeNumberOfLeadingZeros(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        LongValue i = args[0].asLongValue();
+        return new IntValue(i.context, Long.numberOfLeadingZeros(i.concrete), toInt(i, BitOps.numberOfLeadingZeros(i.context, i.formula, 64)));
     }
 
     /**
@@ -421,9 +428,10 @@ public class LongInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeNumberOfTrailingZeros(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        LongValue i = args[0].asLongValue();
+        return new IntValue(i.context, Long.numberOfTrailingZeros(i.concrete), toInt(i, BitOps.numberOfTrailingZeros(i.context, i.formula, 64)));
     }
 
     /**
@@ -521,9 +529,10 @@ public class LongInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeReverse(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        LongValue i = args[0].asLongValue();
+        return new LongValue(i.context, Long.reverse(i.concrete), BitOps.reverse(i.context, i.formula, 64));
     }
 
     /**
@@ -701,9 +710,11 @@ public class LongInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToBinaryString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        LongValue i = args[0].asLongValue();
+        return new StringValue(i.context, Long.toBinaryString(i.concrete),
+                BitOps.toUnsignedPowerOfTwoString(i.context, i.formula, 64, 1), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -716,9 +727,11 @@ public class LongInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToHexString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        LongValue i = args[0].asLongValue();
+        return new StringValue(i.context, Long.toHexString(i.concrete),
+                BitOps.toUnsignedPowerOfTwoString(i.context, i.formula, 64, 4), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -731,9 +744,11 @@ public class LongInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToOctalString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        LongValue i = args[0].asLongValue();
+        return new StringValue(i.context, Long.toOctalString(i.concrete),
+                BitOps.toUnsignedPowerOfTwoString(i.context, i.formula, 64, 3), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -809,6 +824,14 @@ public class LongInvocation {
             throws IndexOutOfBoundsException, ValueConversionException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
+        if (args.length == 1 && args[0] instanceof LongValue i) {
+            // the decimal digits of the unsigned value; the radix variant is not modelled
+            SolverContext ctx = i.context;
+            StringFormulaManager sfm = ctx.getFormulaManager().getStringFormulaManager();
+            BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
+            return new StringValue(ctx, Long.toUnsignedString(i.concrete),
+                    sfm.toStringFormula(bvmgr.toIntegerFormula(i.formula, false)), ObjectValue.ADDRESS_UNKNOWN);
+        }
         return PlaceHolder.instance;
     }
 
