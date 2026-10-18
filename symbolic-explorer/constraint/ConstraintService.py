@@ -82,4 +82,4 @@ class ConstraintService:
             # tree were complete: the driver reports UNKNOWN for it (SVCompDriver).
             logger.exception(f'[CONSTRAINT SERVICE] Could not add trace {trace_id} to endpoint {endpoint_id}')
             Database.instance().record_trace_ingest_failure(endpoint_id, f'trace {trace_id}: {type(e).__name__}: {e}',
-                                                            reference_semantic_change)
+                                                            reference_semantic_change, trace_id, stack_overflow)

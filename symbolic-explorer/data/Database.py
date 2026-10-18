@@ -132,15 +132,21 @@ class Database:
             tree.add(trace, inputs, ufs)
 
     def record_trace_ingest_failure(self, endpoint_id: Union[str, int], message: str,
-                                    reference_semantic_change: bool = False):
+                                    reference_semantic_change: bool = False, trace_id: str = None,
+                                    stack_overflow: bool = False):
         """Records that a trace the executor sent could not be added: the tree lacks its path, so
-        the search on it is incomplete. A reference semantic change it reported still counts."""
+        the search on it is incomplete. A reference semantic change it reported still counts, and so
+        does a stack overflow: the trace becomes the latest one, so that the driver does not report
+        a violation of that execution (see SVCompDriver.round_has_stack_overflow)."""
         endpoint_id = str(endpoint_id)
         with lock:
             self._add_endpoint(endpoint_id)
             self.tree[endpoint_id].record_execution_error('trace_ingest_failed', message)
             if reference_semantic_change:
                 self.tree[endpoint_id].record_reference_semantic_change()
+            if stack_overflow and trace_id is not None:
+                self.tree[endpoint_id].stack_overflow_traces.add(trace_id)
+                self.witness_data[endpoint_id] = {'trace_id': trace_id, 'nondet_returns': [], 'violation': None}
 
     def trace_count(self) -> int:
         """How many traces arrived so far."""

@@ -38,6 +38,16 @@ class DatabaseLockTest(unittest.TestCase):
         kinds = [e['kind'] for e in db.get_tree('ingest-test').execution_errors]
         self.assertEqual(kinds, ['trace_ingest_failed'])
 
+    def test_ingest_failure_keeps_a_stack_overflow(self):
+        # The driver must still drop that execution's violation (SVCompDriver.round_has_stack_overflow).
+        from constraint.ConstraintService import ConstraintService
+        from parse.TraceParser import Parser
+        db = database.Database.instance()
+        with mock.patch.object(Parser, 'parse_trace', side_effect=RecursionError('boom')):
+            ConstraintService.add_constraints('so-ingest-test', 't-so', [], [], [], True, False, stack_overflow=True)
+        self.assertEqual(db.get_witness_data('so-ingest-test')['trace_id'], 't-so')
+        self.assertTrue(db.is_stack_overflow_trace('so-ingest-test', 't-so'))
+
 
 if __name__ == '__main__':
     unittest.main()

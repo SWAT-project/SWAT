@@ -47,6 +47,12 @@ class FakeDatabase:
     def clear_witness_data(self, endpoint_id):
         pass
 
+    def get_witness_data(self, endpoint_id):
+        return None
+
+    def is_stack_overflow_trace(self, endpoint_id, trace_id):
+        return False
+
 
 class DriverTest(unittest.TestCase):
 
