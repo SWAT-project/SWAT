@@ -92,8 +92,13 @@ final class BitOps {
      * The unsigned value of {@code x} in radix 2^shift without leading zeros ("0" for zero), as
      * Integer/Long.toBinaryString (shift 1), toOctalString (shift 3) and toHexString (shift 4): the
      * string of all digits (each one str.from_code of its value), from the highest non-zero digit on.
+     * Radixes up to 8 only have decimal digits and use the str.from_int encoding of {@link
+     * NumberStrings}, which the solver handles far better.
      */
     static StringFormula toUnsignedPowerOfTwoString(SolverContext ctx, BitvectorFormula x, int width, int shift) {
+        if (shift <= 3) {
+            return NumberStrings.unsignedDigits(ctx, x, width, 1 << shift);
+        }
         BitvectorFormulaManager bv = ctx.getFormulaManager().getBitvectorFormulaManager();
         BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
         StringFormulaManager smgr = ctx.getFormulaManager().getStringFormulaManager();
@@ -106,10 +111,8 @@ final class BitOps {
             int lo = k * shift;
             int hi = Math.min(lo + shift, width) - 1;
             IntegerFormula digit = bv.toIntegerFormula(bv.extract(x, hi, lo), false);
-            IntegerFormula code = shift < 4
-                    ? imgr.add(digit, imgr.makeNumber('0'))
-                    : imgr.add(digit, bmgr.ifThenElse(imgr.greaterThan(digit, imgr.makeNumber(9)),
-                            imgr.makeNumber('a' - 10), imgr.makeNumber('0')));
+            IntegerFormula code = imgr.add(digit, bmgr.ifThenElse(imgr.greaterThan(digit, imgr.makeNumber(9)),
+                    imgr.makeNumber('a' - 10), imgr.makeNumber('0')));
             chars.add(0, smgr.fromCodePoint(code));
             if (k > 0) {
                 start = bmgr.ifThenElse(bv.equal(bv.extract(x, hi, lo), c(bv, hi - lo + 1, 0)),

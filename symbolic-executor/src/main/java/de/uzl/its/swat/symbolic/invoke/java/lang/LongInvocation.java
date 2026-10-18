@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.invoke.java.lang;
 
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
@@ -27,7 +28,7 @@ public class LongInvocation {
             String name,
             Value<?, ?>[] args,
             Type[] desc,
-            SymbolicTraceHandler symbolicTraceHandler) throws ValueConversionException, NotImplementedException {
+            SymbolicTraceHandler symbolicTraceHandler) throws ValueConversionException, NotImplementedException, NoThreadContextException {
         return switch (name) {
             case "bitCount" -> invokeBitCount(args);
             case "compare" -> invokeCompare(args);
@@ -761,14 +762,16 @@ public class LongInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException, NoThreadContextException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
-        if (args.length == 1 && args[0] instanceof LongValue lv) {
-            return toString(lv);
+        if (args.length == 1) {
+            return args[0] instanceof LongValue lv ? toString(lv) : PlaceHolder.instance;
         }
-        // toString with radix not yet supported
-        return PlaceHolder.instance;
+        LongValue l = args[0].asLongValue();
+        int radix = NumberStrings.selectRadix(args[1].asIntValue());
+        return new StringValue(l.context, Long.toString(l.concrete, radix),
+                NumberStrings.toString(l.context, l.formula, 64, true, radix), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -821,18 +824,13 @@ public class LongInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToUnsignedString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException, NoThreadContextException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
-        if (args.length == 1 && args[0] instanceof LongValue i) {
-            // the decimal digits of the unsigned value; the radix variant is not modelled
-            SolverContext ctx = i.context;
-            StringFormulaManager sfm = ctx.getFormulaManager().getStringFormulaManager();
-            BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
-            return new StringValue(ctx, Long.toUnsignedString(i.concrete),
-                    sfm.toStringFormula(bvmgr.toIntegerFormula(i.formula, false)), ObjectValue.ADDRESS_UNKNOWN);
-        }
-        return PlaceHolder.instance;
+        LongValue l = args[0].asLongValue();
+        int radix = args.length == 1 ? 10 : NumberStrings.selectRadix(args[1].asIntValue());
+        return new StringValue(l.context, Long.toUnsignedString(l.concrete, radix),
+                NumberStrings.toString(l.context, l.formula, 64, false, radix), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**

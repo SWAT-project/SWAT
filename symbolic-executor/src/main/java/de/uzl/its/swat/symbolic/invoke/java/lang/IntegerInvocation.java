@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.invoke.java.lang;
 
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
@@ -16,7 +17,7 @@ import org.sosy_lab.java_smt.api.BitvectorFormulaManager;
 
 public class IntegerInvocation {
 
-    public static Value<?, ?> invokeStaticMethod(String name, Value<?, ?>[] args, Type[] desc) throws ValueConversionException, NotImplementedException {
+    public static Value<?, ?> invokeStaticMethod(String name, Value<?, ?>[] args, Type[] desc) throws ValueConversionException, NotImplementedException, NoThreadContextException {
         return switch (name) {
             case "bitCount" -> invokeBitCount(args);
             case "compare" -> invokeCompare(args);
@@ -749,14 +750,16 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException, NoThreadContextException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
-        if (args.length == 1 && args[0] instanceof IntValue iv) {
-            return toString(iv);
+        if (args.length == 1) {
+            return args[0] instanceof IntValue iv ? toString(iv) : PlaceHolder.instance;
         }
-        // toString with radix not yet supported
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        int radix = NumberStrings.selectRadix(args[1].asIntValue());
+        return new StringValue(i.context, Integer.toString(i.concrete, radix),
+                NumberStrings.toString(i.context, i.formula, 32, true, radix), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -840,18 +843,13 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToUnsignedString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException, NoThreadContextException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
-        if (args.length == 1 && args[0] instanceof IntValue i) {
-            // the decimal digits of the unsigned value; the radix variant is not modelled
-            SolverContext ctx = i.context;
-            StringFormulaManager sfm = ctx.getFormulaManager().getStringFormulaManager();
-            BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
-            return new StringValue(ctx, Integer.toUnsignedString(i.concrete),
-                    sfm.toStringFormula(bvmgr.toIntegerFormula(i.formula, false)), ObjectValue.ADDRESS_UNKNOWN);
-        }
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        int radix = args.length == 1 ? 10 : NumberStrings.selectRadix(args[1].asIntValue());
+        return new StringValue(i.context, Integer.toUnsignedString(i.concrete, radix),
+                NumberStrings.toString(i.context, i.formula, 32, false, radix), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
