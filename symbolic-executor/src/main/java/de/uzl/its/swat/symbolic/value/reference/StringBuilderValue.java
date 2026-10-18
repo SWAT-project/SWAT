@@ -35,6 +35,17 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     private final IntegerFormulaManager imgr;
     private StringValue stringValue;
 
+    /**
+     * The capacity while it is the one the constructor set; null after a change that may grow it
+     * (the growth policy is not modelled).
+     */
+    private IntValue capacity;
+
+    /** The methods that do not change the capacity. */
+    private static final Set<String> KEEP_CAPACITY = Set.of("charAt", "compareTo", "delete", "deleteCharAt",
+            "getChars", "indexOf", "lastIndexOf", "length", "reverse", "setCharAt", "subSequence", "substring",
+            "toString", "capacity");
+
     /** Whether a change SWAT does not model left the chars unknown. */
     private boolean unknown = false;
 
@@ -100,7 +111,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
                 case "<init>" -> invokeInit(args, desc);
                 case "append" -> invokeAppend(args, desc);
                 case "appendCodePoint" -> invokeAppendCodePoint(args);
-                case "capacity" -> PlaceHolder.instance; // depends on the growth policy, so taken concretely
+                case "capacity" -> capacity != null ? capacity : PlaceHolder.instance;
                 case "charAt" -> invokeCharAt(args);
                 case "compareTo" -> invokeCompareTo(args);
                 case "delete" -> invokeDelete(args);
@@ -122,6 +133,9 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
             // e.g. a double appended, which has no model as a String
             result = PlaceHolder.instance;
         }
+        if (!name.equals("<init>") && !KEEP_CAPACITY.contains(name)) {
+            capacity = null;
+        }
         if (result instanceof PlaceHolder && MUTATORS.contains(name)) {
             unknown = true;
         }
@@ -130,12 +144,21 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
 
     private Value<?, ?> invokeInit(Value<?, ?>[] args, Type[] desc) {
         StringValue chars;
-        if (args.length == 0 || desc[0].getSort() == Type.INT) {
-            // new StringBuilder(), new StringBuilder(int capacity)
+        capacity = null;
+        if (args.length == 0) {
             chars = new StringValue(context, "", -1);
+            capacity = new IntValue(context, 16);
+        } else if (desc[0].getSort() == Type.INT) {
+            // new StringBuilder(int capacity)
+            chars = new StringValue(context, "", -1);
+            capacity = args[0] instanceof IntValue c ? c : null;
         } else if (args.length == 1) {
-            // new StringBuilder(String), new StringBuilder(CharSequence)
+            // new StringBuilder(String), new StringBuilder(CharSequence): length + 16
             chars = StringValue.charsOf(args[0]);
+            if (chars != null) {
+                capacity = new IntValue(context, chars.concrete.length() + 16,
+                        imgr.add(smgr.length(chars.formula), imgr.makeNumber(16)));
+            }
         } else {
             chars = null;
         }

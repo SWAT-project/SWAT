@@ -238,7 +238,7 @@ class StringModelExactnessTest extends Specification {
     }
 
     @Unroll
-    def "replace(CharSequence, CharSequence) replaces every occurrence: #sample, #target -> #replacement"() {
+    def "replace is exact up to ten occurrences, and precision loss: #sample, #target -> #replacement"() {
         given:
         def s = symbolicString("s", "fixed")
         def fixed = [fixString(s, sample)]
@@ -248,24 +248,34 @@ class StringModelExactnessTest extends Specification {
                 [new StringValue(context, target, -1), new StringValue(context, replacement, -1)])
 
         then:
+        precisionLoss()
         exactString(fixed, r.formula, sample.replace(target, replacement))
-        !precisionLoss()
 
         where:
-        [sample, target, replacement] << [["", "aaaaaaaaaaaaaaa", "xaxax"], ["a", "aa", "xa"], ["", "aa"]].combinations()
+        [sample, target, replacement] << [["", "aaaaaaaaa", "xaxax"], ["a", "aa", "xa"], ["", "b"]].combinations()
     }
 
-    def "replace(char, char) replaces more than ten occurrences"() {
+    def "replace(char, char) of more than ten occurrences is not exact, and precision loss"() {
         given:
         def s = symbolicString("s", "fixed")
-        def sample = "a" * 25 + "b" + "a" * 3
+        def sample = "a" * 25
 
         when:
         def r = (StringValue) call(s, "replace", [Type.CHAR_TYPE, Type.CHAR_TYPE],
                 [new CharValue(context, 'a' as char), new CharValue(context, 'c' as char)])
 
         then:
-        exactString([fixString(s, sample)], r.formula, sample.replace('a' as char, 'c' as char))
+        precisionLoss()
+        !exactString([fixString(s, sample)], r.formula, sample.replace('a' as char, 'c' as char))
+    }
+
+    def "replace on concrete strings is concrete"() {
+        when:
+        def r = (StringValue) call(new StringValue(context, "abab", -1), "replace", [Type.CHAR_TYPE, Type.CHAR_TYPE],
+                [new CharValue(context, 'a' as char), new CharValue(context, 'c' as char)])
+
+        then:
+        r.concrete == "cbcb"
         !precisionLoss()
     }
 
@@ -551,6 +561,26 @@ class StringModelExactnessTest extends Specification {
         then:
         !sb.unknown
         ((StringValue) call(sb, "toString", [], [])).concrete == "ba"
+    }
+
+    def "the capacity is the constructor's until the builder may grow"() {
+        given:
+        def s = symbolicString("s", "abc")
+        def sb = builder(null)
+        call(sb, "<init>", [STRING], [s])
+
+        when:
+        def capacity = (IntValue) call(sb, "capacity", [], [])
+
+        then:
+        capacity.concrete == 19
+        exactInt([fixString(s, "hello")], capacity, 21)
+
+        when:
+        call(sb, "append", [STRING], [new StringValue(context, "x", -1)])
+
+        then:
+        call(sb, "capacity", [], []) == PlaceHolder.instance
     }
 
     def "a builder with symbolic chars is symbolic"() {

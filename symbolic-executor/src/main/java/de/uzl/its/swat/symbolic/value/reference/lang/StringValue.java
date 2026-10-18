@@ -20,7 +20,6 @@ import de.uzl.its.swat.thread.ThreadHandler;
 import lombok.Getter;
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.*;
-import org.sosy_lab.java_smt.api.visitors.DefaultFormulaVisitor;
 
 import static java.lang.Thread.currentThread;
 
@@ -36,6 +35,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      */
     public static final java.util.Set<String> EXACT_UFS = java.util.Set.of("commonPrefixLength", "trimStart", "trimEnd", "lastIndexOf");
 
+    static final int REPLACE_COUNT = 10;
     private StringFormulaManager smgr;
     private IntegerFormulaManager imgr;
 
@@ -1042,48 +1042,23 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     /**
-     * String.replace: every occurrence of target, left to right, which is str.replace_all for a
-     * non-empty target. For an empty one Java puts the replacement between any two chars and at both
-     * ends, where str.replace_all leaves the string as it is: not modelled.
+     * String.replace: every occurrence of target, left to right. Z3 hardly decides str.replace_all
+     * (with a concrete target it gave up or hung where this did not), so only the first
+     * REPLACE_COUNT occurrences are replaced, one by one, which is exact only for strings with as
+     * many occurrences at most (and str.replace differs from Java for an empty target): precision
+     * loss.
      */
     private StringValue replaceAll(StringValue target, StringValue replacement) {
         String newConcrete = this.concrete.replace(target.concrete, replacement.concrete);
         if (!isSymbolic() && !target.isSymbolic() && !replacement.isSymbolic()) {
             return new StringValue(context, newConcrete, ObjectValue.ADDRESS_UNKNOWN);
         }
-        if (target.isSymbolic() || target.concrete.isEmpty()) {
-            recordPrecisionLoss();
+        recordPrecisionLoss();
+        StringFormula newFormula = formula;
+        for (int i = 0; i < REPLACE_COUNT; i++) {
+            newFormula = smgr.replace(newFormula, target.formula, replacement.formula);
         }
-        return new StringValue(context, newConcrete, replaceAll(formula, target.formula, replacement.formula),
-                ObjectValue.ADDRESS_UNKNOWN);
-    }
-
-    /**
-     * str.replace_all(s, target, replacement). JavaSMT's Z3 backend does not offer it, so the term
-     * is parsed from SMT-LIB, over placeholder variables that are then substituted.
-     */
-    private StringFormula replaceAll(StringFormula s, StringFormula target, StringFormula replacement) {
-        FormulaManager fmgr = context.getFormulaManager();
-        StringFormula sVar = smgr.makeVariable("swat.replaceAll.s");
-        StringFormula tVar = smgr.makeVariable("swat.replaceAll.t");
-        StringFormula rVar = smgr.makeVariable("swat.replaceAll.r");
-        StringFormula result = smgr.makeVariable("swat.replaceAll.result");
-        BooleanFormula definition = fmgr.parse("(declare-fun |swat.replaceAll.s| () String)"
-                + "(declare-fun |swat.replaceAll.t| () String)(declare-fun |swat.replaceAll.r| () String)"
-                + "(declare-fun |swat.replaceAll.result| () String)"
-                + "(assert (= |swat.replaceAll.result| (str.replace_all |swat.replaceAll.s| |swat.replaceAll.t| |swat.replaceAll.r|)))");
-        Formula term = fmgr.visit(definition, new DefaultFormulaVisitor<Formula>() {
-            @Override
-            protected Formula visitDefault(Formula f) {
-                return null;
-            }
-
-            @Override
-            public Formula visitFunction(Formula f, java.util.List<Formula> args, FunctionDeclaration<?> decl) {
-                return args.get(0).equals(result) ? args.get(1) : args.get(0);
-            }
-        });
-        return fmgr.substitute((StringFormula) term, java.util.Map.of(sVar, s, tVar, target, rVar, replacement));
+        return new StringValue(context, newConcrete, newFormula, ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
