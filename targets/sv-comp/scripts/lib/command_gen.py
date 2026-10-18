@@ -6,7 +6,7 @@ import socket
 from pathlib import Path
 from pprint import pformat
 from typing import Optional
-from .dtypes import Command, VerificationTask
+from .dtypes import Command, VerificationCategory, VerificationTask
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,6 +43,9 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
     config_path = SCRIPT_DIR / '..' / config_file
     library_path = BASE_PATH / 'libs' / 'java-library-path'
     sa_path = BASE_PATH.parent / 'cfg-extraction'
+    # The pre-analysis only targets asserts, so it can only prune for valid-assert (the explorer
+    # enforces this too).
+    no_sa = no_sa or ver_task['category'] != VerificationCategory.VALID_ASSERT_PRP
 
     base_command: list[str] = [str(PYENV_PATH), "-u", str(BASE_PATH / 'symbolic-explorer' / 'SymbolicExplorer.py'),
                     "-prp", ver_task['category'].value,
