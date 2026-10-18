@@ -18,6 +18,10 @@ import java.util.List;
  *       the calling method (name + descriptor), the class' SourceFile attribute, the line and the
  *       index of the call among the nondet calls on that line (bytecode order, which follows the
  *       left-to-right evaluation order).
+ *   <li>{@link #recordThrow} is invoked by the SV-COMP instrumentation before every {@code athrow}
+ *       of the task. An {@code AssertionError} is the violation of an {@code assert}, and it counts
+ *       where it is thrown, whether or not it later escapes the entry method (a {@code finally}
+ *       that calls {@code System.exit}, returns or throws would otherwise hide it).
  *   <li>{@link #recordTarget} is invoked by the surrounding try/catch of the entry method with the
  *       throwable that escaped it; its stack trace locates the violating statement.
  * </ul>
@@ -37,6 +41,8 @@ public final class Witness {
     private static final List<NondetReturnDTO> nondetReturns =
             Collections.synchronizedList(new ArrayList<>());
     private static volatile ViolationDTO violation = null;
+    // The AssertionError reported by recordThrow, if any (the first one thrown in the task)
+    private static volatile Throwable thrownAssertion = null;
 
     private Witness() {}
 
@@ -137,6 +143,31 @@ public final class Witness {
      * @param throwable the uncaught throwable
      */
     public static void recordTarget(Throwable throwable) {
+        if (throwable == thrownAssertion) {
+            // Reported when it was thrown
+            return;
+        }
+        throwable.printStackTrace();
+        violation = describe(throwable);
+    }
+
+    /**
+     * Reports the first {@code AssertionError} thrown by the task: prints its stack trace (the
+     * explorer derives the verdict from that output) and records it as the violation. Under the
+     * SV-COMP semantics the assertion fails where it is thrown, so the report must not depend on the
+     * error escaping the entry method. Other throwables are left to {@link #recordTarget}; a rethrow
+     * of the reported error (e.g. at the end of a {@code finally}) is ignored.
+     *
+     * @param throwable the throwable about to be thrown
+     */
+    public static void recordThrow(Throwable throwable) {
+        if (!(throwable instanceof AssertionError) || thrownAssertion != null) {
+            return;
+        }
+        synchronized (Witness.class) {
+            if (thrownAssertion != null) return;
+            thrownAssertion = throwable;
+        }
         throwable.printStackTrace();
         violation = describe(throwable);
     }
@@ -186,5 +217,6 @@ public final class Witness {
     public static void reset() {
         nondetReturns.clear();
         violation = null;
+        thrownAssertion = null;
     }
 }

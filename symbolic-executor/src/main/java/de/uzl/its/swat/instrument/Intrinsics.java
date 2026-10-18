@@ -174,7 +174,9 @@ public class Intrinsics {
      * reaching the instrumented end of its entry method. Executions that terminated normally have
      * removed their context already, so this is a no-op for them. Runs in the shutdown hook
      * registered by the Transformer, hence on another thread than the target; errors are logged
-     * only.
+     * only. Instrumented exit calls end the execution before the JVM shuts down ({@link
+     * de.uzl.its.swat.instrument.svcomp.SystemExit}); this hook is the fallback for the exits that
+     * bypass them (uninstrumented callers, reflection).
      */
     public static void terminateOnShutdown() {
         for (long threadId : ThreadHandler.getActiveThreadContextIds()) {
