@@ -55,7 +55,7 @@ public class ContainerContents {
     private final List<Value<?, ?>> mutables = new ArrayList<>();
     /** Whether a value-typed (String, boxed) element was symbolic when it was stored. */
     private boolean symbolicImmutable = false;
-    /** Map keys; a modelled store only accepts keys that are not symbolic. */
+    /** Mutable map keys; a modelled store only accepts keys that are not symbolic. */
     private final List<Value<?, ?>> keys = new ArrayList<>();
 
     private final Map<Integer, Value<?, ?>> byAddress = new HashMap<>();
@@ -96,7 +96,10 @@ public class ContainerContents {
         if (key == null) {
             return;
         }
-        keys.add(key);
+        // A String or boxed key was concrete when stored and stays so; only mutable keys are rechecked
+        if (!isValueTyped(key)) {
+            keys.add(key);
+        }
         index(key);
     }
 
