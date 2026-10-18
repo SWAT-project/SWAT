@@ -91,6 +91,7 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
     }
 
     Result run() throws AnalyzerException {
+        if (program.unsupportedClasspath() != null) return Result.neither(program.unsupportedClasspath());
         entry = program.method(MAIN_CLASS, "main", MAIN_DESC);
         if (entry == null || !entry.isStatic() || !entry.hasCode()) return Result.neither("no Main.main");
 

@@ -35,13 +35,17 @@ public interface ObjectFactory<T> { T createObject(); }
     @TempDir
     Path dir
 
-    ExceptionFreedomCheck.Result check(String main, String release = '8') {
+    ExceptionFreedomCheck.Result check(String main, String release = '8', Map<String, String> extra = [:]) {
         Path src = dir.resolve('src'), out = dir.resolve('classes')
         Files.createDirectories(src.resolve('org/sosy_lab/sv_benchmarks'))
         Files.createDirectories(out)
         Files.writeString(src.resolve('org/sosy_lab/sv_benchmarks/Verifier.java'), VERIFIER)
         Files.writeString(src.resolve('org/sosy_lab/sv_benchmarks/ObjectFactory.java'), FACTORY)
         Files.writeString(src.resolve('Main.java'), 'import org.sosy_lab.sv_benchmarks.Verifier;\n' + main)
+        extra.each { path, code ->
+            Files.createDirectories(src.resolve(path).parent)
+            Files.writeString(src.resolve(path), code)
+        }
         def files = []
         src.toFile().eachFileRecurse { if (it.name.endsWith('.java')) files << it.path }
         int rc = ToolProvider.getSystemJavaCompiler().run(null, null, null,
@@ -101,6 +105,27 @@ public interface ObjectFactory<T> { T createObject(); }
         'library default method'              | '8'     | 'class It implements java.util.Iterator<Object> { public boolean hasNext() { return false; } public Object next() { return null; } } public class Main { public static void main(String[] a) { if (Verifier.nondetInt() == 42) new It().remove(); } }'
         'library default calls back'          | '17'    | 'class X implements CharSequence { public int length() { throw new IllegalStateException(); } public char charAt(int i) { return 0; } public CharSequence subSequence(int s, int e) { return this; } public String toString() { return ""; } } public class Main { public static void main(String[] a) { if (Verifier.nondetBoolean()) { boolean b = new X().isEmpty(); } } }'
         'library default via app interface'   | '8'     | 'interface J extends java.util.Iterator<Object> {} abstract class Ab implements J { public boolean hasNext() { return false; } } class It extends Ab { public Object next() { return null; } } public class Main { public static void main(String[] a) { J j = new It(); j.remove(); } }'
+    }
+
+    static final String STEAL = 'static { try { java.lang.reflect.Field f = Class.forName("Main").getDeclaredField("o"); f.setAccessible(true); f.set(null, null); } catch (Exception e) {} }'
+
+    @Unroll
+    def "classes the JVM loads differently than modelled: #name"() {
+        when:
+        def r = check(program, '8', extra)
+
+        then:
+        !r.exceptionFree
+        !r.assertionFree
+
+        where:
+        name                          | program | extra
+        'Verifier package helper'     | 'public class Main { static Object o = new Object(); public static void main(String[] a) { int z = org.sosy_lab.sv_benchmarks.Helper.X; System.out.println(o.hashCode() + z); } }' | ['org/sosy_lab/sv_benchmarks/Helper.java': 'package org.sosy_lab.sv_benchmarks; public class Helper { public static int X; ' + STEAL + ' }']
+        'javax class nulls a field'   | 'public class Main { static Object o = new Object(); public static void main(String[] a) { int z = javax.mine.Helper.X; System.out.println(o.hashCode() + z); } }' | ['javax/mine/Helper.java': 'package javax.mine; public class Helper { public static int X; ' + STEAL + ' }']
+        'javax class asserts'         | 'public class Main { public static void main(String[] a) { int z = javax.mine.Config.LEVEL; System.out.println(z); } }' | ['javax/mine/Config.java': 'package javax.mine; public class Config { public static int LEVEL; static { LEVEL = -1; assert LEVEL >= 0 : "bad level"; } }']
+        'java class field'            | 'public class Main { public static void main(String[] a) { int z = java.mine.Config.LEVEL; System.out.println(z); } }' | ['java/mine/Config.java': 'package java.mine; public class Config { public static int LEVEL = 1; }']
+        'java class array'            | 'public class Main { public static void main(String[] a) { Object[] arr = new java.mine.Config[1]; System.out.println(arr.length); } }' | ['java/mine/Config.java': 'package java.mine; public class Config { public static int LEVEL = 1; }']
+        'class shadowed by the JDK'   | 'import org.xml.sax.helpers.AttributesImpl; public class Main { public static void main(String[] a) { AttributesImpl x = new AttributesImpl(); x.removeAttribute(0); } }' | ['org/xml/sax/helpers/AttributesImpl.java': 'package org.xml.sax.helpers; public class AttributesImpl { public AttributesImpl() {} public void removeAttribute(int index) {} }']
     }
 
     @Unroll

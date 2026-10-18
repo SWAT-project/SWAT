@@ -97,9 +97,9 @@ final class Program {
     private void add(InputStream in) throws IOException {
         ClassNode c = new ClassNode();
         new ClassReader(in).accept(c, ClassReader.SKIP_FRAMES);
-        // The first definition on the classpath wins, as for the JVM's class loader. Classes in
-        // java/ are always the platform's own.
-        if (classes.containsKey(c.name) || isPlatformPackage(c.name)) return;
+        // The first definition on the classpath wins, as for the JVM's class loader.
+        if (classes.containsKey(c.name)) return;
+        if (unsupported == null) unsupported = unsupportedReason(c.name);
         classes.put(c.name, c);
         if (c.name.startsWith(VERIFIER_PACKAGE)) return;
         for (MethodNode m : c.methods) {
@@ -108,9 +108,46 @@ final class Program {
         }
     }
 
-    /** Packages the JVM always loads from the platform, never from the classpath. */
-    private static boolean isPlatformPackage(String name) {
-        return name.startsWith("java/") || name.startsWith("javax/") || name.startsWith("jdk/") || name.startsWith("sun/");
+    /**
+     * Why a class on the classpath breaks the assumption that the classpath is the program (null
+     * if it does not). The JVM does not load such a class the way the analysis models it: it
+     * refuses java/ packages, serves packages the platform defines from the platform, and the
+     * analysis models only Verifier and ObjectFactory of the Verifier package, so the static
+     * initializer of any other class there would run unanalysed.
+     */
+    private static String unsupportedReason(String name) {
+        int slash = name.lastIndexOf('/');
+        String pkg = slash < 0 ? "" : name.substring(0, slash);
+        if (name.startsWith(VERIFIER_PACKAGE)) {
+            if (name.equals(VERIFIER_PACKAGE + "Verifier") || name.equals(VERIFIER_PACKAGE + "ObjectFactory")) return null;
+            return "class " + name + " in the Verifier package";
+        }
+        for (String prefix : PLATFORM_PREFIXES) {
+            if (name.startsWith(prefix)) return "class " + name + " in a platform package";
+        }
+        if (PLATFORM_PACKAGES.contains(pkg.replace('/', '.'))) return "class " + name + " in a package of the JDK";
+        return null;
+    }
+
+    /**
+     * Package prefixes of the platform: java/, javax/, jdk/, sun/, and those that exist only in the
+     * JDK 8 runtime (not as modules of the JDK the check runs on).
+     */
+    private static final List<String> PLATFORM_PREFIXES = List.of("java/", "javax/", "jdk/", "sun/", "com/sun/",
+            "org/omg/", "org/w3c/", "org/xml/", "org/ietf/", "org/jcp/");
+
+    /** The packages of the JDK's boot modules (the platform the check runs on). */
+    private static final Set<String> PLATFORM_PACKAGES = new HashSet<>();
+
+    static {
+        for (Module m : ModuleLayer.boot().modules()) PLATFORM_PACKAGES.addAll(m.getPackages());
+    }
+
+    /** Set if a class on the classpath breaks the model of class loading; the check then fails. */
+    private String unsupported;
+
+    String unsupportedClasspath() {
+        return unsupported;
     }
 
     /** An application class (not a library class, and not the modelled Verifier package). */
