@@ -38,6 +38,7 @@ class GraphBuilder:
         self.exits = []
         self.asserts = []
         self.entry = None
+        self.metadata = {} # further graph metadata, e.g. callbacksReachingAssert
 
     def node(self, id, exit=False, incomplete=False, chain=None, assertion=False):
         n = {'id': id, 'statement': id, 'stmtType': 'X', 'lineNumber': -1}
@@ -83,7 +84,8 @@ class GraphBuilder:
         graph = {'nodes': self.nodes, 'edges': self.edges, 'entryNodeId': self.entry,
                  'exitNodeIds': self.exits,
                  'metadata': {'assertionPointIds': self.asserts,
-                              'isIncomplete': any(n.get('isIncomplete') for n in self.nodes)}}
+                              'isIncomplete': any(n.get('isIncomplete') for n in self.nodes),
+                              **self.metadata}}
         with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as f:
             json.dump(graph, f)
             path = f.name
@@ -93,6 +95,14 @@ class GraphBuilder:
             return g
         finally:
             os.unlink(path)
+
+    def save(self, path: str):
+        """Writes the graph's JSON to `path`, as the extractor would."""
+        graph = {'nodes': self.nodes, 'edges': self.edges, 'entryNodeId': self.entry,
+                 'exitNodeIds': self.exits,
+                 'metadata': {'assertionPointIds': self.asserts, **self.metadata}}
+        with open(path, 'w') as f:
+            json.dump(graph, f)
 
 
 def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=(), callback=False):
@@ -128,6 +138,16 @@ def leaf():
     lf.parent = None
     lf.inputs = []
     return lf
+
+
+def keyed(g: SAGraph) -> SAGraph:
+    """Gives every branch and call site of `g` its node id as key, so a tree can name them."""
+    index = g.entry_node.graph_index
+    for n in g.nodes.values():
+        if n.is_branch() or n.is_call_site():
+            n.key = n.id
+            index.keys[n.id] = n
+    return g
 
 
 def candidates(tree_root, sa_graph):
@@ -294,31 +314,53 @@ class DfsTest(unittest.TestCase):
         # so its unexplored branched side must be pruned. That only happens if the second return
         # resumed at r2: resuming at r1 would pair bm's event with kb again, whose sides are
         # interesting, and losing track altogether would make everything interesting.
+        g = keyed(shared_callee_graph().load())
+        n3 = branch_node('n3', skipped=leaf(), branched=None, key='bm', pops=1)
+        n2 = branch_node('n2', skipped=n3, branched=leaf(), key='kb', pops=1, pushes=('c2',))
+        n1 = branch_node('n1', skipped=n2, branched=leaf(), key='kb', pushes=('c1',))
+        self.assertEqual(candidates(n1, g), set())
+
+    def test_unchecked_pairing_is_not_pruned(self):
+        # As above, but the trace carries no keys: the walk still pairs bm's event with bm, but
+        # cannot check that pairing, so it does not prune by it.
         g = shared_callee_graph().load()
         n3 = branch_node('n3', skipped=leaf(), branched=None)
         n2 = branch_node('n2', skipped=n3, branched=leaf())
         n1 = branch_node('n1', skipped=n2, branched=leaf())
-        self.assertEqual(candidates(n1, g), set())
+        self.assertEqual(candidates(n1, g), {'n3'})
+
+    def test_unchecked_stack_is_not_pruned(self):
+        # The keys match, but a frame the trace reports has no call site in the graph (a library
+        # call, or a call site without a key), so the walk's stack cannot be checked.
+        # Under the first call to classify(), kb's sides cannot reach an assert (precision_graph).
+        # (b0 has no key, so its pruned side is still walked into.)
+        g = keyed(precision_graph().load())
+        k_first = branch_node('k_first', skipped=leaf(), branched=None, key='kb', pushes=('c1',))
+        n0 = branch_node('n0', skipped=k_first, branched=leaf())
+        self.assertEqual(candidates(n0, g), set())
+        k_first.pushes = (None,)
+        self.assertEqual(candidates(n0, g), {'k_first'})
 
     def test_unexplored_side_leading_to_assert_is_kept(self):
-        g = shared_callee_graph().load()
-        n3 = branch_node('n3', skipped=None, branched=leaf())
-        n2 = branch_node('n2', skipped=n3, branched=leaf())
-        n1 = branch_node('n1', skipped=n2, branched=leaf())
+        g = keyed(shared_callee_graph().load())
+        n3 = branch_node('n3', skipped=None, branched=leaf(), key='bm', pops=1)
+        n2 = branch_node('n2', skipped=n3, branched=leaf(), key='kb', pops=1, pushes=('c2',))
+        n1 = branch_node('n1', skipped=n2, branched=leaf(), key='kb', pushes=('c1',))
         self.assertEqual(candidates(n1, g), {'n3'})
 
     def test_unmodelled_exception_makes_everything_after_it_interesting(self):
         # main: if (b1) exit; if (b2) exit; assert. b2's TRUE side cannot reach the assert, so it is
         # pruned -- unless the executor reported an exception the graph does not model before b2:
         # from there on the walk has no information.
-        g = (GraphBuilder()
+        g = keyed(GraphBuilder()
              .nodes_('e0', 'b1', 'b2').node('a', assertion=True).node('x', exit=True)
              .edge('e0', 'b1').branch('b1', 'b2', 'x').branch('b2', 'a', 'x').edge('a', 'x')
              .load())
-        n2 = branch_node('n2', skipped=leaf(), branched=None)
-        n1 = branch_node('n1', skipped=n2, branched=leaf())
+        n2 = branch_node('n2', skipped=leaf(), branched=None, key='b2')
+        n1 = branch_node('n1', skipped=n2, branched=leaf(), key='b1')
         self.assertEqual(candidates(n1, g), set())
         n1.skipped = special_node('x', branched=n2, inst='UNMODELLED_EXCEPTION')
+        n2.key = None # without a key the walk cannot find the graph again (see KeyCheckTest)
         self.assertEqual(candidates(n1, g), {'n2'})
 
     def exception_graph(self):
@@ -359,15 +401,15 @@ class DfsTest(unittest.TestCase):
         # side skips the assert, so the unexplored branched side is uninteresting -- which the walk
         # can only tell if it unwound from uncaught[AIOOBE] into main's handler. Stopping at the
         # uncaught node means "no information" and keeps it.
-        g = inter_method_catch_graph().load()
-        n2 = branch_node('n2', skipped=leaf(), branched=None)
-        n1 = branch_node('n1', skipped=n2, branched=leaf())
+        g = keyed(inter_method_catch_graph().load())
+        n2 = branch_node('n2', skipped=leaf(), branched=None, key='hb', pops=1)
+        n1 = branch_node('n1', skipped=n2, branched=leaf(), key='g', pushes=('c',))
         self.assertEqual(candidates(n1, g), set())
 
     def test_guard_failure_keeps_handler_assert_reachable(self):
-        g = inter_method_catch_graph().load()
-        n2 = branch_node('n2', skipped=None, branched=leaf())
-        n1 = branch_node('n1', skipped=n2, branched=leaf())
+        g = keyed(inter_method_catch_graph().load())
+        n2 = branch_node('n2', skipped=None, branched=leaf(), key='hb', pops=1)
+        n1 = branch_node('n1', skipped=n2, branched=leaf(), key='g', pushes=('c',))
         self.assertEqual(candidates(n1, g), {'n2'})
 
     def test_unwinding_picks_the_handler_of_the_frame_on_the_stack(self):
@@ -389,9 +431,10 @@ class DfsTest(unittest.TestCase):
              .edge('t0', 'g').branch('g', 'u', 'tx', phantom=True)
              .edge('u', 'h1', 'EXCEPTIONAL_RETURN').edge('u', 'h2', 'EXCEPTIONAL_RETURN')
              .load())
-        n3 = branch_node('n3', skipped=None, branched=None)
-        n2 = branch_node('n2', skipped=n3, branched=leaf())
-        n1 = branch_node('n1', skipped=leaf(), branched=n2)
+        keyed(g)
+        n3 = branch_node('n3', skipped=None, branched=None, key='h2b', pops=1)
+        n2 = branch_node('n2', skipped=n3, branched=leaf(), key='g', pops=1, pushes=('c2',))
+        n1 = branch_node('n1', skipped=leaf(), branched=n2, key='g', pushes=('c1',))
         self.assertEqual(candidates(n1, g), set())
 
     def test_recursion_levels_return_in_order(self):
@@ -405,10 +448,11 @@ class DfsTest(unittest.TestCase):
              .edge('f0', 'fb').branch('fb', 'fc', 'fx')
              .call('fc', 'f0', 'fr', ['fx']).edge('fr', 'fx')
              .load())
-        n4 = branch_node('n4', skipped=leaf(), branched=None)
-        n3 = branch_node('n3', skipped=leaf(), branched=n4)
-        n2 = branch_node('n2', skipped=n3, branched=leaf())
-        n1 = branch_node('n1', skipped=n2, branched=leaf())
+        keyed(g)
+        n4 = branch_node('n4', skipped=leaf(), branched=None, key='bm', pops=3)
+        n3 = branch_node('n3', skipped=leaf(), branched=n4, key='fb', pushes=('fc',))
+        n2 = branch_node('n2', skipped=n3, branched=leaf(), key='fb', pushes=('fc',))
+        n1 = branch_node('n1', skipped=n2, branched=leaf(), key='fb', pushes=('c',))
         self.assertEqual(candidates(n1, g), set())
 
 
@@ -620,10 +664,10 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
         # Both calls to classify() have their branch half explored. Context-insensitively both
         # unexplored sides are interesting, because the second caller reaches an assert; with the
         # call stack only the one under the second call is.
-        g = precision_graph().load()
-        k_first = branch_node('k_first', skipped=leaf(), branched=None)
-        k_second = branch_node('k_second', skipped=leaf(), branched=None)
-        n0 = branch_node('n0', skipped=k_first, branched=k_second)
+        g = keyed(precision_graph().load())
+        k_first = branch_node('k_first', skipped=leaf(), branched=None, key='kb', pushes=('c1',))
+        k_second = branch_node('k_second', skipped=leaf(), branched=None, key='kb', pushes=('c2',))
+        n0 = branch_node('n0', skipped=k_first, branched=k_second, key='b0')
         self.assertEqual(candidates(n0, g), {'k_second'})
 
     def test_summaries(self):
