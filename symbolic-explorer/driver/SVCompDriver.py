@@ -1,3 +1,4 @@
+import copy
 import glob
 import signal
 import subprocess
@@ -194,13 +195,13 @@ class SVCompDriver:
                     return Action.REPORTVERDICT
 
 
-            if len(Database.instance().get_tree(ENDPOINT_ID).symbolic_vars) == 0:
+            if Database.instance().count_symbolic_vars(ENDPOINT_ID) == 0:
                 # No symbolic vars found, safe to assume no violation
                 logger.info(f'[SVCOMP] No symbolic vars found')
                 self.state.verdict = Verdict.NO_SYMBOLIC_VARS
                 return Action.REPORTVERDICT
         
-            logger.info(f'[SVCOMP] Found {len(Database.instance().get_tree(ENDPOINT_ID).symbolic_vars)} symbolic vars')
+            logger.info(f'[SVCOMP] Found {Database.instance().count_symbolic_vars(ENDPOINT_ID)} symbolic vars')
 
             # No assertion error found but symbolic variables present, continue with symbolic exploration
             return Action.SYMBOLICNEXT
@@ -412,8 +413,9 @@ class SVCompDriver:
             return Action.REPORTVERDICT
 
         logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
-        # remember which branch we want to explore
-        self.state.branch_to_explore = branch
+        # remember which branch we want to explore, as it is now: the node itself is the tree's
+        # and gets its other side once the next trace arrives (check_divergence needs this one)
+        self.state.branch_to_explore = copy.copy(branch)
         self.state.solution_is_guess = Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id)
 
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]

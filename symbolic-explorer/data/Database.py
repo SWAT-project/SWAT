@@ -158,6 +158,25 @@ class Database:
         lock.release()
         return ret
     
+    def visit_tree(self, endpoint_id: Union[str, int], visit):
+        """Returns visit(tree, solved, unsat) for the endpoint's tree, with the gids of the solved
+        and of the unsat branches, all under the lock and without copying: a copy of the whole
+        tree in every round costs more than the walk itself. visit must not keep the sets, and
+        must not call back into the Database (the lock is held)."""
+        endpoint_id = str(endpoint_id)
+        lock.acquire()
+        try:
+            return visit(self.tree[endpoint_id], self.solutions.keys(), set(self.unsat_branches))
+        finally:
+            lock.release()
+
+    def count_symbolic_vars(self, endpoint_id: Union[str, int]) -> int:
+        endpoint_id = str(endpoint_id)
+        lock.acquire()
+        ret = len(self.tree[endpoint_id].symbolic_vars)
+        lock.release()
+        return ret
+
     def get_witness_data(self, endpoint_id: Union[str, int]) -> dict | None:
         """The witness data of the latest trace of the endpoint (None if no trace arrived since the last clear)."""
         endpoint_id = str(endpoint_id)

@@ -81,7 +81,8 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         skip_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_fallthrough_child(), sa_stack)
         branch_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_branched_child(), sa_stack)
         
-        logger.info(f"[DFS] @{node.id}/{("CALLBACK" if node.callback else "CLINIT") if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
+        if sa_index is not None: # without a graph the line has nothing to say, at every node every round
+            logger.info(f"[DFS] @{node.id}/{("CALLBACK" if node.callback else "CLINIT") if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
         
         # Add the node itself, if eligible
         if (node.skipped is None and skip_is_interesting) or (node.branched is None and branch_is_interesting):
