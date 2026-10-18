@@ -41,6 +41,8 @@ final class AbsValue implements Value {
     final String staticType;
     /** The receiver of the current instance method, unchanged since method entry. */
     final boolean isThis;
+    /** The slot may hold the receiver of the current instance method (a may-alias fact, kept by joins). */
+    final boolean mayBeThis;
     /**
      * The exception caught by the handler with this index in the method's try-catch list (-1: not a
      * caught exception, or not known to be one).
@@ -59,6 +61,12 @@ final class AbsValue implements Value {
 
     AbsValue(Kind kind, int size, Long constant, Integer length, String lengthOf, String ordinalOf,
              String exactType, String staticType, boolean isThis, int caughtBy) {
+        this(kind, size, constant, length, lengthOf, ordinalOf, exactType, staticType, isThis, caughtBy, isThis);
+    }
+
+    private AbsValue(Kind kind, int size, Long constant, Integer length, String lengthOf, String ordinalOf,
+                     String exactType, String staticType, boolean isThis, int caughtBy, boolean mayBeThis) {
+        this.mayBeThis = mayBeThis || isThis;
         this.kind = kind;
         this.size = size;
         this.constant = constant;
@@ -110,16 +118,16 @@ final class AbsValue implements Value {
 
     /** The same value without the facts that only hold where it was computed (receiver, handler). */
     AbsValue escaped() {
-        if (!isThis && caughtBy < 0) return this;
+        if (!mayBeThis && caughtBy < 0) return this;
         return new AbsValue(kind, size, constant, length, lengthOf, ordinalOf, exactType, staticType, false, -1);
     }
 
     AbsValue withOrdinalOf(String enumType) {
-        return new AbsValue(kind, size, constant, length, lengthOf, enumType, exactType, staticType, isThis);
+        return new AbsValue(kind, size, constant, length, lengthOf, enumType, exactType, staticType, isThis, caughtBy, mayBeThis);
     }
 
     AbsValue withLengthOf(String enumType) {
-        return new AbsValue(kind, size, constant, length, enumType, ordinalOf, exactType, staticType, isThis);
+        return new AbsValue(kind, size, constant, length, enumType, ordinalOf, exactType, staticType, isThis, caughtBy, mayBeThis);
     }
 
     boolean isBottom() {
@@ -146,6 +154,15 @@ final class AbsValue implements Value {
 
     /** The least upper bound of two values. */
     static AbsValue join(AbsValue a, AbsValue b) {
+        AbsValue j = joinFacts(a, b);
+        if ((a.mayBeThis || b.mayBeThis) && !j.mayBeThis) {
+            j = new AbsValue(j.kind, j.size, j.constant, j.length, j.lengthOf, j.ordinalOf, j.exactType, j.staticType,
+                    j.isThis, j.caughtBy, true);
+        }
+        return j;
+    }
+
+    private static AbsValue joinFacts(AbsValue a, AbsValue b) {
         if (a.equals(b)) return a;
         if (a.isBottom()) return b;
         if (b.isBottom()) return a;
@@ -180,7 +197,7 @@ final class AbsValue implements Value {
         if (this == o) return true;
         if (!(o instanceof AbsValue)) return false;
         AbsValue v = (AbsValue) o;
-        return kind == v.kind && size == v.size && isThis == v.isThis && caughtBy == v.caughtBy
+        return kind == v.kind && size == v.size && isThis == v.isThis && mayBeThis == v.mayBeThis && caughtBy == v.caughtBy
                 && Objects.equals(constant, v.constant)
                 && Objects.equals(length, v.length) && Objects.equals(lengthOf, v.lengthOf)
                 && Objects.equals(ordinalOf, v.ordinalOf) && Objects.equals(exactType, v.exactType)
@@ -189,7 +206,7 @@ final class AbsValue implements Value {
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, size, constant, length, lengthOf, ordinalOf, exactType, staticType, isThis, caughtBy);
+        return Objects.hash(kind, size, constant, length, lengthOf, ordinalOf, exactType, staticType, isThis, mayBeThis, caughtBy);
     }
 
     @Override
@@ -202,6 +219,7 @@ final class AbsValue implements Value {
         if (exactType != null) sb.append(" exact=").append(exactType);
         else if (staticType != null) sb.append(" type=").append(staticType);
         if (isThis) sb.append(" this");
+        else if (mayBeThis) sb.append(" maybe-this");
         if (caughtBy >= 0) sb.append(" caught#").append(caughtBy);
         return sb.toString();
     }

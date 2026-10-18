@@ -97,8 +97,9 @@ final class Program {
     private void add(InputStream in) throws IOException {
         ClassNode c = new ClassNode();
         new ClassReader(in).accept(c, ClassReader.SKIP_FRAMES);
-        // The first definition on the classpath wins, as for the JVM's class loader.
-        if (classes.containsKey(c.name)) return;
+        // The first definition on the classpath wins, as for the JVM's class loader. Classes in
+        // java/ are always the platform's own.
+        if (classes.containsKey(c.name) || c.name.startsWith("java/")) return;
         classes.put(c.name, c);
         if (c.name.startsWith(VERIFIER_PACKAGE)) return;
         for (MethodNode m : c.methods) {
@@ -221,21 +222,27 @@ final class Program {
         return null;
     }
 
-    /** A default method for name+desc in the application interfaces of a class (null if none). */
-    private Method resolveDefault(String clazz, String name, String desc) {
+    /** All default methods for name+desc in the application interfaces of a class. */
+    private List<Method> defaults(String clazz, String name, String desc) {
+        List<Method> out = new ArrayList<>();
         for (String t : appSupertypes(clazz)) {
             ClassNode c = classes.get(t);
             if ((c.access & Opcodes.ACC_INTERFACE) == 0) continue;
             Method m = method(t, name, desc);
-            if (m != null && m.hasCode() && !m.isStatic()) return m;
+            if (m != null && m.hasCode() && !m.isStatic() && (m.node.access & Opcodes.ACC_PRIVATE) == 0) out.add(m);
         }
-        return null;
+        return out;
     }
 
     /**
-     * The targets of an invokevirtual/invokeinterface on an application owner type: the method each
-     * concrete application subtype of the owner resolves to. Returns null if some subtype resolves
-     * to a library method that is not one of the known methods of java/lang/Object or java/lang/Enum.
+     * The targets of an invokevirtual/invokeinterface on an application owner type: a superset of
+     * the methods the JVM may select for each concrete application subtype of the owner (JVMS
+     * 5.4.6). Rather than following the selection rules exactly (package-private overriding,
+     * maximally-specific default methods), every non-private instance method with that name and
+     * descriptor in the superclass chain, and every default method of the application
+     * superinterfaces, counts. A library implementation counts unless a public or protected
+     * application method overrides it. Returns null if a library class whose methods are unknown
+     * might provide it.
      */
     Targets virtualTargets(String owner, String name, String desc) {
         Targets t = new Targets();
@@ -249,23 +256,24 @@ final class Program {
         for (String sub : appSubtypes(owner)) {
             ClassNode c = classes.get(sub);
             if ((c.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE)) != 0) continue;
-            String[] lib = new String[1];
-            Method m = resolveInChain(sub, name, desc, lib);
-            if (m != null) {
+            boolean overridesLibrary = false;
+            String lib = null;
+            for (String k : superChain(sub)) {
+                if (!isApp(k)) {
+                    lib = k;
+                    break;
+                }
+                Method m = method(k, name, desc);
+                if (m == null || m.isStatic() || (m.node.access & Opcodes.ACC_PRIVATE) != 0) continue;
+                if ((m.node.access & Opcodes.ACC_NATIVE) != 0) return null;
                 if (m.hasCode()) t.methods.add(m);
-                else if ((m.node.access & Opcodes.ACC_NATIVE) != 0) return null;
-                // abstract in a concrete class cannot happen for verified classes
-                continue;
+                if ((m.node.access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED)) != 0) overridesLibrary = true;
             }
-            String declaring = lib[0] == null ? null : JdkModel.declaringClass(lib[0], name, desc);
-            if (declaring != null) {
-                t.libraryMethods.add(declaring + "." + name + desc);
-                continue;
-            }
-            if (lib[0] != null && !JdkModel.knowsMethodsOf(lib[0])) return null;
-            Method d = resolveDefault(sub, name, desc);
-            if (d != null) t.methods.add(d);
-            // else: AbstractMethodError, an Error
+            t.methods.addAll(defaults(sub, name, desc));
+            if (lib == null || overridesLibrary) continue;
+            String declaring = JdkModel.declaringClass(lib, name, desc);
+            if (declaring != null) t.libraryMethods.add(declaring + "." + name + desc);
+            else if (!JdkModel.knowsMethodsOf(lib)) return null;
         }
         return t;
     }

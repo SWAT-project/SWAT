@@ -185,7 +185,7 @@ final class JdkModel {
                 "equalsIgnoreCase(Ljava/lang/String;)Z", "indexOf(I)I", "indexOf(II)I", "lastIndexOf(I)I",
                 "lastIndexOf(II)I");
         add("java/lang/String", none, fresh, "toString()Ljava/lang/String;", "intern()Ljava/lang/String;",
-                "trim()Ljava/lang/String;", "toLowerCase()Ljava/lang/String;", "toUpperCase()Ljava/lang/String;",
+                "trim()Ljava/lang/String;",
                 "replace(CC)Ljava/lang/String;", "valueOf(I)Ljava/lang/String;", "valueOf(J)Ljava/lang/String;",
                 "valueOf(F)Ljava/lang/String;", "valueOf(D)Ljava/lang/String;", "valueOf(Z)Ljava/lang/String;",
                 "valueOf(C)Ljava/lang/String;", "<init>()V");
@@ -194,15 +194,15 @@ final class JdkModel {
                 "startsWith(Ljava/lang/String;I)Z", "endsWith(Ljava/lang/String;)Z", "indexOf(Ljava/lang/String;)I",
                 "indexOf(Ljava/lang/String;I)I", "lastIndexOf(Ljava/lang/String;)I", "<init>(Ljava/lang/String;)V",
                 "<init>([C)V");
-        add("java/lang/String", nonNull, fresh, "concat(Ljava/lang/String;)Ljava/lang/String;",
-                "valueOf([C)Ljava/lang/String;");
+        // Not concat, toLowerCase, toUpperCase or new StringBuilder(String): on JDK 8 their size
+        // computations overflow for huge strings and throw NegativeArraySizeException.
+        add("java/lang/String", nonNull, fresh, "valueOf([C)Ljava/lang/String;");
         add("java/lang/String", none, Returns.NONNULL_EXACT, "toCharArray()[C");
         add("java/lang/String", str, fresh, "valueOf(Ljava/lang/Object;)Ljava/lang/String;");
 
         for (String sb : List.of("java/lang/StringBuilder", "java/lang/StringBuffer")) {
             String l = "L" + sb + ";";
             add(sb, none, decl, "<init>()V", "length()I");
-            add(sb, nonNull, decl, "<init>(Ljava/lang/String;)V");
             add(sb, none, self, "append(Z)" + l, "append(C)" + l, "append(I)" + l, "append(J)" + l,
                     "append(F)" + l, "append(D)" + l, "append(Ljava/lang/String;)" + l, "reverse()" + l);
             add(sb, str, self, "append(Ljava/lang/Object;)" + l, "append(Ljava/lang/CharSequence;)" + l);

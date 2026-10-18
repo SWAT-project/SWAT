@@ -92,6 +92,12 @@ public interface ObjectFactory<T> { T createObject(); }
         'unmodelled library call'             | '8'     | 'public class Main { public static void main(String[] a) { String s = Verifier.nondetString(); char c = s.charAt(3); } }'
         'println of an object'                | '8'     | 'class A { public String toString() { throw new IllegalStateException(); } } public class Main { public static void main(String[] a) { System.out.println(new A()); } }'
         'null string argument'                | '8'     | 'public class Main { public static void main(String[] a) { String s = Verifier.nondetBoolean() ? null : "x"; boolean b = "abc".startsWith(s); } }'
+        'main called with null'               | '8'     | 'public class Main { public static void main(String[] a) { if (Verifier.nondetBoolean()) { main(null); } else { int n = a.length; } } }'
+        'more specific default method'        | '8'     | 'interface I { default int m() { return 0; } } interface J extends I { default int m() { throw new IllegalStateException(); } } class C implements I, J {} public class Main { public static void main(String[] a) { new C().m(); } }'
+        'private method does not implement'   | '17'    | 'interface I { default void m() { throw new IllegalStateException(); } } class B { private void m() {} } class C extends B implements I {} public class Main { public static void main(String[] a) { I x = new C(); x.m(); } }'
+        'receiver escapes through a join'     | '8'     | 'interface G { String get(); } class G0 implements G { public String get() { return "ok"; } } class Holder { G g; Holder() { this.g = new G0(); } } abstract class Base implements G { Base() { G o = Verifier.nondetBoolean() ? this : Main.H.g; Main.H.g = o; } } class C extends Base { String f; C(int d) { super(); int z = 10 / d; this.f = "x"; } public String get() { return this.f; } } public class Main { static Holder H = new Holder(); public static void main(String[] a) { try { new C(Verifier.nondetInt()); } catch (RuntimeException e) { } String s = H.g.get(); int n = s.length(); } }'
+        'concat overflows on JDK 8'           | '8'     | 'public class Main { public static void main(String[] a) { String s = Verifier.nondetString(); String t = s.concat(s); } }'
+        'StringBuilder constructor overflows' | '8'   | 'public class Main { public static void main(String[] a) { StringBuilder sb = new StringBuilder(Verifier.nondetString()); } }'
     }
 
     @Unroll

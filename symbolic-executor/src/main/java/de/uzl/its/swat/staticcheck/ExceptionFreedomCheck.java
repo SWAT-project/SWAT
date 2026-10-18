@@ -2,6 +2,8 @@ package de.uzl.its.swat.staticcheck;
 
 import java.nio.file.Path;
 import java.util.*;
+import org.objectweb.asm.ConstantDynamic;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
@@ -101,7 +103,8 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
                     fieldFacts.put(key, AbsValue.prim(t.getSize()));
                     continue;
                 }
-                if (f.value instanceof String) fieldFacts.put(key, AbsValue.exact("java/lang/String"));
+                // The JVM only applies a ConstantValue attribute to static fields.
+                if (f.value instanceof String && (f.access & ACC_STATIC) != 0) fieldFacts.put(key, AbsValue.exact("java/lang/String"));
                 else if (!initializedBeforeRead.contains(key)) fieldFacts.put(key, AbsValue.NULL);
             }
         }
@@ -204,6 +207,9 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
                 if (f[i] == null) continue;
                 if (insns[i] instanceof InvokeDynamicInsnNode && !isStringConcat((InvokeDynamicInsnNode) insns[i]))
                     return m.key + ": line " + line(insns[i]) + ": invokedynamic";
+                if (insns[i] instanceof LdcInsnNode && (((LdcInsnNode) insns[i]).cst instanceof Handle
+                        || ((LdcInsnNode) insns[i]).cst instanceof ConstantDynamic))
+                    return m.key + ": line " + line(insns[i]) + ": ldc of a method handle or dynamic constant";
                 int op = insns[i].getOpcode();
                 if (op == NEW) work.addAll(initializers(((TypeInsnNode) insns[i]).desc));
                 else if (op == GETSTATIC || op == PUTSTATIC) work.addAll(initializers(((FieldInsnNode) insns[i]).owner));
@@ -332,8 +338,12 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
 
     @Override
     public AbsValue parameter(Program.Method method, int index, Type type) {
-        if (method == entry) return AbsValue.array(MAIN_DESC.substring(1, MAIN_DESC.indexOf(')')), null, null);
         AbsValue[] params = parameterFacts.get(method.key);
+        if (method == entry) {
+            // The launcher passes a non-null array; the program may call main itself as well.
+            AbsValue launcher = AbsValue.array(MAIN_DESC.substring(1, MAIN_DESC.indexOf(')')), null, null);
+            return params == null || params[index] == null ? launcher : AbsValue.join(launcher, params[index]);
+        }
         if (params == null || params[index] == null) return AbsValue.bottom(type.getSize());
         return params[index];
     }
@@ -519,7 +529,7 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
                 Frame<AbsValue> frame = fr[mn.instructions.indexOf(insn)];
                 if (frame == null) return false;
                 if (insn.getOpcode() == PUTFIELD && assigns((FieldInsnNode) insn, c, f) && top(frame, 1).isThis
-                        && !top(frame, 0).isThis) {
+                        && !top(frame, 0).mayBeThis) {
                     assigned = true;
                     break;
                 }
@@ -545,19 +555,19 @@ public final class ExceptionFreedomCheck implements FactInterpreter.Facts, Opcod
     private boolean letsReceiverEscape(AbstractInsnNode insn, Frame<AbsValue> frame, Set<String> checking) {
         int op = insn.getOpcode();
         if (op == PUTFIELD || op == PUTSTATIC || op == AASTORE || op == ARETURN || op == ATHROW) {
-            return top(frame, 0).isThis;
+            return top(frame, 0).mayBeThis;
         }
         if (insn instanceof InvokeDynamicInsnNode) {
             int n = Type.getArgumentTypes(((InvokeDynamicInsnNode) insn).desc).length;
-            for (int i = 0; i < n; i++) if (top(frame, i).isThis) return true;
+            for (int i = 0; i < n; i++) if (top(frame, i).mayBeThis) return true;
             return false;
         }
         if (!(insn instanceof MethodInsnNode)) return false;
         MethodInsnNode mi = (MethodInsnNode) insn;
         int n = Type.getArgumentTypes(mi.desc).length;
-        for (int i = 0; i < n; i++) if (top(frame, i).isThis) return true;
-        if (op == INVOKESTATIC || !top(frame, n).isThis) return false;
-        if (op != INVOKESPECIAL || !mi.name.equals("<init>")) return true;
+        for (int i = 0; i < n; i++) if (top(frame, i).mayBeThis) return true;
+        if (op == INVOKESTATIC || !top(frame, n).mayBeThis) return false;
+        if (op != INVOKESPECIAL || !mi.name.equals("<init>") || !top(frame, n).isThis) return true;
         if (mi.owner.equals("java/lang/Object") && mi.desc.equals("()V")) return false;
         if (mi.owner.equals("java/lang/Enum") && mi.desc.equals("(Ljava/lang/String;I)V")) return false;
         Program.Method ctor = program.method(mi.owner, mi.name, mi.desc);
