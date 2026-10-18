@@ -163,7 +163,7 @@ public class ValueFactory {
     public static ObjectValue<?, ?> createObjectValue(int nFields, String className) throws NoThreadContextException, NotImplementedException, TypeException, ValueConversionException {
         SolverContext context = ThreadHandler.getSolverContext(Thread.currentThread().getId());
         List<String> classInterfacesAndParents =
-                ClassDepot.getRuntimeInstance().getInterfacesForClass(className);
+                new ArrayList<>(ClassDepot.getRuntimeInstance().getInterfacesForClass(className));
         classInterfacesAndParents.addAll(
                 ClassDepot.getRuntimeInstance().getParentsForClass(className));
 

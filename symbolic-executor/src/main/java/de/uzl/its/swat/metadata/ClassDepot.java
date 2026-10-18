@@ -82,12 +82,16 @@ public class ClassDepot implements Serializable, ClassDepotInstrumentation, Clas
         classToInterfaces.put(normalized, interfaces);
     }
 
+    /** Returns the registered parents of a class; the list is shared and must not be modified. */
     public synchronized List<String> getParentsForClass(String className) {
-        return classToParents.getOrDefault(Util.formatClassName(className), Collections.emptyList());
+        return Collections.unmodifiableList(
+                classToParents.getOrDefault(Util.formatClassName(className), Collections.emptyList()));
     }
 
+    /** Returns the registered interfaces of a class; the list is shared and must not be modified. */
     public synchronized List<String> getInterfacesForClass(String className) {
-        return classToInterfaces.getOrDefault(Util.formatClassName(className), Collections.emptyList());
+        return Collections.unmodifiableList(
+                classToInterfaces.getOrDefault(Util.formatClassName(className), Collections.emptyList()));
     }
 
     /**
