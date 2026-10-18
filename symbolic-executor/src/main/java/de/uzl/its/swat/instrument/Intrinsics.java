@@ -66,46 +66,82 @@ public class Intrinsics {
      */
     public static void init(String endpoint) {
         try {
-            if (ThreadHandler.hasThreadContext(currentThread().getId())) {
+            long threadId = currentThread().getId();
+            if (ThreadHandler.hasThreadContext(threadId)) {
+                if (ThreadHandler.enterStartedEndpoint(threadId)) {
+                    // The entry class's static initializer started the execution (initBeforeEntry).
+                    // Its locals live in the initial frame that the endpoint now runs in.
+                    ThreadHandler.getSymbolicVisitor(threadId).getStack().getActiveFrame().clearLocals();
+                    logger.info("Entering endpoint {} started by its static initializer (Thread: {})",
+                            endpoint, threadId);
+                    return;
+                }
                 // An endpoint called from within a running one (e.g. a harness main calling
                 // another main) continues the running symbolic execution.
-                ThreadHandler.enterNestedEndpoint(currentThread().getId());
-                logger.info("Entering nested endpoint {} (Thread: {})", endpoint, currentThread().getId());
+                ThreadHandler.enterNestedEndpoint(threadId);
+                logger.info("Entering nested endpoint {} (Thread: {})", endpoint, threadId);
                 return;
             }
-            int endpointID;
-            if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
-                endpointID = 0;
-            } else {
-                endpointID = endpoint.hashCode();
-            }
-            ThreadHandler.addThreadContext(currentThread().getId(), endpoint, endpointID);
-
-            logger.info(
-                    new PrintBox(
-                            60,
-                            "Symbolic execution started (Thread: "
-                                    + Thread.currentThread().getId()
-                                    + ")",
-                            new ArrayList<>(
-                                    List.of(
-                                            new String[]{
-                                                    "Execution started (Thread: "
-                                                            + Thread.currentThread().getId()
-                                                            + ")",
-                                                    "Threads (tracked / active): ("
-                                                            + ThreadHandler.getThreadCount()
-                                                            + " / "
-                                                            + Thread.activeCount()
-                                                            + ")",
-                                                    "Method: " + endpoint,
-                                                    "ID: " + endpointID
-                                            })))
-                            .toString());
+            startExecution(endpoint);
         } catch (Throwable t) {
             // The ErrorHandler has to be here as this method transfers control to the target domain
             new ErrorHandler().handleException("Error during initialization of symbolic engine: ", t);
         }
+    }
+
+    /**
+     * Starts symbolic tracking in the static initializer of the entry class, which the JVM runs
+     * before the entry method, so that inputs read there (e.g. a static field initialised with a
+     * Verifier.nondet* call) are tracked. The entry method's init call then continues this
+     * execution. Does nothing if the thread's execution is already running. The method call is
+     * added during instrumentation.
+     *
+     * @param endpoint The name of the endpoint whose class is being initialised.
+     */
+    public static void initBeforeEntry(String endpoint) {
+        try {
+            long threadId = currentThread().getId();
+            if (ThreadHandler.hasThreadContext(threadId)) {
+                return;
+            }
+            startExecution(endpoint);
+            ThreadHandler.setStartedBeforeEndpoint(threadId);
+        } catch (Throwable t) {
+            // The ErrorHandler has to be here as this method transfers control to the target domain
+            new ErrorHandler().handleException("Error during initialization of symbolic engine: ", t);
+        }
+    }
+
+    private static void startExecution(String endpoint) throws Exception {
+        int endpointID;
+        if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
+            endpointID = 0;
+        } else {
+            endpointID = endpoint.hashCode();
+        }
+        ThreadHandler.addThreadContext(currentThread().getId(), endpoint, endpointID);
+
+        logger.info(
+                new PrintBox(
+                        60,
+                        "Symbolic execution started (Thread: "
+                                + Thread.currentThread().getId()
+                                + ")",
+                        new ArrayList<>(
+                                List.of(
+                                        new String[]{
+                                                "Execution started (Thread: "
+                                                        + Thread.currentThread().getId()
+                                                        + ")",
+                                                "Threads (tracked / active): ("
+                                                        + ThreadHandler.getThreadCount()
+                                                        + " / "
+                                                        + Thread.activeCount()
+                                                        + ")",
+                                                "Method: " + endpoint,
+                                                "ID: " + endpointID
+                                        })))
+                        .toString());
     }
 
 

@@ -69,6 +69,10 @@ public class ThreadContext {
     // that calls another main. Their init/terminate calls only adjust this count.
     @Getter @Setter private int nestedEndpoints = 0;
 
+    // Set while the execution was started by the entry class's static initializer and the
+    // endpoint itself has not been entered yet.
+    @Getter @Setter private boolean startedBeforeEndpoint = false;
+
     // Tracks if liftValue is called multiple times with the same index.
     @Getter private final HashMap<String, Integer> symbolicIdxOccurrence = new java.util.HashMap<>();
     private HashMap<String, Long> SubUid = new HashMap<>();
