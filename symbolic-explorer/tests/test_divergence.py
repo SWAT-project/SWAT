@@ -82,6 +82,15 @@ class CheckDivergenceTest(unittest.TestCase):
         self.assertNotIn('SWAT Assertion failed', out)
         self.assertEqual(self.tree.expected_divergences, 1)
 
+    def test_unmodelled_exception_marker_does_not_count_as_a_level(self):
+        # The tree has no level for the marker (Tree.structural), so neither does the trace.
+        root = SimpleNamespace(parent=None)
+        self.driver.state.branch_to_explore = SimpleNamespace(id=7, branched=None, parent=root)
+        marker = SimpleNamespace(id=5, has_branched=True, inst='UNMODELLED_EXCEPTION')
+        with self.assertNoLogs(svcomp.logger, level='INFO'):
+            self.driver.check_divergence([trace_branch(3, True), marker, trace_branch(7, True)])
+        self.assertEqual(self.tree.execution_errors, [])
+
 
 if __name__ == '__main__':
     unittest.main()

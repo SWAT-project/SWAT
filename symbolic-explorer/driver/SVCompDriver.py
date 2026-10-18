@@ -12,6 +12,7 @@ from solver.SolverHandler import SATResult
 
 from data.Database import Database
 from data.BinaryExecutionTree.Node import Node
+from data.BinaryExecutionTree.Tree import Tree
 
 from strategy.StrategyService import StrategyService
 from data.StaticAnalysisGraph.SAGraph import SAGraph
@@ -323,9 +324,11 @@ class SVCompDriver:
         marker the harness counts as an internal error, and counted in the tree's statistics.
         """
         target = self.state.branch_to_explore
-        # The tree has one level per trace element, so the target is at its depth in the trace.
+        # The tree has one level per trace element (but for UNMODELLED_EXCEPTION markers, see
+        # Tree.structural), so the target is at its depth in the trace.
         # Matching by id alone would be wrong: ids repeat within a trace (all keys of a
         # LOOKUPSWITCH share one, TABLESWITCH case numbers wrap at 16, loops, recursion).
+        trace = [element for element, _ in Tree.structural(trace)]
         depth = 0
         node = getattr(target, 'parent', None)
         while node is not None:

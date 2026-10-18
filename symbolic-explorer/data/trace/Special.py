@@ -4,6 +4,10 @@ from typing import Optional
 # executor emits CLINIT when it enters a <clinit> and INVOKECLINIT_END when it leaves it again.
 CLINIT = 'de.uzl.its.swat.symbolic.instruction.CLINIT'
 CLINIT_END = 'de.uzl.its.swat.symbolic.instruction.INVOKECLINIT_END'
+# The executor's marker for an exception the SA graph does not model
+# (SymbolicInstructionVisitor.UNMODELLED_EXCEPTION). Unlike the other elements, it is only in the
+# trace of a run that throws, so two traces with the same branches can differ by it.
+UNMODELLED_EXCEPTION = 'UNMODELLED_EXCEPTION'
 
 
 def short_inst(inst: Optional[str]) -> str:

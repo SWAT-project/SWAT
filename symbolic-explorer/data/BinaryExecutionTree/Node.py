@@ -32,16 +32,17 @@ class Node:
             (e.g. '...instruction.CLINIT'); None for 'Branch' nodes.
 
     Raises:
-        ValueError: If the trace argument is None or empty, indicating that the node cannot be created.
+        ValueError: If no trace element is given, indicating that the node cannot be created.
     """
 
-    def __init__(self, parent: Optional['Node'], trace: list, inputs: List[Input], ufs: List[UF]):
+    def __init__(self, parent: Optional['Node'], branch, inputs: List[Input], ufs: List[UF]):
         """
-        Initializes a new instance of the Node class.
+        Initializes a new instance of the Node class for one trace element. Its children are left
+        unset; Tree links the nodes of a trace into a path.
 
         Args:
             parent (Node): The parent node of this node.
-            trace (list): A list of trace elements defining the execution path.
+            branch (Branch | Special): The trace element this node stands for.
             inputs (any): The inputs associated with this node.
             ufs (any): The UFs associated with this node.
         """
@@ -62,19 +63,12 @@ class Node:
         self.pops = 0
         self.pushes = ()
         self.callback = False  # in a callback from library code: no counterpart in the SA graph
+        # Whether some trace threw an exception the SA graph does not model right before this node
+        # (an UNMODELLED_EXCEPTION marker, which is not a node of its own, see Tree.structural).
+        self.unmodelled_exception = False
 
-        # Validate trace argument
-        if trace is None or len(trace) == 0:
+        if branch is None:
             raise ValueError(f'Cannot create Node with no branch!')
-
-        # Process the first element of the trace to determine the branch
-        branch = trace.pop(0)
-
-        # Create a child node based on remaining trace elements
-        if len(trace) == 0:
-            child = Leaf(parent=self, inputs=inputs, ufs=ufs)
-        else:
-            child = Node(parent=self, trace=trace, inputs=inputs, ufs=ufs)
 
         # Assign branch details to the node
         self.id = branch.id
@@ -84,7 +78,6 @@ class Node:
         if isinstance(branch, Special):
             self.kind = "Special"
             self.inst = branch.inst
-            self.branched = child
         else:
             self.kind = "Branch"
             self.concrete_only = branch.concrete_only
@@ -93,11 +86,6 @@ class Node:
             self.pushes = branch.pushes
             self.callback = branch.callback
             self.constraint[branch.trace_id] = branch.constraint
-            # Determine whether the branch was taken or skipped and assign child
-            if branch.has_branched:
-                self.branched = child
-            else:
-                self.skipped = child
 
     def is_clinit_start(self) -> bool:
         """
