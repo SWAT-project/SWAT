@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.value.reference;
 
+import com.google.common.collect.ImmutableSet;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.config.Config;
@@ -9,15 +10,48 @@ import de.uzl.its.swat.symbolic.value.VoidValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.CharValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.array.CharArrayValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.BoxedValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import java.util.Set;
 import org.objectweb.asm.Type;
 import org.sosy_lab.java_smt.api.*;
 
+/**
+ * Shadow of a <a
+ * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/StringBuilder.html">StringBuilder</a>:
+ * its chars as a {@link StringValue}, which is replaced (never changed: it may be a String the
+ * program holds) on every change.
+ *
+ * <p>The index checks of the methods (when they throw an IndexOutOfBoundsException) and the
+ * concrete values the models rely on are recorded by the caller as branches, see
+ * StringCallBranches. The models below assume those hold.
+ *
+ * <p>After a change SWAT does not model (it returned a PlaceHolder), the chars are unknown: every
+ * method then returns a PlaceHolder, until the builder is recovered from the heap with its concrete
+ * value ({@link #resync}).
+ */
 public final class StringBuilderValue extends ObjectValue<Object, Object> {
     private final StringFormulaManager smgr;
     private final IntegerFormulaManager imgr;
     private StringValue stringValue;
+
+    /**
+     * The capacity while it is the one the constructor set; null after a change that may grow it
+     * (the growth policy is not modelled).
+     */
     private IntValue capacity;
+
+    /** The methods that do not change the capacity. */
+    private static final Set<String> KEEP_CAPACITY = Set.of("charAt", "compareTo", "delete", "deleteCharAt",
+            "getChars", "indexOf", "lastIndexOf", "length", "reverse", "setCharAt", "subSequence", "substring",
+            "toString", "capacity");
+
+    /** Whether a change SWAT does not model left the chars unknown. */
+    private boolean unknown = false;
+
+    /** The methods that change the builder: if one is not modelled, the chars are unknown. */
+    private static final Set<String> MUTATORS = Set.of("<init>", "append", "appendCodePoint", "delete",
+            "deleteCharAt", "insert", "replace", "reverse", "setCharAt", "setLength");
 
     public StringBuilderValue(SolverContext context) {
         super(context, ObjectValue.ADDRESS_UNKNOWN);
@@ -38,6 +72,25 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         return stringValue;
     }
 
+    /** The chars, or null if they are not known. */
+    public StringValue getContent() {
+        return unknown ? null : stringValue;
+    }
+
+    public boolean isUnknown() {
+        return unknown;
+    }
+
+    /**
+     * Takes the concrete chars of the builder, e.g. when it is recovered from the heap after a
+     * change SWAT does not model. A symbolic content was lost at that change already (with a
+     * context loss: the call returned a PlaceHolder for a symbolic receiver).
+     */
+    public void resync(String chars) {
+        this.stringValue = new StringValue(context, chars, -1);
+        this.unknown = false;
+    }
+
     /**
      * Handles method invocation for Java's <a
      * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/StringBuilder.html">StringBuilder</a>
@@ -51,832 +104,303 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      */
     @Override
     public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
-        return switch (name) {
-            case "<init>" -> invokeInit(args, desc);
-            case "append" -> invokeAppend(args, desc);
-            case "appendCodePoint" -> invokeAppendCodePoint(args, desc);
-            case "capacity" -> invokeCapacity(args, desc);
-            case "charAt" -> invokeCharAt(args, desc);
-            case "chars" -> invokeChars(args, desc);
-            case "codePointAt" -> invokeCodePointAt(args, desc);
-            case "codePointBefore" -> invokeCodePointBefore(args, desc);
-            case "codePointCount" -> invokeCodePointCount(args, desc);
-            case "codePoints" -> invokeCodePoints(args, desc);
-            case "compareTo" -> invokeCompareTo(args, desc);
-            case "delete" -> invokeDelete(args, desc);
-            case "deleteCharAt" -> invokeDeleteCharAt(args, desc);
-            case "ensureCapacity" -> invokeEnsureCapacity(args, desc);
-            case "getChars" -> invokeGetChars(args, desc);
-            case "indexOf" -> invokeIndexOf(args, desc);
-            case "insert" -> invokeInsert(args, desc);
-            case "lastIndexOf" -> invokeLastIndexOf(args, desc);
-            case "length" -> invokeLength(args, desc);
-            case "offsetByCodePoints" -> invokeOffsetByCodePoints(args, desc);
-            case "replace" -> invokeReplace(args, desc);
-            case "reverse" -> invokeReverse(args, desc);
-            case "setCharAt" -> invokeSetCharAt(args, desc);
-            case "setLength" -> invokeSetLength(args, desc);
-            case "subSequence" -> invokeSubSequence(args, desc);
-            case "substring" -> invokeSubstring(args, desc);
-            case "toString" -> invokeToString(args, desc);
-            case "trimToSize" -> invokeTrimToSize(args, desc);
-            default -> PlaceHolder.instance;
+        if ((unknown || stringValue == null) && !name.equals("<init>")) return PlaceHolder.instance;
+        Value<?, ?> result;
+        try {
+            result = switch (name) {
+                case "<init>" -> invokeInit(args, desc);
+                case "append" -> invokeAppend(args, desc);
+                case "appendCodePoint" -> invokeAppendCodePoint(args);
+                case "capacity" -> capacity != null ? capacity : PlaceHolder.instance;
+                case "charAt" -> invokeCharAt(args);
+                case "compareTo" -> invokeCompareTo(args);
+                case "delete" -> invokeDelete(args);
+                case "deleteCharAt" -> invokeDeleteCharAt(args);
+                case "ensureCapacity", "trimToSize" -> VoidValue.instance; // the chars stay the same
+                case "getChars" -> invokeGetChars(args);
+                case "indexOf", "lastIndexOf" -> stringValue.invokeMethod(name, desc, args);
+                case "insert" -> invokeInsert(args, desc);
+                case "length" -> new IntValue(context, stringValue.concrete.length(), smgr.length(stringValue.formula));
+                case "replace" -> invokeReplace(args);
+                case "reverse" -> invokeReverse();
+                case "setCharAt" -> invokeSetCharAt(args);
+                case "setLength" -> invokeSetLength(args);
+                case "subSequence", "substring" -> invokeSubstring(args);
+                case "toString" -> new StringValue(context, stringValue.concrete, stringValue.formula, -1);
+                default -> PlaceHolder.instance;
+            };
+        } catch (NotImplementedException e) {
+            // e.g. a double appended, which has no model as a String
+            result = PlaceHolder.instance;
+        }
+        if (!name.equals("<init>") && !KEEP_CAPACITY.contains(name)) {
+            capacity = null;
+        }
+        if (result instanceof PlaceHolder && MUTATORS.contains(name)) {
+            unknown = true;
+        }
+        return result;
+    }
+
+    private Value<?, ?> invokeInit(Value<?, ?>[] args, Type[] desc) {
+        StringValue chars;
+        capacity = null;
+        if (args.length == 0) {
+            chars = new StringValue(context, "", -1);
+            capacity = new IntValue(context, 16);
+        } else if (desc[0].getSort() == Type.INT) {
+            // new StringBuilder(int capacity)
+            chars = new StringValue(context, "", -1);
+            capacity = args[0] instanceof IntValue c ? c : null;
+        } else if (args.length == 1) {
+            // new StringBuilder(String), new StringBuilder(CharSequence): length + 16
+            chars = StringValue.charsOf(args[0]);
+            if (chars != null) {
+                capacity = new IntValue(context, chars.concrete.length() + 16,
+                        imgr.add(smgr.length(chars.formula), imgr.makeNumber(16)));
+            }
+        } else {
+            chars = null;
+        }
+        if (chars == null) return PlaceHolder.instance;
+        this.stringValue = chars;
+        this.unknown = false;
+        return VoidValue.instance;
+    }
+
+    private void setChars(String concrete, StringFormula formula) {
+        this.stringValue = new StringValue(context, concrete, formula, -1);
+    }
+
+    private StringValue concat(StringValue a, StringValue b) {
+        return new StringValue(context, a.concrete + b.concrete, smgr.concat(a.formula, b.formula), -1);
+    }
+
+    private NumeralFormula.IntegerFormula length() {
+        return smgr.length(stringValue.formula);
+    }
+
+    /** The chars from begin to end of the content. */
+    private StringFormula chars(NumeralFormula.IntegerFormula begin, NumeralFormula.IntegerFormula end) {
+        return smgr.substring(stringValue.formula, begin, imgr.subtract(end, begin));
+    }
+
+    /**
+     * The chars a value of type {@code type} is appended or inserted as (String.valueOf), or null
+     * if that is not modelled.
+     */
+    private StringValue charsOf(Value<?, ?> value, Type type) throws NotImplementedException, ValueConversionException {
+        return switch (type.getDescriptor()) {
+            case "I" -> value.asIntValue().asStringValue();
+            case "Z" -> value.asBooleanValue().asStringValue();
+            case "C" -> value.asCharValue().asStringValue();
+            case "J" -> value.asLongValue().asStringValue();
+            case "D" -> value.isSymbolic() ? null
+                    : new StringValue(context, String.valueOf(value.asDoubleValue().concrete), -1);
+            case "F" -> value.isSymbolic() ? null
+                    : new StringValue(context, String.valueOf(value.asFloatValue().concrete), -1);
+            case "[C" -> value instanceof CharArrayValue array ? array.asStringValue() : null;
+            default -> objectChars(value);
         };
     }
 
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Init">Init</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeInit(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
-        int numberOfArgs = args.length;
-        if (numberOfArgs == 0) {
-            return invokeInit();
-        } else if (numberOfArgs == 1) {
-            return switch (desc[0].getDescriptor()) {
-                case "I" -> invokeInit(args[0].asIntValue());
-                case "Ljava/lang/String;" -> invokeInit(args[0].asStringValue());
-                case "Ljava/lang/CharSequence;" -> invokeInit(args[0].asObjectValue());
-                default -> PlaceHolder.instance;
-            };
+    /** String.valueOf(obj) for an Object, CharSequence or String argument, or null if not modelled. */
+    private StringValue objectChars(Value<?, ?> obj) throws NotImplementedException, ValueConversionException {
+        if (obj instanceof ObjectValue<?, ?> o && o.isNullValue()) return new StringValue(context, "null", -1);
+        StringValue chars = StringValue.charsOf(obj);
+        if (chars != null) return chars;
+        if (obj instanceof BoxedValue<?> boxed
+                && boxed.invokeMethod("toString", new Type[0], new Value<?, ?>[0]) instanceof StringValue str) {
+            return str;
         }
-        return PlaceHolder.instance;
+        return null;
     }
 
-    private Value<?, ?> invokeInit() {
-        this.capacity = new IntValue(this.context, 16);
-        this.stringValue = new StringValue(this.context, "", -1);
-        return VoidValue.instance;
-    }
-
-    private Value<?, ?> invokeInit(IntValue capacity) {
-        this.capacity = capacity;
-        this.stringValue = new StringValue(this.context, "", -1);
-        return VoidValue.instance;
-    }
-
-    private Value<?, ?> invokeInit(@SuppressWarnings("unused") ObjectValue<?, ?> seq) {
-        return PlaceHolder.instance;
-    }
-
-    private Value<?, ?> invokeInit(StringValue str) {
-        this.capacity = new IntValue(this.context, 16 + str.concrete.length());
-        this.stringValue = str;
-        return VoidValue.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Append">Append</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
     private Value<?, ?> invokeAppend(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
-        int numberOfArgs = args.length;
-        if (numberOfArgs == 1) {
-            return switch (desc[0].getDescriptor()) {
-                case "I" -> invokeAppend(args[0].asIntValue().asStringValue());
-                case "Z" -> invokeAppend(args[0].asBooleanValue().asStringValue());
-                case "C" -> invokeAppend(args[0].asCharValue().asStringValue());
-                case "D" -> invokeAppend(args[0].asDoubleValue().asStringValue());
-                case "F" -> invokeAppend(args[0].asFloatValue().asStringValue());
-                case "J" -> invokeAppend(args[0].asLongValue().asStringValue());
-                case "Ljava/lang/String;" -> invokeAppend(args[0].asStringValue());
-                case "Ljava/lang/CharSequence;",
-                        "Ljava/lang/StringBuffer;",
-                        "Ljava/lang/Object;" -> invokeAppend(args[0].asObjectValue());
-                case "[C" -> invokeAppend(
-                        args[0].asObjectValue().asArrayValue().asCharArrayValue());
-                default -> PlaceHolder.instance;
-            };
-        } else if (numberOfArgs == 3) {
-            return switch (desc[0].getDescriptor()) {
-                case "[C" -> invokeAppend(
-                        args[0].asObjectValue().asArrayValue().asCharArrayValue(),
-                        args[1].asIntValue(),
-                        args[2].asIntValue());
-                case "Ljava/lang/CharSequence;" -> invokeAppend(
-                        args[0].asObjectValue(), args[1].asIntValue(), args[2].asIntValue());
-                default -> PlaceHolder.instance;
-            };
-        }
-        return PlaceHolder.instance;
-    }
-
-    private StringBuilderValue invokeAppend(StringValue s) throws NotImplementedException, ValueConversionException {
-        String desc = "(Ljava.lang.String;)";
-        Type[] type = Type.getArgumentTypes(desc);
-        this.stringValue =
-                (StringValue) stringValue.invokeMethod("concat", type, new StringValue[] {s});
-        return this;
-    }
-
-    private Value<?, ?> invokeAppend(CharArrayValue str) throws NotImplementedException, ValueConversionException {
-        int size = str.size.concrete;
-        for (int i = 0; i < size; i++) {
-            invokeAppend(str.getElement(new IntValue(str.getContext(), i)).asStringValue());
-        }
-
-        return this;
-    }
-
-    private Value<?, ?> invokeAppend(@SuppressWarnings("unused") ObjectValue<?, ?> obj) {
-        return PlaceHolder.instance;
-    }
-
-    private Value<?, ?> invokeAppend(ObjectValue<?, ?> obj, IntValue start, IntValue end) {
-        try {
-            StringValue s = obj.asStringValue();
-            Type[] desc = new Type[] {Type.INT_TYPE, Type.INT_TYPE};
-            Value<?, ?>[] args = new Value<?, ?>[] {start, end};
-            StringValue substring = (StringValue) s.invokeMethod("substring", desc, args);
-            return invokeAppend(substring);
-        } catch (Exception ignored) {
-            return PlaceHolder.instance;
-        }
-    }
-
-    private Value<?, ?> invokeAppend(CharArrayValue str, IntValue offset, IntValue len) throws NotImplementedException, ValueConversionException {
-        for (int i = 0; i < len.concrete; i++) {
-            invokeAppend(
-                    str.getElement(new IntValue(str.getContext(), i + offset.concrete))
-                            .asStringValue());
-        }
-
-        return this;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#AppendCodePoint">AppendCodePoint().</a>
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeAppendCodePoint(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Capacity">Capacity</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeCapacity(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return capacity;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#CharAt">CharAt</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeCharAt(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) throws NotImplementedException, ValueConversionException {
-        return new CharValue(
-                context,
-                this.stringValue.concrete.charAt(args[0].asIntValue().concrete),
-                this.smgr.charAt(this.stringValue.formula, args[0].asIntValue().asIntegerFormula()));
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Chars">Chars</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeChars(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#CodePointAt">CodePointAt</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeCodePointAt(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#CodePointBefore">CodePointBefore</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeCodePointBefore(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#CodePointCount">CodePointCount</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeCodePointCount(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#CodePoints">CodePoints</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeCodePoints(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#CompareTo">CompareTo</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeCompareTo(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Delete">Delete</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeDelete(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) {
-        IntValue start = (IntValue) args[0];
-        IntValue end = (IntValue) args[1];
-        NumeralFormula.IntegerFormula remainingLength =
-                this.imgr.subtract(this.smgr.length(this.stringValue.formula), end.asIntegerFormula());
-        this.stringValue.formula =
-                this.smgr.concat(
-                        this.smgr.substring(
-                                this.stringValue.formula,
-                                new IntValue(context, 0).asIntegerFormula(),
-                                start.asIntegerFormula()),
-                        this.smgr.substring(
-                                this.stringValue.formula, end.asIntegerFormula(), remainingLength));
-        StringBuilder deleteBuilder = new StringBuilder(this.stringValue.concrete);
-        this.stringValue.concrete = deleteBuilder.delete(start.concrete, end.concrete).toString();
-        return this;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#DeleteCharAt">DeleteCharAt</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeDeleteCharAt(
-            Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) throws NotImplementedException, ValueConversionException {
-        IntValue endIndex =
-                new IntValue(
-                        this.context,
-                        args[0].asIntValue().concrete + 1,
-                        this.imgr.add(
-                                args[0].asIntValue().asIntegerFormula(),
-                                new IntValue(this.context, 1).asIntegerFormula()));
-        return invokeDelete(
-                new Value<?, ?>[] {args[0], endIndex}, new Type[] {Type.INT_TYPE, Type.INT_TYPE});
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#EnsureCapacity">EnsureCapacity</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeEnsureCapacity(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#GetChars">GetChars</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeGetChars(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#IndexOf">IndexOf</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeIndexOf(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) throws NotImplementedException, ValueConversionException {
+        StringValue chars;
         if (args.length == 1) {
-            return invokeIndexOf(args[0].asStringValue());
-        } else if (args.length == 2) {
-            return invokeIndexOf(args[0].asStringValue(), args[1].asIntValue());
-        }
-        return PlaceHolder.instance;
-    }
-
-    private Value<?, ?> invokeIndexOf(StringValue str) {
-        return new IntValue(
-                this.context,
-                this.stringValue.concrete.indexOf(str.concrete),
-                this.smgr.indexOf(
-                        this.stringValue.formula,
-                        str.formula,
-                        new IntValue(this.context, 0).asIntegerFormula()));
-    }
-
-    private Value<?, ?> invokeIndexOf(StringValue str, IntValue fromIndex) {
-        return new IntValue(
-                this.context,
-                this.stringValue.concrete.indexOf(str.concrete),
-                this.smgr.indexOf(this.stringValue.formula, str.formula, fromIndex.asIntegerFormula()));
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Insert">Insert()</a>.
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeInsert(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
-        if (args.length == 2) {
-            return switch (desc[1].getDescriptor()) {
-                case "I" -> invokeInsert(
-                        args[0].asIntValue(), args[1].asIntValue().asStringValue());
-                case "Z" -> invokeInsert(
-                        args[0].asIntValue(), args[1].asBooleanValue().asStringValue());
-                case "C" -> invokeInsert(
-                        args[0].asIntValue(), args[1].asCharValue().asStringValue());
-                case "D" -> invokeInsert(
-                        args[0].asIntValue(), args[1].asDoubleValue().asStringValue());
-                case "F" -> invokeInsert(
-                        args[0].asIntValue(), args[1].asFloatValue().asStringValue());
-                case "J" -> invokeInsert(
-                        args[0].asIntValue(), args[1].asLongValue().asStringValue());
-                case "Ljava/lang/String;" -> invokeInsert(
-                        args[0].asIntValue(), args[1].asStringValue());
-                case "Ljava/lang/CharSequence;", "Ljava/lang/Object;" -> invokeInsert(
-                        args[0].asIntValue(), args[1].asObjectValue());
-                case "[C" -> invokeInsert(
-                        args[0].asIntValue(),
-                        args[1].asObjectValue().asArrayValue().asCharArrayValue());
-                default -> PlaceHolder.instance;
-            };
-        } else if (args.length == 4) {
-            return switch (desc[1].getDescriptor()) {
-                case "Ljava/lang/CharSequence;" -> invokeInsert(
-                        args[0].asIntValue(),
-                        args[1].asObjectValue(),
-                        args[2].asIntValue(),
-                        args[3].asIntValue());
-                case "[C" -> invokeInsert(
-                        args[0].asIntValue(),
-                        args[1].asObjectValue().asArrayValue().asCharArrayValue(),
-                        args[2].asIntValue(),
-                        args[3].asIntValue());
-                default -> PlaceHolder.instance;
-            };
-        }
-        return PlaceHolder.instance;
-    }
-
-    private Value<?, ?> invokeInsert(IntValue offset, StringValue str) {
-        this.stringValue.formula =
-                this.smgr.concat(
-                        smgr.substring(
-                                this.stringValue.formula,
-                                new IntValue(this.context, 0).asIntegerFormula(),
-                                offset.asIntegerFormula()),
-                        str.formula,
-                        smgr.substring(
-                                this.stringValue.formula,
-                                offset.asIntegerFormula(),
-                                smgr.length(stringValue.formula)));
-        this.stringValue.concrete =
-                this.stringValue
-                        .concrete
-                        .substring(0, offset.concrete)
-                        .concat(String.valueOf(str.concrete))
-                        .concat(this.stringValue.concrete.substring(offset.concrete));
-        return this;
-    }
-
-    private Value<?, ?> invokeInsert(
-            @SuppressWarnings("unused") IntValue offset,
-            @SuppressWarnings("unused") ObjectValue<?, ?> obj) {
-        return PlaceHolder.instance;
-    }
-
-    private Value<?, ?> invokeInsert(IntValue offset, CharArrayValue str) throws NotImplementedException, ValueConversionException {
-        int size = str.size.concrete;
-        StringValue newStr = new StringValue(this.context, "", -1);
-        for (int i = 0; i < size; i++) {
-            newStr.invokeMethod(
-                    "concat",
-                    new Type[] {Type.getType("Ljava/lang/String;")},
-                    new Value[] {
-                        str.getElement(new IntValue(str.getContext(), i)).asStringValue()
-                    });
-        }
-        invokeInsert(offset, newStr);
-        return this;
-    }
-
-    private Value<?, ?> invokeInsert(
-            IntValue index, CharArrayValue str, IntValue offset, IntValue len) throws NotImplementedException, ValueConversionException {
-        StringValue newStr = new StringValue(this.context, "", -1);
-        for (int i = 0; i < len.concrete; i++) {
-            newStr.invokeMethod(
-                    "concat",
-                    new Type[] {Type.getType("Ljava/lang/String;")},
-                    new Value[] {
-                        str.getElement(new IntValue(str.getContext(), i + offset.concrete))
-                                .asStringValue()
-                    });
-        }
-        invokeInsert(index, newStr);
-        return this;
-    }
-
-    private Value<?, ?> invokeInsert(
-            @SuppressWarnings("unused") IntValue index,
-            @SuppressWarnings("unused") ObjectValue<?, ?> str,
-            @SuppressWarnings("unused") IntValue offset,
-            @SuppressWarnings("unused") IntValue len) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#LastIndexOf">LastIndexOf</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeLastIndexOf(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Length">Length</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeLength(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return new IntValue(
-                this.context,
-                this.stringValue.concrete.length(),
-                this.smgr.length(this.stringValue.formula));
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#OffsetByCodePoints">OffsetByCodePoints</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeOffsetByCodePoints(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Replace">Replace</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeReplace(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) {
-        IntValue start = (IntValue) args[0];
-        IntValue end = (IntValue) args[1];
-        StringValue replacement = (StringValue) args[2];
-        StringFormula substring =
-                this.smgr.substring(
-                        this.stringValue.formula,
-                        start.asIntegerFormula(),
-                        this.imgr.subtract(end.asIntegerFormula(), start.asIntegerFormula()));
-        this.stringValue.formula =
-                smgr.replace(this.stringValue.formula, substring, replacement.formula);
-        StringBuilder builderReplace = new StringBuilder(this.stringValue.concrete);
-        this.stringValue.concrete =
-                builderReplace
-                        .replace(start.concrete, end.concrete, replacement.concrete)
-                        .toString();
-        return this;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Reverse">Reverse</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeReverse(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#SetCharAt">SetCharAt</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeSetCharAt(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        /*
-            IntValue index = args[0].asIntValue();
-            CharValue newChar = args[1].asCharValue();
-
-            NumeralFormula.IntegerFormula secondIndex = this.imgr.add(index.formula, new IntValue(this.context, 1).formula);
-            NumeralFormula.IntegerFormula lengthOfSecondSubstring =
-                    this.imgr.subtract(this.smgr.length(this.stringValue.formula), secondIndex);
-            this.stringValue.formula = this.smgr.concat(
-                    this.smgr.substring(this.stringValue.formula, new IntValue(this.context, 0).formula, index.formula),
-                    newChar.formula,
-                    this.smgr.substring(this.stringValue.formula, this.imgr.add(index.formula, secondIndex), lengthOfSecondSubstring));
-
-            StringBuilder builderSetCharAt = new StringBuilder(this.stringValue.concrete);
-            builderSetCharAt.setCharAt(index.concrete, newChar.concrete);
-            this.stringValue.concrete = builderSetCharAt.toString();
-        }
-             */
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#SetLength">SetLength</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeSetLength(Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc)
-            throws NotImplementedException, ValueConversionException {
-        IntValue newLength = args[0].asIntValue();
-        if (newLength.isSymbolic() || newLength.concrete < 0) {
-            return PlaceHolder.instance; // a symbolic length is not modelled
-        }
-        int n = newLength.concrete;
-        int length = this.stringValue.concrete.length();
-        if (n <= length) {
-            // Truncation, e.g. setLength(0) to reuse the builder
-            this.stringValue.formula = this.smgr.substring(this.stringValue.formula,
-                    new IntValue(context, 0).asIntegerFormula(), newLength.asIntegerFormula());
-            this.stringValue.concrete = this.stringValue.concrete.substring(0, n);
+            chars = charsOf(args[0], desc[0]);
+        } else if (args.length == 3 && args[0] instanceof CharArrayValue array) {
+            // append(char[] str, int offset, int len), by the concrete offset and len (pinned)
+            int offset = args[1].asIntValue().concrete;
+            int len = args[2].asIntValue().concrete;
+            chars = new StringValue(context, "", -1);
+            for (int i = offset; i < offset + len; i++) {
+                chars = concat(chars, array.getElement(new IntValue(context, i)).asStringValue());
+            }
+        } else if (args.length == 3 && desc[0].getDescriptor().equals("Ljava/lang/CharSequence;")) {
+            // append(CharSequence s, int start, int end); s == null appends a part of "null"
+            StringValue s = objectChars(args[0]);
+            if (s == null) return PlaceHolder.instance;
+            IntValue start = args[1].asIntValue();
+            IntValue end = args[2].asIntValue();
+            chars = new StringValue(context, s.concrete.substring(start.concrete, end.concrete),
+                    smgr.substring(s.formula, start.asIntegerFormula(),
+                            imgr.subtract(end.asIntegerFormula(), start.asIntegerFormula())), -1);
         } else {
-            // Growing pads with null characters
-            String padding = "\0".repeat(n - length);
-            this.stringValue.formula = this.smgr.concat(this.stringValue.formula, this.smgr.makeString(padding));
-            this.stringValue.concrete = this.stringValue.concrete + padding;
+            chars = null;
+        }
+        if (chars == null) return PlaceHolder.instance;
+        setChars(stringValue.concrete + chars.concrete, smgr.concat(stringValue.formula, chars.formula));
+        return this;
+    }
+
+    private Value<?, ?> invokeAppendCodePoint(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        // A valid code point (else it throws, which StringCallBranches checks)
+        IntValue codePoint = args[0].asIntValue();
+        String chars = new String(Character.toChars(codePoint.concrete));
+        setChars(stringValue.concrete + chars, smgr.concat(stringValue.formula, stringValue.codePointString(codePoint)));
+        return this;
+    }
+
+    private Value<?, ?> invokeCharAt(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        IntValue index = args[0].asIntValue();
+        return new CharValue(context, stringValue.concrete.charAt(index.concrete),
+                smgr.charAt(stringValue.formula, index.asIntegerFormula()));
+    }
+
+    private Value<?, ?> invokeCompareTo(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        // As the Strings of both: compareTo(StringBuilder another) compares lexicographically too.
+        StringValue other = StringValue.charsOf(args[0]);
+        if (other == null) return PlaceHolder.instance;
+        return stringValue.invokeMethod("compareTo", new Type[] {Type.getType(String.class)}, new Value<?, ?>[] {other});
+    }
+
+    private Value<?, ?> invokeDelete(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        IntValue start = args[0].asIntValue();
+        IntValue end = args[1].asIntValue();
+        // An end past the length deletes up to the end; substring gives "" from there.
+        NumeralFormula.IntegerFormula e = end.asIntegerFormula();
+        setChars(new StringBuilder(stringValue.concrete).delete(start.concrete, end.concrete).toString(),
+                smgr.concat(chars(imgr.makeNumber(0), start.asIntegerFormula()),
+                        smgr.substring(stringValue.formula, e, imgr.subtract(length(), e))));
+        return this;
+    }
+
+    private Value<?, ?> invokeDeleteCharAt(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        IntValue index = args[0].asIntValue();
+        IntValue end = new IntValue(context, index.concrete + 1,
+                imgr.add(index.asIntegerFormula(), imgr.makeNumber(1)));
+        return invokeDelete(new Value<?, ?>[] {index, end});
+    }
+
+    private Value<?, ?> invokeGetChars(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        // getChars(int srcBegin, int srcEnd, char[] dst, int dstBegin), by the concrete indices (pinned)
+        if (!(args[2] instanceof CharArrayValue dst)) return PlaceHolder.instance;
+        int srcBegin = args[0].asIntValue().concrete;
+        int srcEnd = args[1].asIntValue().concrete;
+        int dstBegin = args[3].asIntValue().concrete;
+        for (int i = srcBegin; i < srcEnd; i++) {
+            dst.storeElement(new IntValue(context, dstBegin + i - srcBegin),
+                    (CharValue) invokeCharAt(new Value<?, ?>[] {new IntValue(context, i)}));
         }
         return VoidValue.instance;
     }
 
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#SubSequence">SubSequence</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeSubSequence(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
-    }
-
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#Substring">Substring</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeSubstring(
-            Value<?, ?>[] args, @SuppressWarnings("unused") Type[] desc) throws NotImplementedException, ValueConversionException {
-        if (args.length == 1) {
-            return invokeSubstring(args[0].asIntValue());
-        } else if (args.length == 2) {
-            return invokeSubstring(args[0].asIntValue(), args[1].asIntValue());
+    private Value<?, ?> invokeInsert(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
+        IntValue offset = args[0].asIntValue();
+        StringValue chars;
+        if (args.length == 2) {
+            chars = charsOf(args[1], desc[1]);
+        } else if (args.length == 4 && args[1] instanceof CharArrayValue array) {
+            // insert(int index, char[] str, int offset, int len), by the concrete offset and len (pinned)
+            int from = args[2].asIntValue().concrete;
+            int len = args[3].asIntValue().concrete;
+            chars = new StringValue(context, "", -1);
+            for (int i = from; i < from + len; i++) {
+                chars = concat(chars, array.getElement(new IntValue(context, i)).asStringValue());
+            }
+        } else if (args.length == 4 && desc[1].getDescriptor().equals("Ljava/lang/CharSequence;")) {
+            // insert(int dstOffset, CharSequence s, int start, int end)
+            StringValue s = objectChars(args[1]);
+            if (s == null) return PlaceHolder.instance;
+            IntValue start = args[2].asIntValue();
+            IntValue end = args[3].asIntValue();
+            chars = new StringValue(context, s.concrete.substring(start.concrete, end.concrete),
+                    smgr.substring(s.formula, start.asIntegerFormula(),
+                            imgr.subtract(end.asIntegerFormula(), start.asIntegerFormula())), -1);
+        } else {
+            chars = null;
         }
-        return PlaceHolder.instance;
+        if (chars == null) return PlaceHolder.instance;
+        NumeralFormula.IntegerFormula off = offset.asIntegerFormula();
+        String c = stringValue.concrete;
+        setChars(c.substring(0, offset.concrete) + chars.concrete + c.substring(offset.concrete),
+                smgr.concat(chars(imgr.makeNumber(0), off), chars.formula, chars(off, length())));
+        return this;
     }
 
-    private Value<?, ?> invokeSubstring(IntValue start) {
-        NumeralFormula.IntegerFormula remainingLength =
-                this.imgr.subtract(this.smgr.length(this.stringValue.formula), start.asIntegerFormula());
-        this.stringValue.formula =
-                this.smgr.substring(this.stringValue.formula, start.asIntegerFormula(), remainingLength);
-        this.stringValue.concrete = this.stringValue.concrete.substring(start.concrete);
-        return new StringValue(
-                this.context, this.stringValue.concrete, this.stringValue.formula, -1);
+    private Value<?, ?> invokeReplace(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        // replace(int start, int end, String str); an end past the length replaces up to the end
+        if (!(args[2] instanceof StringValue str)) return PlaceHolder.instance;
+        IntValue start = args[0].asIntValue();
+        IntValue end = args[1].asIntValue();
+        NumeralFormula.IntegerFormula e = end.asIntegerFormula();
+        setChars(new StringBuilder(stringValue.concrete).replace(start.concrete, end.concrete, str.concrete).toString(),
+                smgr.concat(chars(imgr.makeNumber(0), start.asIntegerFormula()), str.formula,
+                        smgr.substring(stringValue.formula, e, imgr.subtract(length(), e))));
+        return this;
     }
 
-    private Value<?, ?> invokeSubstring(IntValue start, IntValue end) {
-        this.stringValue.formula =
-                this.smgr.substring(this.stringValue.formula, start.asIntegerFormula(), end.asIntegerFormula());
-        this.stringValue.concrete =
-                this.stringValue.concrete.substring(start.concrete, end.concrete);
-        return new StringValue(
-                this.context, this.stringValue.concrete, this.stringValue.formula, -1);
+    private Value<?, ?> invokeReverse() {
+        // Only concrete chars: a symbolic string cannot be reversed in the string theory.
+        if (stringValue.isSymbolic()) return PlaceHolder.instance;
+        setChars(new StringBuilder(stringValue.concrete).reverse().toString(),
+                smgr.makeString(new StringBuilder(stringValue.concrete).reverse().toString()));
+        return this;
     }
 
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#ToString">ToString</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeToString(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return new StringValue(
-                this.context, this.stringValue.concrete, this.stringValue.formula, -1);
+    private Value<?, ?> invokeSetCharAt(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        IntValue index = args[0].asIntValue();
+        CharValue ch = args[1].asCharValue();
+        NumeralFormula.IntegerFormula i = index.asIntegerFormula();
+        StringBuilder sb = new StringBuilder(stringValue.concrete);
+        sb.setCharAt(index.concrete, ch.concrete);
+        setChars(sb.toString(), smgr.concat(chars(imgr.makeNumber(0), i), ch.asStringValue().formula,
+                chars(imgr.add(i, imgr.makeNumber(1)), length())));
+        return VoidValue.instance;
     }
 
-    /**
-     * Invocation handling for the String instance method <a
-     * href="https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/lang/String.html#TrimToSize">TrimToSize</a>().
-     * Returns PlaceHolder::instance if the method is not yet implemented, or the Value that
-     * represents the result of the method including symbolic handling.
-     *
-     * @param args List of Values that correspond to the method arguments
-     * @param desc Array of Type descriptions of the methods' signature. No guarantee is given that
-     *     the Value in args is of the same type.
-     * @return The resulting Value or PlaceHolder::instance
-     */
-    private Value<?, ?> invokeTrimToSize(
-            @SuppressWarnings("unused") Value<?, ?>[] args,
-            @SuppressWarnings("unused") Type[] desc) {
-        return PlaceHolder.instance;
+    private Value<?, ?> invokeSetLength(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        // By the concrete length (pinned): the first n chars of the content padded with n '\0's.
+        int n = args[0].asIntValue().concrete;
+        StringBuilder sb = new StringBuilder(stringValue.concrete);
+        sb.setLength(n);
+        setChars(sb.toString(), smgr.substring(smgr.concat(stringValue.formula, smgr.makeString("\0".repeat(n))),
+                imgr.makeNumber(0), imgr.makeNumber(n)));
+        return VoidValue.instance;
+    }
+
+    private Value<?, ?> invokeSubstring(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        // substring(start) is substring(start, length()); subSequence(start, end) is substring(start, end)
+        if (args.length != 1 && args.length != 2) return PlaceHolder.instance;
+        IntValue start = args[0].asIntValue();
+        IntValue end = args.length == 2 ? args[1].asIntValue()
+                : new IntValue(context, stringValue.concrete.length(), length());
+        return new StringValue(context, stringValue.concrete.substring(start.concrete, end.concrete),
+                chars(start.asIntegerFormula(), end.asIntegerFormula()), -1);
     }
 
     @Override
-    public StringValue asStringValue() {
+    public boolean isSymbolic() {
+        return stringValue != null && stringValue.isSymbolic();
+    }
+
+    @Override
+    public boolean isSymbolic(Set<Value<?, ?>> visited) {
+        return isSymbolic();
+    }
+
+    @Override
+    public ImmutableSet<String> getSymbolicVariables() {
+        return stringValue == null ? ImmutableSet.of() : stringValue.getSymbolicVariables();
+    }
+
+    @Override
+    public StringValue asStringValue() throws NotImplementedException {
+        if (unknown || stringValue == null) {
+            throw new NotImplementedException("The chars of this StringBuilder are not known");
+        }
         return this.stringValue;
     }
 
@@ -896,6 +420,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
 
         return "Ljava/lang/StringBuilder @"
                 + Integer.toHexString(address)
+                + (unknown ? " (unknown)" : "")
                 + " ("
                 + concreteString
                 + ", "

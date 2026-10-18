@@ -86,6 +86,21 @@ public class SymbolicTraceHandler {
         symbolicTrace.addTraceElement(branch);
     }
 
+    /**
+     * As {@link #checkAndSetBranch(boolean, BooleanFormula, long, String)}, for a branch inside a
+     * library call that SWAT models (e.g. the index check of String.charAt). The static pre-analysis
+     * graph walks over library calls, so the branch is marked as one in a callback: the explorer's
+     * walk of the graph holds its place, as for application code a library calls back.
+     */
+    public void checkAndSetLibraryBranch(boolean result, BooleanFormula constraint, long iid, String suffix) throws NoThreadContextException {
+        BooleanFormulaManager bmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId())
+                .getFormulaManager().getBooleanFormulaManager();
+        BranchElement branch = new BranchElement(result, result ? constraint : bmgr.not(constraint), iid);
+        place(branch, iid, suffix);
+        branch.setCallback(true);
+        symbolicTrace.addTraceElement(branch);
+    }
+
     /** Records where a branch is: its key and the change of the frame stack since the last branch. */
     private static void place(BranchElement branch, long iid, String suffix) throws NoThreadContextException {
         String key = BranchKeys.keyOf(iid);

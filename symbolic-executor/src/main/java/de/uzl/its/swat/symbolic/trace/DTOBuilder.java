@@ -17,6 +17,7 @@ import de.uzl.its.swat.coverage.InstrCoverage;
 import de.uzl.its.swat.symbolic.trace.dto.*;
 import de.uzl.its.swat.thread.ThreadHandler;
 import de.uzl.its.swat.witness.Witness;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;

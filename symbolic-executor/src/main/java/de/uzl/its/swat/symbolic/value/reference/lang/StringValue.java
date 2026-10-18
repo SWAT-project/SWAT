@@ -228,13 +228,24 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeInit(Value<?, ?>[] args, Type[] desc) {
-        if (args.length == 1 && args[0] instanceof StringValue s) {
-            this.concrete = s.concrete;
-            this.formula = s.formula;
-        }
         // Mark this string as user-de-interned since it was created via new String()
         // in user code (as opposed to SWAT's NoCacheMethodAdapter de-interning)
         this.userDeInterned = true;
+        StringValue chars;
+        if (args.length == 0) {
+            chars = new StringValue(context, "", -1);
+        } else if (args.length == 1 && args[0] instanceof CharArrayValue array) {
+            // The concrete number of chars, which the call's branches pin (StringCallBranches).
+            chars = array.asStringValue();
+        } else if (args.length == 1) {
+            // new String(String), new String(StringBuilder)
+            chars = charsOf(args[0]);
+        } else {
+            chars = null;
+        }
+        if (chars == null) return PlaceHolder.instance;
+        this.concrete = chars.concrete;
+        this.formula = chars.formula;
         return VoidValue.instance;
     }
 
@@ -373,13 +384,22 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         return new IntValue(context, result, cmp);
     }
 
-    /** Records that a model is only approximate, so an exhausted search proves nothing. */
-    private static void recordPrecisionLoss() {
+    /** Records that a model is not exact for this call, so an exhausted search proves nothing. */
+    static void recordPrecisionLoss() {
         try {
             ThreadHandler.getSymbolicTraceHandler(currentThread().getId()).recordSymbolicPrecisionLoss();
         } catch (Exception e) {
             throw new IllegalStateException("No symbolic trace handler for the current thread", e);
         }
+    }
+
+    /**
+     * The chars of a CharSequence SWAT tracks: a String or a StringBuilder's content, else null.
+     */
+    public static StringValue charsOf(Value<?, ?> sequence) {
+        if (sequence instanceof StringValue str) return str;
+        if (sequence instanceof de.uzl.its.swat.symbolic.value.reference.StringBuilderValue sb) return sb.getContent();
+        return null;
     }
 
     /** Adds a constraint that defines the UFs a model introduced; it holds on every path and is never negated. */
@@ -439,7 +459,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeContains(Value<?, ?>[] args, Type[] desc) {
-        if (args.length == 1 && args[0] instanceof StringValue s) {
+        StringValue s = args.length == 1 ? charsOf(args[0]) : null;
+        if (s != null) {
             boolean result = concrete.contains(s.concrete);
             return new BooleanValue(context, result, smgr.contains(formula, s.formula));
         } else {
@@ -459,7 +480,9 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeContentEquals(Value<?, ?>[] args, Type[] desc) {
-        return PlaceHolder.instance;
+        StringValue other = args.length == 1 ? charsOf(args[0]) : null;
+        if (other == null) return PlaceHolder.instance;
+        return new BooleanValue(context, concrete.contentEquals(other.concrete), smgr.equal(formula, other.formula));
     }
 
     /**
@@ -511,15 +534,14 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      */
     private Value<?, ?> invokeEquals(Value<?, ?>[] args, Type[] desc) {
         if (args.length == 1) {
-            Value<?, ?> anObject = args[0];
-            try {
-                StringValue str = anObject.asStringValue();
+            // Only a String is equal to a String (not, e.g., a StringBuilder with the same chars).
+            if (args[0] instanceof StringValue str) {
                 boolean result = concrete.equals(str.concrete);
                 return new BooleanValue(context, result, smgr.equal(formula, str.formula));
-            } catch (Exception ignored) {
-                System.out.println("No String indeed!");
-                return PlaceHolder.instance;
+            } else if (args[0] instanceof ObjectValue<?, ?> obj && obj.getAddress() == ObjectValue.ADDRESS_NULL) {
+                return new BooleanValue(context, false);
             }
+            return PlaceHolder.instance;
         } else {
             return PlaceHolder.instance;
         }
@@ -618,11 +640,12 @@ public class StringValue extends ObjectValue<StringFormula, String> {
                 IntValue srcEnd = args[1].asIntValue();
                 CharArrayValue dst = args[2].asObjectValue().asArrayValue().asCharArrayValue();
                 IntValue dstBegin = args[3].asIntValue();
+                // By the concrete indices, which the call's branches pin (StringCallBranches).
                 for (int idx = srcBegin.concrete; idx < srcEnd.concrete; idx++) {
                     Value<?, ?>[] charAtArgs = new Value[] { new IntValue(context, idx) };
                     Type[] charAtDesc = new Type[] { Type.INT_TYPE };
                     dst.storeElement(
-                            new IntValue(context, dstBegin.concrete + idx),
+                            new IntValue(context, dstBegin.concrete + idx - srcBegin.concrete),
                             (CharValue) invokeCharAt(charAtArgs, charAtDesc));
                 }
                 return VoidValue.instance;
@@ -719,7 +742,43 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     private Value<?, ?> invokeIndexOf(IntValue ch, IntValue fromIndex) {
-        return invokeIndexOf(ch.asStringValue(), fromIndex);
+        int result = concrete.indexOf(ch.concrete, fromIndex.concrete);
+        if (!isSymbolic() && !ch.isSymbolic() && !fromIndex.isSymbolic()) return new IntValue(context, result);
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        IntValue index = (IntValue) invokeIndexOf(new StringValue(context, "", codePointString(ch), -1), fromIndex);
+        // No code point, no match (as Java, which searches for a code point, not for its digits).
+        return new IntValue(context, result, bmgr.ifThenElse(isCodePoint(ch), index.asIntegerFormula(), imgr.makeNumber(-1)));
+    }
+
+    /** Whether ch is a code point, i.e. in [0, 0x10FFFF]: the chars indexOf(int)/lastIndexOf(int) can find. */
+    private BooleanFormula isCodePoint(IntValue ch) {
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        if (!ch.isSymbolic()) return bmgr.makeBoolean(Character.isValidCodePoint(ch.concrete));
+        NumeralFormula.IntegerFormula c = ch.asIntegerFormula();
+        return bmgr.and(imgr.greaterOrEquals(c, imgr.makeNumber(0)),
+                imgr.lessOrEquals(c, imgr.makeNumber(Character.MAX_CODE_POINT)));
+    }
+
+    /**
+     * The chars of code point ch in a Java string (String.valueOf(Character.toChars(ch))): the char
+     * itself in the BMP, else its surrogate pair. Meaningful only if {@link #isCodePoint} holds.
+     */
+    public StringFormula codePointString(IntValue ch) {
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        if (!ch.isSymbolic()) {
+            // Char by char: makeString would take a surrogate pair for one (SMT) character.
+            if (!Character.isValidCodePoint(ch.concrete)) return smgr.makeString("");
+            StringFormula chars = smgr.makeString("");
+            for (char c : Character.toChars(ch.concrete)) chars = smgr.concat(chars, smgr.fromCodePoint(imgr.makeNumber(c)));
+            return chars;
+        }
+        NumeralFormula.IntegerFormula c = ch.asIntegerFormula();
+        NumeralFormula.IntegerFormula offset = imgr.subtract(c, imgr.makeNumber(Character.MIN_SUPPLEMENTARY_CODE_POINT));
+        NumeralFormula.IntegerFormula high = imgr.add(imgr.makeNumber(Character.MIN_HIGH_SURROGATE), imgr.divide(offset, imgr.makeNumber(1024)));
+        NumeralFormula.IntegerFormula low = imgr.add(imgr.makeNumber(Character.MIN_LOW_SURROGATE), imgr.modulo(offset, imgr.makeNumber(1024)));
+        return bmgr.ifThenElse(imgr.lessThan(c, imgr.makeNumber(Character.MIN_SUPPLEMENTARY_CODE_POINT)),
+                smgr.fromCodePoint(c),
+                smgr.concat(smgr.fromCodePoint(high), smgr.fromCodePoint(low)));
     }
 
     /**
@@ -782,17 +841,15 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         if (args.length < 1 || args.length > 2) return PlaceHolder.instance;
         IntValue from = args.length == 2 ? args[1].asIntValue() : new IntValue(context, Integer.MAX_VALUE);
         StringValue target;
+        IntValue ch = null;
         int result;
         if (desc[0].getSort() == Type.INT) {
-            IntValue ch = args[0].asIntValue();
-            // Supplementary code points are two chars in a Java string but one in the solver's, so
-            // only BMP chars are modelled exactly. A symbolic char may leave that range (and a
-            // negative one becomes the empty string), so the model is then approximate.
-            if (ch.concrete < 0 || ch.concrete > Character.MAX_VALUE) return PlaceHolder.instance;
-            target = new StringValue(context, String.valueOf((char) (int) ch.concrete),
-                    smgr.fromCodePoint(ch.asIntegerFormula()), -1);
+            // The chars of the code point; for anything else there is no match. By the concrete
+            // char, which the call's branches pin (StringCallBranches): with a symbolic one the
+            // window encoding below is too hard for the solver.
+            ch = new IntValue(context, args[0].asIntValue().concrete);
+            target = new StringValue(context, "", codePointString(ch), -1);
             result = concrete.lastIndexOf(ch.concrete, from.concrete);
-            if (ch.isSymbolic()) recordPrecisionLoss();
         } else if (args[0] instanceof StringValue str) {
             target = str;
             result = concrete.lastIndexOf(str.concrete, from.concrete);
@@ -825,7 +882,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
                         bmgr.and(imgr.greaterOrEquals(r, imgr.makeNumber(0)), imgr.lessOrEquals(r, last),
                                 smgr.equal(smgr.substring(formula, r, tlen), target.formula),
                                 bmgr.not(smgr.contains(afterR, target.formula))))));
-        return new IntValue(context, result, r);
+        return new IntValue(context, result, ch == null ? r : bmgr.ifThenElse(isCodePoint(ch), r, imgr.makeNumber(-1)));
     }
 
     /**
@@ -969,41 +1026,33 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     private Value<?, ?> invokeReplace(ObjectValue<?, ?> target, ObjectValue<?, ?> replacement) {
-        if (target instanceof StringValue oldString && replacement instanceof StringValue newString) {
-            // ToDo  (Nils): This is the correct implementation. However replaceAll is currently not
-            // supported by Z3
-            /*
-            formula = smgr.replaceAll(this.formula, oldString.formula, newString.formula);
-             */
-
-            var newConcrete = this.concrete.replace(oldString.concrete, newString.concrete);
-            var newFormula = this.formula;
-            for (int i = 0; i < REPLACE_COUNT; i++) {
-                newFormula = smgr.replace(newFormula, oldString.formula, newString.formula);
-            }
-
-            return new StringValue(context, newConcrete, newFormula, ObjectValue.ADDRESS_UNKNOWN);
-        } else {
-            return PlaceHolder.instance;
-        }
+        StringValue oldString = charsOf(target);
+        StringValue newString = charsOf(replacement);
+        if (oldString == null || newString == null) return PlaceHolder.instance;
+        return replaceAll(oldString, newString);
     }
 
     private Value<?, ?> invokeReplace(CharValue oldChar, CharValue newChar) {
-        StringValue oldString = oldChar.asStringValue();
-        StringValue newString = newChar.asStringValue();
-        // ToDo  (Nils): This is the correct implementation. However replaceAll is currently not
-        // supported by Z3
-        // See: https://git.its.uni-luebeck.de/research-projects/pet-hmr/knife-fuzzer/-/issues/54
-        /*
-        formula = smgr.replaceAll(this.formula, oldString.formula, newString.formula);
-         */
+        return replaceAll(oldChar.asStringValue(), newChar.asStringValue());
+    }
 
-        var newConcrete = this.concrete.replace(oldString.concrete, newString.concrete);
-        var newFormula = this.formula;
-        for (int i = 0; i < REPLACE_COUNT; i++) {
-            newFormula = smgr.replace(newFormula, oldString.formula, newString.formula);
+    /**
+     * String.replace: every occurrence of target, left to right. Z3 hardly decides str.replace_all
+     * (with a concrete target it gave up or hung where this did not), so only the first
+     * REPLACE_COUNT occurrences are replaced, one by one, which is exact only for strings with as
+     * many occurrences at most (and str.replace differs from Java for an empty target): precision
+     * loss.
+     */
+    private StringValue replaceAll(StringValue target, StringValue replacement) {
+        String newConcrete = this.concrete.replace(target.concrete, replacement.concrete);
+        if (!isSymbolic() && !target.isSymbolic() && !replacement.isSymbolic()) {
+            return new StringValue(context, newConcrete, ObjectValue.ADDRESS_UNKNOWN);
         }
-
+        recordPrecisionLoss();
+        StringFormula newFormula = formula;
+        for (int i = 0; i < REPLACE_COUNT; i++) {
+            newFormula = smgr.replace(newFormula, target.formula, replacement.formula);
+        }
         return new StringValue(context, newConcrete, newFormula, ObjectValue.ADDRESS_UNKNOWN);
     }
 
@@ -1097,12 +1146,17 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     private Value<?, ?> invokeStartsWith(StringValue prefix, IntValue toffset) {
+        // As Java: false unless the prefix fits at toffset, i.e. 0 <= toffset <= length - prefix length.
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        NumeralFormula.IntegerFormula t = toffset.asIntegerFormula();
+        NumeralFormula.IntegerFormula plen = smgr.length(prefix.formula);
         return new BooleanValue(
                 context,
-                concrete.startsWith(prefix.concrete),
-                smgr.equal(
-                        prefix.formula,
-                        smgr.substring(formula, toffset.asIntegerFormula(), smgr.length(prefix.formula))));
+                concrete.startsWith(prefix.concrete, toffset.concrete),
+                bmgr.and(
+                        imgr.greaterOrEquals(t, imgr.makeNumber(0)),
+                        imgr.lessOrEquals(t, imgr.subtract(smgr.length(formula), plen)),
+                        smgr.equal(prefix.formula, smgr.substring(formula, t, plen))));
     }
 
     /**
@@ -1176,8 +1230,10 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      *     the Value in args is of the same type.
      * @return The resulting Value or PlaceHolder::instance
      */
-    private Value<?, ?> invokeSubSequence(Value<?, ?>[] args, Type[] desc) {
-        return PlaceHolder.instance;
+    private Value<?, ?> invokeSubSequence(Value<?, ?>[] args, Type[] desc)
+            throws NotImplementedException, ValueConversionException {
+        // subSequence(begin, end) is substring(begin, end)
+        return args.length == 2 ? invokeSubstring(args, desc) : PlaceHolder.instance;
     }
 
     /**
@@ -1233,21 +1289,16 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     private Value<?, ?> invokeToCharArray(Value<?, ?>[] args, Type[] desc)
             throws NotImplementedException, ValueConversionException {
 
-        if (!concrete.isEmpty()) {
-            CharArrayValue dst = new CharArrayValue(context, new IntValue(context, concrete.length()), -1);
-            for (int idx = 0; idx < concrete.length(); idx++) {
-                Value<?, ?>[] charAtArgs = new Value[] { new IntValue(context, idx) };
-                Type[] charAtDesc = new Type[] { Type.INT_TYPE };
-                dst.storeElement(
-                        new IntValue(context, idx),
-                        (CharValue) invokeCharAt(charAtArgs, charAtDesc));
-            }
-            return dst;
-        } else {
-            new CharArrayValue(context, new IntValue(context, 0), -1);
+        // As long as the concrete string, which the call's branches pin (StringCallBranches).
+        CharArrayValue dst = new CharArrayValue(context, new IntValue(context, concrete.length()), -1);
+        for (int idx = 0; idx < concrete.length(); idx++) {
+            Value<?, ?>[] charAtArgs = new Value[] { new IntValue(context, idx) };
+            Type[] charAtDesc = new Type[] { Type.INT_TYPE };
+            dst.storeElement(
+                    new IntValue(context, idx),
+                    (CharValue) invokeCharAt(charAtArgs, charAtDesc));
         }
-
-        return PlaceHolder.instance;
+        return dst;
     }
 
     /**
