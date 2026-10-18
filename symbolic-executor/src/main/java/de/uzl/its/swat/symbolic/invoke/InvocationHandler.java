@@ -28,6 +28,7 @@ public class InvocationHandler {
                             "java/io/PrintStream/println",
                             "de/uzl/its/swat/instrument/Intrinsics",
                             "de/uzl/its/swat/common/UtilInstrumented",
+                            "de/uzl/its/swat/common/RefIdentity",
                             "de/uzl/its/swat/witness/Witness",
                             "de/uzl/its/swat/instrument/svcomp/Verifier",
                             "java/io/PrintStream",
@@ -67,8 +68,12 @@ public class InvocationHandler {
         Type[] types = Type.getArgumentTypes(desc);
         logger.trace("Invoking method {} in class {} with arguments {}", name, owner, arguments);
 
-        // We do that first to include the pointer in instance invocation cases
-        boolean containsSymbolicArgument = arguments.stream().anyMatch(v -> {
+        boolean ignored = IGNORED_INVOCATIONS.contains(owner + "/" + name)
+                || IGNORED_INVOCATIONS.contains(owner);
+
+        // We do that first to include the pointer in instance invocation cases. Ignored
+        // invocations are never recorded, so their arguments need no (possibly deep) scan.
+        boolean containsSymbolicArgument = !ignored && arguments.stream().anyMatch(v -> {
             try {
                 return v.isSymbolic() || hasSymbolicElement(v);
             } catch (NotImplementedException e) {
@@ -78,7 +83,7 @@ public class InvocationHandler {
         });
 
         if (isInstance) {
-            containsSymbolicArgument = containsSymbolicArgument || instance.isSymbolic();
+            containsSymbolicArgument = containsSymbolicArgument || (!ignored && instance.isSymbolic());
             retValue = instance.invokeMethod(name, types, arguments.toArray(new Value[0]));
         } else {
             retValue =
@@ -91,9 +96,7 @@ public class InvocationHandler {
         }
 
         // When the method is not implemented and its not on the ignore list, we record it
-        if (retValue instanceof PlaceHolder &&
-                !(IGNORED_INVOCATIONS.contains(owner + "/" + name)
-                || IGNORED_INVOCATIONS.contains(owner))) {
+        if (retValue instanceof PlaceHolder && !ignored) {
 
             if(isInstance) arguments.add(0, instance);
 
