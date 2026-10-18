@@ -64,6 +64,20 @@ public final class LoopStateMatcher {
 
     private static final String SWAT_PACKAGE = "de/uzl/its/swat/";
 
+    /**
+     * Time one run may spend on hashing. Leaving out a state is always sound (no branch is left
+     * out because of it), so once the budget is used up the run reports no more states.
+     */
+    private static final long BUDGET_NANOS = 1_000_000_000L;
+
+    private static long spentNanos = 0;
+
+    /** The states this run reported. */
+    private static final java.util.Set<String> seen = new java.util.HashSet<>();
+
+    /** Whether the run reports no more states: the budget is used up or a state repeated. */
+    private static boolean stopped = false;
+
     private LoopStateMatcher() {}
 
     /** Thrown when the state cannot be hashed. */
@@ -93,19 +107,33 @@ public final class LoopStateMatcher {
      */
     public static String stateOf(
             LOOP_HEAD inst, ShadowContext shadow, Map<String, Value<?, ?>[]> shadowStatics, int threads) {
+        if (stopped) {
+            return null;
+        }
         LoopHeads.Head head = LoopHeads.get(inst.head);
         if (head == null || threads != 1 || inst.locals.length != head.slots().length) {
             logger.debug("[LOOP STATE] Not hashed: unknown head or several threads");
             return null;
         }
+        long start = System.nanoTime();
         try {
             checkStack(head);
             checkShadow(head, shadow, shadowStatics);
             String h = hash(head, inst.locals);
             logger.debug("[LOOP STATE] {}: {}", inst.head, h);
+            if (!seen.add(h)) {
+                // The explorer leaves out everything after a repeat on this path anyway
+                stopped = true;
+            }
             return h;
         } catch (Unhashable e) {
             return null;
+        } finally {
+            spentNanos += System.nanoTime() - start;
+            if (spentNanos > BUDGET_NANOS) {
+                logger.debug("[LOOP STATE] Time budget used up, no more states this run");
+                stopped = true;
+            }
         }
     }
 
