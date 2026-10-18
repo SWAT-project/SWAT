@@ -6,6 +6,7 @@ import static java.lang.Thread.currentThread;
 
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.*;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.coverage.BranchCoverage;
@@ -31,6 +32,7 @@ import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue;
 import de.uzl.its.swat.symbolic.value.reference.array.*;
 import de.uzl.its.swat.symbolic.value.reference.lang.*;
+import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.thread.ThreadHandler;
 
 import java.lang.reflect.Modifier;
@@ -41,12 +43,14 @@ import org.sosy_lab.java_smt.api.*;
 
 public class SymbolicInstructionVisitor implements IVisitor {
     // The stack of stack frames (method stacks)
-    @Getter private final ShadowContext stack; //Todo rename?
+    @Getter
+    private final ShadowContext stack; //Todo rename?
     // Counter for the number of times an instruction ID (IID) was seen, used for creating trackable
     // unique ids in loops etc.
     private final HashMap<Long, Long> iidCounter = new HashMap<>();
     // The handler for the symbolic trace that is sent to the symbolic explorer
-    @Getter private final SymbolicTraceHandler symbolicTraceHandler;
+    @Getter
+    private final SymbolicTraceHandler symbolicTraceHandler;
 
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
 
@@ -84,11 +88,37 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The (next) instruction/ special marker after the instruction that could have
      *     caused an exception
      */
+    /**
+     * Marks, in the trace, an exception the static pre-analysis graph does not model precisely: one
+     * SWAT reports no branch for (a null dereference, a cast, a library call that throws, an
+     * Error). The explorer stops trusting the graph for the rest of such a path, because the graph
+     * cannot say where the execution continues.
+     */
+    public static final String UNMODELLED_EXCEPTION = "UNMODELLED_EXCEPTION";
+
+    /** A frame of an uninstrumented (library) method, not one of SWAT's own helpers. */
+    private static boolean isLibraryFrame(Frame frame) {
+        String cname = frame.getClassName();
+        return cname != null && !cname.startsWith("de/uzl/its/swat/") && !cname.equals("LambdaFrame")
+                && !cname.equals(ShadowContext.getINITIAL_FRAME_NAME())
+                && !Util.shouldInstrument(Util.formatClassName(cname));
+    }
+
+    private void recordUnmodelledException(long iid) {
+        symbolicTraceHandler.addSpecialElement(determineIid(iid), UNMODELLED_EXCEPTION);
+    }
+
     private void checkAndSetException(Instruction inst) throws NoThreadContextException {
         symbolicTraceHandler.addSpecialElement(determineIid(inst.iid), inst.getClass().getName());
+        boolean arrayAccess = untrackedAccessModelled;
+        untrackedAccessModelled = false;
         if (!((getNextInst() instanceof SPECIAL) && ((SPECIAL) getNextInst()).i == 0)
                 && !(getNextInst() instanceof CLINIT)) {
             logger.info("Registered exception: {}", inst.getClass().getName());
+            // An explicit throw and a failed access to a non-null array are modelled; the rest not.
+            if (!(inst instanceof ATHROW) && !arrayAccess) {
+                recordUnmodelledException(inst.iid);
+            }
             stack.clearOperandStack();
             stack.pushOperand(PlaceHolder.instance); // ToDo: add more specific placeholder
         }
@@ -118,6 +148,31 @@ public class SymbolicInstructionVisitor implements IVisitor {
         return true; // false;
     }
 
+    /**
+     * Records the bounds check of an access to an array SWAT does not track, e.g. one returned by an
+     * uninstrumented call. The static pre-analysis graph has a guard branch for every array access,
+     * and the explorer walks it in step with the trace by position, so the check has to be in the
+     * trace even without a symbolic array: as a concrete-only branch, taken iff the access completed
+     * normally. (Any exception it throws counts as out of bounds, which is all the graph models.)
+     *
+     * @param inst The array load or store instruction
+     */
+    /** Whether a failed access to an untracked array is the one the graph models (see checkAndSetException). */
+    private boolean untrackedAccessModelled = false;
+
+    private void recordUntrackedBoundsCheck(Instruction inst, IntValue idx, ObjectValue<?, ?> array) throws NoThreadContextException, NotImplementedException {
+        // If it fails, the graph has it as the bounds guard's failure, an
+        // ArrayIndexOutOfBoundsException. That is right unless the array is null (a
+        // NullPointerException) or an AASTORE stores a value of the wrong type (an
+        // ArrayStoreException).
+        untrackedAccessModelled = array.getAddress() != ObjectValue.ADDRESS_NULL && !(inst instanceof AASTORE);
+        boolean completed = (getNextInst() instanceof SPECIAL special && special.i == 0) || getNextInst() instanceof CLINIT;
+        symbolicTraceHandler.addConcreteBranch(completed, determineIid(inst.iid));
+        // Neither the bounds nor the element of an untracked array depend on the index here, so
+        // with a symbolic index other indices are never tried.
+        recordConcreteObjectIndex(idx);
+    }
+
     public boolean checkArrayBounds(Value<?, ?> ref, IntValue idx, long iid) throws NoThreadContextException {
         SWATAssert.check(ref instanceof AbstractArrayValue || ref instanceof ObjectArrayValue, "Unknown array type!");
 
@@ -134,6 +189,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             return result;
         }
     }
+
     /**
      * Loads a reference from an array and stores the reference on the symbolic stack ToDo (Nils):
      * Reference arrays are not symbolically tracked currently See: <a
@@ -148,6 +204,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             if (ref instanceof ObjectArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
+                    recordConcreteObjectIndex(idx);
                     stack.pushOperand(arr.getElement(idx));
                 } else {
                     enforceException();
@@ -168,6 +225,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 stack.pushOperand(
                         ref.getName() != null
                                 ? PlaceHolder.symbolicInstance
@@ -184,7 +242,19 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ASTORE instruction
      */
-    public void visitAASTORE(AASTORE inst) throws SymbolicInstructionException{
+    /**
+     * Object arrays are indexed by the concrete index only (ObjectArrayValue), and untracked arrays
+     * not at all, so with a symbolic index no other element is ever tried. An exhausted search
+     * then proves nothing.
+     */
+    private void recordConcreteObjectIndex(IntValue idx) throws NotImplementedException {
+        if (idx.isSymbolic()) {
+            logger.warn("Object array accessed at a symbolic index; only the concrete element is tracked");
+            symbolicTraceHandler.recordSymbolicPrecisionLoss();
+        }
+    }
+
+    public void visitAASTORE(AASTORE inst) throws SymbolicInstructionException {
         try {
             ObjectValue<?, ?> val = stack.popOperand().asObjectValue();
             IntValue idx = stack.popOperand().asIntValue();
@@ -192,6 +262,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             if (ref instanceof ObjectArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
+                    recordConcreteObjectIndex(idx);
                     arr.storeElement(idx, val);
                 } else {
                     enforceException();
@@ -212,6 +283,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[AASTORE]: Unknown array type: {}", ref.getClass().getSimpleName());
             }
         } catch (Throwable t) {
@@ -224,8 +296,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ACONST_NULL instruction
      */
-    public void visitACONST_NULL(ACONST_NULL inst) throws SymbolicInstructionException{
-        try{
+    public void visitACONST_NULL(ACONST_NULL inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNULLValue());
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -237,8 +309,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst One on the ALOAD (ALOAD, ALOAD_0 - ALOAD_3) instructions
      */
-    public void visitALOAD(ALOAD inst) throws SymbolicInstructionException{
-        try{
+    public void visitALOAD(ALOAD inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(stack.getLocal(inst.var));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -250,7 +322,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ANEWARRAY instruction.
      */
-    public void visitANEWARRAY(ANEWARRAY inst) throws SymbolicInstructionException{
+    public void visitANEWARRAY(ANEWARRAY inst) throws SymbolicInstructionException {
         try {
             IntValue size = stack.popOperand().asIntValue();
             BooleanFormula constraint = size.checkPositive();
@@ -269,8 +341,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ARETURN instruction
      */
-    public void visitARETURN(ARETURN inst) throws SymbolicInstructionException{
-        try{
+    public void visitARETURN(ARETURN inst) throws SymbolicInstructionException {
+        try {
             symbolicTraceHandler.addSpecialElement(determineIid(inst.iid), "ARETURN");
             stack.setReturnValue(stack.popOperand());
             // checkAndSetException(inst);
@@ -287,7 +359,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst The ARRAYLENGTH instruction
      */
     public void visitARRAYLENGTH(ARRAYLENGTH inst) throws SymbolicInstructionException {
-        try{
+        try {
             Value<?, ?> v = stack.popOperand();
             if (v instanceof AbstractArrayValue<?, ?, ?, ?, ?> arr) {
                 stack.pushOperand(arr.size);
@@ -297,7 +369,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 // if (ref.getFields() != null) {
                 //     stack.pushOperand(ref.getNFields());     <---- This is currently removed to ensure no wrong value ends up on the stack see Issue #99
                 // } else {
-                    stack.pushOperand(PlaceHolder.instance);
+                stack.pushOperand(PlaceHolder.instance);
                 // }
 
             } else {
@@ -317,8 +389,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst One of the ASTORE (ASTORE, ASTORE_0 - ASTORE_3) instructions. inst.var is the
      *     locals index
      */
-    public void visitASTORE(ASTORE inst) throws SymbolicInstructionException{
-        try{
+    public void visitASTORE(ASTORE inst) throws SymbolicInstructionException {
+        try {
             stack.setLocal(inst.var, stack.popOperand());
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -333,8 +405,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ATHROW instruction
      */
-    public void visitATHROW(ATHROW inst) throws SymbolicInstructionException{
-        try{
+    public void visitATHROW(ATHROW inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> top = stack.peekOperand();
             stack.clearOperandStack();
             stack.pushOperand(top);
@@ -349,7 +421,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The BALOAD instruction.
      */
-    public void visitBALOAD(BALOAD inst) throws SymbolicInstructionException{
+    public void visitBALOAD(BALOAD inst) throws SymbolicInstructionException {
         try {
             IntValue idx = stack.popOperand().asIntValue();
             ObjectValue<?, ?> arr = (ObjectValue<?, ?>) stack.popOperand();
@@ -360,14 +432,15 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 } else {
                     enforceException();
                 }
-            } else if(arr instanceof ByteArrayValue barr) {
+            } else if (arr instanceof ByteArrayValue barr) {
                 boolean result = checkArrayBounds(barr, idx, inst.iid);
                 if (result) {
                     stack.pushOperand(barr.getElement(idx));
                 } else {
                     enforceException();
                 }
-         } else {
+            } else {
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[BALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -385,7 +458,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The BASTORE instruction.
      */
-    public void visitBASTORE(BASTORE inst) throws SymbolicInstructionException{
+    public void visitBASTORE(BASTORE inst) throws SymbolicInstructionException {
         try {
             Value<?, ?> val = stack.popOperand();
             IntValue idx = stack.popOperand().asIntValue();
@@ -405,6 +478,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[BASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -417,9 +491,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The BIPUSH instruction
      */
-    public void visitBIPUSH(BIPUSH inst) throws SymbolicInstructionException{
+    public void visitBIPUSH(BIPUSH inst) throws SymbolicInstructionException {
         // ToDo (Nils): Some unforseen concequences because the byte is handled as an int?
-        try{
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, inst.value));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -431,7 +505,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The CALOAD instruction.
      */
-    public void visitCALOAD(CALOAD inst) throws SymbolicInstructionException{
+    public void visitCALOAD(CALOAD inst) throws SymbolicInstructionException {
         try {
             IntValue idx = stack.popOperand().asIntValue();
             ObjectValue<?, ?> arr = (ObjectValue<?, ?>) stack.popOperand();
@@ -443,6 +517,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[CALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -460,7 +535,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The CASTORE instruction.
      */
-    public void visitCASTORE(CASTORE inst) throws SymbolicInstructionException{
+    public void visitCASTORE(CASTORE inst) throws SymbolicInstructionException {
         try {
             CharValue val = stack.popOperand().asCharValue();
             IntValue idx = stack.popOperand().asIntValue();
@@ -473,6 +548,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[CASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -486,8 +562,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The CHECKCAST instruction
      */
-    public void visitCHECKCAST(CHECKCAST inst) throws SymbolicInstructionException{
-        try{
+    public void visitCHECKCAST(CHECKCAST inst) throws SymbolicInstructionException {
+        try {
             checkAndSetException(inst);
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -499,8 +575,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The D2F instruction
      */
-    public void visitD2F(D2F inst) throws SymbolicInstructionException{
-        try{
+    public void visitD2F(D2F inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
             stack.pushOperand(d1.D2F());
         } catch (Throwable t) {
@@ -513,8 +589,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The D2I instruction
      */
-    public void visitD2I(D2I inst) throws SymbolicInstructionException{
-        try{
+    public void visitD2I(D2I inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
             stack.pushOperand(d1.D2I());
         } catch (Throwable t) {
@@ -527,8 +603,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The D2L instruction
      */
-    public void visitD2L(D2L inst) throws SymbolicInstructionException{
-        try{
+    public void visitD2L(D2L inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
             stack.pushWideOperand(d1.D2L());
         } catch (Throwable t) {
@@ -541,8 +617,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DADD instruction
      */
-    public void visitDADD(DADD inst) throws SymbolicInstructionException{
-        try{
+    public void visitDADD(DADD inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d2 = (DoubleValue) stack.popWideOperand();
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
             stack.pushWideOperand(d1.DADD(d2));
@@ -556,7 +632,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DALOAD instruction.
      */
-    public void visitDALOAD(DALOAD inst) throws SymbolicInstructionException{
+    public void visitDALOAD(DALOAD inst) throws SymbolicInstructionException {
         try {
             IntValue idx = stack.popOperand().asIntValue();
             ObjectValue<?, ?> arr = (ObjectValue<?, ?>) stack.popOperand();
@@ -568,6 +644,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[DALOAD]: Unknown array type");
                 stack.pushWideOperand(
                         arr.getName() != null
@@ -585,7 +662,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DASTORE instruction.
      */
-    public void visitDASTORE(DASTORE inst) throws SymbolicInstructionException{
+    public void visitDASTORE(DASTORE inst) throws SymbolicInstructionException {
         try {
             DoubleValue val = stack.popWideOperand().asDoubleValue();
             IntValue idx = stack.popOperand().asIntValue();
@@ -598,6 +675,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[DASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -610,8 +688,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DCMPG instruction
      */
-    public void visitDCMPG(DCMPG inst) throws SymbolicInstructionException{
-        try{
+    public void visitDCMPG(DCMPG inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d2 = stack.popWideOperand().asDoubleValue();
             DoubleValue d1 = stack.popWideOperand().asDoubleValue();
             stack.pushOperand(d1.DCMPG(d2));
@@ -625,8 +703,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DCMPL instruction
      */
-    public void visitDCMPL(DCMPL inst) throws SymbolicInstructionException{
-        try{
+    public void visitDCMPL(DCMPL inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d2 = stack.popWideOperand().asDoubleValue();
             DoubleValue d1 = stack.popWideOperand().asDoubleValue();
             stack.pushOperand(d1.DCMPL(d2));
@@ -640,8 +718,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DCONST_0 instruction
      */
-    public void visitDCONST_0(DCONST_0 inst) throws SymbolicInstructionException{
-        try{
+    public void visitDCONST_0(DCONST_0 inst) throws SymbolicInstructionException {
+        try {
             stack.pushWideOperand(ValueFactory.createNumericalValue(ValueType.doubleValue, 0.0));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -653,8 +731,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DCONST_1 instruction
      */
-    public void visitDCONST_1(DCONST_1 inst) throws SymbolicInstructionException{
-        try{
+    public void visitDCONST_1(DCONST_1 inst) throws SymbolicInstructionException {
+        try {
             stack.pushWideOperand(ValueFactory.createNumericalValue(ValueType.doubleValue, 1.0));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -666,9 +744,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DDIV instruction
      */
-    public void visitDDIV(DDIV inst) throws SymbolicInstructionException{
+    public void visitDDIV(DDIV inst) throws SymbolicInstructionException {
         // ToDo (Nils):  What if one of the values is zero?
-        try{
+        try {
             DoubleValue d2 = (DoubleValue) stack.popWideOperand();
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
             stack.pushWideOperand(d1.DDIV(d2));
@@ -682,8 +760,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst One of the DLOAD instructions (DLOAD, DLOAD_0 - DLOAD_3)
      */
-    public void visitDLOAD(DLOAD inst) throws SymbolicInstructionException{
-        try{
+    public void visitDLOAD(DLOAD inst) throws SymbolicInstructionException {
+        try {
             stack.pushWideOperand(stack.getWideLocal(inst.var));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -695,8 +773,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DMUL instruction
      */
-    public void visitDMUL(DMUL inst) throws SymbolicInstructionException{
-        try{
+    public void visitDMUL(DMUL inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d2 = (DoubleValue) stack.popWideOperand();
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
             stack.pushWideOperand(d1.DMUL(d2));
@@ -710,8 +788,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DNEG instruction
      */
-    public void visitDNEG(DNEG inst) throws SymbolicInstructionException{
-        try{
+    public void visitDNEG(DNEG inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
             stack.pushWideOperand(d1.DNEG());
         } catch (Throwable t) {
@@ -719,8 +797,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitDREM(DREM inst) throws SymbolicInstructionException{
-        try{
+    public void visitDREM(DREM inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d2 = (DoubleValue) stack.popWideOperand();
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
             stack.pushWideOperand(d1.DREM(d2));
@@ -735,8 +813,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DRETURN instruction
      */
-    public void visitDRETURN(DRETURN inst) throws SymbolicInstructionException{
-        try{
+    public void visitDRETURN(DRETURN inst) throws SymbolicInstructionException {
+        try {
             symbolicTraceHandler.addSpecialElement(determineIid(inst.iid), "DRETURN");
             stack.setReturnValue(stack.popWideOperand());
             // checkAndSetException(inst);
@@ -750,8 +828,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst One of the DSTORE instructions (DSTORE, DSTORE_0 - DSTORE_3)
      */
-    public void visitDSTORE(DSTORE inst) throws SymbolicInstructionException{
-        try{
+    public void visitDSTORE(DSTORE inst) throws SymbolicInstructionException {
+        try {
             stack.setWideLocal(inst.var, stack.popWideOperand());
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -763,8 +841,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DSUB instruction
      */
-    public void visitDSUB(DSUB inst) throws SymbolicInstructionException{
-        try{
+    public void visitDSUB(DSUB inst) throws SymbolicInstructionException {
+        try {
             DoubleValue d2 = (DoubleValue) stack.popWideOperand();
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
             stack.pushWideOperand(d1.DSUB(d2));
@@ -779,9 +857,10 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DUP instruction
      */
-    public void visitDUP(DUP inst) throws SymbolicInstructionException{
-        try{
-            stack.pushOperand(stack.peekOperand());} catch (Throwable t) {
+    public void visitDUP(DUP inst) throws SymbolicInstructionException {
+        try {
+            stack.pushOperand(stack.peekOperand());
+        } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
     }
@@ -792,8 +871,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DUP2 instruction
      */
-    public void visitDUP2(DUP2 inst) throws SymbolicInstructionException{
-        try{
+    public void visitDUP2(DUP2 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(stack.peekWideOperand());
             stack.pushOperand(stack.peekWideOperand());
         } catch (Throwable t) {
@@ -807,8 +886,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DUP2_X1 instruction
      */
-    public void visitDUP2_X1(DUP2_X1 inst) throws SymbolicInstructionException{
-        try{
+    public void visitDUP2_X1(DUP2_X1 inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> word1 = stack.popOperand();
             Value<?, ?> word2 = stack.popOperand();
             Value<?, ?> word3 = stack.popOperand();
@@ -828,8 +907,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DUP2_X2 instruction
      */
-    public void visitDUP2_X2(DUP2_X2 inst) throws SymbolicInstructionException{
-        try{
+    public void visitDUP2_X2(DUP2_X2 inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> word1 = stack.popOperand();
             Value<?, ?> word2 = stack.popOperand();
             Value<?, ?> word3 = stack.popOperand();
@@ -850,8 +929,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DUP2_X1 instruction
      */
-    public void visitDUP_X1(DUP_X1 inst) throws SymbolicInstructionException{
-        try{
+    public void visitDUP_X1(DUP_X1 inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> top = stack.popOperand();
             Value<?, ?> top2 = stack.popOperand();
             stack.pushOperand(top);
@@ -869,8 +948,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The DUP2_X1 instruction
      */
-    public void visitDUP_X2(DUP_X2 inst) throws SymbolicInstructionException{
-        try{
+    public void visitDUP_X2(DUP_X2 inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> word1 = stack.popOperand();
             Value<?, ?> word2 = stack.popOperand();
             Value<?, ?> word3 = stack.popOperand();
@@ -888,8 +967,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The F2D instruction
      */
-    public void visitF2D(F2D inst) throws SymbolicInstructionException{
-        try{
+    public void visitF2D(F2D inst) throws SymbolicInstructionException {
+        try {
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushWideOperand(f1.F2D());
         } catch (Throwable t) {
@@ -902,8 +981,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The F2I instruction
      */
-    public void visitF2I(F2I inst) throws SymbolicInstructionException{
-        try{
+    public void visitF2I(F2I inst) throws SymbolicInstructionException {
+        try {
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushOperand(f1.F2I());
         } catch (Throwable t) {
@@ -911,8 +990,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitF2L(F2L inst) throws SymbolicInstructionException{
-        try{
+    public void visitF2L(F2L inst) throws SymbolicInstructionException {
+        try {
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushWideOperand(f1.F2L());
         } catch (Throwable t) {
@@ -925,8 +1004,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FADD instruction
      */
-    public void visitFADD(FADD inst) throws SymbolicInstructionException{
-        try{
+    public void visitFADD(FADD inst) throws SymbolicInstructionException {
+        try {
             FloatValue f2 = stack.popOperand().asFloatValue();
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushOperand(f1.FADD(f2));
@@ -940,7 +1019,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FALOAD instruction
      */
-    public void visitFALOAD(FALOAD inst) throws SymbolicInstructionException{
+    public void visitFALOAD(FALOAD inst) throws SymbolicInstructionException {
         try {
             IntValue idx = stack.popOperand().asIntValue();
             ObjectValue<?, ?> arr = (ObjectValue<?, ?>) stack.popOperand();
@@ -952,6 +1031,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[FALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -969,7 +1049,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FASTORE instruction
      */
-    public void visitFASTORE(FASTORE inst) throws SymbolicInstructionException{
+    public void visitFASTORE(FASTORE inst) throws SymbolicInstructionException {
         try {
             FloatValue val = stack.popOperand().asFloatValue();
             IntValue idx = stack.popOperand().asIntValue();
@@ -982,6 +1062,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[FASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -994,8 +1075,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FCMPG instruction
      */
-    public void visitFCMPG(FCMPG inst) throws SymbolicInstructionException{
-        try{
+    public void visitFCMPG(FCMPG inst) throws SymbolicInstructionException {
+        try {
             FloatValue f2 = stack.popOperand().asFloatValue();
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushOperand(f1.FCMPG(f2));
@@ -1009,8 +1090,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FCMPL instruction
      */
-    public void visitFCMPL(FCMPL inst) throws SymbolicInstructionException{
-        try{
+    public void visitFCMPL(FCMPL inst) throws SymbolicInstructionException {
+        try {
             FloatValue f2 = stack.popOperand().asFloatValue();
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushOperand(f1.FCMPL(f2));
@@ -1024,8 +1105,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FCONST_0 instruction
      */
-    public void visitFCONST_0(FCONST_0 inst) throws SymbolicInstructionException{
-        try{
+    public void visitFCONST_0(FCONST_0 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.floatValue, 0.0f));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1037,8 +1118,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FCONST_1 instruction
      */
-    public void visitFCONST_1(FCONST_1 inst) throws SymbolicInstructionException{
-        try{
+    public void visitFCONST_1(FCONST_1 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.floatValue, 1.0f));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1050,8 +1131,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FCONST_2 instruction
      */
-    public void visitFCONST_2(FCONST_2 inst) throws SymbolicInstructionException{
-        try{
+    public void visitFCONST_2(FCONST_2 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.floatValue, 2.0f));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1063,8 +1144,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FDIV instruction
      */
-    public void visitFDIV(FDIV inst) throws SymbolicInstructionException{
-        try{
+    public void visitFDIV(FDIV inst) throws SymbolicInstructionException {
+        try {
             FloatValue f2 = stack.popOperand().asFloatValue();
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushOperand(f1.FDIV(f2));
@@ -1078,8 +1159,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst One of the FLOAD instructions (FLOAD, FLOAD_0 - FLOAD_3)
      */
-    public void visitFLOAD(FLOAD inst) throws SymbolicInstructionException{
-        try{
+    public void visitFLOAD(FLOAD inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(stack.getLocal(inst.var));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1091,8 +1172,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FMUL instruction
      */
-    public void visitFMUL(FMUL inst) throws SymbolicInstructionException{
-        try{
+    public void visitFMUL(FMUL inst) throws SymbolicInstructionException {
+        try {
             FloatValue f2 = stack.popOperand().asFloatValue();
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushOperand(f1.FMUL(f2));
@@ -1106,8 +1187,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FNEG instruction
      */
-    public void visitFNEG(FNEG inst) throws SymbolicInstructionException{
-        try{
+    public void visitFNEG(FNEG inst) throws SymbolicInstructionException {
+        try {
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushOperand(f1.FNEG());
         } catch (Throwable t) {
@@ -1121,8 +1202,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FREM instruction
      */
-    public void visitFREM(FREM inst) throws SymbolicInstructionException{
-        try{
+    public void visitFREM(FREM inst) throws SymbolicInstructionException {
+        try {
             FloatValue f2 = stack.popOperand().asFloatValue();
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushOperand(f1.FREM(f2));
@@ -1137,8 +1218,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FRETURN instruction
      */
-    public void visitFRETURN(FRETURN inst) throws SymbolicInstructionException{
-        try{
+    public void visitFRETURN(FRETURN inst) throws SymbolicInstructionException {
+        try {
             symbolicTraceHandler.addSpecialElement(determineIid(inst.iid), "FRETURN");
             stack.setReturnValue(stack.popOperand());
             // checkAndSetException(inst);
@@ -1153,8 +1234,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst One of the FSTORE instructions (FSTORE, FSTORE_0 - FSTORE_3)
      */
-    public void visitFSTORE(FSTORE inst) throws SymbolicInstructionException{
-        try{
+    public void visitFSTORE(FSTORE inst) throws SymbolicInstructionException {
+        try {
             stack.setLocal(inst.var, stack.popOperand());
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1166,8 +1247,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The FSUB instruction.
      */
-    public void visitFSUB(FSUB inst) throws SymbolicInstructionException{
-        try{
+    public void visitFSUB(FSUB inst) throws SymbolicInstructionException {
+        try {
             FloatValue f2 = stack.popOperand().asFloatValue();
             FloatValue f1 = stack.popOperand().asFloatValue();
             stack.pushOperand(f1.FSUB(f2));
@@ -1181,9 +1262,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The GETFIELD instruction
      */
-    public void visitGETFIELD(GETFIELD inst) throws SymbolicInstructionException{
+    public void visitGETFIELD(GETFIELD inst) throws SymbolicInstructionException {
         try {
             ObjectValue<?, ?> ref = stack.popOperand().asObjectValue();
+            if (ref.getAddress() == ObjectValue.ADDRESS_NULL) {
+                // The JVM throws a NullPointerException here: follow it like any other throwing
+                // instruction instead of reading a field of null.
+                stack.pushOperand(PlaceHolder.instance);
+                checkAndSetException(inst);
+                return;
+            }
 
             int fieldIndex = classDepot.getFieldIndex(inst.cIdx, inst.name, false);
 
@@ -1203,11 +1291,12 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    private Value<?, ?> fetchStaticField (GETSTATIC inst)
-            throws ThreadAlreadyDisabledException, NoThreadContextException, ThreadAlreadyEnabledException, ClassNotFoundException {
+    private Value<?, ?> fetchStaticField(GETSTATIC inst)
+            throws ThreadAlreadyDisabledException, NoThreadContextException, ThreadAlreadyEnabledException,
+            ClassNotFoundException {
         int runtimeFieldIndex = classDepot.getFieldIndex(inst.cIdx, inst.name, true);
         return ThreadHandler.getStaticField(
-                        currentThread().getId(), inst.cIdx, runtimeFieldIndex);
+                currentThread().getId(), inst.cIdx, runtimeFieldIndex);
     }
 
     /**
@@ -1215,7 +1304,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The GETSTATIC instruction
      */
-    public void visitGETSTATIC(GETSTATIC inst) throws SymbolicInstructionException{
+    public void visitGETSTATIC(GETSTATIC inst) throws SymbolicInstructionException {
         try {
             Value<?, ?> val;
             val = fetchStaticField(inst);
@@ -1223,7 +1312,6 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 // Specific placeholder to attribute the concrete value in the following GETVALUE_
                 val = new PlaceHolder(PlaceHolder.ValueOrigin.GETSTATIC, inst, null);
             }
-
 
             if (inst.desc.startsWith("D") || inst.desc.startsWith("J")) {
                 stack.pushWideOperand(val);
@@ -1239,8 +1327,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitGETVALUE_Object(GETVALUE_Object<?> inst) throws SymbolicInstructionException{
-        try{
+    public void visitGETVALUE_Object(GETVALUE_Object<?> inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> peek = stack.peekOperand();
             Value<?, ?> tmp;
             boolean isSymbolic = false;
@@ -1275,7 +1363,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     }
                     Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
                     shadowStateLogger.info("Recovered object from heap: {}", tmp);
-                    if(tmp instanceof StringBuilderValue sbv){
+                    if (tmp instanceof StringBuilderValue sbv) {
                         StringBuilder sb = (StringBuilder) inst.val;
                         SWATAssert.check(sbv.getStringValue().concrete.equals(inst.val),
                                 "Concrete value of the StringBuilder does not match the value in the stack: {} | {}",
@@ -1305,7 +1393,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         GETSTATIC gsInst = (GETSTATIC) placeHolder.inst;
                         setStaticField(tmp, gsInst.cIdx, gsInst.name);
                         Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
-                        shadowStateLogger.debug("Storing retrieved value in field {}",gsInst.name);
+                        shadowStateLogger.debug("Storing retrieved value in field {}", gsInst.name);
                     }
                 }
             } else if ((peek.asObjectValue()).getAddress() == ADDRESS_UNKNOWN) {
@@ -1318,7 +1406,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         SWATAssert.check(inst.val.equals(peek.concrete),
                                 "Concrete value of the object does not match the value in the stack: {} | {}",
                                 inst.val, peek.concrete);
-                        if(peek.formula == null) {
+                        if (peek.formula == null) {
                             // TODO This needs to be cleaned up!
                             stack.popOperand();
                             StringValue val = ValueFactory.createStringValue(s, inst.address);
@@ -1363,7 +1451,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     } else {
                         // In delegation context, fetch the actual delegated object and replace it on stack
                         if (peek.asObjectValue().getAddress() != inst.address) {
-                            logger.debug("Delegation detected: stack has @{}, instruction expects @{}. Fetching delegated object.",
+                            logger.debug(
+                                    "Delegation detected: stack has @{}, instruction expects @{}. Fetching delegated object.",
                                     String.format("%08x", peek.asObjectValue().getAddress()),
                                     String.format("%08x", inst.address));
 
@@ -1380,7 +1469,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
                             } else if (inst.val != null) {
                                 // If not in heap yet, create it from the instruction using ValueFactory
                                 try {
-                                    Value<?, ?> delegatedObject = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(inst.val, inst.address);
+                                    Value<?, ?> delegatedObject = de.uzl.its.swat.symbolic.value.ValueFactory
+                                            .createObjectValue(inst.val, inst.address);
                                     stack.pushOperand(delegatedObject);
                                     stack.putToHeap(inst.address, delegatedObject);
                                     logger.debug("Created new delegated object from instruction: {}", delegatedObject);
@@ -1411,7 +1501,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) GETVALUE_boolean instruction
      */
-    public void visitGETVALUE_boolean(GETVALUE_boolean inst) throws SymbolicInstructionException{
+    public void visitGETVALUE_boolean(GETVALUE_boolean inst) throws SymbolicInstructionException {
         visitGETVALUE_primitive(inst, ValueType.booleanValue);
     }
 
@@ -1420,7 +1510,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) GETVALUE_byte instruction
      */
-    public void visitGETVALUE_byte(GETVALUE_byte inst) throws SymbolicInstructionException{
+    public void visitGETVALUE_byte(GETVALUE_byte inst) throws SymbolicInstructionException {
         visitGETVALUE_primitive(inst, ValueType.byteValue);
     }
 
@@ -1429,7 +1519,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) GETVALUE_char instruction
      */
-    public void visitGETVALUE_char(GETVALUE_char inst) throws SymbolicInstructionException{
+    public void visitGETVALUE_char(GETVALUE_char inst) throws SymbolicInstructionException {
         visitGETVALUE_primitive(inst, ValueType.charValue);
     }
 
@@ -1438,7 +1528,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) GETVALUE_double instruction
      */
-    public void visitGETVALUE_double(GETVALUE_double inst) throws SymbolicInstructionException{
+    public void visitGETVALUE_double(GETVALUE_double inst) throws SymbolicInstructionException {
         visitGETVALUE_primitive(inst, ValueType.doubleValue);
     }
 
@@ -1447,7 +1537,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) GETVALUE_float instruction
      */
-    public void visitGETVALUE_float(GETVALUE_float inst) throws SymbolicInstructionException{
+    public void visitGETVALUE_float(GETVALUE_float inst) throws SymbolicInstructionException {
         visitGETVALUE_primitive(inst, ValueType.floatValue);
     }
 
@@ -1456,7 +1546,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) GETVALUE_int instruction
      */
-    public void visitGETVALUE_int(GETVALUE_int inst) throws SymbolicInstructionException{
+    public void visitGETVALUE_int(GETVALUE_int inst) throws SymbolicInstructionException {
         visitGETVALUE_primitive(inst, ValueType.intValue);
     }
 
@@ -1465,7 +1555,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) GETVALUE_long instruction
      */
-    public void visitGETVALUE_long(GETVALUE_long inst) throws SymbolicInstructionException{
+    public void visitGETVALUE_long(GETVALUE_long inst) throws SymbolicInstructionException {
         visitGETVALUE_primitive(inst, ValueType.longValue);
     }
 
@@ -1474,11 +1564,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) GETVALUE_short instruction
      */
-    public void visitGETVALUE_short(GETVALUE_short inst) throws SymbolicInstructionException{
+    public void visitGETVALUE_short(GETVALUE_short inst) throws SymbolicInstructionException {
         visitGETVALUE_primitive(inst, ValueType.shortValue);
     }
 
-    public void visitGETVALUE_void(GETVALUE_void inst) throws SymbolicInstructionException{
+    public void visitGETVALUE_void(GETVALUE_void inst) throws SymbolicInstructionException {
         // TODO: Why does the case exist if it does nothing?
     }
 
@@ -1487,15 +1577,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Either the GOTO or GOTO_w instruction
      */
-    public void visitGOTO(GOTO inst) throws SymbolicInstructionException{}
+    public void visitGOTO(GOTO inst) throws SymbolicInstructionException {
+    }
 
     /**
      * Converts an integer to a byte and puts the result onto the symbolic stack
      *
      * @param inst The I2B instruction
      */
-    public void visitI2B(I2B inst) throws SymbolicInstructionException{
-        try{
+    public void visitI2B(I2B inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.I2B());
         } catch (Throwable t) {
@@ -1511,8 +1602,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The I2C instruction
      */
-    public void visitI2C(I2C inst) throws SymbolicInstructionException{
-        try{
+    public void visitI2C(I2C inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.I2C());
         } catch (Throwable t) {
@@ -1525,8 +1616,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The I2D instruction
      */
-    public void visitI2D(I2D inst) throws SymbolicInstructionException{
-        try{
+    public void visitI2D(I2D inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushWideOperand(i1.I2D());
         } catch (Throwable t) {
@@ -1539,8 +1630,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The I2F instruction
      */
-    public void visitI2F(I2F inst) throws SymbolicInstructionException{
-        try{
+    public void visitI2F(I2F inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.I2F());
         } catch (Throwable t) {
@@ -1553,8 +1644,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The I2L instruction
      */
-    public void visitI2L(I2L inst) throws SymbolicInstructionException{
-        try{
+    public void visitI2L(I2L inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushWideOperand(i1.I2L());
         } catch (Throwable t) {
@@ -1567,8 +1658,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The I2S instruction
      */
-    public void visitI2S(I2S inst) throws SymbolicInstructionException{
-        try{
+    public void visitI2S(I2S inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.I2S());
         } catch (Throwable t) {
@@ -1581,8 +1672,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IADD instruction
      */
-    public void visitIADD(IADD inst) throws SymbolicInstructionException{
-        try{
+    public void visitIADD(IADD inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.IADD(i2));
@@ -1596,7 +1687,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IALOAD instruction
      */
-    public void visitIALOAD(IALOAD inst) throws SymbolicInstructionException{
+    public void visitIALOAD(IALOAD inst) throws SymbolicInstructionException {
         try {
             IntValue idx = stack.popOperand().asIntValue();
             ObjectValue<?, ?> ref = (ObjectValue<?, ?>) stack.popOperand();
@@ -1608,6 +1699,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[IALOAD]: Unknown array type");
                 stack.pushOperand(
                         ref.getName() != null
@@ -1626,8 +1718,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IAND instruction
      */
-    public void visitIAND(IAND inst) throws SymbolicInstructionException{
-        try{
+    public void visitIAND(IAND inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.IAND(i2));
@@ -1641,7 +1733,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IASTORE instruction
      */
-    public void visitIASTORE(IASTORE inst) throws SymbolicInstructionException{
+    public void visitIASTORE(IASTORE inst) throws SymbolicInstructionException {
         try {
             IntValue val = stack.popOperand().asIntValue();
             IntValue idx = stack.popOperand().asIntValue();
@@ -1654,6 +1746,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[IASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -1666,8 +1759,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Current instruction
      */
-    public void visitICONST_0(ICONST_0 inst) throws SymbolicInstructionException{
-        try{
+    public void visitICONST_0(ICONST_0 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, 0));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1679,8 +1772,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Current instruction
      */
-    public void visitICONST_1(ICONST_1 inst) throws SymbolicInstructionException{
-        try{
+    public void visitICONST_1(ICONST_1 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, 1));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1692,8 +1785,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Current instruction
      */
-    public void visitICONST_2(ICONST_2 inst) throws SymbolicInstructionException{
-        try{
+    public void visitICONST_2(ICONST_2 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, 2));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1705,8 +1798,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Current instruction
      */
-    public void visitICONST_3(ICONST_3 inst) throws SymbolicInstructionException{
-        try{
+    public void visitICONST_3(ICONST_3 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, 3));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1718,8 +1811,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Current instruction
      */
-    public void visitICONST_4(ICONST_4 inst) throws SymbolicInstructionException{
-        try{
+    public void visitICONST_4(ICONST_4 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, 4));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1731,8 +1824,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Current instruction
      */
-    public void visitICONST_5(ICONST_5 inst) throws SymbolicInstructionException{
-        try{
+    public void visitICONST_5(ICONST_5 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, 5));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1744,8 +1837,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Current ICONST_M1 instruction
      */
-    public void visitICONST_M1(ICONST_M1 inst) throws SymbolicInstructionException{
-        try{
+    public void visitICONST_M1(ICONST_M1 inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, -1));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -1757,7 +1850,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Current IDIV instruction
      */
-    public void visitIDIV(IDIV inst) throws SymbolicInstructionException{
+    public void visitIDIV(IDIV inst) throws SymbolicInstructionException {
         try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
@@ -1780,8 +1873,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IFEQ instruction
      */
-    public void visitIFEQ(IFEQ inst) throws SymbolicInstructionException{
-        try{
+    public void visitIFEQ(IFEQ inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             // IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IFEQ();
@@ -1801,8 +1894,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IFGE instruction
      */
-    public void visitIFGE(IFGE inst) throws SymbolicInstructionException{
-        try{
+    public void visitIFGE(IFGE inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IFGE();
             boolean isBranchTaken = isBranchTaken();
@@ -1821,8 +1914,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IFGT instruction
      */
-    public void visitIFGT(IFGT inst) throws SymbolicInstructionException{
-        try{
+    public void visitIFGT(IFGT inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IFGT();
             boolean isBranchTaken = isBranchTaken();
@@ -1841,8 +1934,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IFLE instruction
      */
-    public void visitIFLE(IFLE inst) throws SymbolicInstructionException{
-        try{
+    public void visitIFLE(IFLE inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IFLE();
             boolean isBranchTaken = isBranchTaken();
@@ -1861,8 +1954,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IFLT instruction
      */
-    public void visitIFLT(IFLT inst) throws SymbolicInstructionException{
-        try{
+    public void visitIFLT(IFLT inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IFLT();
             boolean isBranchTaken = isBranchTaken();
@@ -1881,8 +1974,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IFNE instruction
      */
-    public void visitIFNE(IFNE inst) throws SymbolicInstructionException{
-        try{
+    public void visitIFNE(IFNE inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IFNE();
             boolean isBranchTaken = isBranchTaken();
@@ -1901,8 +1994,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IFNONNULL instruction.
      */
-    public void visitIFNONNULL(IFNONNULL inst) throws SymbolicInstructionException{
-        try{
+    public void visitIFNONNULL(IFNONNULL inst) throws SymbolicInstructionException {
+        try {
             ObjectValue<?, ?> o1 = stack.popOperand().asObjectValue();
             BooleanFormula constraint = o1.IFNONNULL();
             boolean isBranchTaken = isBranchTaken();
@@ -1921,8 +2014,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IFNULL instruction.
      */
-    public void visitIFNULL(IFNULL inst) throws SymbolicInstructionException{
-        try{
+    public void visitIFNULL(IFNULL inst) throws SymbolicInstructionException {
+        try {
             ObjectValue<?, ?> o1 = stack.popOperand().asObjectValue();
             BooleanFormula constraint = o1.IFNULL();
             boolean isBranchTaken = isBranchTaken();
@@ -1942,8 +2035,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IF_ACMPEQ instruction.
      */
-    public void visitIF_ACMPEQ(IF_ACMPEQ inst) throws SymbolicInstructionException{
-        try{
+    public void visitIF_ACMPEQ(IF_ACMPEQ inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> v2 = stack.popOperand();
             Value<?, ?> v1 = stack.popOperand();
             BooleanFormula constraint;
@@ -1956,7 +2049,6 @@ public class SymbolicInstructionVisitor implements IVisitor {
             }
             boolean isBranchTaken = isBranchTaken();
             long iid = determineIid(inst.iid);
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
@@ -1972,8 +2064,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IF_ACMPNE instruction.
      */
-    public void visitIF_ACMPNE(IF_ACMPNE inst) throws SymbolicInstructionException{
-        try{
+    public void visitIF_ACMPNE(IF_ACMPNE inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> v2 = stack.popOperand();
             Value<?, ?> v1 = stack.popOperand();
             BooleanFormula constraint;
@@ -2000,8 +2092,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IF_ICMPEQ instruction
      */
-    public void visitIF_ICMPEQ(IF_ICMPEQ inst) throws SymbolicInstructionException{
-        try{
+    public void visitIF_ICMPEQ(IF_ICMPEQ inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IF_ICMPEQ(i2);
@@ -2028,8 +2120,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IF_ICMPGE instruction
      */
-    public void visitIF_ICMPGE(IF_ICMPGE inst) throws SymbolicInstructionException{
-        try{
+    public void visitIF_ICMPGE(IF_ICMPGE inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IF_ICMPGE(i2);
@@ -2049,8 +2141,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IF_ICMPGT instruction
      */
-    public void visitIF_ICMPGT(IF_ICMPGT inst) throws SymbolicInstructionException{
-        try{
+    public void visitIF_ICMPGT(IF_ICMPGT inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IF_ICMPGT(i2);
@@ -2070,8 +2162,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IF_ICMPLE instruction
      */
-    public void visitIF_ICMPLE(IF_ICMPLE inst) throws SymbolicInstructionException{
-        try{
+    public void visitIF_ICMPLE(IF_ICMPLE inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IF_ICMPLE(i2);
@@ -2091,8 +2183,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IF_ICMPLT instruction
      */
-    public void visitIF_ICMPLT(IF_ICMPLT inst) throws SymbolicInstructionException{
-        try{
+    public void visitIF_ICMPLT(IF_ICMPLT inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IF_ICMPLT(i2);
@@ -2112,8 +2204,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IF_ICMPNE instruction
      */
-    public void visitIF_ICMPNE(IF_ICMPNE inst) throws SymbolicInstructionException{
-        try{
+    public void visitIF_ICMPNE(IF_ICMPNE inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             BooleanFormula constraint = i1.IF_ICMPNE(i2);
@@ -2133,8 +2225,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IINC instruction
      */
-    public void visitIINC(IINC inst) throws SymbolicInstructionException{
-        try{
+    public void visitIINC(IINC inst) throws SymbolicInstructionException {
+        try {
             // ToDo (Nils): What happens if this is the first time the local is referenced? The next
             // line should return a Placeholder then
             IntValue i1 = stack.getLocal(inst.var).asIntValue();
@@ -2151,8 +2243,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ILOAD instruction (including ILOAD_0 - ILOAD_3)
      */
-    public void visitILOAD(ILOAD inst) throws SymbolicInstructionException{
-        try{
+    public void visitILOAD(ILOAD inst) throws SymbolicInstructionException {
+        try {
             // ToDO (Nils): Why are ILOAD_0 etc not present? Where did they catch them and used this
             // case?
             stack.pushOperand(stack.getLocal(inst.var));
@@ -2166,8 +2258,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IMUL instruction
      */
-    public void visitIMUL(IMUL inst) throws SymbolicInstructionException{
-        try{
+    public void visitIMUL(IMUL inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.IMUL(i2));
@@ -2181,8 +2273,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The INEG instruction
      */
-    public void visitINEG(INEG inst) throws SymbolicInstructionException{
-        try{
+    public void visitINEG(INEG inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.INEG());
         } catch (Throwable t) {
@@ -2198,7 +2290,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The INSTANCEOF instruction.
      */
-    public void visitINSTANCEOF(INSTANCEOF inst) throws SymbolicInstructionException{
+    public void visitINSTANCEOF(INSTANCEOF inst) throws SymbolicInstructionException {
         try {
             stack.popOperand();
             stack.pushOperand(PlaceHolder.instance);
@@ -2209,36 +2301,64 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     /**
+     * Handles a call to an uninstrumented method that threw instead of returning: its model, if it
+     * has one, is not consulted (that happens on a normal return), and whether it throws may depend
+     * on symbolic arguments, a branch nothing in the trace captures. With symbolic arguments the
+     * search past this call is therefore incomplete, which is recorded as a context loss.
+     */
+    private void recordThrowingCall(long iid, String owner, String name, String desc, long invokeId, boolean isInstance) throws NoThreadContextException {
+        // Thrown by uninstrumented code, or before the callee ran (a null receiver, an Error):
+        // nothing the graph models.
+        recordUnmodelledException(iid);
+        boolean symbolic;
+        try {
+            Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), isInstance);
+            symbolic = isInstance && stack.getInstance().isSymbolic();
+            for (Value<?, ?> argument : arguments) symbolic = symbolic || argument.isSymbolic();
+        } catch (Exception e) {
+            symbolic = true; // cannot tell, so assume the worst
+        }
+        if (!symbolic) return;
+        logger.warn("Invocation of method {} in class {} with arguments {} threw, causes context loss", name, owner, desc);
+        symbolicTraceHandler.recordSymbolicContextLoss();
+        long threadId = Thread.currentThread().getId();
+        InvocationEntry entry = new InvocationEntry(owner, name, desc, isInstance, invokeId, true);
+        ThreadHandler.recordMissingInvocation(threadId, entry);
+        ThreadHandler.recordContextLossInvocation(threadId, entry);
+    }
+
+    /**
      * Invokes an interface method on an object reference from the symbolic stack
      *
      * @param inst The INVOKEINTERFACE instruction
      */
-    public void visitINVOKEINTERFACE(INVOKEINTERFACE inst) throws SymbolicInstructionException{
-        try{
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+    public void visitINVOKEINTERFACE(INVOKEINTERFACE inst) throws SymbolicInstructionException {
+        try {
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
 
                 ObjectValue<?, ?> instance = stack.getInstance();
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), true);
-                Value<?, ?> retVal =
-                        InvocationHandler.invoke(
-                                symbolicTraceHandler,
-                                inst.desc,
-                                inst.owner,
-                                inst.name,
-                                inst.invokeId,
-                                new ArrayList<>(Arrays.asList(arguments)),
-                                true,
-                                instance);
+                Value<?, ?> retVal = InvocationHandler.invoke(
+                        symbolicTraceHandler,
+                        inst.desc,
+                        inst.owner,
+                        inst.name,
+                        inst.invokeId,
+                        new ArrayList<>(Arrays.asList(arguments)),
+                        true,
+                        instance);
                 stack.setReturnValue(retVal);
 
-        }
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, true);
+            }
 
-        if (!inst.owner.equals("de/uzl/its/swat/Main")) {
-            symbolicTraceHandler.recordInvocation(
-                    determineIid(inst.iid), inst.getClass().getCanonicalName());
-        }
+            if (!inst.owner.equals("de/uzl/its/swat/Main")) {
+                symbolicTraceHandler.recordInvocation(
+                        determineIid(inst.iid), inst.getClass().getCanonicalName());
+            }
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2249,24 +2369,25 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The INVOKESPECIAL instruction
      */
-    public void visitINVOKESPECIAL(INVOKESPECIAL inst) throws SymbolicInstructionException{
-        try{
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+    public void visitINVOKESPECIAL(INVOKESPECIAL inst) throws SymbolicInstructionException {
+        try {
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 ObjectValue<?, ?> instance = stack.getInstance();
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), true);
-                Value<?, ?> retVal =
-                        InvocationHandler.invoke(
-                                symbolicTraceHandler,
-                                inst.desc,
-                                inst.owner,
-                                inst.name,
-                                inst.invokeId,
-                                new ArrayList<>(Arrays.asList(arguments)),
-                                true,
-                                instance);
+                Value<?, ?> retVal = InvocationHandler.invoke(
+                        symbolicTraceHandler,
+                        inst.desc,
+                        inst.owner,
+                        inst.name,
+                        inst.invokeId,
+                        new ArrayList<>(Arrays.asList(arguments)),
+                        true,
+                        instance);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2283,23 +2404,24 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The INVOKESTATIC instruction
      */
-    public void visitINVOKESTATIC(INVOKESTATIC inst) throws SymbolicInstructionException{
-        try{
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, false);
+    public void visitINVOKESTATIC(INVOKESTATIC inst) throws SymbolicInstructionException {
+        try {
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
-               Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), false);
-                Value<?, ?> retVal =
-                        InvocationHandler.invoke(
-                                symbolicTraceHandler,
-                                inst.desc,
-                                inst.owner,
-                                inst.name,
-                                inst.invokeId,
-                                new ArrayList<>(Arrays.asList(arguments)),
-                                false,
-                                null);
+                Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), false);
+                Value<?, ?> retVal = InvocationHandler.invoke(
+                        symbolicTraceHandler,
+                        inst.desc,
+                        inst.owner,
+                        inst.name,
+                        inst.invokeId,
+                        new ArrayList<>(Arrays.asList(arguments)),
+                        false,
+                        null);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, false);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2316,24 +2438,38 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The INVOKEVIRTUAL instruction
      */
-    public void visitINVOKEVIRTUAL(INVOKEVIRTUAL inst) throws SymbolicInstructionException{
-        try{
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+    public void visitINVOKEVIRTUAL(INVOKEVIRTUAL inst) throws SymbolicInstructionException {
+        try {
+            if (previousWasUnpack && isStaticMethod(inst.owner, inst.name, inst.desc)) {
+                // A static method called through Method.invoke: the instrumentation invokes it like
+                // an instance method, with Method.invoke's (null) receiver below the arguments.
+                // The callee has no receiver, so the frame must not have one either.
+                previousWasUnpack = false;
+                stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
+                Frame callee = stack.popFrame();
+                stack.popOperand(); // the null receiver
+                stack.pushFrame(callee);
+                symbolicTraceHandler.recordInvocation(determineIid(inst.iid), inst.getClass().getCanonicalName());
+                return;
+            }
+            previousWasUnpack = false;
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 ObjectValue<?, ?> instance = stack.getInstance();
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), true);
-                Value<?, ?> retVal =
-                        InvocationHandler.invoke(
-                                symbolicTraceHandler,
-                                inst.desc,
-                                inst.owner,
-                                inst.name,
-                                inst.invokeId,
-                                new ArrayList<>(Arrays.asList(arguments)),
-                                true,
-                                instance);
+                Value<?, ?> retVal = InvocationHandler.invoke(
+                        symbolicTraceHandler,
+                        inst.desc,
+                        inst.owner,
+                        inst.name,
+                        inst.invokeId,
+                        new ArrayList<>(Arrays.asList(arguments)),
+                        true,
+                        instance);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, true);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2350,23 +2486,24 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The INVOKEDYNAMIC instruction
      */
-    public void visitINVOKEDYNAMIC(INVOKEDYNAMIC inst) throws SymbolicInstructionException{
-        try{
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, false);
+    public void visitINVOKEDYNAMIC(INVOKEDYNAMIC inst) throws SymbolicInstructionException {
+        try {
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), false);
-                Value<?, ?> retVal =
-                        InvocationHandler.invoke(
-                                symbolicTraceHandler,
-                                inst.desc,
-                                inst.owner,
-                                inst.name,
-                                inst.invokeId,
-                                new ArrayList<>(Arrays.asList(arguments)),
-                                false,
-                                null);
+                Value<?, ?> retVal = InvocationHandler.invoke(
+                        symbolicTraceHandler,
+                        inst.desc,
+                        inst.owner,
+                        inst.name,
+                        inst.invokeId,
+                        new ArrayList<>(Arrays.asList(arguments)),
+                        false,
+                        null);
                 stack.setReturnValue(retVal);
+            } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
+                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, false);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2383,8 +2520,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IOR instruction
      */
-    public void visitIOR(IOR inst) throws SymbolicInstructionException{
-        try{
+    public void visitIOR(IOR inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.IOR(i2));
@@ -2398,7 +2535,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IREM instruction
      */
-    public void visitIREM(IREM inst) throws SymbolicInstructionException{
+    public void visitIREM(IREM inst) throws SymbolicInstructionException {
         try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
@@ -2422,8 +2559,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IRETURN instruction
      */
-    public void visitIRETURN(IRETURN inst) throws SymbolicInstructionException{
-        try{
+    public void visitIRETURN(IRETURN inst) throws SymbolicInstructionException {
+        try {
             symbolicTraceHandler.addSpecialElement(determineIid(inst.iid), "IRETURN");
             stack.setReturnValue(stack.popOperand());
             // checkAndSetException(inst);
@@ -2437,8 +2574,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ISHL instruction
      */
-    public void visitISHL(ISHL inst) throws SymbolicInstructionException{
-        try{
+    public void visitISHL(ISHL inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.ISHL(i2));
@@ -2453,8 +2590,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ISHR instruction
      */
-    public void visitISHR(ISHR inst) throws SymbolicInstructionException{
-        try{
+    public void visitISHR(ISHR inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.ISHR(i2));
@@ -2468,8 +2605,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ISTORE instruction
      */
-    public void visitISTORE(ISTORE inst) throws SymbolicInstructionException{
-        try{
+    public void visitISTORE(ISTORE inst) throws SymbolicInstructionException {
+        try {
             stack.setLocal(inst.var, stack.popOperand());
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -2481,8 +2618,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The ISUB instruction
      */
-    public void visitISUB(ISUB inst) throws SymbolicInstructionException{
-        try{
+    public void visitISUB(ISUB inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.ISUB(i2));
@@ -2496,8 +2633,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IUSHR instruction
      */
-    public void visitIUSHR(IUSHR inst) throws SymbolicInstructionException{
-        try{
+    public void visitIUSHR(IUSHR inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.IUSHR(i2));
@@ -2512,8 +2649,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The IXOR instruction
      */
-    public void visitIXOR(IXOR inst) throws SymbolicInstructionException{
-        try{
+    public void visitIXOR(IXOR inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             IntValue i1 = stack.popOperand().asIntValue();
             stack.pushOperand(i1.IXOR(i2));
@@ -2530,10 +2667,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst Either the JSR or JSR_W instruction
      */
-    public void visitJSR(JSR inst) throws SymbolicInstructionException{}
+    public void visitJSR(JSR inst) throws SymbolicInstructionException {
+    }
 
-    public void visitL2D(L2D inst) throws SymbolicInstructionException{
-        try{
+    public void visitL2D(L2D inst) throws SymbolicInstructionException {
+        try {
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.L2D());
         } catch (Throwable t) {
@@ -2541,8 +2679,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitL2F(L2F inst) throws SymbolicInstructionException{
-        try{
+    public void visitL2F(L2F inst) throws SymbolicInstructionException {
+        try {
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushOperand(i1.L2F());
         } catch (Throwable t) {
@@ -2550,8 +2688,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitL2I(L2I inst) throws SymbolicInstructionException{
-        try{
+    public void visitL2I(L2I inst) throws SymbolicInstructionException {
+        try {
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushOperand(i1.L2I());
         } catch (Throwable t) {
@@ -2564,8 +2702,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LADD instruction
      */
-    public void visitLADD(LADD inst) throws SymbolicInstructionException{
-        try{
+    public void visitLADD(LADD inst) throws SymbolicInstructionException {
+        try {
             LongValue i2 = stack.popWideOperand().asLongValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LADD(i2));
@@ -2579,7 +2717,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LALOAD instruction
      */
-    public void visitLALOAD(LALOAD inst) throws SymbolicInstructionException{
+    public void visitLALOAD(LALOAD inst) throws SymbolicInstructionException {
         try {
             IntValue idx = stack.popOperand().asIntValue();
             ObjectValue<?, ?> arr = (ObjectValue<?, ?>) stack.popOperand();
@@ -2591,6 +2729,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[LALOAD]: Unknown array type");
                 stack.pushWideOperand(
                         arr.getName() != null
@@ -2609,8 +2748,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LAND instruction
      */
-    public void visitLAND(LAND inst) throws SymbolicInstructionException{
-        try{
+    public void visitLAND(LAND inst) throws SymbolicInstructionException {
+        try {
             LongValue i2 = stack.popWideOperand().asLongValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LAND(i2));
@@ -2624,7 +2763,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LASTORE instruction
      */
-    public void visitLASTORE(LASTORE inst) throws SymbolicInstructionException{
+    public void visitLASTORE(LASTORE inst) throws SymbolicInstructionException {
         try {
             LongValue val = stack.popWideOperand().asLongValue();
             IntValue idx = stack.popOperand().asIntValue();
@@ -2637,6 +2776,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[LASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -2649,8 +2789,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LCMP instruction
      */
-    public void visitLCMP(LCMP inst) throws SymbolicInstructionException{
-        try{
+    public void visitLCMP(LCMP inst) throws SymbolicInstructionException {
+        try {
             LongValue i2 = stack.popWideOperand().asLongValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushOperand(i1.LCMP(i2));
@@ -2664,8 +2804,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LCONST_0 instruction
      */
-    public void visitLCONST_0(LCONST_0 inst) throws SymbolicInstructionException{
-        try{
+    public void visitLCONST_0(LCONST_0 inst) throws SymbolicInstructionException {
+        try {
             stack.pushWideOperand(ValueFactory.createNumericalValue(ValueType.longValue, 0L));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -2677,8 +2817,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LCONST_1 instruction
      */
-    public void visitLCONST_1(LCONST_1 inst) throws SymbolicInstructionException{
-        try{
+    public void visitLCONST_1(LCONST_1 inst) throws SymbolicInstructionException {
+        try {
             stack.pushWideOperand(ValueFactory.createNumericalValue(ValueType.longValue, 1L));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -2690,8 +2830,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) LDC_String instruction
      */
-    public void visitLDC_String(LDC_String inst) throws SymbolicInstructionException{
-        try{
+    public void visitLDC_String(LDC_String inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createStringValue(inst.c, inst.address));
             checkAndSetException(inst);
         } catch (Throwable t) {
@@ -2704,8 +2844,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) LDC_Object instruction
      */
-    public void visitLDC_Object(LDC_Object inst) throws SymbolicInstructionException{
-        try{
+    public void visitLDC_Object(LDC_Object inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> tmp = stack.getFromHeap(inst.c);
             if (tmp != null) {
                 stack.pushOperand(tmp);
@@ -2726,8 +2866,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) LDC_double instruction
      */
-    public void visitLDC_double(LDC_double inst) throws SymbolicInstructionException{
-        try{
+    public void visitLDC_double(LDC_double inst) throws SymbolicInstructionException {
+        try {
             stack.pushWideOperand(ValueFactory.createNumericalValue(ValueType.doubleValue, inst.c));
             checkAndSetException(inst);
         } catch (Throwable t) {
@@ -2740,8 +2880,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) LDC_float instruction
      */
-    public void visitLDC_float(LDC_float inst) throws SymbolicInstructionException{
-        try{
+    public void visitLDC_float(LDC_float inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.floatValue, inst.c));
             checkAndSetException(inst);
         } catch (Throwable t) {
@@ -2754,8 +2894,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) LDC_int instruction
      */
-    public void visitLDC_int(LDC_int inst) throws SymbolicInstructionException{
-        try{
+    public void visitLDC_int(LDC_int inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, inst.c));
             checkAndSetException(inst);
         } catch (Throwable t) {
@@ -2768,8 +2908,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The (artificial) LDC_long instruction
      */
-    public void visitLDC_long(LDC_long inst) throws SymbolicInstructionException{
-        try{
+    public void visitLDC_long(LDC_long inst) throws SymbolicInstructionException {
+        try {
             stack.pushWideOperand(ValueFactory.createNumericalValue(ValueType.longValue, inst.c));
             checkAndSetException(inst);
         } catch (Throwable t) {
@@ -2782,7 +2922,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LDIV instruction
      */
-    public void visitLDIV(LDIV inst) throws SymbolicInstructionException{
+    public void visitLDIV(LDIV inst) throws SymbolicInstructionException {
         try {
             LongValue l2 = stack.popWideOperand().asLongValue();
             LongValue l1 = stack.popWideOperand().asLongValue();
@@ -2806,8 +2946,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst One of the LLOAD isntructions (LLOAD, LLOAD_0 - LLOAD_3)
      */
-    public void visitLLOAD(LLOAD inst) throws SymbolicInstructionException{
-        try{
+    public void visitLLOAD(LLOAD inst) throws SymbolicInstructionException {
+        try {
             stack.pushWideOperand(stack.getWideLocal(inst.var));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -2819,8 +2959,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LMUL instruction
      */
-    public void visitLMUL(LMUL inst) throws SymbolicInstructionException{
-        try{
+    public void visitLMUL(LMUL inst) throws SymbolicInstructionException {
+        try {
             LongValue i2 = stack.popWideOperand().asLongValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LMUL(i2));
@@ -2834,8 +2974,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LNEG isntruction
      */
-    public void visitLNEG(LNEG inst) throws SymbolicInstructionException{
-        try{
+    public void visitLNEG(LNEG inst) throws SymbolicInstructionException {
+        try {
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LNEG());
         } catch (Throwable t) {
@@ -2848,8 +2988,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LOR instruction
      */
-    public void visitLOR(LOR inst) throws SymbolicInstructionException{
-        try{
+    public void visitLOR(LOR inst) throws SymbolicInstructionException {
+        try {
             LongValue i2 = stack.popWideOperand().asLongValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LOR(i2));
@@ -2863,7 +3003,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LREM instruction
      */
-    public void visitLREM(LREM inst) throws SymbolicInstructionException{
+    public void visitLREM(LREM inst) throws SymbolicInstructionException {
         try {
             LongValue i2 = stack.popWideOperand().asLongValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
@@ -2887,8 +3027,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LRETURN instruction
      */
-    public void visitLRETURN(LRETURN inst) throws SymbolicInstructionException{
-        try{
+    public void visitLRETURN(LRETURN inst) throws SymbolicInstructionException {
+        try {
             symbolicTraceHandler.addSpecialElement(determineIid(inst.iid), "lRETURN");
             stack.setReturnValue(stack.popWideOperand());
             // checkAndSetException(inst);
@@ -2902,8 +3042,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LSHL instruction
      */
-    public void visitLSHL(LSHL inst) throws SymbolicInstructionException{
-        try{
+    public void visitLSHL(LSHL inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LSHL(i2));
@@ -2917,8 +3057,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LSHR instruction
      */
-    public void visitLSHR(LSHR inst) throws SymbolicInstructionException{
-        try{
+    public void visitLSHR(LSHR inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LSHR(i2));
@@ -2932,8 +3072,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst One of the LSTORE instructions (LSTORE, LSTORE_0 - LSTORE_3)
      */
-    public void visitLSTORE(LSTORE inst) throws SymbolicInstructionException{
-        try{
+    public void visitLSTORE(LSTORE inst) throws SymbolicInstructionException {
+        try {
             stack.setWideLocal(inst.var, stack.popWideOperand());
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -2945,8 +3085,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LSUB instruction
      */
-    public void visitLSUB(LSUB inst) throws SymbolicInstructionException{
-        try{
+    public void visitLSUB(LSUB inst) throws SymbolicInstructionException {
+        try {
             LongValue i2 = stack.popWideOperand().asLongValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LSUB(i2));
@@ -2961,8 +3101,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LUSHR instruction
      */
-    public void visitLUSHR(LUSHR inst) throws SymbolicInstructionException{
-        try{
+    public void visitLUSHR(LUSHR inst) throws SymbolicInstructionException {
+        try {
             IntValue i2 = stack.popOperand().asIntValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LUSHR(i2));
@@ -2976,8 +3116,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LXOR instruction
      */
-    public void visitLXOR(LXOR inst) throws SymbolicInstructionException{
-        try{
+    public void visitLXOR(LXOR inst) throws SymbolicInstructionException {
+        try {
             LongValue i2 = stack.popWideOperand().asLongValue();
             LongValue i1 = stack.popWideOperand().asLongValue();
             stack.pushWideOperand(i1.LXOR(i2));
@@ -2991,8 +3131,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The MONITORENTER instruction.
      */
-    public void visitMONITORENTER(MONITORENTER inst) throws SymbolicInstructionException{
-        try{
+    public void visitMONITORENTER(MONITORENTER inst) throws SymbolicInstructionException {
+        try {
             stack.popOperand();
             checkAndSetException(inst);
         } catch (Throwable t) {
@@ -3005,8 +3145,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The MONITOREXIT instruction.
      */
-    public void visitMONITOREXIT(MONITOREXIT inst) throws SymbolicInstructionException{
-        try{
+    public void visitMONITOREXIT(MONITOREXIT inst) throws SymbolicInstructionException {
+        try {
             stack.popOperand();
             checkAndSetException(inst);
         } catch (Throwable t) {
@@ -3014,10 +3154,10 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitCLINIT(CLINIT inst) throws SymbolicInstructionException{
+    public void visitCLINIT(CLINIT inst) throws SymbolicInstructionException {
         try {
             String owner = classDepot.getClassName(inst.cIdx);
-            stack.newStackFrame(inst.desc, owner, inst.name, false);
+            stack.newStackFrame(inst.desc, owner, inst.name, false, inst.iid);
             symbolicTraceHandler.recordInvocation(
                     determineIid(inst.iid), inst.getClass().getCanonicalName());
         } catch (Throwable t) {
@@ -3026,19 +3166,44 @@ public class SymbolicInstructionVisitor implements IVisitor {
         // checkAndSetException(inst);
     }
 
-    public void visitUNPACK_INVOKE_PARAMETER(UNPACK_INVOKE_PARAMETER inst)  throws SymbolicInstructionException{
-        try{
+    /** Whether the last instruction unpacked Method.invoke's arguments for the invoke that follows. */
+    private boolean previousWasUnpack = false;
+
+    private static boolean isStaticMethod(String owner, String name, String desc) {
+        try {
+            Class<?> cls = Class.forName(owner.replace('/', '.'), false, ClassLoader.getSystemClassLoader());
+            for (java.lang.reflect.Method m : cls.getDeclaredMethods()) {
+                if (m.getName().equals(name) && Type.getMethodDescriptor(m).equals(desc)) {
+                    return java.lang.reflect.Modifier.isStatic(m.getModifiers());
+                }
+            }
+        } catch (Throwable t) {
+            // Not resolvable: treat as an instance method, as before.
+        }
+        return false;
+    }
+
+    public void visitUNPACK_INVOKE_PARAMETER(UNPACK_INVOKE_PARAMETER inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> top = stack.popOperand();
             if (top instanceof ObjectArrayValue param) {
                 SolverContext context = ThreadHandler.getSolverContext(currentThread().getId());
+                // Method.invoke passes primitives boxed; the invoke that follows takes them unboxed.
+                Type[] paramTypes = stack.getNextInst() instanceof INVOKEVIRTUAL next
+                        ? Type.getArgumentTypes(next.desc) : new Type[0];
                 for (int i = 0; i < param.getSize().concrete; i++) {
                     Value<?, ?> v = param.getElement(new IntValue(context, i));
+                    if (i < paramTypes.length && paramTypes[i].getSort() <= Type.DOUBLE
+                            && v instanceof BoxedValue<?> boxed && boxed.getVal() != null) {
+                        v = boxed.getVal();
+                    }
                     if (v instanceof LongValue || v instanceof DoubleValue) {
                         stack.pushWideOperand(v);
                     } else {
                         stack.pushOperand(v);
                     }
                 }
+                previousWasUnpack = true;
             } else {
                 throw new SymbolicInstructionException(inst, "Unpacking of ObjectArray requires an Array of Objects.");
             }
@@ -3047,10 +3212,10 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitSET_FIELD_REFLECTION(SET_FIELD_REFLECTION inst) throws SymbolicInstructionException{
-        try{
+    public void visitSET_FIELD_REFLECTION(SET_FIELD_REFLECTION inst) throws SymbolicInstructionException {
+        try {
 
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 String reflectFieldName = inst.reflectFieldName;
@@ -3065,7 +3230,6 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     valueToSet = stack.getLocal(2);
                 }
 
-
                 // Value<?, ?> fieldObject = stack.getLocal(0);
                 // ToDo: Any easier way? And does it always work?
                 // ToDo: Is it possible, that the field is static?
@@ -3077,7 +3241,6 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     int fieldIndex = classDepot.getFieldIndex(cIdx, reflectFieldName, false);
                     targetObject.setField(fieldIndex, valueToSet);
                 }
-
 
                 stack.setReturnValue(PlaceHolder.instance);
             }
@@ -3097,9 +3260,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitGET_FIELD_REFLECTION(GET_FIELD_REFLECTION inst) throws SymbolicInstructionException{
-        try{
-            stack.newStackFrame(inst.desc, inst.owner, inst.name, true);
+    public void visitGET_FIELD_REFLECTION(GET_FIELD_REFLECTION inst) throws SymbolicInstructionException {
+        try {
+            stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
 
@@ -3135,7 +3298,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitNEW(NEW inst) throws SymbolicInstructionException{
+    public void visitNEW(NEW inst) throws SymbolicInstructionException {
         try {
             String className = classDepot.getClassName(inst.cIdx);
             int nFields = classDepot.getFieldCountWithReflection(className, null, false);
@@ -3151,32 +3314,33 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitNEWARRAY(NEWARRAY inst) throws SymbolicInstructionException{
+    public void visitNEWARRAY(NEWARRAY inst) throws SymbolicInstructionException {
         try {
             IntValue size = stack.popOperand().asIntValue();
             BooleanFormula constraint = size.checkPositive();
             boolean result = size.concrete >= 0;
             symbolicTraceHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
 
-            if(result) {
+            if (result) {
                 switch (inst.atype) {
                     case 4 -> // T_BOOLEAN
-                            stack.pushOperand(ValueFactory.createArrayValue(ValueType.booleanValue, size, -1));
+                        stack.pushOperand(ValueFactory.createArrayValue(ValueType.booleanValue, size, -1));
                     case 5 -> // T_CHAR
-                            stack.pushOperand(ValueFactory.createArrayValue(ValueType.charValue, size, -1));
+                        stack.pushOperand(ValueFactory.createArrayValue(ValueType.charValue, size, -1));
                     case 6 -> // T_FLOAT
-                            stack.pushOperand(ValueFactory.createArrayValue(ValueType.floatValue, size, -1));
+                        stack.pushOperand(ValueFactory.createArrayValue(ValueType.floatValue, size, -1));
                     case 7 -> // T_DOUBLE
-                            stack.pushOperand(ValueFactory.createArrayValue(ValueType.doubleValue, size, -1));
+                        stack.pushOperand(ValueFactory.createArrayValue(ValueType.doubleValue, size, -1));
                     case 8 -> // T_BYTE
-                            stack.pushOperand(ValueFactory.createArrayValue(ValueType.byteValue, size, -1));
+                        stack.pushOperand(ValueFactory.createArrayValue(ValueType.byteValue, size, -1));
                     case 9 -> // T_SHORT
-                            stack.pushOperand(ValueFactory.createArrayValue(ValueType.shortValue, size, -1));
+                        stack.pushOperand(ValueFactory.createArrayValue(ValueType.shortValue, size, -1));
                     case 10 -> // T_INT
-                            stack.pushOperand(ValueFactory.createArrayValue(ValueType.intValue, size, -1));
+                        stack.pushOperand(ValueFactory.createArrayValue(ValueType.intValue, size, -1));
                     case 11 -> // T_LONG
-                            stack.pushOperand(ValueFactory.createArrayValue(ValueType.longValue, size, -1));
-                    default -> throw new SymbolicInstructionException(inst, "Unknown primitive type: " + inst.atype + "!");
+                        stack.pushOperand(ValueFactory.createArrayValue(ValueType.longValue, size, -1));
+                    default ->
+                        throw new SymbolicInstructionException(inst, "Unknown primitive type: " + inst.atype + "!");
                 }
             } else {
                 enforceException();
@@ -3191,15 +3355,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The NOP instruction.
      */
-    public void visitNOP(NOP inst) throws SymbolicInstructionException{}
+    public void visitNOP(NOP inst) throws SymbolicInstructionException {
+    }
 
     /**
      * Pops the top value from the symbolic stack.
      *
      * @param inst The POP instruction
      */
-    public void visitPOP(POP inst) throws SymbolicInstructionException{
-        try{
+    public void visitPOP(POP inst) throws SymbolicInstructionException {
+        try {
             stack.popOperand();
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -3211,8 +3376,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The POP2 instruction
      */
-    public void visitPOP2(POP2 inst) throws SymbolicInstructionException{
-        try{
+    public void visitPOP2(POP2 inst) throws SymbolicInstructionException {
+        try {
             stack.popWideOperand();
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -3228,8 +3393,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The PUTFIELD instruction
      */
-    public void visitPUTFIELD(PUTFIELD inst) throws SymbolicInstructionException{
-        try{
+    public void visitPUTFIELD(PUTFIELD inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> value;
             if (inst.desc.startsWith("D") || inst.desc.startsWith("J")) {
                 value = stack.popWideOperand();
@@ -3237,6 +3402,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 value = stack.popOperand();
             }
             ObjectValue<?, ?> ref = stack.popOperand().asObjectValue();
+            if (ref.getAddress() == ObjectValue.ADDRESS_NULL) {
+                // NullPointerException, see visitGETFIELD
+                checkAndSetException(inst);
+                return;
+            }
             int fieldIndex = classDepot.getFieldIndex(inst.cIdx, inst.name, false);
             try {
                 ref.setField(fieldIndex, value);
@@ -3250,7 +3420,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     private void setStaticField(Value<?, ?> value, int cIdx, String name)
-            throws ThreadAlreadyEnabledException, ThreadAlreadyDisabledException, NoThreadContextException, ClassNotFoundException {
+            throws ThreadAlreadyEnabledException, ThreadAlreadyDisabledException, NoThreadContextException,
+            ClassNotFoundException {
         int fieldIndex = classDepot.getFieldIndex(cIdx, name, true);
         ThreadHandler.setStaticField(
                 Thread.currentThread().getId(), cIdx, fieldIndex, value);
@@ -3261,7 +3432,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The PUTSTATIC instruction
      */
-    public void visitPUTSTATIC(PUTSTATIC inst) throws SymbolicInstructionException{
+    public void visitPUTSTATIC(PUTSTATIC inst) throws SymbolicInstructionException {
         try {
             Value<?, ?> value;
             if (inst.desc.startsWith("D") || inst.desc.startsWith("J")) {
@@ -3285,14 +3456,15 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The RET instruction
      */
-    public void visitRET(RET inst) throws SymbolicInstructionException{}
+    public void visitRET(RET inst) throws SymbolicInstructionException {
+    }
 
     /**
      * Returns void from method, no handling needed (here)
      *
      * @param inst The RETURN instruction
      */
-    public void visitRETURN(RETURN inst) throws SymbolicInstructionException{
+    public void visitRETURN(RETURN inst) throws SymbolicInstructionException {
         // checkAndSetException(inst);
     }
 
@@ -3301,7 +3473,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The SALOAD instruction.
      */
-    public void visitSALOAD(SALOAD inst) throws SymbolicInstructionException{
+    public void visitSALOAD(SALOAD inst) throws SymbolicInstructionException {
         try {
             IntValue idx = stack.popOperand().asIntValue();
             ObjectValue<?, ?> arr = (ObjectValue<?, ?>) stack.popOperand();
@@ -3313,6 +3485,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, arr);
                 logger.warn("[SALOAD]: Unknown array type");
                 stack.pushOperand(
                         arr.getName() != null
@@ -3330,7 +3503,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The SASTORE instruction.
      */
-    public void visitSASTORE(SASTORE inst) throws SymbolicInstructionException{
+    public void visitSASTORE(SASTORE inst) throws SymbolicInstructionException {
         try {
             ShortValue val = stack.popOperand().asShortValue();
             IntValue idx = stack.popOperand().asIntValue();
@@ -3343,6 +3516,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     enforceException();
                 }
             } else {
+                recordUntrackedBoundsCheck(inst, idx, ref);
                 logger.warn("[SASTORE]: Unknown array type");
             }
         } catch (Throwable t) {
@@ -3355,8 +3529,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The SIPUSH instruction
      */
-    public void visitSIPUSH(SIPUSH inst) throws SymbolicInstructionException{
-        try{
+    public void visitSIPUSH(SIPUSH inst) throws SymbolicInstructionException {
+        try {
             stack.pushOperand(ValueFactory.createNumericalValue(ValueType.intValue, inst.value));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -3368,8 +3542,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The SWAP instruction
      */
-    public void visitSWAP(SWAP inst) throws SymbolicInstructionException{
-        try{
+    public void visitSWAP(SWAP inst) throws SymbolicInstructionException {
+        try {
             Value<?, ?> v1 = stack.popOperand();
             Value<?, ?> v2 = stack.popOperand();
             stack.pushOperand(v1);
@@ -3379,8 +3553,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitINVOKEMETHOD_EXCEPTION(INVOKEMETHOD_EXCEPTION inst) throws SymbolicInstructionException{
-        try{
+    public void visitINVOKEMETHOD_EXCEPTION(INVOKEMETHOD_EXCEPTION inst) throws SymbolicInstructionException {
+        try {
             if (stack.getFrameStack().size() == 1) {
                 logger.warn(
                         "[INVOKEMETHOD_EXCEPTION]: Terminating symbolic execution due to stack size"
@@ -3388,7 +3562,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 Intrinsics.terminate();
                 return;
             }
-            stack.popFrame();
+            Frame callee = stack.popFrame();
+            if (isLibraryFrame(callee)) {
+                // The exception comes out of library code that ran application code first (a
+                // callback): the graph has the call as a plain library call, so it cannot say
+                // where this goes. (One thrown before any application code ran is recorded at the
+                // call, see recordThrowingCall.)
+                recordUnmodelledException(inst.iid);
+            }
             stack.pushOperand(
                     PlaceHolder.instance); // placeholder for the exception object ToDo: More specific
             // placeholder
@@ -3403,8 +3584,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst INVOKEMETHOD_END
      */
-    public void visitINVOKEMETHOD_END(INVOKEMETHOD_END inst) throws SymbolicInstructionException{
-        try{
+    public void visitINVOKEMETHOD_END(INVOKEMETHOD_END inst) throws SymbolicInstructionException {
+        try {
             Frame old = stack.popFrame();
             if (old.nReturnWords == 2) {
                 stack.pushWideOperand(old.getRet());
@@ -3422,8 +3603,10 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst INVOKEMETHOD_END
      */
-    public void visitINVOKECLINIT_END(INVOKECLINIT_END inst) throws SymbolicInstructionException{
-        try{
+    public void visitINVOKECLINIT_END(INVOKECLINIT_END inst) throws SymbolicInstructionException {
+        try {
+            symbolicTraceHandler.recordInvocation(
+                    determineIid(inst.iid), inst.getClass().getCanonicalName());
             if (stack.getActiveFrame().getMethodName().equals(inst.name)) {
                 stack.popFrame();
             } else {
@@ -3434,18 +3617,21 @@ public class SymbolicInstructionVisitor implements IVisitor {
         }
     }
 
-    public void visitMAKE_SYMBOLIC(MAKE_SYMBOLIC inst) throws SymbolicInstructionException{}
+    public void visitMAKE_SYMBOLIC(MAKE_SYMBOLIC inst) throws SymbolicInstructionException {
+    }
 
-    public void visitLOOP_BEGIN(LOOP_BEGIN inst) throws SymbolicInstructionException{
+    public void visitLOOP_BEGIN(LOOP_BEGIN inst) throws SymbolicInstructionException {
         /*int loopCnt = loopCounter.getOrDefault(inst.iid, 0);
         loopCounter.put(inst.iid, loopCnt + 1);
         loops.push(inst.iid);
          */
     }
 
-    public void visitLOOP_END(LOOP_END inst) throws SymbolicInstructionException{}
+    public void visitLOOP_END(LOOP_END inst) throws SymbolicInstructionException {
+    }
 
-    public void visitSPECIAL(SPECIAL inst) throws SymbolicInstructionException{}
+    public void visitSPECIAL(SPECIAL inst) throws SymbolicInstructionException {
+    }
 
     /**
      * Creates a multidimensional array of references. Currently, no symbolic handling here because
@@ -3455,7 +3641,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The MULTIANEWARRAY instruction
      */
-    public void visitMULTIANEWARRAY(MULTIANEWARRAY inst) throws SymbolicInstructionException{
+    public void visitMULTIANEWARRAY(MULTIANEWARRAY inst) throws SymbolicInstructionException {
 
         try {
             IntValue[] dims = new IntValue[inst.dims];
@@ -3463,7 +3649,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 IntValue i1 = stack.popOperand().asIntValue();
                 BooleanFormula constraint = i1.checkPositive();
                 boolean result = i1.concrete >= 0;
-                symbolicTraceHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid));
+                symbolicTraceHandler.checkAndSetBranch(result, constraint, determineIid(inst.iid), "#" + i);
                 dims[dims.length - i - 1] = i1;
             }
 
@@ -3482,20 +3668,20 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The LOOKUPSWITCH instruction.
      */
-    public void visitLOOKUPSWITCH(LOOKUPSWITCH inst) throws SymbolicInstructionException{
-        try{
+    public void visitLOOKUPSWITCH(LOOKUPSWITCH inst) throws SymbolicInstructionException {
+        try {
             int[] keys = inst.keys;
 
             IntValue i1 = stack.popOperand().asIntValue();
             for (int key : keys) {
-                BooleanFormula result =
-                        i1.IF_ICMPEQ(
-                                ValueFactory.createNumericalValue(ValueType.intValue, key)
-                                        .asIntValue());
+                BooleanFormula result = i1.IF_ICMPEQ(
+                        ValueFactory.createNumericalValue(ValueType.intValue, key)
+                                .asIntValue());
                 symbolicTraceHandler.checkAndSetBranch(
-                        i1.concrete == key, result, determineIid(inst.iid));
+                        i1.concrete == key, result, determineIid(inst.iid), "#" + key);
 
-                if (i1.concrete == key) return;
+                if (i1.concrete == key)
+                    return;
             }
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
@@ -3508,18 +3694,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *
      * @param inst The TABLESWITCH instruction.
      */
-    public void visitTABLESWITCH(TABLESWITCH inst) throws SymbolicInstructionException{
-        try{
+    public void visitTABLESWITCH(TABLESWITCH inst) throws SymbolicInstructionException {
+        try {
             IntValue i1 = stack.popOperand().asIntValue();
             for (int i = inst.min; i <= inst.max; i++) {
-                BooleanFormula result =
-                        i1.IF_ICMPEQ(
-                                ValueFactory.createNumericalValue(ValueType.intValue, i).asIntValue());
+                BooleanFormula result = i1.IF_ICMPEQ(
+                        ValueFactory.createNumericalValue(ValueType.intValue, i).asIntValue());
                 symbolicTraceHandler.checkAndSetBranch(
-                        i1.concrete == i, result, 
-                        GlobalStateForInstrumentation.createSwitchCaseIid(inst.iid, i, inst.min));
+                        i1.concrete == i, result,
+                        GlobalStateForInstrumentation.createSwitchCaseIid(inst.iid, i, inst.min), "#" + i);
 
-                if (i1.concrete == i) return;
+                if (i1.concrete == i)
+                    return;
             }
 
             BranchCoverage.addVisitedBranch(inst.iid);
@@ -3536,7 +3722,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 || o instanceof Byte;
     }
 
-    private int toInteger(Object o) throws ValueConversionException{
+    private int toInteger(Object o) throws ValueConversionException {
         if (o instanceof Integer i) {
             return i;
         } else if (o instanceof Short s) {
@@ -3601,7 +3787,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     GETSTATIC gsInst = (GETSTATIC) placeHolder.inst;
                     setStaticField(v, gsInst.cIdx, gsInst.name);
                     Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
-                    shadowStateLogger.debug("Storing retrieved value in field {}",gsInst.name);
+                    shadowStateLogger.debug("Storing retrieved value in field {}", gsInst.name);
                 }
             } else if ((!(peek instanceof BoxedValue<?>) && peek.concrete == null)
                     || (peek instanceof BoxedValue<?> && ((BoxedValue<?>) peek).getVal().concrete == null)) {
@@ -3612,9 +3798,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     stack.popOperand();
                     stack.pushOperand(ValueFactory.createNumericalValue(type, inst.v));
                 }
-            } else if ((peek instanceof BoxedValue<?> && !checkEquality(((BoxedValue<?>)peek).getVal().concrete, inst.v))
+            } else if ((peek instanceof BoxedValue<?>
+                    && !checkEquality(((BoxedValue<?>) peek).getVal().concrete, inst.v))
                     || (!(peek instanceof BoxedValue<?>) && !checkEquality(peek.concrete, inst.v))) {
-                SWATAssert.check(false, "[GETVALUE_primitive]: Value on stack does not match expected value! Expected: {}, Actual: {}",
+                SWATAssert.check(false,
+                        "[GETVALUE_primitive]: Value on stack does not match expected value! Expected: {}, Actual: {}",
                         inst.v, peek.concrete);
                 if (cat2) {
                     stack.popWideOperand();

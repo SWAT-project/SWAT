@@ -1,6 +1,7 @@
 import re
 import time
 from svcomp.SymbolicStorage import DataTypes
+import z3
 from z3 import Solver, is_true, Not, Optimize, Z3_OP_UNINTERPRETED, Abs
 from enum import Enum
 from typing import Union, Dict, Tuple, Any
@@ -17,7 +18,24 @@ class SATResult(Enum):
     SAT = 'sat'
     UNSAT = 'unsat'
     UNKNOWN = 'unknown'
+    # The solver ran out of the resource limit (rlimit) it was given. Unlike UNKNOWN, a larger
+    # limit may still decide the query. Only returned when solve() is given an rlimit.
+    LIMIT = 'limit'
     
+# The shared Z3 context's cumulative resource count after the last check. Checks run one at a time,
+# so the difference to the count after the next one is what that check used (see _rlimit_used).
+_last_rlimit_count = 0
+
+
+def _rlimit_used(solver) -> int:
+    """The resources (Z3 rlimit units) the check just run on `solver` used."""
+    global _last_rlimit_count
+    stats = solver.statistics()
+    count = next((stats.get_key_value(k) for k in stats.keys() if k == 'rlimit count'), _last_rlimit_count)
+    used, _last_rlimit_count = count - _last_rlimit_count, count
+    return used
+
+
 class Z3Handler:
     """Class to handle symbolic solving and related tasks."""
 
@@ -176,7 +194,11 @@ class Z3Handler:
 
             return str(encoded)
         elif prefix == DataTypes.STRING.value:
-            return value.as_string()
+            # as_string() escapes some characters as \u{...} but prints a backslash as is, so its
+            # output is ambiguous. Read the code points instead.
+            n = z3.simplify(z3.Length(value)).as_long()
+            return ''.join(chr(z3.simplify(z3.StrToCode(z3.SubString(value, i, 1))).as_long())
+                           for i in range(n))
         else:
             raise ValueError(f"Unsupported prefix {prefix} for value {value}")
 
@@ -358,7 +380,7 @@ class Z3Handler:
         return filepath
 
     @staticmethod
-    def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000) -> Tuple[SATResult, Dict[str, Any]]:
+    def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000, rlimit: int | None = None) -> Tuple[SATResult, Dict[str, Any]]:
         """
         Solve for the given node and path constraints using ConstraintCache (modern approach).
 
@@ -368,14 +390,16 @@ class Z3Handler:
         Args:
         - node (Any): The node for which to solve.
         - path_constraints (list): List of path constraint SMT strings.
+        - timeout_ms: Wall-clock limit for the check, or None.
+        - rlimit: Z3 resource limit for the check, or None. Unlike a timeout it is deterministic:
+          the same query gets as far regardless of machine load. Running out of it gives LIMIT.
 
         Returns:
         - Tuple[SATResult, Dict[str, Any]]: Tuple containing SAT result and solution dictionary.
         """
-        import time
         from solver.ConstraintCache import get_constraint_cache
 
-        t_start = time.time()
+        t_start = time.perf_counter()
 
 
         # Get the global constraint cache (with shared context)
@@ -410,7 +434,11 @@ class Z3Handler:
             for i, path_expr in enumerate(all_exprs[len(node_exprs):]):
                 solver.add(path_expr)
 
-        t_path = time.time() - t_start
+        # Building the solver is Z3 work (SMT-LIB parsing on cache misses, assertion
+        # construction), so it counts towards the SMT solver stage rather than the
+        # explorer residual. It is not a query, hence count=False.
+        t_path = time.perf_counter() - t_start
+        TimingManager.instance().record_solver_time(t_path, count=False)
 
         # Array length constraints are now added in the Java symbolic executor
         # when the array length is made symbolic (InternalInvocation.java)
@@ -436,13 +464,18 @@ class Z3Handler:
 
         if timeout_ms is not None:
             solver.set("timeout", timeout_ms)
-        t_start = time.time()
+        if rlimit is not None:
+            # Z3 gives each check this much on top of what the (shared) context has used already.
+            solver.set("rlimit", rlimit)
+        t_start = time.perf_counter()
         res = solver.check()
-        t_check = time.time() - t_start
+        t_check = time.perf_counter() - t_start
+        TimingManager.instance().record_solver_time(t_check)
+        rlimit_used = _rlimit_used(solver)
 
 
         if str(res) == SATResult.SAT.value:
-            t_start = time.time()
+            t_start = time.perf_counter()
             sol = solver.model()
 
             # Log model to disk for debugging (if enabled)
@@ -462,33 +495,31 @@ class Z3Handler:
                 except Exception as e:
                     logger.warning(f"[SOLVER] Failed to save model: {e}")
 
-            # DEBUG: Print the full Z3 model
-            for decl in sol.decls():
-                var_name = decl.name()
-                var_value = sol[decl]
-
-                # For arrays, show first few elements
-                if '[' in str(var_name):
-                    from z3 import Int as Z3Int
-                    try:
-                        # Get context from the array to avoid context mismatch
-                        ctx = var_value.ctx if hasattr(var_value, 'ctx') else None
-                        for i in range(min(5, 10)):  # Show first 5 elements
-                            idx = Z3Int(i, ctx=ctx) if ctx is not None else Z3Int(i)
-                            elem_val = sol.eval(var_value[idx], model_completion=True)
-                    except:
-                        pass
-
-            # DEBUG: Verify model satisfies constraints
-            for i, constraint in enumerate(solver.assertions()):
-                satisfied = sol.evaluate(constraint, model_completion=True)
-                status = "✓" if satisfied else "✗"
+            # Sanity check: every assertion must hold under the returned model.
+            # Evaluating all assertions is real Z3 work, so only do it when DEBUG
+            # logging is actually enabled.
+            if logger.isEnabledFor(logging.DEBUG):
+                for constraint in solver.assertions():
+                    if not is_true(sol.evaluate(constraint, model_completion=True)):
+                        logger.warning(f"[SOLVER] Model does not satisfy assertion: {constraint}")
 
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
-            t_encode = time.time() - t_start
+            t_encode = time.perf_counter() - t_start
+            TimingManager.instance().record_solver_time(t_encode, count=False)
+            logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s model={t_encode:.3f}s rlimit={rlimit_used}")
             return SATResult.SAT, encoded_sol
         else:
-            return SATResult.UNSAT if str(res) == SATResult.UNSAT.value else SATResult.UNKNOWN, {}
+            logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s rlimit={rlimit_used} ({res})")
+            if str(res) == SATResult.UNSAT.value:
+                return SATResult.UNSAT, {}
+            # With only an rlimit set, a check cut short is reported as "canceled" (older Z3:
+            # "max. resource limit exceeded"); anything else is the solver giving up for good.
+            reason = solver.reason_unknown()
+            if rlimit is not None and timeout_ms is None and ('canceled' in reason or 'resource' in reason):
+                logger.debug(f"[SOLVER] resource limit {rlimit} exhausted after {t_check:.3f}s")
+                return SATResult.LIMIT, {}
+            logger.debug(f"[SOLVER] unknown: {reason}")
+            return SATResult.UNKNOWN, {}
 
     @staticmethod
     def solve_with_optimization(node: Any, path_constraints: list) -> Tuple[SATResult, Dict[str, Any]]:
@@ -502,6 +533,7 @@ class Z3Handler:
         Returns:
         - Tuple[SATResult, Dict[str, Any]]: Tuple containing SAT result and solution dictionary.
         """
+        build_start = time.perf_counter()
         c = Not(Z3Handler.string_to_expr(node.constraint[node.trace_id]))
         optimizer = Optimize()
         optimizer.add(c)
@@ -524,6 +556,10 @@ class Z3Handler:
                         optimizer.minimize(Abs(var))
 
         optimizer.set("timeout", 60 * 1000)
+        # Same accounting as Z3Handler.solve(): building the optimizer is solver work
+        # but not a query, so it is recorded with count=False.
+        TimingManager.instance().record_solver_time(time.perf_counter() - build_start, count=False)
+
         smt_file = Z3Handler.write_optimizer_to_file(optimizer)
         print(f"Saved SMT-LIB file to: {smt_file}")
 
@@ -536,8 +572,10 @@ class Z3Handler:
         TimingManager.instance().record_solver_time(solver_duration)
 
         if str(res) == SATResult.SAT.value:
+            model_start = time.perf_counter()
             sol = optimizer.model()
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
+            TimingManager.instance().record_solver_time(time.perf_counter() - model_start, count=False)
             return SATResult.SAT, encoded_sol
         else:
             return SATResult.UNSAT if str(res) == SATResult.UNSAT.value else SATResult.UNKNOWN, {}

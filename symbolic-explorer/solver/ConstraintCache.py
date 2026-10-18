@@ -66,7 +66,10 @@ class ConstraintCache:
                 - 'variables': Set of variable names found in constraint
                 - 'smt': Original SMT-LIB string
         """
-        key = (node.id, node.trace_id)
+        # By tree node, not by iid: two branches of one trace can share an iid (a switch's case
+        # index wraps at 16, a loop counter at 64), and the cache must not hand one the other's
+        # constraint.
+        key = (node.gid, node.trace_id)
 
         if key not in self._node_cache:
             constraint_str = node.constraint[node.trace_id]

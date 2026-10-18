@@ -1,11 +1,14 @@
 import json
+import math
 import logging
+import time
 
 from data.BinaryExecutionTree.Node import Node
 
 from data.Database import Database
 from strategy.DFS import dfs
 from solver.SolverHandler import SATResult, Z3Handler
+from timing.TimingManager import TimingManager
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +21,17 @@ class StrategyService:
         db = Database.instance()
         tree = db.get_tree(endpoint_id)
         visited = set()
-        possible_branches = dfs(visited, tree, tree.root, db.get_solutions(), db.get_unsat_branches())
+        # With rank_by_distance, the branches are tried closest-to-an-assert first. Only the order
+        # changes, so which branches exist, and hence the verdict, does not. The sort is stable:
+        # ties, and branches without SA information (ranked last), keep their DFS order.
+        distances = {} if kwargs.get("rank_by_distance", False) else None
+        possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches(), kwargs.get("sa_node", None), distances=distances)
+        if distances:
+            possible_branches.sort(key=lambda n: distances.get(n, math.inf))
+        # dfs records where the SA walk fell out of step on its tree, which is a copy.
+        for error in tree.execution_errors:
+            if error['kind'] == 'sa_desync':
+                db.record_execution_error(endpoint_id, error['kind'], error['message'])
         
         return possible_branches
         
@@ -82,7 +95,10 @@ class StrategyService:
         return uf_definitions
 
     @staticmethod
-    def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000):
+    def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000,
+                     solver_rlimit: int | None = None):
+        """Solves for the unexplored side of the branch. LIMIT (the rlimit ran out) records nothing,
+        so the branch stays a candidate and can be retried with a larger limit."""
         db = Database.instance()
 
         path_constraints = StrategyService.collect_path_constrains(possible_branch)
@@ -93,7 +109,7 @@ class StrategyService:
 
         inputs = possible_branch.inputs
 
-        sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms)
+        sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms, rlimit=solver_rlimit)
 
         if sat == SATResult.SAT:
             db.add_solution(branch_id=possible_branch.gid, sol=sol, inputs=inputs, endpoint_id=endpoint_id)
@@ -123,9 +139,14 @@ class StrategyService:
         from solver.ConstraintCache import get_constraint_cache
 
         try:
-            # Get cached parsed constraint (parse once, reuse many times)
+            # Get cached parsed constraint (parse once, reuse many times).
+            # On a cache miss this parses SMT-LIB via Z3 and walks the AST, which is
+            # solver work and must not be charged to the explorer residual. It is not
+            # a solver query, hence count=False.
             cache = get_constraint_cache()
+            t_parse = time.perf_counter()
             cached_data = cache.get_node_constraint(node)
+            TimingManager.instance().record_solver_time(time.perf_counter() - t_parse, count=False)
 
             # Extract variables from the parsed constraint
             constraint_vars = cached_data['variables']

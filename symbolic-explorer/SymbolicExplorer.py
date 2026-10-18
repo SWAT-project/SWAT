@@ -117,7 +117,7 @@ class SymbolicExplorer:
 def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-m", "--mode", choices=['passive', 'annotation', 'args', 'sv-comp', 'http', 'simple'], default='annotation',
                              help="Choose the desired mode")
-    parser.add_argument("-t", "--target", help="Full path to the target JAR file")
+    parser.add_argument("-t", "--target", help="Full path to the target JAR or class name")
     parser.add_argument("-prp", "--property", help="Which property to verify")
     parser.add_argument("-s", "--symbolicvars", nargs='+', help="The types and amount of the symbolic "
                                                                      "variables")
@@ -131,6 +131,13 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-i", "--ip_addr", help="IP address to Listen on", default="127.0.0.1")
     parser.add_argument("--optimize", action="store_true", help="Enable Z3 optimizer to minimize variable values (slower but may produce simpler solutions)", default=False)
     parser.add_argument("--log-smt-formulas", action="store_true", help="Log SMT formulas and models to disk for debugging", default=False)
+    parser.add_argument("--sa-file", help="Path to a file with static pre-analysis results for informing branch exploration (optional)")
+    parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
+    parser.add_argument("--sa-retry-without", action="store_true", help="On a SAFE verdict reached with static pre-analysis, disable it and explore again (guards against false SAFE from incomplete SA)", default=False)
+    parser.add_argument("--sa-no-callback-targets", action="store_true", help="Do not count library calls as possible asserts when application code that library code may call back (overrides of library methods, lambdas) can reach an assert. Unsound: an assert reached only through such a callback can then give a false SAFE", default=False)
+    parser.add_argument("--sa-rank-distance", action="store_true", help="Try branches closest to an assert (by static pre-analysis graph distance) first, instead of in plain DFS order", default=False)
+    parser.add_argument("--solver-rlimit", type=int, default=0, help="Z3 resource limit (rlimit) for the first query of each branch in sv-comp mode; a branch that runs out is retried later with a growing limit. 0 (default): unlimited")
+    parser.add_argument("--parallel-sa", action="store_true", help="Run the static pre-analysis in the background and use it once it is ready (sv-comp mode). By default exploration waits for it: running it in parallel makes runs nondeterministic", default=False)
 
     # SV-COMP witness arguments: the explorer writes the violation witness from the trace of the
     # violating execution (needs the task's input files and property file as given to the verifier)

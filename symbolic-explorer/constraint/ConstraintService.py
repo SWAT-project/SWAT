@@ -26,7 +26,8 @@ class ConstraintService:
                         reference_semantic_change: bool = False,
                         missing_invocations: List[InvocationItem] = None,
                         nondet_returns: List[NondetReturnItem] = None,
-                        violation: Optional[ViolationItem] = None):
+                        violation: Optional[ViolationItem] = None,
+                        approximate_model: bool = False):
         """
         Adds constraints to the database.
 
@@ -46,6 +47,8 @@ class ConstraintService:
         missing_invocations (list): Methods that could not be modelled symbolically during this trace.
         nondet_returns (list): The values returned by Verifier.nondet*() calls with their call locations.
         violation (ViolationItem): The throwable that escaped the entry method, if any.
+        approximate_model (bool): Whether an approximate model (a sampled Math function) was used,
+            so that solutions built from this trace are only guesses.
 
         Returns:
         None: The result is the side effect of adding data to the database.
@@ -53,8 +56,10 @@ class ConstraintService:
 
         # logger.info(f'[CONSTRAINT SERVICE] Received trace: {[t.__str__() for t in trace]}')
         trace_parsed: List[Branch | Special] = Parser.parse_trace(trace, trace_id=trace_id)
-        # logger.info(f'[CONSTRAINT SERVICE] Parsed trace: {[t.__str__() for t in trace_parsed]}')
+        logger.info(f'[CONSTRAINT SERVICE] Parsed trace: {[t.__str__() for t in trace_parsed]}')
+        logger.info(f'[CONSTRAINT SERVICE] Parsed trace branches: {[t.__str__() for t in trace_parsed if isinstance(t, Branch)]}')
         inputs_parsed: List[Input] = Parser.parse_inputs(inputs)
+        # logger.info(f'[CONSTRAINT SERVICE] Parsed inputs: {[i.__str__() for i in inputs_parsed]}')
         ufs_parsed: List[UF] = Parser.parse_ufs(ufs)
         # Flatten the missing-invocation DTOs into plain dicts so the Database/Tree stay decoupled
         # from the pydantic request models.
@@ -66,5 +71,5 @@ class ConstraintService:
             'violation': violation.model_dump() if violation is not None else None,
         }
         # Adding the trace and inputs to the database for the specified endpoint.
-        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data)
+        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data, approximate_model)
         logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')

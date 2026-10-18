@@ -24,7 +24,8 @@ def _signature(inv: dict) -> str:
     return f"{inv['owner']}/{inv['name']}:{inv['desc']}"
 
 
-def build_testcase_stats(verdict, category, tree) -> dict:
+def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, static_analysis: dict,
+                         solver_limit_hits: int = 0) -> dict:
     """
     Assemble the consolidated per-testcase statistics dictionary.
 
@@ -32,6 +33,7 @@ def build_testcase_stats(verdict, category, tree) -> dict:
         verdict: The final (post-downgrade) Verdict enum for the testcase.
         category: The VerificationCategory enum for the property.
         tree: The per-endpoint Tree holding accumulated metadata for the testcase.
+        static_analysis: The pre-analysis outcome, see StaticPreAnalysis.stats().
 
     Returns:
         A JSON-serializable dict describing the testcase outcome.
@@ -62,12 +64,22 @@ def build_testcase_stats(verdict, category, tree) -> dict:
             'context_loss_invocations': sum(1 for i in missing if i['context_loss']),
             'execution_errors': len(tree.execution_errors),
         },
+        'performance': {
+            'symbolic_exec_iterations': symbolic_exec_iterations,
+            'nr_solver_calls': nr_solver_calls,
+            # Queries that ran out of their resource limit (--solver-rlimit) and were retried later.
+            'solver_limit_hits': solver_limit_hits,
+            # Runs that took another path than a solution based on an approximate model predicted.
+            'expected_divergences': tree.expected_divergences,
+        },
+        'static_analysis': static_analysis,
     }
 
 
-def write_testcase_stats(filepath: Path, verdict, category, tree):
+def write_testcase_stats(filepath: Path, verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, static_analysis: dict,
+                         solver_limit_hits: int = 0):
     """Write the consolidated per-testcase statistics to ``filepath`` as JSON."""
-    data = build_testcase_stats(verdict, category, tree)
+    data = build_testcase_stats(verdict, category, tree, symbolic_exec_iterations, nr_solver_calls, static_analysis, solver_limit_hits)
 
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, 'w') as f:

@@ -14,6 +14,8 @@ import org.objectweb.asm.commons.LocalVariablesSorter;
 /** A visitor to visit a Java method */
 public class SVCompMethodAdapter extends LocalVariablesSorter {
 
+    private static final String SYSTEM_EXIT = "de/uzl/its/swat/instrument/svcomp/SystemExit";
+
     private final String identifier;
     private final String cname;
     private final String name;
@@ -128,6 +130,13 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
         } else if (name.equals("assume")) {
             String newOwner = "de/uzl/its/swat/instrument/svcomp/Verifier";
             mv.visitMethodInsn(opcode, newOwner, name, descriptor, isInterface);
+        } else if (owner.equals("java/lang/System") && name.equals("exit") && descriptor.equals("(I)V")) {
+            // Send the trace before the program ends (see SystemExit)
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, SYSTEM_EXIT, "exit", descriptor, false);
+        } else if (owner.equals("java/lang/Runtime") && (name.equals("exit") || name.equals("halt"))
+                && descriptor.equals("(I)V")) {
+            String newName = name.equals("exit") ? "runtimeExit" : "runtimeHalt";
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, SYSTEM_EXIT, newName, "(Ljava/lang/Runtime;I)V", false);
         } else if (owner.equals("java/net/Socket")) {
             String newOwner = "de/uzl/its/swat/instrument/svcomp/Socket";
             mv.visitMethodInsn(opcode, newOwner, name, descriptor, isInterface);

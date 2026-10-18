@@ -7,6 +7,9 @@ import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.StatsStorage;
+import de.uzl.its.swat.instrument.BranchKeys;
+import de.uzl.its.swat.symbolic.shadow.Frame;
+import de.uzl.its.swat.symbolic.shadow.ShadowContext;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
@@ -14,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 
 import org.sosy_lab.java_smt.api.BooleanFormula;
+import org.sosy_lab.java_smt.api.BooleanFormulaManager;
 import org.sosy_lab.java_smt.api.FormulaManager;
 
 /**
@@ -40,6 +44,15 @@ public class SymbolicTraceHandler {
      * @param iid The iid of the branch instruction.
      */
     public void checkAndSetBranch(boolean result, BooleanFormula constraint, long iid) throws NoThreadContextException {
+        checkAndSetBranch(result, constraint, iid, "");
+    }
+
+    /**
+     * As {@link #checkAndSetBranch(boolean, BooleanFormula, long)}, for one of several branches an
+     * instruction reports: {@code suffix} tells them apart in the branch's key ({@code #<case
+     * value>} for a switch case, {@code #<n>} for the n-th dimension MULTIANEWARRAY checks).
+     */
+    public void checkAndSetBranch(boolean result, BooleanFormula constraint, long iid, String suffix) throws NoThreadContextException {
 
         long threadId = Thread.currentThread().getId();
         BranchElement current;
@@ -50,7 +63,40 @@ public class SymbolicTraceHandler {
         current = new BranchElement(result, pathConstraint, iid);
         // check if the path constraint contains a free/ symbolic variable
 
+        place(current, iid, suffix);
         symbolicTrace.addTraceElement(current);
+    }
+
+    /** Records where a branch is: its key and the change of the frame stack since the last branch. */
+    private static void place(BranchElement branch, long iid, String suffix) throws NoThreadContextException {
+        String key = BranchKeys.keyOf(iid);
+        branch.setKey(key == null ? null : key + suffix);
+        ShadowContext stack = ThreadHandler.getSymbolicVisitor(Thread.currentThread().getId()).getStack();
+        branch.setCallback(stack.inCallback());
+        ShadowContext.StackDelta delta = stack.takeStackDelta();
+        branch.setPops(delta.popped());
+        List<String> pushes = new ArrayList<>(delta.pushed().size());
+        for (Frame frame : delta.pushed()) {
+            pushes.add(frame.getCallSite() < 0 ? null : BranchKeys.keyOf(frame.getCallSite()));
+        }
+        branch.setPushes(pushes);
+    }
+
+    /**
+     * Records a branch without a symbolic constraint, whose outcome is known only concretely. Used
+     * where the static pre-analysis graph has a branch that SWAT has no symbolic value for (e.g. the
+     * bounds check of an untracked array): the explorer walks that graph in step with the trace, by
+     * position, so the branch must be in the trace, but it is never a target for the solver.
+     *
+     * @param result Whether the branch was taken
+     * @param iid The iid of the branching instruction
+     */
+    public void addConcreteBranch(boolean result, long iid) throws NoThreadContextException {
+        BooleanFormulaManager bmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId())
+                .getFormulaManager().getBooleanFormulaManager();
+        BranchElement branch = new BranchElement(result, bmgr.makeTrue(), iid, true);
+        place(branch, iid, "");
+        symbolicTrace.addTraceElement(branch);
     }
 
     /**
@@ -214,6 +260,13 @@ public class SymbolicTraceHandler {
      */
     public void recordSymbolicContextLoss() {
         symbolicTrace.setSymbolicContextLoss(true);
+    }
+
+    /**
+     * Records that a symbolic model was only approximate, so an exhausted search proves nothing.
+     */
+    public void recordSymbolicPrecisionLoss() {
+        symbolicTrace.setSymbolicPrecisionLoss(true);
     }
 
     /**

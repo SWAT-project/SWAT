@@ -19,6 +19,7 @@ import de.uzl.its.swat.thread.ThreadHandler;
 import de.uzl.its.swat.witness.Witness;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 
@@ -101,7 +102,16 @@ class DTOBuilder {
             ufs.add(new UFDTO(formula));
         }
         logger.trace("Parsing constraints...");
-        boolean symbolicPrecisionLoss = false;
+        // A constraint over anything but the inputs (e.g. an uninterpreted function) means the
+        // model is approximate. Input names usually match the pattern below, but String inputs
+        // (java/lang/String_0) do not, so they are accepted by name.
+        Set<String> inputNames = new HashSet<>();
+        for (InputElement ie : symbolicTrace.getInputs()) {
+            inputNames.add(ie.getName());
+        }
+        java.util.function.Predicate<String> isInput =
+                name -> inputNames.contains(name) || name.matches("[A-Z].*_[0-9].*");
+        boolean symbolicPrecisionLoss = symbolicTrace.isSymbolicPrecisionLoss();
         for (Element el : symbolicTrace.getTrace()) {
             if (el instanceof BranchElement be) {
                 String constraint;
@@ -113,7 +123,7 @@ class DTOBuilder {
                     } else {
                         constraint = String.valueOf(fmgr.dumpFormula(f));
                         if (!fmgr.extractVariablesAndUFs(f).isEmpty() &&
-                            !fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(s -> s.matches("[A-Z].*_[0-9].*"))) {
+                            !fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(isInput)) {
                             symbolicPrecisionLoss = true;
                         }
                     }
@@ -128,16 +138,18 @@ class DTOBuilder {
                     //fmgr.extractVariablesAndUFs(f).keySet().forEach(System.out::println);
                     // assert fmgr.extractVariablesAndUFs(f).keySet().stream()
                     //         .allMatch(s -> s.matches("[A-Z].*_[0-9].*")): "[SWAT] UF introduced in: " + constraint;
-                    if (!fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(s -> s.matches("[A-Z].*_[0-9].*"))) {
+                    if (!fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(isInput)) {
                         symbolicPrecisionLoss = true;
                     }
                 }
-                trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched()));
+                trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), be.isConcreteOnly())
+                        .place(be.getKey(), be.getPops(), be.getPushes(), be.isCallback()));
             } else if (el instanceof SpecialElement se) {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }
         }
-        return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), Witness.getNondetReturns(), Witness.getViolation(), symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange());
+        return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), Witness.getNondetReturns(), Witness.getViolation(), symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange(),
+                symbolicTrace.isSymbolicPrecisionLoss());
     }
 
     protected static String encodeCoverage(InstrCoverage instrCoverage) throws JsonProcessingException {

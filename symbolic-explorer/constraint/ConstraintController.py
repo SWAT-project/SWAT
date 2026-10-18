@@ -44,6 +44,7 @@ class ConstraintController:
         referenceSemanticChange = request.referenceSemanticChange
         nondetReturns = request.nondetReturns
         violation = request.violation
+        approximateModel = request.approximateModel
 
         # Start a new thread to add constraints
         thread = threading.Thread(target=ConstraintService.add_constraints, kwargs={
@@ -57,7 +58,8 @@ class ConstraintController:
             'symbolic_precision_loss': symbolicPrecisionLoss,
             'reference_semantic_change': referenceSemanticChange,
             'nondet_returns': nondetReturns,
-            'violation': violation})
+            'violation': violation,
+            'approximate_model': approximateModel})
         thread.start()
         thread.join() # To ensure trace is added in SV-Comp mode
         # Return a response indicating that the request has been accepted

@@ -10,6 +10,15 @@ class TraceItem(BaseModel):
     branched: bool
     type: str
     inst: Optional[str] = None
+    # A branch the executor records only to mirror a guard of the SA graph; never a solver target.
+    concreteOnly: bool = False
+    # Where the branch is (see the executor's BranchKeys): its key, and how the frame stack changed
+    # since the previous branch -- frames popped, then the call sites (keys) of the frames pushed.
+    key: Optional[str] = None
+    pops: int = 0
+    pushes: list[Optional[str]] = []
+    # Recorded in application code that library code called back: not in the SA graph.
+    callback: bool = False
 class UFItem(BaseModel):
     definition: str 
 
@@ -82,6 +91,8 @@ class ConstraintRequest(BaseModel):
     symbolicContextLoss: bool
     symbolicPrecisionLoss: bool
     referenceSemanticChange: bool = False
+    # An approximate model (a sampled Math function) was used: solutions from this trace are guesses.
+    approximateModel: bool = False
 
 
 class CoverageRequest(BaseModel):

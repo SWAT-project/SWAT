@@ -250,7 +250,9 @@ public class CharValue extends NumericalValue<BitvectorFormula, Character> {
 
     @Override
     public String getConcreteEncoded() {
-        return Character.toString(concrete);
+        // As a number: the explorer passes it back on the command line, where Verifier.nondetChar
+        // parses it with Integer.parseInt (and a raw '\0' would not even survive the command line).
+        return Integer.toString(concrete);
     }
 
     @Override

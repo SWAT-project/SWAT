@@ -23,6 +23,7 @@ libs/jacoco/report
 targets/applications/openhospital/oh_build/restler_working_dir/Compile
 targets/applications/openhospital/oh_build/restler_working_dir/RestlerResults
 targets/sv-comp/sv-benchmarks/
+targets/sv-comp/sv-benchmarks-*/
 targets/sv-comp/wit4java/
 **/__pycache__
 **/.venv/*
@@ -35,3 +36,5 @@ targets/sv-comp/wit4java/
 **/analysis/
 !targets/sv-comp/scripts/lib/analysis
 libs/cfg-extractor/cfg-extractor-1.0-SNAPSHOT.jar
+# Default output of targets/sv-comp/scripts/plot_timing_comparison.py
+timing_comparison.png

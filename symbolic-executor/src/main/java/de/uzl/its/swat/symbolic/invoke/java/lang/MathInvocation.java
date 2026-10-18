@@ -23,6 +23,19 @@ public class MathInvocation {
             Value<?, ?>[] args,
             Type[] desc,
             SymbolicTraceHandler symbolicTraceHandler) throws NotImplementedException, ValueConversionException {
+        return invokeStaticMethod(name, args, desc, symbolicTraceHandler, false);
+    }
+
+    /**
+     * @param strict whether the owner is StrictMath, whose transcendental functions may round
+     *     differently from Math's
+     */
+    public static Value<?, ?> invokeStaticMethod(
+            String name,
+            Value<?, ?>[] args,
+            Type[] desc,
+            SymbolicTraceHandler symbolicTraceHandler,
+            boolean strict) throws NotImplementedException, ValueConversionException {
         return switch (name) {
             case "sin" -> invokeSin(args);
             case "cos" -> invokeCos(args);
@@ -31,9 +44,61 @@ public class MathInvocation {
             case "min" -> invokeMin(args);
             case "round" -> invokeRound(args);
             case "sqrt" -> invokeSqrt(args);
-
-            default -> PlaceHolder.instance;
+            case "floor" -> roundToIntegral(args, FloatingPointRoundingMode.TOWARD_NEGATIVE, Math::floor);
+            case "ceil" -> roundToIntegral(args, FloatingPointRoundingMode.TOWARD_POSITIVE, Math::ceil);
+            case "rint" -> roundToIntegral(args, FloatingPointRoundingMode.NEAREST_TIES_TO_EVEN, Math::rint);
+            // Both are a single multiplication by a constant (Math.toRadians is angdeg * DEGREES_TO_RADIANS).
+            case "toRadians" -> scale(args, 0.017453292519943295, strict ? StrictMath::toRadians : Math::toRadians);
+            case "toDegrees" -> scale(args, 57.29577951308232, strict ? StrictMath::toDegrees : Math::toDegrees);
+            case "getExponent" -> invokeGetExponent(args);
+            case "pow" -> SampledMath.binary("pow" + (strict ? "/strict" : ""), args, strict ? StrictMath::pow : Math::pow,
+                    // inverses: pow(x, y0) = t at x = t^(1/y0), pow(x0, y) = t at y = log(t) / log(x0)
+                    (t, y0) -> y0 == 0 ? Double.NaN : Math.pow(t, 1 / y0),
+                    (t, x0) -> Math.log(t) / Math.log(x0),
+                    symbolicTraceHandler);
+            case "atan2" -> SampledMath.binary("atan2" + (strict ? "/strict" : ""), args, strict ? StrictMath::atan2 : Math::atan2,
+                    // inverses: atan2(y, x0) = t at y = x0 * tan(t), atan2(y0, x) = t at x = y0 / tan(t)
+                    (t, x0) -> x0 * Math.tan(t),
+                    (t, y0) -> y0 / Math.tan(t),
+                    symbolicTraceHandler);
+            default -> SampledMath.unary(name, strict, args, symbolicTraceHandler);
         };
+    }
+
+    /** Math.floor, ceil and rint: IEEE round-to-integral in the given mode, which is exactly what they compute. */
+    private static Value<?, ?> roundToIntegral(Value<?, ?>[] args, FloatingPointRoundingMode mode, java.util.function.DoubleUnaryOperator concrete) {
+        if (args.length != 1 || !(args[0] instanceof DoubleValue a)) return PlaceHolder.instance;
+        FloatingPointFormulaManager fpfm = a.context.getFormulaManager().getFloatingPointFormulaManager();
+        return new DoubleValue(a.context, concrete.applyAsDouble(a.concrete), fpfm.round(a.formula, mode));
+    }
+
+    /** Math.toRadians and toDegrees: one correctly rounded multiplication by a constant. */
+    private static Value<?, ?> scale(Value<?, ?>[] args, double factor, java.util.function.DoubleUnaryOperator concrete) {
+        if (args.length != 1 || !(args[0] instanceof DoubleValue a)) return PlaceHolder.instance;
+        FloatingPointFormulaManager fpfm = a.context.getFormulaManager().getFloatingPointFormulaManager();
+        return new DoubleValue(a.context, concrete.applyAsDouble(a.concrete),
+                fpfm.multiply(a.formula, new DoubleValue(a.context, factor).formula));
+    }
+
+    /**
+     * Math.getExponent(float) and getExponent(double): the biased exponent field minus the bias.
+     * This also gives MAX_EXPONENT + 1 for NaN and infinities and MIN_EXPONENT - 1 for zeros and
+     * subnormals, as specified.
+     */
+    private static Value<?, ?> invokeGetExponent(Value<?, ?>[] args) {
+        if (args.length != 1) return PlaceHolder.instance;
+        if (args[0] instanceof DoubleValue d) {
+            BitvectorFormulaManager bvmgr = d.context.getFormulaManager().getBitvectorFormulaManager();
+            BitvectorFormula bits = d.context.getFormulaManager().getFloatingPointFormulaManager().toIeeeBitvector(d.formula);
+            BitvectorFormula field = bvmgr.extend(bvmgr.extract(bits, 62, 52), 21, false);
+            return new IntValue(d.context, Math.getExponent(d.concrete), bvmgr.subtract(field, bvmgr.makeBitvector(32, Double.MAX_EXPONENT)));
+        } else if (args[0] instanceof FloatValue f) {
+            BitvectorFormulaManager bvmgr = f.context.getFormulaManager().getBitvectorFormulaManager();
+            BitvectorFormula bits = f.context.getFormulaManager().getFloatingPointFormulaManager().toIeeeBitvector(f.formula);
+            BitvectorFormula field = bvmgr.extend(bvmgr.extract(bits, 30, 23), 24, false);
+            return new IntValue(f.context, Math.getExponent(f.concrete), bvmgr.subtract(field, bvmgr.makeBitvector(32, Float.MAX_EXPONENT)));
+        }
+        return PlaceHolder.instance;
     }
 
     /**

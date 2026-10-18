@@ -8,7 +8,6 @@ from data.trace.UF import UF
 
 import log
 logger = log.get_logger()
-# import pygraphviz as pgv
 
 class Tree:
     """
@@ -34,6 +33,11 @@ class Tree:
         self.symbolic_context_loss = False
         self.symbolic_precision_loss = False
         self.reference_semantic_change = False
+        # Traces that used an approximate model (a sampled Math function). A solution built from one
+        # is a guess, so the next run may take another path than predicted without anything being wrong.
+        self.approximate_traces: Set[str] = set()
+        # How often the next run did take another path than such a guessed solution predicted.
+        self.expected_divergences: int = 0
         self.uncaught_exceptions: int = 0
         self.symbolic_vars: Set = set()
         self.ufs: Set = set()
@@ -210,6 +214,7 @@ class Tree:
     def plot_tree(self, idx):
        """Plot the tree using Graphviz and save to a file."""
        #log.info(self.to_string())
+       import pygraphviz as pgv
        G = pgv.AGraph(directed=True, strict=True, rankdir='TB')
        self.add_to_dot(self.root, G)
        G.layout(prog="dot")

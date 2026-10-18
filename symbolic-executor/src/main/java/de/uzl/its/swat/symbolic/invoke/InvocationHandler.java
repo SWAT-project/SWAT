@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.invoke;
 
+import de.uzl.its.swat.symbolic.value.reference.array.ObjectArrayValue;
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
@@ -35,6 +36,23 @@ public class InvocationHandler {
                             "java/io/InputStream",
                             "java/util/Scanner"));
 
+    /**
+     * Whether {@code v} is an object array holding a symbolic value, e.g. the boxed arguments of
+     * {@code Method.invoke} or of any other varargs method. The array's own formula does not show
+     * that: its elements are stored as fields.
+     */
+    private static boolean hasSymbolicElement(Value<?, ?> v) throws NotImplementedException {
+        if (!(v instanceof ObjectArrayValue) || ((ObjectArrayValue) v).getFields() == null) {
+            return false;
+        }
+        for (Value<?, ?> element : ((ObjectArrayValue) v).getFields()) {
+            if (element != null && element.isSymbolic()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static Value<?, ?> invoke(
             SymbolicTraceHandler symbolicTraceHandler,
             String desc,
@@ -52,7 +70,7 @@ public class InvocationHandler {
         // We do that first to include the pointer in instance invocation cases
         boolean containsSymbolicArgument = arguments.stream().anyMatch(v -> {
             try {
-                return v.isSymbolic();
+                return v.isSymbolic() || hasSymbolicElement(v);
             } catch (NotImplementedException e) {
                 // either handle, or wrap in an unchecked exception:
                 throw new RuntimeException(e);

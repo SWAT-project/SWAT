@@ -47,7 +47,7 @@ public final class StaticInvocation {
                     case "java/lang/Long" -> LongInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
                     case "java/lang/Math", "java/lang/StrictMath" -> MathInvocation.invokeStaticMethod(
-                            name, args, desc, symbolicStateHandler);
+                            name, args, desc, symbolicStateHandler, owner.equals("java/lang/StrictMath"));
                     case "java/lang/Short" -> ShortInvocation.invokeStaticMethod(name, args, desc);
                     case "java/lang/Float" -> FloatInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
