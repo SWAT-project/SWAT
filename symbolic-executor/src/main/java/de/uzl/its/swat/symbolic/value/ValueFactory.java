@@ -116,6 +116,8 @@ public class ValueFactory {
             return new StringValue(context, s, address);
         } else if (concrete instanceof IASString s) {
             return new StringValue(context, s.getString(), address);
+        } else if (concrete instanceof StringBuilder sb) {
+            return new StringBuilderValue(context, new StringValue(context, sb.toString(), -1), address);
         } else if (concrete instanceof Boolean b) {
             return new BooleanObjectValue(context, new BooleanValue(context, b), address);
         } else if (concrete instanceof Byte b) {

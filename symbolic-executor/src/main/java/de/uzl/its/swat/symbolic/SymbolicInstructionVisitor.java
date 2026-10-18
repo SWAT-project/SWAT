@@ -16,6 +16,7 @@ import de.uzl.its.swat.metadata.ClassDepot;
 import de.uzl.its.swat.metadata.ClassDepotRuntime;
 import de.uzl.its.swat.symbolic.instruction.*;
 import de.uzl.its.swat.symbolic.invoke.InvocationHandler;
+import de.uzl.its.swat.symbolic.invoke.java.lang.StringCallBranches;
 import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
 import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
 import de.uzl.its.swat.symbolic.shadow.Frame;
@@ -1363,11 +1364,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     }
                     Logger shadowStateLogger = ThreadHandler.getShadowStateLogger(currentThread().getId());
                     shadowStateLogger.info("Recovered object from heap: {}", tmp);
-                    if (tmp instanceof StringBuilderValue sbv) {
-                        StringBuilder sb = (StringBuilder) inst.val;
-                        SWATAssert.check(sbv.getStringValue().concrete.equals(inst.val),
-                                "Concrete value of the StringBuilder does not match the value in the stack: {} | {}",
-                                sbv.getStringValue().concrete, sb.toString());
+                    if (tmp instanceof StringBuilderValue sbv && inst.val != null) {
+                        String chars = inst.val.toString();
+                        if (sbv.isUnknown() || sbv.getStringValue() == null) {
+                            // A change SWAT does not model left its chars unknown: take the concrete ones.
+                            sbv.resync(chars);
+                        } else {
+                            SWATAssert.check(sbv.getStringValue().concrete.equals(chars),
+                                    "Concrete value of the StringBuilder does not match the value in the stack: {} | {}",
+                                    sbv.getStringValue().concrete, chars);
+                        }
                     }
                     stack.pushOperand(tmp);
                 } else if (inst.address == 0) {
@@ -2301,6 +2307,57 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     /**
+     * Records the branches a String or StringBuilder call takes inside the library, which their
+     * models rely on (see {@link StringCallBranches}): its index checks, and pins of the concrete
+     * values a model uses. On a normal return all of them held; a call that threw failed one of the
+     * index checks, if the receiver's chars say so, and that exception is then fully explained by
+     * the branches.
+     *
+     * @param returned Whether the call returned normally
+     * @return Whether the call threw at one of its index checks
+     */
+    private boolean recordStringCallBranches(long iid, String name, String desc, ObjectValue<?, ?> instance, Value<?, ?>[] arguments, boolean returned) throws NoThreadContextException {
+        List<StringCallBranches.Branch> branches = StringCallBranches.of(instance, name, desc, arguments);
+        int failed = -1;
+        for (int i = 0; i < branches.size() && failed < 0; i++) {
+            if (!branches.get(i).holds()) failed = i;
+        }
+        // A normal return where an index check failed (or a throw where all held): the shadow
+        // does not match the call; that is left to the model and to recordThrowingCall.
+        if (branches.isEmpty() || returned == (failed >= 0)) return false;
+        int last = returned ? branches.size() - 1 : failed;
+        FormulaManager fmgr = instance.context.getFormulaManager();
+        for (int i = 0; i <= last; i++) {
+            StringCallBranches.Branch branch = branches.get(i);
+            if (!fmgr.extractVariables(branch.condition()).isEmpty()) {
+                symbolicTraceHandler.checkAndSetLibraryBranch(branch.holds(), branch.condition(), determineIid(iid), "#" + name);
+            }
+        }
+        return !returned;
+    }
+
+    /**
+     * As {@link #recordThrowingCall}, unless the call threw at an index check of a String or
+     * StringBuilder method (see {@link #recordStringCallBranches}), which the trace then explains.
+     */
+    private void recordThrowingInstanceCall(long iid, String owner, String name, String desc, long invokeId) throws NoThreadContextException {
+        boolean explained;
+        try {
+            ObjectValue<?, ?> instance = stack.getInstance();
+            Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), true);
+            explained = recordStringCallBranches(iid, name, desc, instance, arguments, false);
+        } catch (Exception e) {
+            explained = false;
+        }
+        if (explained) {
+            // Not an exception the static pre-analysis graph models (it walks over library calls).
+            recordUnmodelledException(iid);
+        } else {
+            recordThrowingCall(iid, owner, name, desc, invokeId, true);
+        }
+    }
+
+    /**
      * Handles a call to an uninstrumented method that threw instead of returning: its model, if it
      * has one, is not consulted (that happens on a normal return), and whether it throws may depend
      * on symbolic arguments, a branch nothing in the trace captures. With symbolic arguments the
@@ -2340,6 +2397,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
                 ObjectValue<?, ?> instance = stack.getInstance();
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), true);
+                recordStringCallBranches(inst.iid, inst.name, inst.desc, instance, arguments, true);
                 Value<?, ?> retVal = InvocationHandler.invoke(
                         symbolicTraceHandler,
                         inst.desc,
@@ -2352,7 +2410,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 stack.setReturnValue(retVal);
 
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
-                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, true);
+                recordThrowingInstanceCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2376,6 +2434,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 ObjectValue<?, ?> instance = stack.getInstance();
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), true);
+                recordStringCallBranches(inst.iid, inst.name, inst.desc, instance, arguments, true);
                 Value<?, ?> retVal = InvocationHandler.invoke(
                         symbolicTraceHandler,
                         inst.desc,
@@ -2387,7 +2446,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         instance);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
-                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, true);
+                recordThrowingInstanceCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2458,6 +2517,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 ObjectValue<?, ?> instance = stack.getInstance();
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), true);
+                recordStringCallBranches(inst.iid, inst.name, inst.desc, instance, arguments, true);
                 Value<?, ?> retVal = InvocationHandler.invoke(
                         symbolicTraceHandler,
                         inst.desc,
@@ -2469,7 +2529,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         instance);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
-                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, true);
+                recordThrowingInstanceCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
