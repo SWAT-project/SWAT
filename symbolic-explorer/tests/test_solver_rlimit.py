@@ -46,6 +46,7 @@ class SolveCandidatesTest(unittest.TestCase):
         d.nr_solver_calls = 0
         d.solver_limit_hits = 0
         d.rlimit_level = {}
+        d.failed_solutions = {}
         return d
 
     def solve(self, d, candidates, solver):

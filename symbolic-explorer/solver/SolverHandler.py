@@ -380,7 +380,8 @@ class Z3Handler:
         return filepath
 
     @staticmethod
-    def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000, rlimit: int | None = None) -> Tuple[SATResult, Dict[str, Any]]:
+    def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000, rlimit: int | None = None,
+              extra_exprs: list | None = None) -> Tuple[SATResult, Dict[str, Any]]:
         """
         Solve for the given node and path constraints using ConstraintCache (modern approach).
 
@@ -393,6 +394,8 @@ class Z3Handler:
         - timeout_ms: Wall-clock limit for the check, or None.
         - rlimit: Z3 resource limit for the check, or None. Unlike a timeout it is deterministic:
           the same query gets as far regardless of machine load. Running out of it gives LIMIT.
+        - extra_exprs: Further Z3 constraints (in the cache's shared context) on the inputs, e.g.
+          from retry_constraints().
 
         Returns:
         - Tuple[SATResult, Dict[str, Any]]: Tuple containing SAT result and solution dictionary.
@@ -433,6 +436,9 @@ class Z3Handler:
             # Add all path constraint expressions (already parsed and cached)
             for i, path_expr in enumerate(all_exprs[len(node_exprs):]):
                 solver.add(path_expr)
+
+            for expr in extra_exprs or []:
+                solver.add(expr)
 
         # Building the solver is Z3 work (SMT-LIB parsing on cache misses, assertion
         # construction), so it counts towards the SMT solver stage rather than the
@@ -520,6 +526,43 @@ class Z3Handler:
                 return SATResult.LIMIT, {}
             logger.debug(f"[SOLVER] unknown: {reason}")
             return SATResult.UNKNOWN, {}
+
+    @staticmethod
+    def solution_values(sol: Dict[str, Any]) -> Dict[str, Any]:
+        """The scalar input values of a solution (from extract_and_encode_values) as Z3 values,
+        by name. Arrays are left out: their plain value is only a description."""
+        return {name: val['plain_value'] for name, val in sol.items() if z3.is_expr(val.get('plain_value'))}
+
+    @staticmethod
+    def retry_constraints(failed: list, bound: int | None = None, ctx=None) -> list:
+        """Constraints for re-solving a branch whose earlier solutions `failed` did not lead the
+        run to it: each of them is excluded (by its scalar inputs), and with `bound`, every
+        integral input is restricted to [-bound, bound] (chars: [0, bound]).
+
+        Both only remove models, so UNSAT under them proves nothing about the branch.
+        """
+        if ctx is None:
+            from solver.ConstraintCache import get_constraint_cache
+            ctx = get_constraint_cache().shared_context
+        exprs = []
+        consts = {}
+        for sol in failed:
+            values = Z3Handler.solution_values(sol)
+            pairs = [(z3.Const(name, v.sort()), v) for name, v in values.items()]
+            consts.update((name, c) for (c, _), name in zip(pairs, values))
+            # With no scalar input to tell models apart, the failed one cannot be excluded alone.
+            exprs.append(z3.Or([c != v for c, v in pairs]) if pairs else z3.BoolVal(False, ctx=ctx))
+        if bound is not None:
+            for name, c in consts.items():
+                if z3.is_bv(c):
+                    width = c.size()
+                    if name.startswith(DataTypes.CHAR.value + '_'):
+                        exprs.append(z3.ULE(c, z3.BitVecVal(min(bound, 2**width - 1), width, ctx=c.ctx)))
+                    elif bound < 2**(width - 1):
+                        exprs.append(z3.And(c >= -bound, c <= bound))
+                elif z3.is_int(c):
+                    exprs.append(z3.And(c >= -bound, c <= bound))
+        return exprs
 
     @staticmethod
     def solve_with_optimization(node: Any, path_constraints: list) -> Tuple[SATResult, Dict[str, Any]]:

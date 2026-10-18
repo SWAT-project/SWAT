@@ -25,7 +25,7 @@ def _signature(inv: dict) -> str:
 
 
 def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, static_analysis: dict,
-                         solver_limit_hits: int = 0) -> dict:
+                         solver_limit_hits: int = 0, divergence_retries: int = 0) -> dict:
     """
     Assemble the consolidated per-testcase statistics dictionary.
 
@@ -71,15 +71,18 @@ def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int,
             'solver_limit_hits': solver_limit_hits,
             # Runs that took another path than a solution based on an approximate model predicted.
             'expected_divergences': tree.expected_divergences,
+            # Branches re-solved because the run of their previous solution did not reach them.
+            'divergence_retries': divergence_retries,
         },
         'static_analysis': static_analysis,
     }
 
 
 def write_testcase_stats(filepath: Path, verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, static_analysis: dict,
-                         solver_limit_hits: int = 0):
+                         solver_limit_hits: int = 0, divergence_retries: int = 0):
     """Write the consolidated per-testcase statistics to ``filepath`` as JSON."""
-    data = build_testcase_stats(verdict, category, tree, symbolic_exec_iterations, nr_solver_calls, static_analysis, solver_limit_hits)
+    data = build_testcase_stats(verdict, category, tree, symbolic_exec_iterations, nr_solver_calls, static_analysis, solver_limit_hits,
+                                divergence_retries)
 
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, 'w') as f:

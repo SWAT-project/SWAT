@@ -8,7 +8,7 @@ from typing import List, Tuple
 from pathlib import Path
 
 
-from solver.SolverHandler import SATResult
+from solver.SolverHandler import SATResult, Z3Handler
 
 from data.Database import Database
 from data.BinaryExecutionTree.Node import Node
@@ -34,6 +34,15 @@ import platform
 # that branch grows by this factor, up to MAX_RLIMIT (the largest value Z3 accepts).
 RLIMIT_GROWTH = 5
 MAX_RLIMIT = 2**32 - 1
+
+# A solution whose run does not reach the side of the branch it was solved for is re-solved up to
+# this many times (by default), each time with the solutions that failed so far excluded. Only if
+# all of them fail too is the branch given up on, which rules out SAFE (see run()).
+DIVERGENCE_RETRIES = 3
+# A retry first looks for small values: every integral input is bounded by each of these magnitudes
+# in turn, then left unbounded. The solver likes extreme values such as 2^31-1 for a size, and then
+# the allocation fails (OutOfMemoryError) before the run gets to the branch.
+RETRY_BOUNDS = (16, 256, 65536)
 
 # The (unique) endpoint ID for the SV-COMP target. As each target is handled separately, this ID is always 0.
 ENDPOINT_ID = 0 
@@ -71,6 +80,8 @@ class State:
     def __init__(self):
         self.verdict = Verdict.UNKNOWN
         self.branch_to_explore: Node | None = None
+        # The solution the next run executes (for branch_to_explore)
+        self.solution: dict | None = None
         # Whether the solution for branch_to_explore came from a trace with an approximate model,
         # so that the next run may legitimately diverge from it.
         self.solution_is_guess: bool = False
@@ -98,6 +109,13 @@ class SVCompDriver:
         self.solver_limit_hits = 0 # queries that ran out of their resource limit
         # How often each branch (by gid) ran out of its resource limit; each time multiplies it.
         self.rlimit_level: dict[int, int] = {}
+        self.divergence_retries = getattr(args, 'divergence_retries', DIVERGENCE_RETRIES)
+        # The solutions of each branch (by gid) whose runs did not reach it
+        self.failed_solutions: dict[int, list[dict]] = {}
+        # Branches given up on after their solutions kept failing, with the side that was not reached
+        # (True: branched), unless the solutions were only guesses (see check_divergence)
+        self.given_up: list[tuple[Node, bool]] = []
+        self.divergence_retry_count = 0 # branches scheduled to be re-solved
     
     @contextmanager
     def pushd(self, dirname):
@@ -255,6 +273,7 @@ class SVCompDriver:
             if self.state.branch_to_explore:
                 self.check_divergence(Database.instance().get_trace(-1)) # most recent trace
             self.state.branch_to_explore = None
+            self.state.solution = None
             self.state.solution_is_guess = False
 
             self.log_output(output)
@@ -297,9 +316,8 @@ class SVCompDriver:
     def check_divergence(self, trace) -> None:
         """Checks that the last run took the side of branch_to_explore its solution was solved for.
 
-        A divergence is a bug, unless the solution relied on an approximate model: then it was only a
-        guess, and the divergence is expected. That is logged without the "SWAT Assertion failed"
-        marker the harness counts as an internal error, and counted in the tree's statistics.
+        If not, the branch is re-solved with the failed solutions excluded (see solve_retry), up to
+        divergence_retries times; only then is it given up on (give_up_branch).
         """
         target = self.state.branch_to_explore
         # The tree has one level per trace element, so the target is at its depth in the trace.
@@ -318,12 +336,60 @@ class SVCompDriver:
             reason = 'Branch does not appear in trace.'
         if self.state.solution_is_guess:
             Database.instance().record_expected_divergence(ENDPOINT_ID)
-            logger.info(f'[SVCOMP] Diverged from branch {target.id}: its solution relied on an approximate model (expected). {reason}')
-        else:
-            logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {target.id} as expected! {reason}')
-            # The branch counts as solved now, so its unexplored side is never tried again: an
-            # exhausted search no longer proves anything (see run()).
-            Database.instance().record_execution_error(ENDPOINT_ID, 'unexpected_divergence', f'branch {target.id}: {reason}')
+        failed = self.failed_solutions.setdefault(target.gid, [])
+        failed.append(self.state.solution or {})
+        if len(failed) <= self.divergence_retries:
+            logger.info(f'[SVCOMP] Diverged from branch {target.id}{" (approximate model)" if self.state.solution_is_guess else ""}: {reason} '
+                        f'Re-solving it without the failed solutions ({len(failed)}/{self.divergence_retries}).')
+            Database.instance().drop_solution(target.gid)
+            self.divergence_retry_count += 1
+            return
+        self.give_up_branch(target, self.state.solution_is_guess, reason)
+
+    def give_up_branch(self, target: Node, guess: bool, reason: str) -> None:
+        """Takes a branch whose solutions kept missing it out of the search.
+
+        A divergence is a bug, unless the solution relied on an approximate model: then it was only a
+        guess, and the divergence is expected (that run has precision loss, so it cannot end SAFE
+        anyway). That is logged without the "SWAT Assertion failed" marker the harness counts as an
+        internal error.
+        """
+        Database.instance().retire_branch(target.gid)
+        tries = len(self.failed_solutions.get(target.gid, []))
+        if guess:
+            logger.info(f'[SVCOMP] Diverged from branch {target.id}: its solution relied on an approximate model (expected). {reason} Giving up after {tries} solutions.')
+            return
+        logger.error(f'[SVCOMP] SWAT Assertion failed: Target did not explore branch {target.id} as expected! {reason} Giving up after {tries} solutions.')
+        # Its unexplored side is never tried again: an exhausted search no longer proves anything,
+        # unless some other run reaches that side after all (see run()).
+        Database.instance().record_execution_error(ENDPOINT_ID, 'unexpected_divergence', f'branch {target.id}: {reason}')
+        self.given_up.append((target, target.branched is None))
+
+    def unreached_given_up_branches(self) -> list[Node]:
+        """The given-up branches whose unexplored side no run has reached by now. A side reached
+        later is in the tree, so the search covers what lies behind it like any other."""
+        return [n for n, branched in self.given_up if (n.branched if branched else n.skipped) is None]
+
+    def solve_retry(self, branch: Node, rlimit: int | None) -> tuple[SATResult, dict]:
+        """Re-solves a branch whose solutions so far did not lead the run to it, excluding them.
+
+        Small values are tried first (RETRY_BOUNDS), then any value. A bounded query that fails in
+        any way only moves on to the next bound. UNSAT without a bound means that no other solution
+        is left: the branch is given up on, as the encoding was evidently imprecise for it, the
+        branch is not claimed infeasible.
+        """
+        failed = self.failed_solutions[branch.gid]
+        for bound in RETRY_BOUNDS + (None,):
+            extra = Z3Handler.retry_constraints(failed, bound)
+            sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit, extra_exprs=extra)
+            self.nr_solver_calls += 1
+            if sat == SATResult.SAT or bound is None:
+                break
+            logger.debug(f'[SYMBOLIC EXPLORATION] Retry of branch {branch.id}: no solution with inputs bounded by {bound} ({sat})')
+        if sat == SATResult.UNSAT:
+            self.give_up_branch(branch, Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id),
+                                'No other solution left.')
+        return sat, sol
 
     def adopt_sa_graph(self):
         """Switches branch selection to the pre-analysis graph once it is ready (at most once).
@@ -368,8 +434,11 @@ class SVCompDriver:
             alone = retry and len(pending) == 1
             for branch in pending:
                 rlimit = None if alone else self.solver_rlimit_for(branch)
-                sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit)
-                self.nr_solver_calls += 1
+                if branch.gid in self.failed_solutions:
+                    sat, sol = self.solve_retry(branch, rlimit)
+                else:
+                    sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit)
+                    self.nr_solver_calls += 1
                 if sat == SATResult.SAT:
                     return branch, sol, gave_up
                 if sat == SATResult.LIMIT:
@@ -411,6 +480,7 @@ class SVCompDriver:
         logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
         # remember which branch we want to explore
         self.state.branch_to_explore = branch
+        self.state.solution = sol
         self.state.solution_is_guess = Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id)
 
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
@@ -450,10 +520,13 @@ class SVCompDriver:
             logger.warning(f'[SVCOMP] Found symbolic precision loss')
             verdict = Verdict.UNKNOWN
 
-        if (verdict == Verdict.SAFE) and any(e.get('kind') == 'unexpected_divergence'
-                                              for e in Database.instance().get_tree(ENDPOINT_ID).execution_errors):
-            logger.warning(f'[SVCOMP] A solution did not reach the side of the branch it was solved for')
-            verdict = Verdict.UNKNOWN
+        if self.given_up:
+            unreached = self.unreached_given_up_branches()
+            if (verdict == Verdict.SAFE) and unreached:
+                logger.warning(f'[SVCOMP] No solution reached the side of branch(es) {[n.id for n in unreached]} it was solved for')
+                verdict = Verdict.UNKNOWN
+            elif not unreached:
+                logger.info(f'[SVCOMP] Other runs reached the sides of all given-up branches')
 
         if (verdict == Verdict.SAFE) and any(e.get('kind') == 'sa_desync'
                                               for e in Database.instance().get_tree(ENDPOINT_ID).execution_errors):
@@ -490,7 +563,7 @@ class SVCompDriver:
         stats_file = os.path.join(log_dir, 'stats.json')
         write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
                              self.round_idx, self.nr_solver_calls, self.sa.stats(self.sa_adopted_round),
-                             self.solver_limit_hits)
+                             self.solver_limit_hits, self.divergence_retry_count)
 
         self.kill_current_process()
         
