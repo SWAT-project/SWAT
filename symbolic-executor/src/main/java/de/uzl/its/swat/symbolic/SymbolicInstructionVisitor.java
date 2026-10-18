@@ -3842,9 +3842,12 @@ public class SymbolicInstructionVisitor implements IVisitor {
             } else if ((peek instanceof BoxedValue<?>
                     && !checkEquality(((BoxedValue<?>) peek).getVal().concrete, inst.v))
                     || (!(peek instanceof BoxedValue<?>) && !checkEquality(peek.concrete, inst.v))) {
-                SWATAssert.check(false,
-                        "[GETVALUE_primitive]: Value on stack does not match expected value! Expected: {}, Actual: {}",
+                // The shadow value diverged from the JVM (a model bug). Continue with the concrete
+                // value: what the trace derived from the shadow value cannot be trusted, which is
+                // recorded as a context loss.
+                logger.warn("[GETVALUE_primitive]: Value on stack does not match expected value, causes context loss! Expected: {}, Actual: {}",
                         inst.v, peek.concrete);
+                symbolicTraceHandler.recordSymbolicContextLoss();
                 if (cat2) {
                     stack.popWideOperand();
                     stack.pushWideOperand(ValueFactory.createNumericalValue(type, inst.v));
