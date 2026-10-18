@@ -32,7 +32,7 @@ public class FloatInvocation {
         return switch (name) {
             case "compare" -> invokeCompare(args);
             case "floatToIntBits" -> invokeFloatToIntBits(args);
-            case "floatToRawIntBits" -> invokeFloatToIntBits(args); // Same as floatToIntBits for symbolic execution
+            case "floatToRawIntBits" -> invokeFloatToRawIntBits(args, symbolicTraceHandler);
             case "isFinite" -> invokeIsFinite(args);
             case "isInfinite" -> invokeIsInfinite(args);
             case "isNaN" -> invokeIsNaN(args);
@@ -314,10 +314,27 @@ public class FloatInvocation {
         FloatingPointFormulaManager fpmgr = ctx.getFormulaManager().getFloatingPointFormulaManager();
         BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
 
-        // Convert the floating-point formula to a 32-bit bitvector representation
-        // This gives us the IEEE 754 bit representation
-        BitvectorFormula bvFormula = fpmgr.toIeeeBitvector(f.formula);
+        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
+
+        // The IEEE 754 bit layout; every NaN is collapsed to the canonical 0x7fc00000, as in the JDK
+        // (the bit-vector of a NaN is unspecified in SMT-LIB)
+        BitvectorFormula bvFormula = bmgr.ifThenElse(fpmgr.isNaN(f.formula),
+                bvmgr.makeBitvector(32, 0x7fc00000), fpmgr.toIeeeBitvector(f.formula));
 
         return new IntValue(ctx, Float.floatToIntBits(f.concrete), bvFormula);
+    }
+
+    /**
+     * Invocation handler for Float.floatToRawIntBits(float). The model is that of floatToIntBits:
+     * SMT floating point has a single NaN, so the payload of a NaN is not represented and a symbolic
+     * argument records precision loss.
+     */
+    private static Value<?, ?> invokeFloatToRawIntBits(Value<?, ?>[] args, SymbolicTraceHandler symbolicTraceHandler)
+            throws ValueConversionException, NotImplementedException {
+        SWATAssert.enforce(args.length == 1, "Expected 1 argument for floatToRawIntBits(), got " + args.length);
+        FloatValue f = args[0].asFloatValue();
+        IntValue bits = floatToIntBits(f);
+        if (symbolicTraceHandler != null && f.isSymbolic()) symbolicTraceHandler.recordSymbolicPrecisionLoss();
+        return new IntValue(f.context, Float.floatToRawIntBits(f.concrete), bits.formula);
     }
 }

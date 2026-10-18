@@ -97,19 +97,8 @@ public class ShortInvocation {
     private static IntValue compareUnsigned(ShortValue x, ShortValue y) {
         SolverContext ctx = x.context;
         BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
-        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
-
-        BitvectorFormula zero = bvmgr.makeBitvector(32, 0);
-        BitvectorFormula one = bvmgr.makeBitvector(32, 1);
-        BitvectorFormula negOne = bvmgr.makeBitvector(32, -1);
-
-        // Use unsigned comparison on the 16-bit values
-        BooleanFormula isEqual = bvmgr.equal(x.formula, y.formula);
-        BooleanFormula isLess = bvmgr.lessThan(x.formula, y.formula, false);  // false = unsigned
-
-        BitvectorFormula result = bmgr.ifThenElse(isEqual, zero,
-                bmgr.ifThenElse(isLess, negOne, one));
-
+        // Short.toUnsignedInt(x) - Short.toUnsignedInt(y), as in the JDK (not -1/0/1)
+        BitvectorFormula result = bvmgr.subtract(bvmgr.extend(x.formula, 16, false), bvmgr.extend(y.formula, 16, false));
         return new IntValue(ctx, Short.compareUnsigned(x.concrete, y.concrete), result);
     }
 

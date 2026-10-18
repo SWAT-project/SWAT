@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.value.primitive.numeric.integral;
 
+import de.uzl.its.swat.symbolic.invoke.java.lang.NumberStrings;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -219,12 +220,11 @@ public class ShortValue extends NumericalValue<BitvectorFormula, Short> {
 
     @Override
     public StringValue asStringValue() {
-        // String theory requires IntegerFormula, so convert BV to Int
-        NumeralFormula.IntegerFormula intFormula = bvmgr.toIntegerFormula(formula, true);
+        // str.from_int of a negative number is "", so the sign is handled separately
         return new StringValue(
                 this.context,
                 String.valueOf(concrete),
-                context.getFormulaManager().getStringFormulaManager().toStringFormula(intFormula),
+                NumberStrings.decimal(context, formula, 16, true),
                 -1);
     }
 

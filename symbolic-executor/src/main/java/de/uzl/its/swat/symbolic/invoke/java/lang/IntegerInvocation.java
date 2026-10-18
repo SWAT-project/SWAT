@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.invoke.java.lang;
 
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
@@ -16,9 +17,9 @@ import org.sosy_lab.java_smt.api.BitvectorFormulaManager;
 
 public class IntegerInvocation {
 
-    public static Value<?, ?> invokeStaticMethod(String name, Value<?, ?>[] args, Type[] desc) throws ValueConversionException, NotImplementedException {
+    public static Value<?, ?> invokeStaticMethod(String name, Value<?, ?>[] args, Type[] desc) throws ValueConversionException, NotImplementedException, NoThreadContextException {
         return switch (name) {
-            case "bitCode" -> invokeBitCode(args);
+            case "bitCount" -> invokeBitCount(args);
             case "compare" -> invokeCompare(args);
             case "compareUnsigned" -> invokeCompareUnsigned(args);
             case "decode" -> invokeDecode(args);
@@ -52,7 +53,7 @@ public class IntegerInvocation {
     }
 
     /**
-     * Invocation handler for Integer.bitCode(*), handles argument conversion.
+     * Invocation handler for Integer.bitCount(*), handles argument conversion.
      *
      * @param args The invocation arguments from the shadow stack
      * @return The resulting Value
@@ -60,10 +61,11 @@ public class IntegerInvocation {
      * @throws ValueConversionException Thrown if the argument cannot be converted to the desired
      *     type, likely a missing implementation
      */
-    private static Value<?, ?> invokeBitCode(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+    private static Value<?, ?> invokeBitCount(Value<?, ?>[] args)
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "[SWAT] Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        return new IntValue(i.context, Integer.bitCount(i.concrete), BitOps.bitCount(i.context, i.formula, 32));
     }
 
     /**
@@ -91,9 +93,9 @@ public class IntegerInvocation {
      *     href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Integer.html#compare(int,int)</a>
      */
     private static IntValue compare(IntValue x, IntValue y) {
-        SolverContext context = x.context;
-        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
-        return new IntValue(context, x.concrete - y.concrete, bvmgr.subtract(x.formula, y.formula));
+        // (x < y) ? -1 : ((x == y) ? 0 : 1); x - y would overflow
+        return new IntValue(x.context, Integer.compare(x.concrete, y.concrete),
+                BitOps.compare(x.context, x.formula, y.formula, true));
     }
 
     /**
@@ -407,9 +409,10 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeNumberOfLeadingZeros(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        return new IntValue(i.context, Integer.numberOfLeadingZeros(i.concrete), BitOps.numberOfLeadingZeros(i.context, i.formula, 32));
     }
 
     /**
@@ -422,9 +425,10 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeNumberOfTrailingZeros(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        return new IntValue(i.context, Integer.numberOfTrailingZeros(i.concrete), BitOps.numberOfTrailingZeros(i.context, i.formula, 32));
     }
 
     /**
@@ -521,9 +525,10 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeReverse(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        return new IntValue(i.context, Integer.reverse(i.concrete), BitOps.reverse(i.context, i.formula, 32));
     }
 
     /**
@@ -694,9 +699,11 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToBinaryString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        return new StringValue(i.context, Integer.toBinaryString(i.concrete),
+                BitOps.toUnsignedPowerOfTwoString(i.context, i.formula, 32, 1), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -709,9 +716,11 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToHexString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        return new StringValue(i.context, Integer.toHexString(i.concrete),
+                BitOps.toUnsignedPowerOfTwoString(i.context, i.formula, 32, 4), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -724,9 +733,11 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToOctalString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 : "Expected 1 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        return new StringValue(i.context, Integer.toOctalString(i.concrete),
+                BitOps.toUnsignedPowerOfTwoString(i.context, i.formula, 32, 3), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -739,14 +750,16 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException, NoThreadContextException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
-        if (args.length == 1 && args[0] instanceof IntValue iv) {
-            return toString(iv);
+        if (args.length == 1) {
+            return args[0] instanceof IntValue iv ? toString(iv) : PlaceHolder.instance;
         }
-        // toString with radix not yet supported
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        int radix = NumberStrings.selectRadix(args[1].asIntValue());
+        return new StringValue(i.context, Integer.toString(i.concrete, radix),
+                NumberStrings.toString(i.context, i.formula, 32, true, radix), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**
@@ -830,10 +843,13 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeToUnsignedString(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException, NoThreadContextException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
-        return PlaceHolder.instance;
+        IntValue i = args[0].asIntValue();
+        int radix = args.length == 1 ? 10 : NumberStrings.selectRadix(args[1].asIntValue());
+        return new StringValue(i.context, Integer.toUnsignedString(i.concrete, radix),
+                NumberStrings.toString(i.context, i.formula, 32, false, radix), ObjectValue.ADDRESS_UNKNOWN);
     }
 
     /**

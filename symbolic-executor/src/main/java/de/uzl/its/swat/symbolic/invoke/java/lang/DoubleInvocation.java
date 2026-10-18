@@ -9,9 +9,12 @@ import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.LongValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.DoubleObjectValue;
 import org.objectweb.asm.Type;
+import org.sosy_lab.java_smt.api.BitvectorFormula;
+import org.sosy_lab.java_smt.api.BitvectorFormulaManager;
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.BooleanFormulaManager;
 import org.sosy_lab.java_smt.api.FloatingPointFormulaManager;
@@ -27,6 +30,8 @@ public class DoubleInvocation {
             SymbolicTraceHandler symbolicTraceHandler) throws NotImplementedException, ValueConversionException {
         return switch (name) {
             case "compare" -> invokeCompare(args);
+            case "doubleToLongBits" -> invokeDoubleToLongBits(args);
+            case "doubleToRawLongBits" -> invokeDoubleToRawLongBits(args, symbolicTraceHandler);
             case "isFinite" -> invokeIsFinite(args);
             case "isInfinite" -> invokeIsInfinite(args);
             case "isNaN" -> invokeIsNaN(args);
@@ -83,6 +88,44 @@ public class DoubleInvocation {
                         bmgr.ifThenElse(d2IsNaN, imgr.makeNumber(-1), normalResult)));
 
         return new IntValue(ctx, Double.compare(d1.concrete, d2.concrete), result);
+    }
+
+    /**
+     * Invocation handler for Double.doubleToLongBits(double).
+     */
+    private static Value<?, ?> invokeDoubleToLongBits(Value<?, ?>[] args)
+            throws ValueConversionException, NotImplementedException {
+        SWATAssert.enforce(args.length == 1, "Expected 1 argument for doubleToLongBits(), got " + args.length);
+        return doubleToLongBits(args[0].asDoubleValue());
+    }
+
+    /**
+     * Symbolic wrapper for Double.doubleToLongBits(double value): the IEEE 754 bit layout, with every
+     * NaN collapsed to the canonical 0x7ff8000000000000L as in the JDK (the bit-vector of a NaN is
+     * unspecified in SMT-LIB).
+     */
+    private static LongValue doubleToLongBits(DoubleValue d) {
+        SolverContext ctx = d.context;
+        FloatingPointFormulaManager fpmgr = ctx.getFormulaManager().getFloatingPointFormulaManager();
+        BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
+        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
+        BitvectorFormula bits = bmgr.ifThenElse(fpmgr.isNaN(d.formula),
+                bvmgr.makeBitvector(64, 0x7ff8000000000000L), fpmgr.toIeeeBitvector(d.formula));
+        return new LongValue(ctx, Double.doubleToLongBits(d.concrete), bits);
+    }
+
+    /**
+     * Invocation handler for Double.doubleToRawLongBits(double). The model is that of
+     * doubleToLongBits: SMT floating point has a single NaN, so the payload of a NaN is not
+     * represented and a symbolic argument records precision loss.
+     */
+    private static Value<?, ?> invokeDoubleToRawLongBits(Value<?, ?>[] args, SymbolicTraceHandler symbolicTraceHandler)
+            throws ValueConversionException, NotImplementedException {
+        SWATAssert.enforce(args.length == 1, "Expected 1 argument for doubleToRawLongBits(), got " + args.length);
+        DoubleValue d = args[0].asDoubleValue();
+        LongValue bits = doubleToLongBits(d);
+        if (symbolicTraceHandler != null && d.isSymbolic()) symbolicTraceHandler.recordSymbolicPrecisionLoss();
+        return new LongValue(d.context, Double.doubleToRawLongBits(d.concrete), bits.formula);
     }
 
     /**
