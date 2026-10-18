@@ -1,5 +1,8 @@
 package de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint;
 
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import de.uzl.its.swat.thread.ThreadHandler;
 import org.sosy_lab.java_smt.api.BitvectorFormula;
 import org.sosy_lab.java_smt.api.BitvectorFormulaManager;
 import org.sosy_lab.java_smt.api.BooleanFormula;
@@ -391,10 +394,22 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
         return F2D();
     }
 
-    //@Override
-    //public StringValue asStringValue() {
-    //    return new StringValue(context, String.valueOf(concrete), -1);
-    //}
+    /**
+     * The string of the concrete value, as String.valueOf(float). The shortest decimal string that
+     * identifies the value has no practical exact encoding, so a symbolic value loses its link to
+     * the string: context loss.
+     */
+    @Override
+    public StringValue asStringValue() {
+        if (isSymbolic()) {
+            try {
+                ThreadHandler.getSymbolicTraceHandler(Thread.currentThread().getId()).recordSymbolicContextLoss();
+            } catch (NoThreadContextException e) {
+                throw new IllegalStateException("[SWAT] No thread context for a symbolic float", e);
+            }
+        }
+        return new StringValue(context, String.valueOf(concrete), ObjectValue.ADDRESS_UNKNOWN);
+    }
 
     @Override
     public FloatObjectValue asObjectValue(){
