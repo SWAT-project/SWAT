@@ -356,12 +356,17 @@ class SVCompDriver:
         the ones that ran out are tried again, until one is SAT or all are decided. A branch that
         runs out even at MAX_RLIMIT is given up on.
 
+        Choice branches (which the executor adds to enumerate the values of a symbolic operand,
+        e.g. a radix) go after the program's own branches of the same level: a program branch
+        leads somewhere new on the path it is on, while a choice branch starts over with another
+        value of the operand.
+
         The limit only serves to let other branches go first. So once a retry pass is left with a
         single branch, that one is solved without a limit: escalating it step by step would only
         redo the same work at each step.
         """
         gave_up = False
-        pending = sorted(candidates, key=lambda b: self.rlimit_level.get(b.gid, 0))
+        pending = sorted(candidates, key=lambda b: (self.rlimit_level.get(b.gid, 0), b.choice))
         retry = False
         while pending:
             limited = []

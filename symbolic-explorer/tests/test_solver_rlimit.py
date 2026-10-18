@@ -20,8 +20,8 @@ from solver.SolverHandler import SATResult
 BASE = 1000
 
 
-def branch(gid):
-    return SimpleNamespace(gid=gid, id=gid)
+def branch(gid, choice=False):
+    return SimpleNamespace(gid=gid, id=gid, choice=choice)
 
 
 class FakeSolver:
@@ -51,6 +51,14 @@ class SolveCandidatesTest(unittest.TestCase):
     def solve(self, d, candidates, solver):
         with mock.patch.object(svcomp.StrategyService, 'solve_branch', side_effect=solver):
             return d.solve_candidates(candidates)
+
+    def test_choice_branches_come_after_program_branches(self):
+        # 1 is a choice branch (e.g. another radix), 2 a branch of the program: both SAT, 2 first.
+        d = self.driver(rlimit=None)
+        s = FakeSolver({}, {1: SATResult.SAT, 2: SATResult.SAT})
+        found, sol, gave_up = self.solve(d, [branch(1, choice=True), branch(2)], s)
+        self.assertEqual(found.gid, 2)
+        self.assertEqual(s.calls, [(2, None)])
 
     def test_cheap_queries_come_before_retries(self):
         # 1 needs 20x the base limit, 2 is UNSAT, 3 is SAT: 3 is found before 1 is retried.
