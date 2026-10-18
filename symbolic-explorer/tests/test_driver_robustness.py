@@ -69,6 +69,8 @@ class DriverTest(unittest.TestCase):
         self.driver.verdict_reported = False
         self.driver.kill_current_process = lambda: None
         self.driver.precheck = not_proven()
+        self.driver.given_up = []
+        self.driver.divergence_retry_count = 0
 
     def run_with(self, run_testcase):
         self.driver.run_testcase = run_testcase

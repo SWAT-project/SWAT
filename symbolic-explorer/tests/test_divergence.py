@@ -64,7 +64,7 @@ class DivergenceTestBase(unittest.TestCase):
         self.driver.rlimit_level = {}
         self.ctx = z3.Context()
         # Solved to take the branched side, which the tree has not explored yet.
-        self.target = SimpleNamespace(id=7, gid=70, trace_id='t', branched=None, skipped=object(), parent=None)
+        self.target = SimpleNamespace(id=7, gid=70, trace_id='t', branched=None, skipped=object(), parent=None, choice=False)
         self.aim(self.target, {'I_0': 1})
 
     def aim(self, target, values):
@@ -95,6 +95,15 @@ class CheckDivergenceTest(DivergenceTestBase):
         with self.assertNoLogs(svcomp.logger, level='INFO'):
             self.driver.check_divergence([trace_branch(7, False), trace_branch(3, True), trace_branch(7, True)])
         self.assertEqual(self.tree.execution_errors, [])
+
+    def test_unmodelled_exception_marker_does_not_count_as_a_level(self):
+        # The tree has no level for the marker (Tree.structural), so neither does the trace.
+        self.target.parent = SimpleNamespace(parent=None)
+        marker = SimpleNamespace(id=5, has_branched=True, inst='UNMODELLED_EXCEPTION')
+        with self.assertNoLogs(svcomp.logger, level='INFO'):
+            self.driver.check_divergence([trace_branch(3, True), marker, trace_branch(7, True)])
+        self.assertEqual(self.tree.execution_errors, [])
+        self.assertEqual(self.driver.failed_solutions, {})
 
     def test_divergence_is_retried_first(self):
         out = self.check([trace_branch(7, False)])
@@ -219,7 +228,7 @@ class SolveRetryTest(DivergenceTestBase):
         self.assertEqual(self.retired, set())
 
     def test_solve_candidates_routes_retries(self):
-        other = SimpleNamespace(id=8, gid=80, trace_id='t')
+        other = SimpleNamespace(id=8, gid=80, trace_id='t', choice=False)
         with self.solver([SATResult.UNSAT] * 4 + [SATResult.SAT]):
             found, _, gave_up = self.driver.solve_candidates([self.target, other])
         self.assertIs(found, other)
@@ -303,15 +312,6 @@ class SolveBranchTest(unittest.TestCase):
             db.add_unsat_branch.assert_not_called()
             StrategyService.solve_branch(branch)
             db.add_unsat_branch.assert_called_once_with(1)
-
-    def test_unmodelled_exception_marker_does_not_count_as_a_level(self):
-        # The tree has no level for the marker (Tree.structural), so neither does the trace.
-        root = SimpleNamespace(parent=None)
-        self.driver.state.branch_to_explore = SimpleNamespace(id=7, branched=None, parent=root)
-        marker = SimpleNamespace(id=5, has_branched=True, inst='UNMODELLED_EXCEPTION')
-        with self.assertNoLogs(svcomp.logger, level='INFO'):
-            self.driver.check_divergence([trace_branch(3, True), marker, trace_branch(7, True)])
-        self.assertEqual(self.tree.execution_errors, [])
 
 
 if __name__ == '__main__':
