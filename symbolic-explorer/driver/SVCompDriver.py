@@ -35,6 +35,10 @@ import platform
 RLIMIT_GROWTH = 5
 MAX_RLIMIT = 2**32 - 1
 
+# Execution errors after which the tree does not cover every path the runs could take, so that an
+# exhausted search proves nothing (see Tree.add, ConstraintService, run_testcase and run).
+INCOMPLETE_SEARCH_ERRORS = ('tree_mismatch', 'trace_ingest_failed', 'no_trace', 'explorer_crash')
+
 # The (unique) endpoint ID for the SV-COMP target. As each target is handled separately, this ID is always 0.
 ENDPOINT_ID = 0 
     
@@ -98,6 +102,7 @@ class SVCompDriver:
         self.solver_limit_hits = 0 # queries that ran out of their resource limit
         # How often each branch (by gid) ran out of its resource limit; each time multiplies it.
         self.rlimit_level: dict[int, int] = {}
+        self.verdict_reported = False
     
     @contextmanager
     def pushd(self, dirname):
@@ -191,13 +196,21 @@ class SVCompDriver:
                     return Action.REPORTVERDICT
 
 
-            if len(Database.instance().get_tree(ENDPOINT_ID).symbolic_vars) == 0:
+            tree = Database.instance().get_tree(ENDPOINT_ID)
+            ingest_failures = [e for e in tree.execution_errors if e.get('kind') == 'trace_ingest_failed']
+            if ingest_failures:
+                # The tree lacks (part of) a trace, so searching on it would be incomplete.
+                logger.critical(f'[SVCOMP] A trace could not be added to the tree: {ingest_failures[0]["message"]}')
+                self.state.verdict = Verdict.UNKNOWN
+                return Action.REPORTVERDICT
+
+            if len(tree.symbolic_vars) == 0:
                 # No symbolic vars found, safe to assume no violation
                 logger.info(f'[SVCOMP] No symbolic vars found')
                 self.state.verdict = Verdict.NO_SYMBOLIC_VARS
                 return Action.REPORTVERDICT
         
-            logger.info(f'[SVCOMP] Found {len(Database.instance().get_tree(ENDPOINT_ID).symbolic_vars)} symbolic vars')
+            logger.info(f'[SVCOMP] Found {len(tree.symbolic_vars)} symbolic vars')
 
             # No assertion error found but symbolic variables present, continue with symbolic exploration
             return Action.SYMBOLICNEXT
@@ -246,6 +259,7 @@ class SVCompDriver:
             # Run the target with DSE - Time the symbolic executor
             status: ExecutionStatus
             output: List[str]
+            traces_before = Database.instance().trace_count()
             executor_start = time.perf_counter()
             status, output = self.run_command_with_timeout(cmd=command)
             executor_duration = time.perf_counter() - executor_start
@@ -253,7 +267,14 @@ class SVCompDriver:
 
             # check if the target explored the branch as expected
             if self.state.branch_to_explore:
-                self.check_divergence(Database.instance().get_trace(-1)) # most recent trace
+                if Database.instance().trace_count() > traces_before:
+                    self.check_divergence(Database.instance().get_trace(-1)) # most recent trace
+                else:
+                    # The run ended without a trace (it halted or crashed), so whether it took the
+                    # side its solution was solved for is unknown. That side counts as solved now
+                    # and is never tried again, so an exhausted search proves nothing (see run()).
+                    logger.warning(f'[SVCOMP] The run sent no trace, so branch {self.state.branch_to_explore.id} was not checked')
+                    Database.instance().record_execution_error(ENDPOINT_ID, 'no_trace', f'branch {self.state.branch_to_explore.id}')
             self.state.branch_to_explore = None
             self.state.solution_is_guess = False
 
@@ -436,6 +457,11 @@ class SVCompDriver:
 
         try:
             verdict = self.run_testcase(java_path=self.args.java_path, agentpath=self.args.agent, configpath=self.args.config, z3path=self.args.z3dir, port=self.args.port, cp=self.args.classpath)
+        except Exception as e:
+            # The exploration is incomplete: report UNKNOWN now, instead of nothing at all.
+            logger.exception(f'[SVCOMP] Exploration failed')
+            Database.instance().record_execution_error(ENDPOINT_ID, 'explorer_crash', f'{type(e).__name__}: {e}')
+            verdict = Verdict.UNKNOWN
         finally:
             # Exploration can finish before the pre-analysis: stop it, so no extractor outlives us.
             self.sa.cancel()
@@ -460,6 +486,12 @@ class SVCompDriver:
             logger.warning(f'[SVCOMP] The SA walk fell out of step with the execution (see [DFS] SA desync)')
             verdict = Verdict.UNKNOWN
 
+        incomplete = [e for e in Database.instance().get_tree(ENDPOINT_ID).execution_errors
+                      if e.get('kind') in INCOMPLETE_SEARCH_ERRORS]
+        if (verdict == Verdict.SAFE) and incomplete:
+            logger.warning(f'[SVCOMP] The search is incomplete ({incomplete[0]["kind"]}: {incomplete[0]["message"]})')
+            verdict = Verdict.UNKNOWN
+
         if (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).uncaught_exceptions > 0:
             logger.warning(f'[SVCOMP] Found uncaught exceptions during symbolic execution')
             verdict = Verdict.UNKNOWN
@@ -471,6 +503,7 @@ class SVCompDriver:
         if verdict == Verdict.NO_SYMBOLIC_VARS:
             verdict = Verdict.SAFE
         verdict_logger.info(f'[VERDICT {self.verification_category.value}] {verdict.value}')
+        self.verdict_reported = True
         logger.info(f'[EXPLORER] Symbolic execution terminated after {self.round_idx} iterations')
 
         # The witness is written after the verdict and never affects it
