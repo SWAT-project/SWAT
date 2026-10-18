@@ -93,7 +93,7 @@ final class JdkModel {
         DECLARED.put("java/lang/Enum", Set.of("<init>(Ljava/lang/String;I)V", "name()Ljava/lang/String;",
                 "ordinal()I", "toString()Ljava/lang/String;", "equals(Ljava/lang/Object;)Z", "hashCode()I",
                 "clone()Ljava/lang/Object;", "compareTo(Ljava/lang/Enum;)I", "getDeclaringClass()Ljava/lang/Class;",
-                "finalize()V"));
+                "finalize()V", "describeConstable()Ljava/util/Optional;"));
 
         SUPERTYPES.put("java/lang/String", List.of("java/lang/Object", "java/io/Serializable",
                 "java/lang/Comparable", "java/lang/CharSequence"));
@@ -265,6 +265,14 @@ final class JdkModel {
 
     static List<String> knownSupertypes(String type) {
         return SUPERTYPES.getOrDefault(type, List.of("java/lang/Object"));
+    }
+
+    /** Library interfaces known to declare no default methods (on JDK 8 to 21). */
+    private static final Set<String> NO_DEFAULTS = Set.of("java/io/Serializable", "java/lang/Cloneable",
+            "java/lang/Comparable", "java/lang/Runnable", "java/lang/AutoCloseable", "java/io/Closeable");
+
+    static boolean hasNoDefaultMethods(String iface) {
+        return NO_DEFAULTS.contains(iface);
     }
 
     static boolean isFinalClass(String owner) {

@@ -99,13 +99,18 @@ final class Program {
         new ClassReader(in).accept(c, ClassReader.SKIP_FRAMES);
         // The first definition on the classpath wins, as for the JVM's class loader. Classes in
         // java/ are always the platform's own.
-        if (classes.containsKey(c.name) || c.name.startsWith("java/")) return;
+        if (classes.containsKey(c.name) || isPlatformPackage(c.name)) return;
         classes.put(c.name, c);
         if (c.name.startsWith(VERIFIER_PACKAGE)) return;
         for (MethodNode m : c.methods) {
             Method method = new Method(c, m);
             methods.put(method.key, method);
         }
+    }
+
+    /** Packages the JVM always loads from the platform, never from the classpath. */
+    private static boolean isPlatformPackage(String name) {
+        return name.startsWith("java/") || name.startsWith("javax/") || name.startsWith("jdk/") || name.startsWith("sun/");
     }
 
     /** An application class (not a library class, and not the modelled Verifier package). */
@@ -241,8 +246,8 @@ final class Program {
      * maximally-specific default methods), every non-private instance method with that name and
      * descriptor in the superclass chain, and every default method of the application
      * superinterfaces, counts. A library implementation counts unless a public or protected
-     * application method overrides it. Returns null if a library class whose methods are unknown
-     * might provide it.
+     * application method overrides it. Returns null if a library class or library interface whose
+     * methods are unknown might provide it.
      */
     Targets virtualTargets(String owner, String name, String desc) {
         Targets t = new Targets();
@@ -270,7 +275,14 @@ final class Program {
                 if ((m.node.access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED)) != 0) overridesLibrary = true;
             }
             t.methods.addAll(defaults(sub, name, desc));
-            if (lib == null || overridesLibrary) continue;
+            if (overridesLibrary) continue;
+            // A default method of a library interface could be selected instead, and we do not know them.
+            for (String sup : appSupertypes(sub)) {
+                for (String i : classes.get(sup).interfaces) {
+                    if (!isApp(i) && !JdkModel.hasNoDefaultMethods(i)) return null;
+                }
+            }
+            if (lib == null) continue;
             String declaring = JdkModel.declaringClass(lib, name, desc);
             if (declaring != null) t.libraryMethods.add(declaring + "." + name + desc);
             else if (!JdkModel.knowsMethodsOf(lib)) return null;
