@@ -204,7 +204,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             if (ref instanceof ObjectArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
-                    recordConcreteObjectIndex(idx);
+                    selectObjectIndex(arr, idx, inst.iid);
                     stack.pushOperand(arr.getElement(idx));
                 } else {
                     enforceException();
@@ -238,22 +238,78 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     /**
-     * Stores a reference value into an array
-     *
-     * @param inst The ASTORE instruction
-     */
-    /**
-     * Object arrays are indexed by the concrete index only (ObjectArrayValue), and untracked arrays
-     * not at all, so with a symbolic index no other element is ever tried. An exhausted search
-     * then proves nothing.
+     * Untracked arrays are not indexed symbolically at all, so with a symbolic index no other
+     * element is ever tried. An exhausted search then proves nothing.
      */
     private void recordConcreteObjectIndex(IntValue idx) throws NotImplementedException {
         if (idx.isSymbolic()) {
-            logger.warn("Object array accessed at a symbolic index; only the concrete element is tracked");
+            logger.warn("Untracked array accessed at a symbolic index; only the concrete element is tracked");
             symbolicTraceHandler.recordSymbolicPrecisionLoss();
         }
     }
 
+    /** Arrays up to this length are searched for the element a symbolic index selects. */
+    private static final int MAX_INDEX_CHOICE_LENGTH = 1 << 16;
+
+    /**
+     * An object array holds references (ObjectArrayValue), which have no formula, so an access at
+     * a symbolic index can only use the element at the concrete index. To make the other elements
+     * reachable, the access branches on which element the index selects: a binary search over
+     * {@code [0, length)}, one branch {@code idx < mid} per step, each taken as the concrete index
+     * says. The branches together pin the index to its concrete value, so the element is exact on
+     * this path, and the explorer reaches every other element by flipping them. They come after the
+     * bounds check, so they only split the in-bounds case.
+     *
+     * <p>Where the length is symbolic (the steps would differ between executions on the same path)
+     * or too large to search, only the concrete element is tracked and precision loss recorded.
+     *
+     * @param arr The accessed array
+     * @param idx The index, within bounds
+     * @param iid The iid of the array instruction
+     */
+    private void selectObjectIndex(ObjectArrayValue arr, IntValue idx, long iid)
+            throws NoThreadContextException, NotImplementedException {
+        if (!idx.isSymbolic()) {
+            return;
+        }
+        SolverContext context = ThreadHandler.getSolverContext(currentThread().getId());
+        FormulaManager fmgr = context.getFormulaManager();
+        try {
+            // e.g. an element of a primitive array that only ever held concrete values
+            if (fmgr.extractVariables(fmgr.simplify(idx.formula)).isEmpty()) {
+                return;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (arr.size.isSymbolic() || arr.size.concrete > MAX_INDEX_CHOICE_LENGTH) {
+            logger.warn("Object array of symbolic or large length accessed at a symbolic index; only the concrete element is tracked");
+            symbolicTraceHandler.recordSymbolicPrecisionLoss();
+            return;
+        }
+        BitvectorFormulaManager bvmgr = fmgr.getBitvectorFormulaManager();
+        long branchIid = determineIid(iid);
+        int lo = 0;
+        int hi = arr.size.concrete;
+        int step = 0;
+        while (hi - lo > 1) {
+            int mid = lo + (hi - lo) / 2;
+            boolean below = idx.concrete < mid;
+            BooleanFormula constraint = bvmgr.lessThan(idx.formula, bvmgr.makeBitvector(32, mid), true);
+            symbolicTraceHandler.addChoiceBranch(below, constraint, branchIid, "#idx" + step++);
+            if (below) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+    }
+
+    /**
+     * Stores a reference value into an array
+     *
+     * @param inst The ASTORE instruction
+     */
     public void visitAASTORE(AASTORE inst) throws SymbolicInstructionException {
         try {
             ObjectValue<?, ?> val = stack.popOperand().asObjectValue();
@@ -262,7 +318,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
             if (ref instanceof ObjectArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
-                    recordConcreteObjectIndex(idx);
+                    selectObjectIndex(arr, idx, inst.iid);
                     arr.storeElement(idx, val);
                 } else {
                     enforceException();

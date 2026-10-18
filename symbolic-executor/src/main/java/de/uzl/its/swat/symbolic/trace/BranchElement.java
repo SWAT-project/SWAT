@@ -21,6 +21,10 @@ final class BranchElement extends Element {
     // an array SWAT does not track. It keeps the explorer's walk of that graph in step, but has no
     // symbolic constraint, so the explorer never tries to flip it.
     private final boolean concreteOnly;
+    // A branch the executor adds itself to enumerate the values of a symbolic operand (e.g. which
+    // element of an object array a symbolic index selects). The static pre-analysis graph has no
+    // such branch, so the explorer flips it but does not walk the graph over it.
+    @lombok.Setter private boolean choice;
 
     // Where the branch is, for the explorer to check and resynchronise its walk of the static
     // pre-analysis graph (see BranchKeys): the branch's key, or null if its instruction has none,
