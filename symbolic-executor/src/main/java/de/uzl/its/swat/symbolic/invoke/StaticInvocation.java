@@ -15,6 +15,7 @@ import de.uzl.its.swat.symbolic.invoke.java.lang.LongInvocation;
 import de.uzl.its.swat.symbolic.invoke.java.lang.MathInvocation;
 import de.uzl.its.swat.symbolic.invoke.java.lang.ShortInvocation;
 import de.uzl.its.swat.symbolic.invoke.java.lang.StringInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.SystemInvocation;
 import de.uzl.its.swat.symbolic.invoke.java.util.ObjectsInvocation;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
@@ -53,6 +54,7 @@ public final class StaticInvocation {
                             name, args, desc, symbolicStateHandler);
                     case "java/lang/Double" -> DoubleInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
+                    case "java/lang/System" -> SystemInvocation.invokeStaticMethod(name, args, desc);
                     case "java/util/Objects" -> ObjectsInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
                     default -> PlaceHolder.instance;
