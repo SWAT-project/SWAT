@@ -19,6 +19,9 @@ class TraceItem(BaseModel):
     pushes: list[Optional[str]] = []
     # Recorded in application code that library code called back: not in the SA graph.
     callback: bool = False
+    # A branch the executor adds to enumerate the values of a symbolic operand (e.g. the element a
+    # symbolic array index selects): flipped like any other, but not in the SA graph.
+    choice: bool = False
 class UFItem(BaseModel):
     definition: str 
 

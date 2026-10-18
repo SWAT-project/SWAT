@@ -57,7 +57,9 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         # If clinit_depth > 0, we do not have corresponding SA information, so pretend that there is no SA and DON'T WALK the SA graph.
         # Likewise for a branch in application code that library code called back: the graph walks
         # over the library call, so the walk holds its place until the callback returns.
-        mask_sa_node = clinit_depth > 0 or node.callback
+        # A choice branch (the executor's search for the element a symbolic index selects) has no
+        # graph node either: both of its sides continue from the walk's current place.
+        mask_sa_node = clinit_depth > 0 or node.callback or node.choice
     
         # Get information on interesting paths. If sa_node is None, all paths should be considered interesting
         if sa_node and not mask_sa_node:
@@ -81,7 +83,7 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         skip_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_fallthrough_child(), sa_stack)
         branch_is_interesting = mask_sa_node or (sa_node is None) or is_interesting(sa_node.get_branched_child(), sa_stack)
         
-        logger.info(f"[DFS] @{node.id}/{("CALLBACK" if node.callback else "CLINIT") if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
+        logger.info(f"[DFS] @{node.id}/{("CALLBACK" if node.callback else "CHOICE" if node.choice else "CLINIT") if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
         
         # Add the node itself, if eligible
         if (node.skipped is None and skip_is_interesting) or (node.branched is None and branch_is_interesting):

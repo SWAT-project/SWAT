@@ -23,7 +23,8 @@ class Parser:
                                      key=branch.key,
                                      pops=branch.pops,
                                      pushes=tuple(branch.pushes),
-                                     callback=branch.callback))
+                                     callback=branch.callback,
+                                     choice=branch.choice))
             else:
                 _trace.append(Special(id=branch.iid,
                                       trace_id=trace_id,

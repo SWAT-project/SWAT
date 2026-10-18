@@ -32,6 +32,16 @@ public class BranchDTO {
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
     private boolean callback;
 
+    // See BranchElement: a branch the executor adds that the static pre-analysis graph does not have.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private boolean choice;
+
+    public BranchDTO choice(boolean choice) {
+        this.choice = choice;
+        return this;
+    }
+
     public BranchDTO place(String key, int pops, java.util.List<String> pushes, boolean callback) {
         this.key = key;
         this.pops = pops;

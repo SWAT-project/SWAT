@@ -67,6 +67,25 @@ public class SymbolicTraceHandler {
         symbolicTrace.addTraceElement(current);
     }
 
+    /**
+     * Records a branch the executor adds itself to enumerate the values of a symbolic operand, e.g.
+     * one step of the search for the element a symbolic array index selects. It is a branch like
+     * any other for the explorer, which flips it to try the other values, but the static
+     * pre-analysis graph has no counterpart for it.
+     *
+     * @param result Whether {@code constraint} holds on this execution
+     * @param constraint The condition branched on
+     * @param iid The iid of the instruction the operand belongs to
+     * @param suffix Tells the instruction's branches apart in their keys
+     */
+    public void addChoiceBranch(boolean result, BooleanFormula constraint, long iid, String suffix) throws NoThreadContextException {
+        FormulaManager fmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId()).getFormulaManager();
+        BranchElement branch = new BranchElement(result, result ? constraint : fmgr.getBooleanFormulaManager().not(constraint), iid);
+        branch.setChoice(true);
+        place(branch, iid, suffix);
+        symbolicTrace.addTraceElement(branch);
+    }
+
     /** Records where a branch is: its key and the change of the frame stack since the last branch. */
     private static void place(BranchElement branch, long iid, String suffix) throws NoThreadContextException {
         String key = BranchKeys.keyOf(iid);
