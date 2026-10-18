@@ -110,7 +110,15 @@ public class SymbolicTraceHandler {
      * @return The symbolic trace encoded as a JSON string.
      */
     public String getTraceDTO(StatsStorage statsStorage) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
-        return DTOBuilder.encodeTrace(symbolicTrace, statsStorage);
+        return DTOBuilder.encodeTrace(symbolicTrace, statsStorage, Thread.currentThread().getId());
+    }
+
+    /**
+     * Encodes the trace with the solver context of the given thread, for callers running on
+     * another thread (the shutdown hook sending the trace of the target's main thread).
+     */
+    public String getTraceDTO(StatsStorage statsStorage, long threadId) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
+        return DTOBuilder.encodeTrace(symbolicTrace, statsStorage, threadId);
     }
 
     /**

@@ -1,10 +1,10 @@
-from typing import List
+from typing import List, Optional
 from data.Database import Database
 from parse.TraceParser import Parser
 from data.trace.Input import Input
 from data.trace.UF import UF
 
-from parse.DataTransferObjects import TraceItem, InputItem, UFItem, InvocationItem
+from parse.DataTransferObjects import TraceItem, InputItem, UFItem, InvocationItem, NondetReturnItem, ViolationItem
 from data.trace.Special import Special
 from data.trace.Branch import Branch
 
@@ -24,7 +24,9 @@ class ConstraintService:
     def add_constraints(endpoint_id: str, trace_id: str, trace: List[TraceItem], inputs: List[InputItem], ufs: List[UFItem],
                         symbolic_context_loss: bool, symbolic_precision_loss: bool,
                         reference_semantic_change: bool = False,
-                        missing_invocations: List[InvocationItem] = None):
+                        missing_invocations: List[InvocationItem] = None,
+                        nondet_returns: List[NondetReturnItem] = None,
+                        violation: Optional[ViolationItem] = None):
         """
         Adds constraints to the database.
 
@@ -42,6 +44,8 @@ class ConstraintService:
         symbolic_precision_loss (bool): A flag indicating whether the symbolic precision was lost (UFs introduced).
         reference_semantic_change (bool): A flag indicating whether reference equality semantics changed.
         missing_invocations (list): Methods that could not be modelled symbolically during this trace.
+        nondet_returns (list): The values returned by Verifier.nondet*() calls with their call locations.
+        violation (ViolationItem): The throwable that escaped the entry method, if any.
 
         Returns:
         None: The result is the side effect of adding data to the database.
@@ -55,6 +59,12 @@ class ConstraintService:
         # Flatten the missing-invocation DTOs into plain dicts so the Database/Tree stay decoupled
         # from the pydantic request models.
         missing_invocations_data = [item.model_dump() for item in (missing_invocations or [])]
+        # The witness data of this execution (plain dicts as well); the Database keeps the latest.
+        witness_data = {
+            'trace_id': trace_id,
+            'nondet_returns': [item.model_dump() for item in (nondet_returns or [])],
+            'violation': violation.model_dump() if violation is not None else None,
+        }
         # Adding the trace and inputs to the database for the specified endpoint.
-        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data)
+        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data)
         logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')

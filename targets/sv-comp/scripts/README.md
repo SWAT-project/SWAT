@@ -61,6 +61,15 @@ scripts/
 ./svcomp setup all
 ```
 
+Witnesses of violation results are written by the Symbolic Explorer itself (from the trace of
+the violating execution, via the `witnesscreator` package from `symbolic-explorer/requirements.txt`)
+to the testcase's log directory as `witness/witness.yml` (YAML format 2.3) and
+`witness/witness.graphml` (legacy). The harness only validates them: the YAML witness must have
+exactly one `target` waypoint and, if `SWAT_WITNESSLINT` names a WitnessLint command
+(e.g. `SWAT_WITNESSLINT="/path/venv/bin/python /path/witnesslint/witnesslinter.py"`), it is linted
+with `--expectViolationWitness --expectedWitnessVersion 2`; the GraphML witness is validated with
+wit4java (reported as `Validated:`). A proper validator setup is tracked in #47.
+
 ### Test Commands
 
 ```bash

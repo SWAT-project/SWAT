@@ -18,6 +18,7 @@ from strategy.StrategyService import StrategyService
 from enum import Enum
 from svcomp.SymbolicStorage import SymbolicStorage
 from svcomp.TestcaseStats import write_testcase_stats
+from svcomp.WitnessWriter import write_violation_witness
 from timing.TimingManager import TimingManager
 
 
@@ -197,6 +198,9 @@ class SVCompDriver:
             logger.info(f'[SVCOMP] {"="*30} ROUND ({round_idx:03}) {"="*30}')
             logger.info(f'[SVCOMP] {"="*73}')
 
+            # Only a trace of this round may provide the witness data of the violating execution
+            Database.instance().clear_witness_data(ENDPOINT_ID)
+
             # Build the java command to run DSE
             command: List[str] = self.build_command(javaagent=agentpath, config=configpath, Z3_DIR=z3path, port=port, cp=cp, java_path=java_path)
 
@@ -327,6 +331,10 @@ class SVCompDriver:
             verdict = Verdict.SAFE
         verdict_logger.info(f'[VERDICT {self.verification_category.value}] {verdict.value}')
 
+        # The witness is written after the verdict and never affects it
+        if verdict == Verdict.VIOLATION:
+            self.write_witness()
+
         # Stop total timing (don't print summary here - execution.py will print complete summary with witness timing)
         TimingManager.instance().stop_total_timer()
 
@@ -343,6 +351,21 @@ class SVCompDriver:
         self.kill_current_process()
         
         
+    def write_witness(self):
+        """Writes witness.yml/witness.graphml for the VIOLATION verdict from the trace of the violating round."""
+        input_files = getattr(self.args, 'witness_input', None) or []
+        property_file = getattr(self.args, 'witness_property', None)
+        if not input_files or not property_file:
+            logger.warning('[WITNESS] No task input files/property file given (--witness-input/--witness-property), no witness is written')
+            return
+        write_violation_witness(
+            Database.instance().get_witness_data(ENDPOINT_ID),
+            input_files=input_files,
+            property_file=property_file,
+            out_dir=getattr(self.args, 'witness_dir', None) or 'witness',
+            producer_version=getattr(self.args, 'producer_version', None) or 'unknown',
+            base_dir=getattr(self.args, 'witness_base_dir', None) or None)
+
     def kill_current_process(self):
         pid = os.getpid()  
         os.kill(pid, signal.SIGTERM)  # Send termination signal

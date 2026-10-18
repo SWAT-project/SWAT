@@ -17,6 +17,14 @@ public class TraceDTO {
     @SuppressWarnings("unused")
     private ArrayList<InvocationDTO> missingInvocations;
 
+    // The values returned by Verifier.nondet*() calls with their call locations (witness data)
+    @SuppressWarnings("unused")
+    private ArrayList<NondetReturnDTO> nondetReturns;
+
+    // The throwable that escaped the entry method, null if the execution ended normally
+    @SuppressWarnings("unused")
+    private ViolationDTO violation;
+
     @SuppressWarnings("unused")
     private boolean symbolicContextLoss = false;
     @SuppressWarnings("unused")
@@ -24,11 +32,13 @@ public class TraceDTO {
     @SuppressWarnings("unused")
     private boolean referenceSemanticChange = false;
 
-    public TraceDTO(ArrayList<InputDTO> inputs, ArrayList<BranchDTO> trace, ArrayList<UFDTO> ufs, ArrayList<InvocationDTO> missingInvocations, boolean symbolicContextLoss, boolean symbolicPrecisionLoss, boolean referenceSemanticChange) {
+    public TraceDTO(ArrayList<InputDTO> inputs, ArrayList<BranchDTO> trace, ArrayList<UFDTO> ufs, ArrayList<InvocationDTO> missingInvocations, ArrayList<NondetReturnDTO> nondetReturns, ViolationDTO violation, boolean symbolicContextLoss, boolean symbolicPrecisionLoss, boolean referenceSemanticChange) {
         this.trace = trace;
         this.inputs = inputs;
         this.ufs = ufs;
         this.missingInvocations = missingInvocations;
+        this.nondetReturns = nondetReturns;
+        this.violation = violation;
         this.symbolicContextLoss = symbolicContextLoss;
         this.symbolicPrecisionLoss = symbolicPrecisionLoss;
         this.referenceSemanticChange = referenceSemanticChange;

@@ -16,6 +16,7 @@ import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.coverage.InstrCoverage;
 import de.uzl.its.swat.symbolic.trace.dto.*;
 import de.uzl.its.swat.thread.ThreadHandler;
+import de.uzl.its.swat.witness.Witness;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -35,10 +36,12 @@ class DTOBuilder {
      * Encodes the symbolic trace as a JSON string.
      *
      * @param symbolicTrace The symbolic trace to be encoded.
+     * @param statsStorage The per-execution statistics of the thread.
+     * @param threadId The thread whose solver context the formulas belong to.
      * @return The symbolic trace encoded as a JSON string.
      */
-    protected static String encodeTrace(SymbolicTrace symbolicTrace, StatsStorage statsStorage) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
-        return buildRequestBody(buildTraceDTO(symbolicTrace, statsStorage));
+    protected static String encodeTrace(SymbolicTrace symbolicTrace, StatsStorage statsStorage, long threadId) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
+        return buildRequestBody(buildTraceDTO(symbolicTrace, statsStorage, threadId));
     }
 
     /**
@@ -74,13 +77,13 @@ class DTOBuilder {
      * @return A {@link TraceDTO ConstraintDTO} that contains relevant all relevant information
      *     to transfer symbolic traces
      */
-    private static TraceDTO buildTraceDTO(SymbolicTrace symbolicTrace, StatsStorage statsStorage) throws NoThreadContextException, NotImplementedException {
+    private static TraceDTO buildTraceDTO(SymbolicTrace symbolicTrace, StatsStorage statsStorage, long threadId) throws NoThreadContextException, NotImplementedException {
         ArrayList<InputDTO> inputs = new ArrayList<>();
         ArrayList<UFDTO> ufs = new ArrayList<>();
         ArrayList<BranchDTO> trace = new ArrayList<>();
 
         FormulaManager fmgr =
-                ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+                ThreadHandler.getSolverContext(threadId).getFormulaManager();
         for (InputElement ie : symbolicTrace.getInputs()) {
             String lowerBound = String.valueOf(fmgr.dumpFormula(ie.getValue().getBounds(false)));
             String upperBound = String.valueOf(fmgr.dumpFormula(ie.getValue().getBounds(true)));
@@ -134,7 +137,7 @@ class DTOBuilder {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }
         }
-        return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange());
+        return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), Witness.getNondetReturns(), Witness.getViolation(), symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange());
     }
 
     protected static String encodeCoverage(InstrCoverage instrCoverage) throws JsonProcessingException {

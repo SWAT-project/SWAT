@@ -37,6 +37,8 @@ public abstract class Transformer implements ClassFileTransformer {
     static {
         // register the hook as early as possible
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            // A target that ends the JVM abruptly (System.exit) must not lose its trace
+            Intrinsics.terminateOnShutdown();
             LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
             // this will flush and close all appenders (including your buffered FileAppender)
             lc.stop();

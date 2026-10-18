@@ -29,6 +29,8 @@ targets/sv-comp/wit4java/
 /.vscode/
 **/smt_files/
 **/witness/
+# ... but not the witness packages of the executor sources
+!symbolic-executor/src/**/witness/
 **/sv-comp/results/
 **/analysis/
 !targets/sv-comp/scripts/lib/analysis
