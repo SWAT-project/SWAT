@@ -116,6 +116,9 @@ class SVCompDriver:
         cmd = [
             java_path,
             f'-Xmx{mem}g',
+            # A round runs the target once, mostly for well under a second: C2 compilations
+            # would not pay off before the JVM exits, the C1 ones do.
+            '-XX:TieredStopAtLevel=1',
             f'-Dconfig.path={config}',
             f'-Dexplorer.port={port}',
             f'-javaagent:{javaagent}',
