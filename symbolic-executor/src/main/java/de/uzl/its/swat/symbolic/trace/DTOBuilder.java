@@ -17,6 +17,7 @@ import de.uzl.its.swat.coverage.InstrCoverage;
 import de.uzl.its.swat.symbolic.trace.dto.*;
 import de.uzl.its.swat.thread.ThreadHandler;
 import de.uzl.its.swat.witness.Witness;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
@@ -109,8 +110,11 @@ class DTOBuilder {
         for (InputElement ie : symbolicTrace.getInputs()) {
             inputNames.add(ie.getName());
         }
+        // The UFs of the exact String models are defined by the trace's constraints (see
+        // StringValue.EXACT_UFS), so they are no loss of precision either.
         java.util.function.Predicate<String> isInput =
-                name -> inputNames.contains(name) || name.matches("[A-Z].*_[0-9].*");
+                name -> inputNames.contains(name) || name.matches("[A-Z].*_[0-9].*")
+                        || StringValue.EXACT_UFS.contains(name);
         boolean symbolicPrecisionLoss = symbolicTrace.isSymbolicPrecisionLoss();
         for (Element el : symbolicTrace.getTrace()) {
             if (el instanceof BranchElement be) {
