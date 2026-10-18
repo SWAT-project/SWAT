@@ -110,7 +110,8 @@ class Database:
                   symbolic_context_loss: bool, symbolic_precision_loss: bool,
                   reference_semantic_change: bool = False, missing_invocations: list = None,
                   witness_data: dict = None,
-                  approximate_model: bool = False):
+                  approximate_model: bool = False,
+                  stack_overflow: bool = False):
         endpoint_id = str(endpoint_id)
 
         with lock:
@@ -121,6 +122,7 @@ class Database:
             tree.record_precision_loss() if symbolic_precision_loss else None
             tree.record_reference_semantic_change() if reference_semantic_change else None
             tree.approximate_traces.add(trace_id) if approximate_model else None
+            tree.stack_overflow_traces.add(trace_id) if stack_overflow else None
             tree.record_missing_invocations(missing_invocations)
             tree.record_inputs(inputs)
             tree.record_ufs(ufs)
@@ -184,6 +186,13 @@ class Database:
         endpoint_id = str(endpoint_id)
         with lock:
             ret = trace_id in self.tree[endpoint_id].approximate_traces
+        return ret
+
+    def is_stack_overflow_trace(self, endpoint_id: Union[str, int], trace_id: str) -> bool:
+        """Whether a StackOverflowError reached the target's code in the execution of the trace."""
+        endpoint_id = str(endpoint_id)
+        with lock:
+            ret = trace_id in self.tree[endpoint_id].stack_overflow_traces
         return ret
 
     def record_expected_divergence(self, endpoint_id: Union[str, int]):

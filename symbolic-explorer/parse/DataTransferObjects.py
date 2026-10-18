@@ -96,6 +96,9 @@ class ConstraintRequest(BaseModel):
     referenceSemanticChange: bool = False
     # An approximate model (a sampled Math function) was used: solutions from this trace are guesses.
     approximateModel: bool = False
+    # A StackOverflowError reached the target's code: the path depends on the JVM's stack size, so a
+    # violation of this execution is not a verdict (the executor also reports context loss).
+    stackOverflow: bool = False
 
 
 class CoverageRequest(BaseModel):

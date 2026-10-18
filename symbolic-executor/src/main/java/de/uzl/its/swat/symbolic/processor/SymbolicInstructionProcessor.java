@@ -3,6 +3,7 @@ package de.uzl.its.swat.symbolic.processor;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.StackOverflowGuard;
 import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.logging.GlobalLogger;
@@ -175,6 +176,10 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
      */
     @Override
     public void processInstruction(Instruction nextInstruction) {
+        // After a stack overflow the shadow state is no longer reliable: stop tracking
+        if (StackOverflowGuard.trackingLost | StackOverflowGuard.targetOverflowed) {
+            return;
+        }
         try {
             SWATAssert.enforce(!isActive, "Symbolic execution is already active!");
             isActive = true;
@@ -350,13 +355,22 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
 
                 ThreadHandler.setCurrentInstruction(id, ThreadHandler.getNextInstruction(id));
             }
+        } catch (StackOverflowError e) {
+            // Only field writes here: the stack is still exhausted. The error is swallowed, so the
+            // target continues as it would without SWAT; the trace is marked as context loss.
+            StackOverflowGuard.trackingLost = true;
         } catch (Throwable t) {
-            new ErrorHandler().handleException("Error visiting Instruction!", t);
+            if (StackOverflowGuard.findStackOverflow(t) != null) {
+                StackOverflowGuard.trackingLost = true;
+            } else {
+                new ErrorHandler().handleException("Error visiting Instruction!", t);
+            }
         } finally {
-            long id = Thread.currentThread().getId();
-            ThreadHandler.checkThreadContextAbortTimer(id);
+            isActive = false;
         }
-        isActive = false;
+        if (!(StackOverflowGuard.trackingLost | StackOverflowGuard.targetOverflowed)) {
+            ThreadHandler.checkThreadContextAbortTimer(Thread.currentThread().getId());
+        }
     }
 
     /**

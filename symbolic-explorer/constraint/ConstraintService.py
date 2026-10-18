@@ -27,7 +27,8 @@ class ConstraintService:
                         missing_invocations: List[InvocationItem] = None,
                         nondet_returns: List[NondetReturnItem] = None,
                         violation: Optional[ViolationItem] = None,
-                        approximate_model: bool = False):
+                        approximate_model: bool = False,
+                        stack_overflow: bool = False):
         """
         Adds constraints to the database.
 
@@ -49,6 +50,8 @@ class ConstraintService:
         violation (ViolationItem): The throwable that escaped the entry method, if any.
         approximate_model (bool): Whether an approximate model (a sampled Math function) was used,
             so that solutions built from this trace are only guesses.
+        stack_overflow (bool): Whether a StackOverflowError reached the target's code, so that a
+            violation of this execution depends on the JVM's stack size.
 
         Returns:
         None: The result is the side effect of adding data to the database.
@@ -72,7 +75,7 @@ class ConstraintService:
                 'violation': violation.model_dump() if violation is not None else None,
             }
             # Adding the trace and inputs to the database for the specified endpoint.
-            Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data, approximate_model)
+            Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data, approximate_model, stack_overflow)
             logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')
         except Exception as e:
             # A trace that cannot be added must not end the run silently, nor let it go on as if the

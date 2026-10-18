@@ -190,7 +190,12 @@ class SVCompDriver:
         """Determines the next step based on the execution status."""
         if status == ExecutionStatus.SUCCESS:
 
-            
+            # A StackOverflowError reached the target in this execution: its outcome depends on the
+            # JVM's stack size, which the task does not fix, so a violation it shows is not reported.
+            # The trace carries context loss, so the search goes on but cannot end in SAFE.
+            stack_overflow = self.round_has_stack_overflow()
+            if stack_overflow:
+                output = self.drop_violations(output)
             for l in output:
                 if "java.lang.AssertionError: [SWAT]" in l:
                     # Internal assertion error in the DSE
@@ -225,6 +230,11 @@ class SVCompDriver:
                 return Action.REPORTVERDICT
 
             if len(tree.symbolic_vars) == 0:
+                if stack_overflow:
+                    # The only execution there is overflowed the stack: its outcome is not a verdict
+                    logger.info(f'[SVCOMP] No symbolic vars found, but the execution overflowed the stack')
+                    self.state.verdict = Verdict.UNKNOWN
+                    return Action.REPORTVERDICT
                 # No symbolic vars found, safe to assume no violation
                 logger.info(f'[SVCOMP] No symbolic vars found')
                 self.state.verdict = Verdict.NO_SYMBOLIC_VARS
@@ -241,6 +251,28 @@ class SVCompDriver:
             return Action.REPORTVERDICT
         
         
+    def is_violation_line(self, line: str) -> bool:
+        """Whether the executor output line reports a violation of the checked property."""
+        if self.verification_category == VerificationCategory.VALID_ASSERT_PRP:
+            return "java.lang.AssertionError" in line and "java.lang.AssertionError: [SWAT]" not in line
+        if self.verification_category == VerificationCategory.NO_RUNTIME_EXCEPTION_PRP:
+            return "[SWAT] Uncaught top-level RuntimeException in symbolic execution" in line
+        return False
+
+    def drop_violations(self, output: List[str]) -> List[str]:
+        """Removes the violation lines of an execution whose outcome is not a verdict."""
+        violations = [l for l in output if self.is_violation_line(l)]
+        if violations:
+            logger.warning(f'[SVCOMP] Violation after a stack overflow, not reported: {violations[0].strip()}')
+            Database.instance().record_execution_error(ENDPOINT_ID, 'stack_overflow_violation', violations[0].strip())
+        return [l for l in output if not self.is_violation_line(l)]
+
+    def round_has_stack_overflow(self) -> bool:
+        """Whether the trace of this round (if one arrived) reports a stack overflow in the target."""
+        witness_data = Database.instance().get_witness_data(ENDPOINT_ID)
+        return witness_data is not None and Database.instance().is_stack_overflow_trace(
+            ENDPOINT_ID, witness_data['trace_id'])
+
     def log_output(self, output: List[str]):
         logger.info(f'[SVCOMP] Java Output Begin')
         for line in output:

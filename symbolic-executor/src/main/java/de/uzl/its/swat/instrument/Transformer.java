@@ -3,6 +3,7 @@ package de.uzl.its.swat.instrument;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.StackOverflowGuard;
 import de.uzl.its.swat.common.PrintBox;
 import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.InstrumentationException;
@@ -134,6 +135,10 @@ public abstract class Transformer implements ClassFileTransformer {
     @SuppressWarnings("unused")
     public static void premain(String agentArgs, Instrumentation inst) {
         try {
+            // Initialised here, not on first use: that can be on an exhausted stack, where a
+            // failing static initialiser would break the class for the rest of the run
+            StackOverflowGuard.init();
+            new ErrorHandler();
             ThreadHandler.init();
             ThreadHandler.addThreadContext(-1, "SymbolicThread", -1); // Main thread used during initialization and instrumentation
 

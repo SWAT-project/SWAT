@@ -50,6 +50,14 @@ public class ErrorHandler {
      * @param t the throwable to handle
      */
     public void handleException(String msg, Throwable t) {
+        // A stack overflow is not a SWAT failure: stop the symbolic tracking (the trace becomes
+        // context loss) and let the error take its course in the target, as without SWAT. Nothing
+        // is logged, the stack is exhausted.
+        Error stackOverflow = StackOverflowGuard.findStackOverflow(t);
+        if (stackOverflow != null) {
+            StackOverflowGuard.trackingLost = true;
+            throw stackOverflow;
+        }
         long instCnt = -1;
         try {
             instCnt = ThreadHandler.getInstructionCount(currentThread().getId());

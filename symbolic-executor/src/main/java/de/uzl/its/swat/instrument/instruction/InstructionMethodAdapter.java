@@ -1,6 +1,7 @@
 package de.uzl.its.swat.instrument.instruction;
 
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.StackOverflowGuard;
 import de.uzl.its.swat.common.exceptions.InstrumentationException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.config.Config;
@@ -1521,6 +1522,23 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         return getFieldMethods.contains(method);
     }
 
+    /**
+     * Records a StackOverflowError that reaches the exception handler of a call site in
+     * StackOverflowGuard.targetOverflowed, before the exception is reported to SWAT. Expects the
+     * throwable on top of the operand stack and leaves it there. No call and no branch: on an
+     * exhausted stack a call could replace the exception in flight.
+     *
+     * <pre>targetOverflowed |= (throwable instanceof StackOverflowError)</pre>
+     */
+    private void addStackOverflowCheck(MethodVisitor mv) {
+        String guard = Type.getInternalName(StackOverflowGuard.class);
+        mv.visitInsn(DUP);
+        mv.visitTypeInsn(INSTANCEOF, "java/lang/StackOverflowError");
+        mv.visitFieldInsn(GETSTATIC, guard, "targetOverflowed", "Z");
+        mv.visitInsn(IOR);
+        mv.visitFieldInsn(PUTSTATIC, guard, "targetOverflowed", "Z");
+    }
+
     private void addMethodWithTryCatch(
             int opcode, String owner, String name, String desc, boolean itf) {
 
@@ -1580,6 +1598,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
         mv.visitJumpInsn(GOTO, jumpTarget);
         mv.visitLabel(handler);
+        addStackOverflowCheck(mv);
 
         addJpushInsn(mv, instrumentationState.incAndGetId());
         addJpushInsn(mv, invokeId);
@@ -1656,6 +1675,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         mv.visitJumpInsn(GOTO, jumpTarget); // still try catch
 
         mv.visitLabel(handler);
+        addStackOverflowCheck(mv);
         addJpushInsn(mv, instrumentationState.incAndGetId());
         addJpushInsn(mv, invokeId);
         mv.visitMethodInsn(

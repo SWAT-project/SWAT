@@ -35,8 +35,12 @@ public class TraceDTO {
     // which also covers exact UF-based models, solutions from such a trace are only guesses.
     @SuppressWarnings("unused")
     private boolean approximateModel = false;
+    // A StackOverflowError reached the target's code: the path depends on the JVM's stack size,
+    // so a violation of this execution is not a verdict (see StackOverflowGuard)
+    @SuppressWarnings("unused")
+    private boolean stackOverflow = false;
 
-    public TraceDTO(ArrayList<InputDTO> inputs, ArrayList<BranchDTO> trace, ArrayList<UFDTO> ufs, ArrayList<InvocationDTO> missingInvocations, ArrayList<NondetReturnDTO> nondetReturns, ViolationDTO violation, boolean symbolicContextLoss, boolean symbolicPrecisionLoss, boolean referenceSemanticChange, boolean approximateModel) {
+    public TraceDTO(ArrayList<InputDTO> inputs, ArrayList<BranchDTO> trace, ArrayList<UFDTO> ufs, ArrayList<InvocationDTO> missingInvocations, ArrayList<NondetReturnDTO> nondetReturns, ViolationDTO violation, boolean symbolicContextLoss, boolean symbolicPrecisionLoss, boolean referenceSemanticChange, boolean approximateModel, boolean stackOverflow) {
         this.trace = trace;
         this.inputs = inputs;
         this.ufs = ufs;
@@ -47,6 +51,7 @@ public class TraceDTO {
         this.symbolicPrecisionLoss = symbolicPrecisionLoss;
         this.referenceSemanticChange = referenceSemanticChange;
         this.approximateModel = approximateModel;
+        this.stackOverflow = stackOverflow;
 
     }
 

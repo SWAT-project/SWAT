@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.StackOverflowGuard;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
@@ -131,8 +132,14 @@ class DTOBuilder {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }
         }
-        return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), Witness.getNondetReturns(), Witness.getViolation(), symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange(),
-                symbolicTrace.isSymbolicPrecisionLoss());
+        // Symbolic tracking stopped at a stack overflow: the rest of the execution is not in the trace
+        boolean stackOverflow = StackOverflowGuard.isOverflowed();
+        if (stackOverflow) {
+            logger.warn("Stack overflow during the execution (in SWAT: {}, reached the target: {}): recording symbolic context loss",
+                    StackOverflowGuard.trackingLost, StackOverflowGuard.targetOverflowed);
+        }
+        return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), Witness.getNondetReturns(), Witness.getViolation(), symbolicTrace.isSymbolicContextLoss() || stackOverflow, symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange(),
+                symbolicTrace.isSymbolicPrecisionLoss(), StackOverflowGuard.targetOverflowed);
     }
 
     /** Symbols already reported as undeclared, so each is logged once. */
