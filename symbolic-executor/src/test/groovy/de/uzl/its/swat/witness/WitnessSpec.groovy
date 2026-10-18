@@ -142,4 +142,51 @@ class WitnessSpec extends Specification {
         expect:
         Witness.getViolation() == null
     }
+
+    def "the first AssertionError thrown is recorded as the violation"() {
+        given:
+        def first = new AssertionError("first")
+        first.setStackTrace([new StackTraceElement("Main", "main", "Main.java", 8)] as StackTraceElement[])
+        def second = new AssertionError("second")
+        second.setStackTrace([new StackTraceElement("Main", "main", "Main.java", 12)] as StackTraceElement[])
+
+        when:
+        Witness.recordThrow(first)
+        Witness.recordThrow(second)
+
+        then:
+        Witness.getViolation().throwable == "java.lang.AssertionError"
+        Witness.getViolation().frames*.line == [8]
+    }
+
+    def "other throwables are not recorded when thrown"() {
+        when:
+        Witness.recordThrow(new RuntimeException())
+        Witness.recordThrow(null)
+
+        then:
+        Witness.getViolation() == null
+    }
+
+    def "the thrown AssertionError escaping later keeps its violation"() {
+        given:
+        def error = new AssertionError()
+        error.setStackTrace([new StackTraceElement("Main", "main", "Main.java", 8)] as StackTraceElement[])
+        def escaping = new RuntimeException()
+        escaping.setStackTrace([new StackTraceElement("Main", "main", "Main.java", 20)] as StackTraceElement[])
+
+        when:
+        Witness.recordThrow(error)
+        Witness.recordTarget(error)
+
+        then:
+        Witness.getViolation().frames*.line == [8]
+
+        when: "another throwable escapes the entry method"
+        Witness.recordTarget(escaping)
+
+        then:
+        Witness.getViolation().throwable == "java.lang.RuntimeException"
+        Witness.getViolation().frames*.line == [20]
+    }
 }

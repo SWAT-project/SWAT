@@ -166,6 +166,21 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
     }
 
     @Override
+    public void visitInsn(int opcode) {
+        if (opcode == Opcodes.ATHROW) {
+            // An assertion fails where its AssertionError is thrown (see Witness.recordThrow)
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitMethodInsn(
+                    Opcodes.INVOKESTATIC,
+                    "de/uzl/its/swat/witness/Witness",
+                    "recordThrow",
+                    "(Ljava/lang/Throwable;)V",
+                    false);
+        }
+        super.visitInsn(opcode);
+    }
+
+    @Override
     public void visitTypeInsn(int opcode, String type) {
         // Replace the type for `new java.net.Socket` with the mock type
         if (opcode == Opcodes.NEW && type.equals("java/net/Socket")) {
