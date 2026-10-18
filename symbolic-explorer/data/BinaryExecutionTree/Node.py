@@ -62,6 +62,7 @@ class Node:
         self.pops = 0
         self.pushes = ()
         self.callback = False  # in a callback from library code: no counterpart in the SA graph
+        self.choice = False  # added by the executor to enumerate an operand's values: not in the SA graph
 
         # Validate trace argument
         if trace is None or len(trace) == 0:
@@ -92,6 +93,7 @@ class Node:
             self.pops = branch.pops
             self.pushes = branch.pushes
             self.callback = branch.callback
+            self.choice = branch.choice
             self.constraint[branch.trace_id] = branch.constraint
             # Determine whether the branch was taken or skipped and assign child
             if branch.has_branched:

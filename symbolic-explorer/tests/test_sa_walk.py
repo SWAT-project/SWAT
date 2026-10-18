@@ -105,7 +105,7 @@ class GraphBuilder:
             json.dump(graph, f)
 
 
-def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=(), callback=False):
+def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=(), callback=False, choice=False):
     """A tree node for one branch event; `None` children are unexplored sides."""
     n = Node.__new__(Node)
     n.parent = None
@@ -119,6 +119,7 @@ def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=(), 
     n.pops = pops
     n.pushes = pushes
     n.callback = callback
+    n.choice = choice
     n.constraint = {}
     n.skipped = skipped
     n.branched = branched
@@ -584,6 +585,25 @@ class KeyCheckTest(unittest.TestCase):
         self.assertEqual(found, plain)  # b2 is still pruned after the callback
         for n in (cb1, cb2):
             n.callback = False
+        _, desyncs = self.run_dfs(tree, g)
+        self.assertEqual(len(desyncs), 1)
+
+    def test_choice_branches_are_masked(self):
+        g = self.graph()
+        plain, _ = self.run_dfs(self.tree(), g)
+        # Before f is called, an access at a symbolic index adds two choice branches the graph does
+        # not have, one with an unexplored side. Masked, the walk holds its place over them, and
+        # they are still solver targets.
+        tree = self.tree()
+        nf = tree.skipped
+        ch2 = branch_node('ch2', skipped=None, branched=nf, key='M|1|aaload|0#idx1', choice=True)
+        ch1 = branch_node('ch1', skipped=ch2, branched=leaf(), key='M|1|aaload|0#idx0', choice=True)
+        tree.skipped = ch1
+        found, desyncs = self.run_dfs(tree, g)
+        self.assertEqual(desyncs, [])
+        self.assertEqual(found, plain | {'ch2'})
+        for n in (ch1, ch2):
+            n.choice = False
         _, desyncs = self.run_dfs(tree, g)
         self.assertEqual(len(desyncs), 1)
 
