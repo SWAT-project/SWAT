@@ -21,6 +21,11 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ShortValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.FloatObjectValue;
 import lombok.Getter;
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import de.uzl.its.swat.thread.ThreadHandler;
+
+import static java.lang.Thread.currentThread;
 
 public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
     @Getter
@@ -391,10 +396,24 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
         return F2D();
     }
 
-    //@Override
-    //public StringValue asStringValue() {
-    //    return new StringValue(context, String.valueOf(concrete), -1);
-    //}
+    /**
+     * Converts this FloatValue to its decimal string, as String.valueOf(float) does. There is no
+     * symbolic model of the conversion: the string is concrete, and a symbolic value records a
+     * context loss.
+     *
+     * @return The resulting StringValue
+     */
+    @Override
+    public StringValue asStringValue() {
+        if (isSymbolic()) {
+            try {
+                ThreadHandler.getSymbolicTraceHandler(currentThread().getId()).recordSymbolicContextLoss();
+            } catch (NoThreadContextException e) {
+                throw new IllegalStateException("Cannot record the context loss of a float to string conversion", e);
+            }
+        }
+        return new StringValue(context, String.valueOf(concrete), ObjectValue.ADDRESS_UNKNOWN);
+    }
 
     @Override
     public FloatObjectValue asObjectValue(){
