@@ -11,6 +11,7 @@ import com.google.common.base.Objects;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.VoidValue;
@@ -264,18 +265,9 @@ public class FloatObjectValue extends BoxedValue<FloatValue> {
             FloatObjectValue other = args[0].asFloatObjectValue();
             int result = val.concrete.compareTo(other.val.concrete);
             
-            // Use floating point formula managers for proper symbolic handling
-            BooleanFormula equal = fpfm.equalWithFPSemantics(val.formula, other.val.formula);
-            BooleanFormula greater = fpfm.greaterThan(val.formula, other.val.formula);
-            
-            // Create the symbolic result using if-then-else logic
-            var imgr = context.getFormulaManager().getIntegerFormulaManager();
-            var symbolicResult = context.getFormulaManager().getBooleanFormulaManager().ifThenElse(equal,
-                imgr.makeNumber(0),
-                context.getFormulaManager().getBooleanFormulaManager().ifThenElse(greater, 
-                    imgr.makeNumber(1), 
-                    imgr.makeNumber(-1)));
-                
+            // Float.compareTo semantics: NaN is greater than everything, -0.0 is less than 0.0
+            var symbolicResult = BitvectorEncoding.javaCompare(context.getFormulaManager(), val.formula, other.val.formula);
+
             return new IntValue(context, result, symbolicResult);
         } else {
             return PlaceHolder.instance;

@@ -8,6 +8,8 @@ import org.sosy_lab.java_smt.api.BitvectorFormula;
 import org.sosy_lab.java_smt.api.BitvectorFormulaManager;
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.BooleanFormulaManager;
+import org.sosy_lab.java_smt.api.FloatingPointFormula;
+import org.sosy_lab.java_smt.api.FloatingPointFormulaManager;
 import org.sosy_lab.java_smt.api.Formula;
 import org.sosy_lab.java_smt.api.FormulaManager;
 import org.sosy_lab.java_smt.api.FunctionDeclaration;
@@ -72,6 +74,39 @@ public final class BitvectorEncoding {
                 eq,
                 bvmgr.makeBitvector(width, 0),
                 bmgr.ifThenElse(gt, bvmgr.makeBitvector(width, 1), bvmgr.makeBitvector(width, -1)));
+    }
+
+    /**
+     * Returns {@code Double.compare(a, b)} (or {@code Float.compare}) as a 32-bit bit-vector: NaN is
+     * equal to itself and greater than every other value, and -0.0 is less than 0.0.
+     *
+     * @param fmgr the formula manager
+     * @param a the first value
+     * @param b the second value
+     * @return the bit-vector formula, -1, 0 or 1
+     */
+    public static BitvectorFormula javaCompare(FormulaManager fmgr, FloatingPointFormula a, FloatingPointFormula b) {
+        BitvectorFormulaManager bvmgr = fmgr.getBitvectorFormulaManager();
+        BooleanFormulaManager bmgr = fmgr.getBooleanFormulaManager();
+        FloatingPointFormulaManager fpmgr = fmgr.getFloatingPointFormulaManager();
+        BitvectorFormula minus = bvmgr.makeBitvector(32, -1);
+        BitvectorFormula zero = bvmgr.makeBitvector(32, 0);
+        BitvectorFormula one = bvmgr.makeBitvector(32, 1);
+        BooleanFormula aNaN = fpmgr.isNaN(a);
+        BooleanFormula bNaN = fpmgr.isNaN(b);
+        BooleanFormula aNeg = fpmgr.isNegative(a);
+        BooleanFormula bNeg = fpmgr.isNegative(b);
+        // Equal in FP terms but not as bits: -0.0 and 0.0
+        BitvectorFormula equal = bmgr.ifThenElse(
+                bmgr.and(aNeg, bmgr.not(bNeg)),
+                minus,
+                bmgr.ifThenElse(bmgr.and(bNeg, bmgr.not(aNeg)), one, zero));
+        BitvectorFormula ordered = bmgr.ifThenElse(
+                fpmgr.lessThan(a, b), minus, bmgr.ifThenElse(fpmgr.greaterThan(a, b), one, equal));
+        return bmgr.ifThenElse(
+                aNaN,
+                bmgr.ifThenElse(bNaN, zero, one),
+                bmgr.ifThenElse(bNaN, minus, ordered));
     }
 
     private static final class Lowering {

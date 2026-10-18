@@ -219,4 +219,27 @@ class BitvectorEncodingTest extends Specification {
         !mixesSorts(i.formula)
         equivalent(i.formula, bvmgr.makeBitvector(32, bmgr.ifThenElse(b.formula, num(1), num(0))))
     }
+
+    def "javaCompare matches Double.compare and Float.compare"() {
+        given:
+        def values = [Double.NaN, Double.NEGATIVE_INFINITY, -1.5d, -0.0d, 0.0d, Double.MIN_VALUE, 2.0d, Double.POSITIVE_INFINITY]
+
+        expect:
+        [FormulaType.getDoublePrecisionFloatingPointType(), FormulaType.getSinglePrecisionFloatingPointType()].each { type ->
+            def a = fpmgr.makeVariable("a", type)
+            def b = fpmgr.makeVariable("b", type)
+            def cmp = BitvectorEncoding.javaCompare(fmgr, a, b)
+            for (double x : values) {
+                for (double y : values) {
+                    int expected = type.getMantissaSize() == 52 ? Double.compare(x, y) : Float.compare((float) x, (float) y)
+                    def prover = context.newProverEnvironment()
+                    prover.addConstraint(fpmgr.assignment(a, fpmgr.makeNumber(x, type)))
+                    prover.addConstraint(fpmgr.assignment(b, fpmgr.makeNumber(y, type)))
+                    prover.addConstraint(bmgr.not(bvmgr.equal(cmp, bvmgr.makeBitvector(32, expected))))
+                    assert prover.isUnsat(): "compare($x, $y) should be $expected"
+                    prover.close()
+                }
+            }
+        }
+    }
 }

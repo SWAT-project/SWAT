@@ -277,46 +277,56 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
 
     /**
      * Compares two floats and returns: 0 if both values are equal; 1 if this float is greater or
-     * either float is NaN; -1 if the parameter is greater ToDo (Nils): This method is not validated
+     * either float is NaN; -1 if the parameter is greater
      *
      * @param f The other FloatValue
      * @return The resulting IntValue with the boolean conditions
      */
     public IntValue FCMPG(FloatValue f) {
-        if (concrete.isNaN() || f.concrete.isNaN()) {
-            return new IntValue(context, 1);
-        }
-        return FCMP(f);
+        return FCMP(f, 1);
     }
 
     /**
      * Compares two floats and returns: 0 if both values are equal 1 if this float is greater -1 if
-     * the parameter is greater or either float is NaN ToDo (Nils): This method is not validated
+     * the parameter is greater or either float is NaN
      *
      * @param f The other FloatValue
      * @return The resulting IntValue with the boolean conditions
      */
     public IntValue FCMPL(FloatValue f) {
-        if (concrete.isNaN() || f.concrete.isNaN()) {
-            return new IntValue(context, -1);
-        }
-        return FCMP(f);
+        return FCMP(f, -1);
     }
 
     /**
-     * Compares two floats and returns: 0 if both values are equal 1 if this float is greater -1 if
-     * the parameter is greater
+     * Compares two floats as FCMPG/FCMPL do: 0 if both values are equal (also -0.0 and 0.0), 1 if
+     * this float is greater, -1 if the parameter is greater, and nanResult if either is NaN
      *
      * @param f The other FloatValue
+     * @param nanResult The result if either float is NaN
      * @return The resulting IntValue with the boolean conditions
      */
-    private IntValue FCMP(FloatValue f) {
-        int c = concrete.compareTo(f.concrete);
+    private IntValue FCMP(FloatValue f, int nanResult) {
+        int c;
+        if (Float.isNaN(concrete) || Float.isNaN(f.concrete)) {
+            c = nanResult;
+        } else if (concrete > f.concrete) {
+            c = 1;
+        } else if (concrete.floatValue() == f.concrete.floatValue()) {
+            // Explicit unboxing: 'concrete' is a boxed Float, so '==' would compare references
+            c = 0;
+        } else {
+            c = -1;
+        }
 
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        BooleanFormula isNaN = bmgr.or(fmgr.isNaN(formula), fmgr.isNaN(f.formula));
         BooleanFormula eqCond = fmgr.equalWithFPSemantics(formula, f.formula);
         BooleanFormula gtCond = fmgr.greaterThan(formula, f.formula);
         // Built over bit-vectors: Z3 decides int_to_bv over FP comparisons badly.
-        BitvectorFormula res = BitvectorEncoding.compareResult(context.getFormulaManager(), eqCond, gtCond, 32);
+        BitvectorFormula res = bmgr.ifThenElse(
+                isNaN,
+                context.getFormulaManager().getBitvectorFormulaManager().makeBitvector(32, nanResult),
+                BitvectorEncoding.compareResult(context.getFormulaManager(), eqCond, gtCond, 32));
 
         return new IntValue(context, c, res);
     }

@@ -15,6 +15,7 @@ import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -75,32 +76,7 @@ public class FloatInvocation {
      */
     private static IntValue compare(FloatValue f1, FloatValue f2) {
         SolverContext ctx = f1.context;
-        FloatingPointFormulaManager fpmgr = ctx.getFormulaManager().getFloatingPointFormulaManager();
-        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
-        IntegerFormulaManager imgr = ctx.getFormulaManager().getIntegerFormulaManager();
-
-        // Check for NaN cases first
-        BooleanFormula f1IsNaN = fpmgr.isNaN(f1.formula);
-        BooleanFormula f2IsNaN = fpmgr.isNaN(f2.formula);
-
-        // Regular comparisons (when neither is NaN)
-        BooleanFormula isEqual = fpmgr.equalWithFPSemantics(f1.formula, f2.formula);
-        BooleanFormula isLess = fpmgr.lessThan(f1.formula, f2.formula);
-
-        // Build the result using IntegerFormula (will be converted to bitvector by IntValue constructor):
-        // - If both are NaN: return 0
-        // - If only f1 is NaN: return 1 (NaN > anything)
-        // - If only f2 is NaN: return -1 (anything < NaN)
-        // - If equal: return 0
-        // - If f1 < f2: return -1
-        // - Otherwise: return 1
-        NumeralFormula.IntegerFormula normalResult = bmgr.ifThenElse(isEqual, imgr.makeNumber(0),
-                bmgr.ifThenElse(isLess, imgr.makeNumber(-1), imgr.makeNumber(1)));
-
-        NumeralFormula.IntegerFormula result = bmgr.ifThenElse(bmgr.and(f1IsNaN, f2IsNaN), imgr.makeNumber(0),
-                bmgr.ifThenElse(f1IsNaN, imgr.makeNumber(1),
-                        bmgr.ifThenElse(f2IsNaN, imgr.makeNumber(-1), normalResult)));
-
+        BitvectorFormula result = BitvectorEncoding.javaCompare(ctx.getFormulaManager(), f1.formula, f2.formula);
         return new IntValue(ctx, Float.compare(f1.concrete, f2.concrete), result);
     }
     /**
