@@ -2,6 +2,7 @@ package de.uzl.its.swat.symbolic.UFs;
 
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+import de.uzl.its.swat.symbolic.trace.SymbolRegistry;
 import de.uzl.its.swat.thread.ThreadHandler;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,6 +29,8 @@ public class SinCosUF {
 
         sinUF = ufmgr.declareUF("sin", DoubleType, DoubleType);
         cosUF = ufmgr.declareUF("cos", DoubleType, DoubleType);
+        SymbolRegistry.declare("sin", SymbolRegistry.Kind.APPROXIMATE_MODEL_FUNCTION);
+        SymbolRegistry.declare("cos", SymbolRegistry.Kind.APPROXIMATE_MODEL_FUNCTION);
 
         final double PI = Math.PI;
         inputValues = new ArrayList<Double>(Arrays.asList(
@@ -70,6 +73,7 @@ public class SinCosUF {
         sth.addConstraint(
                 bmgr.or(inputValues.stream().map(v -> fmgr.equalWithFPSemantics(symIn, fmgr.makeNumber(v, DoubleType)))
                         .collect(Collectors.toList())));
+        sth.recordSymbolicPrecisionLoss();
 
         return symOut;
     }
@@ -88,6 +92,7 @@ public class SinCosUF {
         sth.addConstraint(
                 bmgr.or(inputValues.stream().map(v -> fmgr.equalWithFPSemantics(symIn, fmgr.makeNumber(v, DoubleType)))
                         .collect(Collectors.toList())));
+        sth.recordSymbolicPrecisionLoss();
 
         return symOut;
     }
