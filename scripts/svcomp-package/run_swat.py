@@ -228,6 +228,11 @@ if __name__ == "__main__":
     log_dir = f'{path}/logs'
 
     cmd[-1] = os.path.join(SCRIPT_DIR, local_target_dir, 'build') #f"{local_target_dir}/build"
+    # The CPU time limit covers the whole run, so the explorer's budget starts with what copying
+    # and compiling the task took (the memory and CPU limits are the explorer's defaults).
+    t = os.times()
+    cmd[cmd.index('--classpath'):cmd.index('--classpath')] = [
+        '--cpu-used', f'{t.user + t.system + t.children_user + t.children_system:.1f}']
     #delete the dir if it exists
     if os.path.exists(log_dir):
         os.system(f'rm -rf {log_dir}')

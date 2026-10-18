@@ -87,6 +87,12 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
 
 - **Duration:** a full valid-assert run takes about 40 min with the default 900 s timeout, and
   much longer with `--testcase-timeout-s 3600`. Only compare runs made with the same timeout.
+- **Resource budget:** as in SV-COMP, the explorer and all executor JVMs share one memory and CPU
+  budget (`--memory-limit` MB, default 15000; `--cpu-limit` s, default 900; the harness passes
+  `--testcase-timeout-s` as the CPU limit). The executor heap is derived from the memory limit (a
+  lower cgroup limit wins). Close to a limit the explorer kills the executor run or interrupts the
+  Z3 query in progress; 20 s before the CPU limit it ends with UNKNOWN. Both rule out SAFE, see
+  `symbolic-explorer/svcomp/ResourceBudget.py` and `resources` in `stats.json`.
 - **Output:** results go to `targets/sv-comp/runs/run_<timestamp>/`. Per-task results are in
   `results/results_<prp>_*.json`, and per-task logs (`explorer.log`,
   `Main_main_interprocedural.json`, `stats.json`) are in `logs/<suite>/<task>_<prp>/`.
