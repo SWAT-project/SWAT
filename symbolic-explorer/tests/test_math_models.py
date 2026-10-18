@@ -94,5 +94,18 @@ class ApproximateLimitTest(unittest.TestCase):
         self.assertEqual((sat, rlimit), (SATResult.UNSAT, None))
 
 
+class ModelValuesTest(unittest.TestCase):
+
+    def test_model_functions_are_not_inputs(self):
+        from z3 import Solver, FP, Float64, Function, fpLT, FPVal, sat
+        from solver.SolverHandler import Z3Handler
+        x = FP('D_0', Float64())
+        f = Function('math_tan_0', Float64(), Float64())
+        s = Solver()
+        s.add(fpLT(FPVal(1.0, Float64()), f(x)), fpLT(x, FPVal(2.0, Float64())))
+        self.assertEqual(s.check(), sat)
+        self.assertEqual(set(Z3Handler.extract_and_encode_values(s.model())), {'D_0'})
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -260,6 +260,9 @@ class Z3Handler:
         for var_decl in model.decls():
             # Extract the variable (as an expression) and its value
             name = str(var_decl.name())
+            # Functions (e.g. the executor's Math models, math_tan_3) are not inputs
+            if var_decl.arity() > 0:
+                continue
             # Updated regex to match array names like "[I_0" as well as regular names
             if not re.match(r'(\[?[\w\/]+)_(\d+)', name):
                 continue
