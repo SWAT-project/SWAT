@@ -41,6 +41,16 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
     private final Stack<Long> openInvokeIds = new Stack<>();
     /** The open invokes that are static initializers (CLINIT). */
     private final Set<Long> clinitInvokeIds = new HashSet<>();
+    /**
+     * The open invokes of a constructor called from within a constructor. The instrumentation
+     * cannot wrap them in a try/catch (the receiver may be the uninitialized this), so an exception
+     * leaving them emits no INVOKEMETHOD_EXCEPTION.
+     */
+    private final Set<Long> unwrappedInitInvokeIds = new HashSet<>();
+    /** Set by the probe the instrumentation places before such a constructor call. */
+    private boolean nextInvokeIsUnwrappedInit = false;
+    /** The value of that probe (see InstructionMethodAdapter.visitMethodInsn). */
+    private static final int UNWRAPPED_INIT_PROBE = 420;
 
     /**
      * Returns whether we're currently in a delegation context (non-instrumented → instrumented).
@@ -439,7 +449,7 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
 
     /**
      * Closes static initializers that an exception left, once an instruction of the frame below
-     * them runs. unwindAbandonedClinits only catches this when an invoke below ends; an
+     * them runs. unwindAbandonedInitializers only catches this when an invoke below ends; an
      * initializer triggered by a field access or {@code new} has none, and the next instruction
      * already belongs to the handler of the frame below. Without this, that handler would run as
      * untracked code inside the initializer's frame.
@@ -474,25 +484,29 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
     }
 
     /**
-     * A static initializer left by an exception emits no INVOKECLINIT_END, so its invoke and its
-     * shadow frame stay open. When the end (or exception) of an invoke below it arrives, the
-     * initializer is certainly over: close it first, as the JVM did when it unwound it.
+     * A static initializer left by an exception emits no INVOKECLINIT_END, and a constructor
+     * called from within a constructor left by an exception emits no INVOKEMETHOD_EXCEPTION, so
+     * their invokes and shadow frames stay open. When the end (or exception) of an invoke below
+     * them arrives, they are certainly over: close them first, as the JVM did when it unwound them.
      */
-    private void unwindAbandonedClinits(long invokeId, ShadowContext stack, Logger logger) {
+    private void unwindAbandonedInitializers(long invokeId, ShadowContext stack, Logger logger) {
         if (openInvokeIds.empty() || openInvokeIds.peek() == invokeId || !openInvokeIds.contains(invokeId)) {
             return;
         }
         List<Long> above = openInvokeIds.subList(openInvokeIds.lastIndexOf(invokeId) + 1, openInvokeIds.size());
-        if (!clinitInvokeIds.containsAll(above)) {
-            return; // not only initializers: leave it to the consistency check below
+        for (long id : above) {
+            if (!clinitInvokeIds.contains(id) && !unwrappedInitInvokeIds.contains(id)) {
+                return; // not only initializers: leave it to the consistency check below
+            }
         }
         while (openInvokeIds.peek() != invokeId) {
-            long clinit = openInvokeIds.pop();
-            clinitInvokeIds.remove(clinit);
-            if (stack.getActiveFrame().getMethodName().equals("<clinit>")) {
+            long open = openInvokeIds.pop();
+            String method = clinitInvokeIds.remove(open) ? "<clinit>" : "<init>";
+            unwrappedInitInvokeIds.remove(open);
+            if (stack.getActiveFrame().getMethodName().equals(method)) {
                 stack.popFrame();
             }
-            logger.info("Closing static initializer (invoke {}) left by an exception", clinit);
+            logger.info("Closing initializer {} (invoke {}) left by an exception", method, open);
         }
     }
 
@@ -514,20 +528,30 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
                         || currentInstruction instanceof INVOKEMETHOD_EXCEPTION
                         || currentInstruction instanceof INVOKECLINIT_END;
 
+        if (currentInstruction instanceof SPECIAL special && special.i == UNWRAPPED_INIT_PROBE) {
+            nextInvokeIsUnwrappedInit = !isInUnknownSpace;
+        }
+
         if (!isInUnknownSpace && currentInstructionIsInvokeX) {
             openInvokeIds.push(((InvokeIdInstruction) currentInstruction).invokeId);
             if (currentInstruction instanceof CLINIT) {
                 clinitInvokeIds.add(((InvokeIdInstruction) currentInstruction).invokeId);
             }
+            if (nextInvokeIsUnwrappedInit && currentInstruction instanceof INVOKESPECIAL) {
+                unwrappedInitInvokeIds.add(((InvokeIdInstruction) currentInstruction).invokeId);
+            }
+        }
+        if (currentInstructionIsInvokeX) {
+            nextInvokeIsUnwrappedInit = false;
         }
 
         if (currentInstructionIsMethodEndOrException) {
-            unwindAbandonedClinits(((InvokeIdInstruction) currentInstruction).invokeId, stack, logger);
+            unwindAbandonedInitializers(((InvokeIdInstruction) currentInstruction).invokeId, stack, logger);
             if (!openInvokeIds.empty()
                     && openInvokeIds.peek() > 0
                     && openInvokeIds.peek()
                             == ((InvokeIdInstruction) currentInstruction).invokeId) {
-                openInvokeIds.pop();
+                unwrappedInitInvokeIds.remove(openInvokeIds.pop());
                 closeOpenInvoke = true;
                 if (isInUnknownSpace) {
                     logger.info("Leaving unknown space.");
