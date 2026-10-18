@@ -2,6 +2,7 @@ package de.uzl.its.swat.symbolic.UFs;
 
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+import de.uzl.its.swat.symbolic.trace.SymbolRegistry;
 import de.uzl.its.swat.thread.ThreadHandler;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import org.sosy_lab.java_smt.api.*;
@@ -20,6 +21,7 @@ public class ToLowerCaseUF {
         bmgr = fmgr.getBooleanFormulaManager();
 
         toLowerUF = ufmgr.declareUF("toLowerCase", FormulaType.IntegerType, FormulaType.IntegerType);
+        SymbolRegistry.declare("toLowerCase", SymbolRegistry.Kind.APPROXIMATE_MODEL_FUNCTION);
 
         // A..Z -> a..z
         for (int c = 'A'; c <= 'Z'; c++) {
@@ -49,6 +51,8 @@ public class ToLowerCaseUF {
                     imgr.greaterOrEquals(charCode, imgr.makeNumber(32)),
                     imgr.lessOrEquals(charCode, imgr.makeNumber(126)));
             sth.addConstraint(bmgr.implication(guard, inAscii));
+            // Restricting the chars to printable ASCII excludes real inputs.
+            sth.recordSymbolicPrecisionLoss();
         }
         return ufmgr.callUF(toLowerUF, charCode);
     }

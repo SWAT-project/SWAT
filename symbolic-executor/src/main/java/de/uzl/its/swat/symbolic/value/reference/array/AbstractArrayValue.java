@@ -4,6 +4,7 @@ import com.google.common.collect.ImmutableSet;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.NotSupportedException;
 import de.uzl.its.swat.config.Config;
+import de.uzl.its.swat.symbolic.trace.SymbolRegistry;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
@@ -60,12 +61,11 @@ public abstract class AbstractArrayValue<
         super(context, address);
         this.context = context;
         this.amgr = context.getFormulaManager().getArrayFormulaManager();
-        Value.symbol = Value.symbol + Value.inc;
         this.indexFormulaType = indexFormulaType;
         this.elementFormulaType = elementFormulaType;
         formulaType = FormulaType.getArrayType(indexFormulaType, elementFormulaType);
 
-        this.formula = amgr.makeArray(symbolicPrefix + "_" + (Value.symbol - Value.inc), formulaType);
+        this.formula = makeBaseArray(amgr, symbolicPrefix, formulaType);
         this.size = size;
         this.parentRefIdx = null;
         this.parentRef = null;
@@ -86,6 +86,19 @@ public abstract class AbstractArrayValue<
         formulaType = FormulaType.getArrayType(indexFormulaType, elementFormulaType);
         this.formula = formula;
         this.size = size;
+    }
+
+    /**
+     * Creates the base symbol of an allocated array, which its initial contents are stored over.
+     * Its name is outside the input namespace ({@code <prefix>_<idx>}): an input array of the same
+     * prefix and index would otherwise share, and constrain, the allocated array's contents.
+     */
+    protected static <I extends Formula, E extends Formula> ArrayFormula<I, E> makeBaseArray(
+            ArrayFormulaManager amgr, String symbolicPrefix, FormulaType.ArrayFormulaType<I, E> type) {
+        String name = symbolicPrefix + "_alloc" + Value.symbol;
+        Value.symbol = Value.symbol + Value.inc;
+        SymbolRegistry.declare(name, SymbolRegistry.Kind.ARRAY_BASE);
+        return amgr.makeArray(name, type);
     }
 
     /**

@@ -1,6 +1,7 @@
 package de.uzl.its.swat.symbolic.UFs;
 
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.symbolic.trace.SymbolRegistry;
 import org.sosy_lab.java_smt.api.*;
 
 import java.util.ArrayList;
@@ -32,6 +33,7 @@ public class EqualsIgnoreCaseUF {
                 FormulaType.BooleanType,
                 FormulaType.StringType,
                 FormulaType.StringType);
+        SymbolRegistry.declare("equalsIgnoreCase", SymbolRegistry.Kind.APPROXIMATE_MODEL_FUNCTION);
     }
 
     public BooleanFormula getUFCall(StringFormula s1, StringFormula s2) {

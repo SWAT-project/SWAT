@@ -102,15 +102,8 @@ class DTOBuilder {
             ufs.add(new UFDTO(formula));
         }
         logger.trace("Parsing constraints...");
-        // A constraint over anything but the inputs (e.g. an uninterpreted function) means the
-        // model is approximate. Input names usually match the pattern below, but String inputs
-        // (java/lang/String_0) do not, so they are accepted by name.
-        Set<String> inputNames = new HashSet<>();
-        for (InputElement ie : symbolicTrace.getInputs()) {
-            inputNames.add(ie.getName());
-        }
-        java.util.function.Predicate<String> isInput =
-                name -> inputNames.contains(name) || name.matches("[A-Z].*_[0-9].*");
+        // A constraint over an approximate model function, or over a symbol no model declared,
+        // means the encoding may be imprecise (see SymbolRegistry).
         boolean symbolicPrecisionLoss = symbolicTrace.isSymbolicPrecisionLoss();
         for (Element el : symbolicTrace.getTrace()) {
             if (el instanceof BranchElement be) {
@@ -122,25 +115,13 @@ class DTOBuilder {
                         constraint = "(assert true)";
                     } else {
                         constraint = String.valueOf(fmgr.dumpFormula(f));
-                        if (!fmgr.extractVariablesAndUFs(f).isEmpty() &&
-                            !fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(isInput)) {
-                            symbolicPrecisionLoss = true;
-                        }
+                        symbolicPrecisionLoss |= hasImpreciseSymbol(fmgr, f);
                     }
-                    //fmgr.extractVariablesAndUFs(f).keySet().forEach(System.out::println);
-                    // assert fmgr.extractVariablesAndUFs(f).keySet().stream()
-                    //         .allMatch(s -> s.matches("[A-Z].*_[0-9].*")): "[SWAT] UF introduced in: " + constraint;
-
                 } catch (InterruptedException e) {
                     BooleanFormula f = be.getConstraint();
                     logger.warn("Error while simplifying formula", e);
                     constraint = String.valueOf(fmgr.dumpFormula(f));
-                    //fmgr.extractVariablesAndUFs(f).keySet().forEach(System.out::println);
-                    // assert fmgr.extractVariablesAndUFs(f).keySet().stream()
-                    //         .allMatch(s -> s.matches("[A-Z].*_[0-9].*")): "[SWAT] UF introduced in: " + constraint;
-                    if (!fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(isInput)) {
-                        symbolicPrecisionLoss = true;
-                    }
+                    symbolicPrecisionLoss |= hasImpreciseSymbol(fmgr, f);
                 }
                 trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), be.isConcreteOnly())
                         .place(be.getKey(), be.getPops(), be.getPushes(), be.isCallback()));
@@ -150,6 +131,25 @@ class DTOBuilder {
         }
         return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), Witness.getNondetReturns(), Witness.getViolation(), symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange(),
                 symbolicTrace.isSymbolicPrecisionLoss());
+    }
+
+    /** Symbols already reported as undeclared, so each is logged once. */
+    private static final Set<String> reportedUndeclared = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Whether the formula mentions a symbol whose constraints are not encoded precisely: an
+     * approximate model function, or a symbol that was never declared in the {@link SymbolRegistry}.
+     */
+    static boolean hasImpreciseSymbol(FormulaManager fmgr, Formula f) {
+        boolean imprecise = false;
+        for (String name : fmgr.extractVariablesAndUFs(f).keySet()) {
+            if (SymbolRegistry.isPrecise(name)) continue;
+            if (SymbolRegistry.kindOf(name) == null && reportedUndeclared.add(name)) {
+                logger.warn("Undeclared symbol {} in a branch constraint; treating it as imprecise", name);
+            }
+            imprecise = true;
+        }
+        return imprecise;
     }
 
     protected static String encodeCoverage(InstrCoverage instrCoverage) throws JsonProcessingException {
