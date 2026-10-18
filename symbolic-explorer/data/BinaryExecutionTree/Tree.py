@@ -36,6 +36,9 @@ class Tree:
         # Traces that used an approximate model (a sampled Math function). A solution built from one
         # is a guess, so the next run may take another path than predicted without anything being wrong.
         self.approximate_traces: Set[str] = set()
+        # Traces whose execution had a StackOverflowError reach the target's code: their outcome
+        # depends on the JVM's stack size, so a violation they show is not a verdict.
+        self.stack_overflow_traces: Set[str] = set()
         # How often the next run did take another path than such a guessed solution predicted.
         self.expected_divergences: int = 0
         self.uncaught_exceptions: int = 0
