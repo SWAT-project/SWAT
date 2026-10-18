@@ -120,6 +120,7 @@ def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=(), 
     n.pushes = pushes
     n.callback = callback
     n.choice = choice
+    n.unmodelled_exception = False
     n.constraint = {}
     n.skipped = skipped
     n.branched = branched
@@ -362,6 +363,17 @@ class DfsTest(unittest.TestCase):
         self.assertEqual(candidates(n1, g), set())
         n1.skipped = special_node('x', branched=n2, inst='UNMODELLED_EXCEPTION')
         n2.key = None # without a key the walk cannot find the graph again (see KeyCheckTest)
+        self.assertEqual(candidates(n1, g), {'n2'})
+
+    def test_unmodelled_exception_mark_on_a_node_makes_everything_after_it_interesting(self):
+        # The same, with the marker kept on the node after it, as Tree.add does.
+        g = (GraphBuilder()
+             .nodes_('e0', 'b1', 'b2').node('a', assertion=True).node('x', exit=True)
+             .edge('e0', 'b1').branch('b1', 'b2', 'x').branch('b2', 'a', 'x').edge('a', 'x')
+             .load())
+        n2 = branch_node('n2', skipped=leaf(), branched=None)
+        n1 = branch_node('n1', skipped=n2, branched=leaf())
+        n2.unmodelled_exception = True
         self.assertEqual(candidates(n1, g), {'n2'})
 
     def exception_graph(self):

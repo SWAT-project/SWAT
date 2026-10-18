@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import threading
 from urllib.request import Request
@@ -59,7 +60,17 @@ class SymbolicExplorer:
 
     def run_sv_comp(self):
         driver = SVCompDriver(args)
-        driver.run()
+        try:
+            driver.run()
+        except BaseException:
+            # The driver reports UNKNOWN for a failed exploration itself; this catches what fails
+            # around it. Without it the HTTP server would keep the process alive until the time limit.
+            log.get_logger().exception('[SVCOMP] The SV-COMP driver failed')
+            if not driver.verdict_reported:
+                log.get_verdict_logger().info(f'[VERDICT {driver.verification_category.value}] == DONT-KNOW')
+            for handler in log.get_logger().handlers:
+                handler.flush()
+            os._exit(1)
 
     def run_http(self):
         driver = HTTPDriver(self.args)

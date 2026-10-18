@@ -2,13 +2,10 @@ from data.BinaryExecutionTree.Node import Node
 from data.BinaryExecutionTree.Leaf import Leaf
 from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, is_interesting, \
     apply_stack_delta, check_branch, resync
+from data.trace.Special import UNMODELLED_EXCEPTION
 
 import log
 logger = log.get_logger()
-
-# The executor's marker for an exception the SA graph does not model
-# (SymbolicInstructionVisitor.UNMODELLED_EXCEPTION).
-UNMODELLED_EXCEPTION = "UNMODELLED_EXCEPTION"
 
 def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0, sa_stack: CallStack = None, distances: dict[Node, float] | None = None, sa_index=None, trace_stack=None) -> list[Node]:
     # sa_node and sa_stack together are where the SA walk stands: the node, and the call stack of
@@ -18,17 +15,27 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
     # along its unexplored side; nodes without SA information are left out.
     # sa_index and trace_stack: the graph's keys, and the call stack as the trace reports it (see
     # SAGraph.apply_stack_delta), against which every branch of the walk is checked.
-    assert clinit_depth >= 0
     possible_nodes = []
     if sa_index is None and sa_node is not None:
         sa_index = sa_node.graph_index
-    
-    if node is not None \
-      and node not in visited \
-      and isinstance(node, Node):
+
+    # The walk is a pre-order over the tree: a node, then the subtree of its skipped side, then
+    # that of its branched side. It keeps its own stack, since paths can be longer than the
+    # interpreter's recursion limit allows; each entry is a node with the walk's state there.
+    work = [(node, sa_node, clinit_depth, sa_stack, trace_stack)]
+    while work:
+        node, sa_node, clinit_depth, sa_stack, trace_stack = work.pop()
+        assert clinit_depth >= 0
+        if node is None or node in visited or not isinstance(node, Node):
+            continue
 
         visited.add(node)
-        
+
+        if node.unmodelled_exception:
+            # Some trace threw an exception the graph does not model right before this node (see
+            # below): the graph cannot say where execution went from there.
+            sa_node, sa_stack = None, None
+
         # Static initializers delimit themselves with CLINIT / INVOKECLINIT_END markers, so we
         # know whether the branches below this node were executed inside a <clinit>. The SA
         # graph does not model static initializers, so those branches have no counterpart there.
@@ -45,15 +52,15 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
                 # went, so the walk has no information -- until it finds the graph again at a
                 # later branch by key (resync, below).
                 sa_node, sa_stack = None, None
-            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_node, clinit_depth, sa_stack, distances, sa_index, trace_stack))
-            return possible_nodes
+            work.append((node.branched, sa_node, clinit_depth, sa_stack, trace_stack))
+            continue
         else:
             assert node.kind == "Branch"
 
         # The frames entered and left since the previous branch, which happened before this one.
         if sa_index is not None:
             trace_stack = apply_stack_delta(trace_stack, node.pops, node.pushes, sa_index)
-        
+
         # If clinit_depth > 0, we do not have corresponding SA information, so pretend that there is no SA and DON'T WALK the SA graph.
         # Likewise for a branch in application code that library code called back: the graph walks
         # over the library call, so the walk holds its place until the callback returns.
@@ -102,9 +109,9 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
                 if distances is not None and sa_node and not mask_sa_node:
                     unexplored = sa_node.get_fallthrough_child() if node.skipped is None else sa_node.get_branched_child()
                     distances[node] = unexplored.assertDistance
-        
+
         # Walk the SA graph in step with the tree. Each side needs its own successor held in its
-        # own variable: rebinding one shared local here would leave the branched recursion
+        # own variable: rebinding one shared local here would leave the branched walk
         # descending from the fallthrough child instead of from this branch.
         sa_skipped = sa_node
         sa_branched = sa_node
@@ -113,10 +120,12 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             sa_skipped = sa_node.get_fallthrough_child()
             sa_branched = sa_node.get_branched_child()
 
-        # Only walk the tree further if the path is interesting (leads to an assert) or if we don't have information (sa_node is None)
-        if skip_is_interesting:
-            possible_nodes.extend(dfs(visited, tree, node.skipped, solved_branches, unsat_branch_ids, sa_skipped, clinit_depth, sa_stack, distances, sa_index, trace_stack))
+        # Only walk the tree further if the path is interesting (leads to an assert) or if we
+        # don't have information (sa_node is None). The branched side goes on the stack first, so
+        # that the skipped side's subtree is walked before it.
         if branch_is_interesting:
-            possible_nodes.extend(dfs(visited, tree, node.branched, solved_branches, unsat_branch_ids, sa_branched, clinit_depth, sa_stack, distances, sa_index, trace_stack))
-    
+            work.append((node.branched, sa_branched, clinit_depth, sa_stack, trace_stack))
+        if skip_is_interesting:
+            work.append((node.skipped, sa_skipped, clinit_depth, sa_stack, trace_stack))
+
     return possible_nodes
