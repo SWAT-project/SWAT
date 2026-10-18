@@ -62,6 +62,9 @@ class Node:
         self.pops = 0
         self.pushes = ()
         self.callback = False  # in a callback from library code: no counterpart in the SA graph
+        # Only for 'Branch' nodes: the loop-head states reached before this branch, since the
+        # previous one, each with its position (see Tree.register_loop_states).
+        self.loop_states = ()
 
         # Validate trace argument
         if trace is None or len(trace) == 0:
@@ -92,6 +95,7 @@ class Node:
             self.pops = branch.pops
             self.pushes = branch.pushes
             self.callback = branch.callback
+            self.loop_states = getattr(branch, 'positioned_loop_states', ())
             self.constraint[branch.trace_id] = branch.constraint
             # Determine whether the branch was taken or skipped and assign child
             if branch.has_branched:

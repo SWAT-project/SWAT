@@ -26,6 +26,8 @@ class StrategyService:
         # ties, and branches without SA information (ranked last), keep their DFS order.
         distances = {} if kwargs.get("rank_by_distance", False) else None
         possible_branches = dfs(visited, tree, tree.root, db.get_solutions().keys(), db.get_unsat_branches(), kwargs.get("sa_node", None), distances=distances)
+        if tree.loop_state_pruned:
+            logger.info(f'[DFS] Left out {tree.loop_state_pruned} subtrees below a repeated loop-head state')
         if distances:
             possible_branches.sort(key=lambda n: distances.get(n, math.inf))
         # dfs records where the SA walk fell out of step on its tree, which is a copy.

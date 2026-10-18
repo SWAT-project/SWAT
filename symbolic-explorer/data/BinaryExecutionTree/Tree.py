@@ -10,6 +10,9 @@ import log
 logger = log.get_logger()
 
 class Tree:
+    # Whether dfs() leaves out the branches below a repeated loop-head state (--no-loop-state-matching).
+    LOOP_STATE_MATCHING = True
+
     """
     Represents a binary execution tree used to model decision points in an execution flow.
 
@@ -48,6 +51,11 @@ class Tree:
         # [SWAT Exception]s) that make the verdict untrustworthy. These cannot ride the trace
         # because they halt the executor JVM before it sends one, so they are surfaced here.
         self.execution_errors: list = []
+        # Loop-head state matching: for each state hash, the smallest position at which an
+        # executed path reached it (see register_loop_states).
+        self.loop_state_first: dict[str, tuple] = {}
+        # Branches the last dfs() left out because of a repeated loop-head state.
+        self.loop_state_pruned = 0
 
 
     def record_inputs(self, inputs: List[Input]):
@@ -138,7 +146,47 @@ class Tree:
             inputs (any): The inputs associated with the branch being added.
             ufs (any): The UFs associated with the branch being added.
         """
+        self.register_loop_states(trace)
         self.root = self.add_recursive(None, self.root, trace.copy(), inputs, ufs)
+
+    def register_loop_states(self, trace: list[Branch | Special]):
+        """
+        Positions the loop-head states of a trace and records the smallest position of each.
+
+        The position of a state is (d, k, m): d branches precede it, k is the outcomes of those
+        branches read as a binary number (taken = 1, the first branch the most significant bit), and
+        m states precede it. Positions compare lexicographically. The state goes with the branch
+        that follows it: that branch, and every branch below it, needs no flip if the same state was
+        reached at a smaller position (see dominated_by_loop_state and the executor's
+        LoopStateMatcher for why). Two paths through the same tree node have the same prefix, so
+        the node's positions do not depend on the trace that created it.
+        """
+        d, k, m = 0, 0, 0
+        for element in trace:
+            if not isinstance(element, Branch):
+                continue
+            states = getattr(element, 'loop_states', ())
+            if states:
+                positioned = []
+                for state in states:
+                    position = (d, k, m)
+                    m += 1
+                    positioned.append((state, position))
+                    first = self.loop_state_first.get(state)
+                    if first is None or position < first:
+                        self.loop_state_first[state] = position
+                element.positioned_loop_states = tuple(positioned)
+            d += 1
+            k = 2 * k + (1 if element.has_branched else 0)
+
+    def dominated_by_loop_state(self, node: Node) -> bool:
+        """Whether a state reached before this branch was reached at a smaller position already."""
+        if not Tree.LOOP_STATE_MATCHING:
+            return False
+        for state, position in node.loop_states:
+            if self.loop_state_first.get(state, position) < position:
+                return True
+        return False
 
     def add_recursive(self, parent: Optional[Node], node: Optional[Union[Node, Leaf]], trace: list[Branch | Special], inputs: List[Input], ufs: List[UF]):
         """

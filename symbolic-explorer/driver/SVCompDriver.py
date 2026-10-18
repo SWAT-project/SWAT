@@ -12,6 +12,7 @@ from solver.SolverHandler import SATResult
 
 from data.Database import Database
 from data.BinaryExecutionTree.Node import Node
+from data.BinaryExecutionTree.Tree import Tree
 
 from strategy.StrategyService import StrategyService
 from data.StaticAnalysisGraph.SAGraph import SAGraph
@@ -98,6 +99,7 @@ class SVCompDriver:
         self.solver_limit_hits = 0 # queries that ran out of their resource limit
         # How often each branch (by gid) ran out of its resource limit; each time multiplies it.
         self.rlimit_level: dict[int, int] = {}
+        Tree.LOOP_STATE_MATCHING = not getattr(args, 'no_loop_state_matching', False)
     
     @contextmanager
     def pushd(self, dirname):

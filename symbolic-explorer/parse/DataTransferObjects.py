@@ -19,6 +19,8 @@ class TraceItem(BaseModel):
     pushes: list[Optional[str]] = []
     # Recorded in application code that library code called back: not in the SA graph.
     callback: bool = False
+    # Hashes of the loop-head states the execution reached since the previous branch, in order.
+    loopStates: list[str] = []
 class UFItem(BaseModel):
     definition: str 
 

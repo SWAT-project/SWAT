@@ -23,7 +23,8 @@ class Parser:
                                      key=branch.key,
                                      pops=branch.pops,
                                      pushes=tuple(branch.pushes),
-                                     callback=branch.callback))
+                                     callback=branch.callback,
+                                     loop_states=tuple(branch.loopStates)))
             else:
                 _trace.append(Special(id=branch.iid,
                                       trace_id=trace_id,
