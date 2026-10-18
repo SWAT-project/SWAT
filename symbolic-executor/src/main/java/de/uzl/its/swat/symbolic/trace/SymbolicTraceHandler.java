@@ -129,6 +129,7 @@ public class SymbolicTraceHandler {
     public void addInput(String name, Value<?, ?> value) {
         logger.info("Input with name: {} and value: {} registered", name, value);
         symbolicTrace.addInputElement(new InputElement(name, value));
+        SymbolRegistry.declare(name, SymbolRegistry.Kind.INPUT);
     }
 
     /**

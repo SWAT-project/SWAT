@@ -6,6 +6,7 @@ import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.symbolic.UFs.EqualsIgnoreCaseUF;
+import de.uzl.its.swat.symbolic.trace.SymbolRegistry;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.VoidValue;
@@ -356,6 +357,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         // prefixes up to k agree, and k is the end of one string or the chars at k differ.
         FunctionDeclaration<NumeralFormula.IntegerFormula> lcp = context.getFormulaManager().getUFManager()
                 .declareUF("commonPrefixLength", FormulaType.IntegerType, FormulaType.StringType, FormulaType.StringType);
+        SymbolRegistry.declare("commonPrefixLength", SymbolRegistry.Kind.MODEL_FUNCTION);
         NumeralFormula.IntegerFormula k = context.getFormulaManager().getUFManager().callUF(lcp, formula, other.formula);
         BooleanFormula kInsideBoth = bmgr.and(imgr.lessThan(k, len), imgr.lessThan(k, otherLen));
         addDefinition(bmgr.and(
@@ -369,6 +371,15 @@ public class StringValue extends ObjectValue<StringFormula, String> {
                 imgr.subtract(smgr.toCodePoint(smgr.charAt(formula, k)), smgr.toCodePoint(smgr.charAt(other.formula, k))),
                 imgr.subtract(len, otherLen));
         return new IntValue(context, result, cmp);
+    }
+
+    /** Records that a model is only approximate, so an exhausted search proves nothing. */
+    private static void recordPrecisionLoss() {
+        try {
+            ThreadHandler.getSymbolicTraceHandler(currentThread().getId()).recordSymbolicPrecisionLoss();
+        } catch (Exception e) {
+            throw new IllegalStateException("No symbolic trace handler for the current thread", e);
+        }
     }
 
     /** Adds a constraint that defines the UFs a model introduced; it holds on every path and is never negated. */
@@ -775,11 +786,13 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         if (desc[0].getSort() == Type.INT) {
             IntValue ch = args[0].asIntValue();
             // Supplementary code points are two chars in a Java string but one in the solver's, so
-            // only BMP chars are modelled exactly (the UF below flags the result as imprecise anyway).
+            // only BMP chars are modelled exactly. A symbolic char may leave that range (and a
+            // negative one becomes the empty string), so the model is then approximate.
             if (ch.concrete < 0 || ch.concrete > Character.MAX_VALUE) return PlaceHolder.instance;
             target = new StringValue(context, String.valueOf((char) (int) ch.concrete),
                     smgr.fromCodePoint(ch.asIntegerFormula()), -1);
             result = concrete.lastIndexOf(ch.concrete, from.concrete);
+            if (ch.isSymbolic()) recordPrecisionLoss();
         } else if (args[0] instanceof StringValue str) {
             target = str;
             result = concrete.lastIndexOf(str.concrete, from.concrete);
@@ -796,6 +809,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         NumeralFormula.IntegerFormula last = bmgr.ifThenElse(imgr.lessThan(fromF, maxStart), fromF, maxStart);
         FunctionDeclaration<NumeralFormula.IntegerFormula> uf = ufmgr.declareUF("lastIndexOf", FormulaType.IntegerType,
                 FormulaType.StringType, FormulaType.StringType, FormulaType.IntegerType);
+        SymbolRegistry.declare("lastIndexOf", SymbolRegistry.Kind.MODEL_FUNCTION);
         NumeralFormula.IntegerFormula r = ufmgr.callUF(uf, formula, target.formula, last);
         // Matches starting at or before `last` are the occurrences of target in the window s[0, last + tlen).
         // (Encoded with contains rather than indexOf, which Z3 solves much faster.)
@@ -1332,6 +1346,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         // being made of chars <= ' ' only, and by the kept part, if any, not starting or ending in one.
         FunctionDeclaration<NumeralFormula.IntegerFormula> loUF = ufmgr.declareUF("trimStart", FormulaType.IntegerType, FormulaType.StringType);
         FunctionDeclaration<NumeralFormula.IntegerFormula> hiUF = ufmgr.declareUF("trimEnd", FormulaType.IntegerType, FormulaType.StringType);
+        SymbolRegistry.declare("trimStart", SymbolRegistry.Kind.MODEL_FUNCTION);
+        SymbolRegistry.declare("trimEnd", SymbolRegistry.Kind.MODEL_FUNCTION);
         NumeralFormula.IntegerFormula lo = ufmgr.callUF(loUF, formula);
         NumeralFormula.IntegerFormula hi = ufmgr.callUF(hiUF, formula);
         NumeralFormula.IntegerFormula len = smgr.length(formula);
