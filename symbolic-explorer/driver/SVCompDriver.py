@@ -44,6 +44,11 @@ MAX_RLIMIT = 2**32 - 1
 # rest of its path was never explored.
 CUT_SHORT_ERRORS = ('resource_limit', 'out_of_memory')
 
+# Executor JVM options besides the heap size. Every round starts a new, short-lived JVM, in which
+# the C2 compiler spends more CPU time than it ever saves (more than a third of an executor's CPU
+# time on MinePump/TCAS); C1 alone compiles fast enough.
+EXECUTOR_JVM_OPTIONS = ['-XX:TieredStopAtLevel=1']
+
 # The (unique) endpoint ID for the SV-COMP target. As each target is handled separately, this ID is always 0.
 ENDPOINT_ID = 0 
     
@@ -136,6 +141,7 @@ class SVCompDriver:
         cmd = [
             java_path,
             f'-Xmx{heap_mib or self.budget.heap_mib}m',
+            *EXECUTOR_JVM_OPTIONS,
             f'-Dconfig.path={config}',
             f'-Dexplorer.port={port}',
             f'-javaagent:{javaagent}',

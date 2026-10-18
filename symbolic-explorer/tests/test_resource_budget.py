@@ -198,10 +198,11 @@ class DriverTest(unittest.TestCase):
         self.assertEqual(step, svcomp.Action.SYMBOLICNEXT)
         self.assertEqual(self.kinds(), ['out_of_memory'])
 
-    def test_heap_in_the_command(self):
+    def test_heap_and_jvm_options_in_the_command(self):
         self.driver.symbolicStorage = SimpleNamespace(input_type=None)
         cmd = self.driver.build_command('agent.jar', 'sv-comp.cfg', 'z3', 8000, ['cp'], java_path='java')
         self.assertIn(f'-Xmx{self.driver.budget.heap_mib}m', cmd)
+        self.assertIn('-XX:TieredStopAtLevel=1', cmd)
 
     def test_no_query_after_the_cpu_deadline(self):
         self.driver.args = SimpleNamespace(solver_rlimit=0)
