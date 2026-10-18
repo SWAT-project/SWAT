@@ -54,22 +54,29 @@ class ConstraintService:
         None: The result is the side effect of adding data to the database.
         """
 
-        # logger.info(f'[CONSTRAINT SERVICE] Received trace: {[t.__str__() for t in trace]}')
-        trace_parsed: List[Branch | Special] = Parser.parse_trace(trace, trace_id=trace_id)
-        logger.info(f'[CONSTRAINT SERVICE] Parsed trace: {[t.__str__() for t in trace_parsed]}')
-        logger.info(f'[CONSTRAINT SERVICE] Parsed trace branches: {[t.__str__() for t in trace_parsed if isinstance(t, Branch)]}')
-        inputs_parsed: List[Input] = Parser.parse_inputs(inputs)
-        # logger.info(f'[CONSTRAINT SERVICE] Parsed inputs: {[i.__str__() for i in inputs_parsed]}')
-        ufs_parsed: List[UF] = Parser.parse_ufs(ufs)
-        # Flatten the missing-invocation DTOs into plain dicts so the Database/Tree stay decoupled
-        # from the pydantic request models.
-        missing_invocations_data = [item.model_dump() for item in (missing_invocations or [])]
-        # The witness data of this execution (plain dicts as well); the Database keeps the latest.
-        witness_data = {
-            'trace_id': trace_id,
-            'nondet_returns': [item.model_dump() for item in (nondet_returns or [])],
-            'violation': violation.model_dump() if violation is not None else None,
-        }
-        # Adding the trace and inputs to the database for the specified endpoint.
-        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data, approximate_model)
-        logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')
+        try:
+            # logger.info(f'[CONSTRAINT SERVICE] Received trace: {[t.__str__() for t in trace]}')
+            trace_parsed: List[Branch | Special] = Parser.parse_trace(trace, trace_id=trace_id)
+            logger.info(f'[CONSTRAINT SERVICE] Parsed trace: {[t.__str__() for t in trace_parsed]}')
+            logger.info(f'[CONSTRAINT SERVICE] Parsed trace branches: {[t.__str__() for t in trace_parsed if isinstance(t, Branch)]}')
+            inputs_parsed: List[Input] = Parser.parse_inputs(inputs)
+            # logger.info(f'[CONSTRAINT SERVICE] Parsed inputs: {[i.__str__() for i in inputs_parsed]}')
+            ufs_parsed: List[UF] = Parser.parse_ufs(ufs)
+            # Flatten the missing-invocation DTOs into plain dicts so the Database/Tree stay decoupled
+            # from the pydantic request models.
+            missing_invocations_data = [item.model_dump() for item in (missing_invocations or [])]
+            # The witness data of this execution (plain dicts as well); the Database keeps the latest.
+            witness_data = {
+                'trace_id': trace_id,
+                'nondet_returns': [item.model_dump() for item in (nondet_returns or [])],
+                'violation': violation.model_dump() if violation is not None else None,
+            }
+            # Adding the trace and inputs to the database for the specified endpoint.
+            Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data, approximate_model)
+            logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')
+        except Exception as e:
+            # A trace that cannot be added must not end the run silently, nor let it go on as if the
+            # tree were complete: the driver reports UNKNOWN for it (SVCompDriver).
+            logger.exception(f'[CONSTRAINT SERVICE] Could not add trace {trace_id} to endpoint {endpoint_id}')
+            Database.instance().record_trace_ingest_failure(endpoint_id, f'trace {trace_id}: {type(e).__name__}: {e}',
+                                                            reference_semantic_change)
