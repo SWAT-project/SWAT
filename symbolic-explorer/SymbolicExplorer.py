@@ -139,6 +139,15 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--solver-rlimit", type=int, default=0, help="Z3 resource limit (rlimit) for the first query of each branch in sv-comp mode; a branch that runs out is retried later with a growing limit. 0 (default): unlimited")
     parser.add_argument("--parallel-sa", action="store_true", help="Run the static pre-analysis in the background and use it once it is ready (sv-comp mode). By default exploration waits for it: running it in parallel makes runs nondeterministic", default=False)
 
+    # SV-COMP resource budget, shared by the explorer and all executor JVMs (sv-comp mode). The
+    # defaults are the competition's limits (bench-defs swat.xml); a lower cgroup memory limit wins.
+    parser.add_argument("--memory-limit", type=int, default=15000,
+                        help="Memory limit of the whole run in MB (10^6 bytes); the executor heap is derived from it")
+    parser.add_argument("--cpu-limit", type=float, default=900,
+                        help="CPU time limit of the whole run in seconds; exploration stops with UNKNOWN shortly before it")
+    parser.add_argument("--cpu-used", type=float, default=0.0,
+                        help="CPU seconds the run used before the explorer started (e.g. compiling the task)")
+
     # SV-COMP witness arguments: the explorer writes the violation witness from the trace of the
     # violating execution (needs the task's input files and property file as given to the verifier)
     parser.add_argument("--witness-dir", default="witness",

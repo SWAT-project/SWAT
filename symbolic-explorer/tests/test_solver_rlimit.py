@@ -15,6 +15,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from driver import SVCompDriver as svcomp
+from svcomp.ResourceBudget import ResourceBudget
 from solver.SolverHandler import SATResult
 
 BASE = 1000
@@ -46,6 +47,7 @@ class SolveCandidatesTest(unittest.TestCase):
         d.nr_solver_calls = 0
         d.solver_limit_hits = 0
         d.rlimit_level = {}
+        d.budget = ResourceBudget(cgroup_limit=0)
         return d
 
     def solve(self, d, candidates, solver):
