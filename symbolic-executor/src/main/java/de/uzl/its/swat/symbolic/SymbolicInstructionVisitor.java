@@ -21,6 +21,8 @@ import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
 import de.uzl.its.swat.symbolic.shadow.Frame;
 import de.uzl.its.swat.symbolic.shadow.ShadowContext;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+import de.uzl.its.swat.symbolic.value.ContainerPlaceHolder;
+import de.uzl.its.swat.symbolic.invoke.java.util.CollectionInvocation;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.ValueFactory;
@@ -1350,7 +1352,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 stack.pushOperand(ValueFactory.getLambdaObjectValue(inst.v, parentAddress, key));
             } else */
 
-            if (peek instanceof PlaceHolder placeHolder) {
+            if (peek instanceof ContainerPlaceHolder containerPlaceHolder) {
+                stack.popOperand();
+                stack.pushOperand(CollectionInvocation.resolve(
+                        containerPlaceHolder, inst.val, inst.address, stack, symbolicTraceHandler));
+            } else if (peek instanceof PlaceHolder placeHolder) {
 
                 // remove the placeholder value
                 stack.popOperand();

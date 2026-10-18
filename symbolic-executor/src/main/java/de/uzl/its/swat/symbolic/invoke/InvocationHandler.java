@@ -7,6 +7,7 @@ import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
+import de.uzl.its.swat.symbolic.invoke.java.util.CollectionInvocation;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -79,6 +80,13 @@ public class InvocationHandler {
         Value<?, ?> retValue;
         Type[] types = Type.getArgumentTypes(desc);
         logger.trace("Invoking method {} in class {} with arguments {}", name, owner, arguments);
+
+        // JDK containers: modelled calls only move references, see CollectionInvocation
+        Value<?, ?> containerResult = CollectionInvocation.invoke(
+                owner, name, desc, arguments.toArray(new Value[0]), isInstance, instance, invokeId);
+        if (containerResult != null) {
+            return containerResult;
+        }
 
         // We do that first to include the pointer in instance invocation cases
         boolean containsSymbolicArgument = arguments.stream().anyMatch(v -> {
