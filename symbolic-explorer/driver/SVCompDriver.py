@@ -9,8 +9,7 @@ from typing import List, Tuple
 from pathlib import Path
 
 
-from solver.SolverHandler import SATResult, Z3Handler
-from z3 import Z3Exception
+from solver.SolverHandler import SATResult
 from solver.ConstraintCache import get_constraint_cache
 
 from data.Database import Database
@@ -425,13 +424,9 @@ class SVCompDriver:
                 if self.budget.cpu_exceeded.is_set():
                     return None, {}, True
                 rlimit = None if alone else self.solver_rlimit_for(branch)
-                Z3Handler.last_unknown_reason = None
                 with self.budget.solver(get_constraint_cache().shared_context) as interrupted_by:
                     sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit)
                 self.nr_solver_calls += 1
-                if sat == SATResult.UNKNOWN and 'memory' in (Z3Handler.last_unknown_reason or ''):
-                    # Z3 reached its memory limit and refuses further work until memory is freed
-                    raise Z3Exception(Z3Handler.last_unknown_reason)
                 if interrupted_by():
                     logger.info(f'[SYMBOLIC EXPLORATION] Query for branch {branch.id} stopped by the resource budget ({interrupted_by()})')
                     gave_up = True
@@ -457,17 +452,6 @@ class SVCompDriver:
         return None, {}, gave_up
 
     def retrieve_solution(self):
-        try:
-            return self._retrieve_solution()
-        except Z3Exception as e:
-            if 'memory' not in str(e):
-                raise
-            logger.warning(f'[SYMBOLIC EXPLORATION] Z3 ran out of its memory limit ({e}), stopping exploration')
-            Database.instance().record_execution_error(ENDPOINT_ID, 'resource_limit', f'round {self.round_idx}: Z3 out of memory')
-            self.state.verdict = Verdict.UNKNOWN
-            return Action.REPORTVERDICT
-
-    def _retrieve_solution(self):
         self.adopt_sa_graph()
         possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance)
         logger.info(f'[SYMBOLIC EXPLORATION] Found {len(possible_branches)} possible branches')

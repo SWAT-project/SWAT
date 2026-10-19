@@ -18,8 +18,6 @@ import threading
 import time
 from contextlib import contextmanager
 
-import z3
-
 import log
 
 logger = log.get_logger()
@@ -36,7 +34,11 @@ DEFAULT_CPU_LIMIT_S = 900
 # executor JVM was seen to grow by 2 GB/s).
 HEADROOM_MB = 2000
 # If the explorer alone is above the limit minus this, nothing can be stopped to make room.
-HARD_HEADROOM_MB = 250
+HARD_HEADROOM_MB = 1000
+# How long an interrupted Z3 query may stay over the memory threshold. Z3 does not react to an
+# interrupt while it bit-blasts, during which it can allocate gigabytes in seconds. (Z3's own
+# memory_max_size is no way out: Z3 then aborts the process in some places.)
+INTERRUPT_GRACE_S = 1.0
 # The explorer's share (Python, the execution tree, Z3). The executor JVM gets half of the rest as
 # heap; the other half is for its native memory, mostly JavaSMT's Z3 context, which grows with the
 # trace about as fast as the heap.
@@ -144,11 +146,6 @@ class ResourceBudget:
         self.memory_threshold = self.memory_limit - HEADROOM_MB * MB
         self.hard_memory_threshold = self.memory_limit - HARD_HEADROOM_MB * MB
         self.heap_mib = max(MIN_HEAP_MB * MB, (self.memory_threshold - EXPLORER_SHARE_MB * MB) // 2) // MIB
-        # The explorer's Z3 may use what is left after the explorer's Python share (the executor
-        # does not run during a query). Z3 counts its own allocations and fails a query at this
-        # limit right away, while an interrupt (see check()) can take seconds to take effect in the
-        # middle of bit-blasting, during which Z3 can allocate gigabytes.
-        self.z3_memory_mb = max(MIN_HEAP_MB * MB, self.memory_threshold - EXPLORER_SHARE_MB * MB) // MB
         self.cpu_limit = cpu_limit_s
         self.cpu_used_before = cpu_used_s
         self.cpu_deadline = cpu_limit_s - CPU_MARGIN_S
@@ -165,6 +162,7 @@ class ResourceBudget:
         self._executor_stopped: str | None = None  # why the monitor killed it: 'memory' or 'cpu'
         self._solver_context = None  # the Z3 context of a running query
         self._solver_interrupted: str | None = None
+        self._solver_interrupted_at = 0.0
         self._tracked: set[int] = set()  # descendants found by the last full scan
         self._last_scan = 0.0
         self._thread: threading.Thread | None = None
@@ -175,7 +173,7 @@ class ResourceBudget:
 
     def describe(self) -> str:
         cg = f', cgroup limit {self.cgroup_memory_limit // MB} MB' if self.cgroup_memory_limit else ''
-        return (f'memory limit {self.memory_limit // MB} MB{cg} (executor heap {self.heap_mib} MiB, Z3 {self.z3_memory_mb} MB, '
+        return (f'memory limit {self.memory_limit // MB} MB{cg} (executor heap {self.heap_mib} MiB, '
                 f'stop at {self.memory_threshold // MB} MB), CPU limit {self.cpu_limit:.0f} s '
                 f'(stop at {self.cpu_deadline:.0f} s, {self.cpu_used_before:.1f} s used before)')
 
@@ -249,6 +247,7 @@ class ResourceBudget:
                     self._solver_context.interrupt()  # for a check started since
                     return None
                 self._solver_interrupted = reason
+                self._solver_interrupted_at = time.monotonic()
                 self.solver_interruptions += 1
                 self._solver_context.interrupt()
                 return True
@@ -258,8 +257,6 @@ class ResourceBudget:
 
     def start(self):
         logger.info(f'[BUDGET] {self.describe()}')
-        # Read when a Z3 context is created, so this has to come before any solving
-        z3.set_param('memory_max_size', self.z3_memory_mb)
         self._thread = threading.Thread(target=self._monitor, name='resource-budget', daemon=True)
         self._thread.start()
 
@@ -293,6 +290,10 @@ class ResourceBudget:
                 self.memory_hits += 1
                 logger.warning(f'[BUDGET] Memory {rss // MB} MB reached {self.memory_threshold // MB} MB, '
                                f'stopped the work in progress')
+            elif stopped is None and self._solver_context is not None:
+                # An interrupted query that keeps its memory, or keeps growing
+                if rss >= self.hard_memory_threshold or time.monotonic() - self._solver_interrupted_at > INTERRUPT_GRACE_S:
+                    self._emergency(f'a Z3 query uses {rss // MB} MB of the {self.memory_limit // MB} MB limit and does not stop')
             elif stopped is False:
                 _malloc_trim()
                 if self.usage()[0] >= self.hard_memory_threshold:
@@ -308,7 +309,6 @@ class ResourceBudget:
             'memory_limit_mb': self.memory_limit // MB,
             'cgroup_memory_limit_mb': self.cgroup_memory_limit // MB if self.cgroup_memory_limit else None,
             'executor_heap_mib': self.heap_mib,
-            'z3_memory_mb': self.z3_memory_mb,
             'peak_rss_mb': self.peak_rss // MB,
             'memory_hits': self.memory_hits,
             'solver_interruptions': self.solver_interruptions,

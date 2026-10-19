@@ -39,9 +39,6 @@ def _rlimit_used(solver) -> int:
 class Z3Handler:
     """Class to handle symbolic solving and related tasks."""
 
-    # Why Z3 could not decide the last query solve() returned UNKNOWN for (e.g. "out of memory").
-    last_unknown_reason: str | None = None
-
     @staticmethod
     def encode_array(model, array_var, element_type_prefix: str, length: int) -> str:
         """
@@ -522,7 +519,6 @@ class Z3Handler:
                 logger.debug(f"[SOLVER] resource limit {rlimit} exhausted after {t_check:.3f}s")
                 return SATResult.LIMIT, {}
             logger.debug(f"[SOLVER] unknown: {reason}")
-            Z3Handler.last_unknown_reason = reason
             return SATResult.UNKNOWN, {}
 
     @staticmethod

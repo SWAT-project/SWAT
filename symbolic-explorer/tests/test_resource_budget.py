@@ -58,7 +58,6 @@ class LimitsTest(unittest.TestCase):
         self.assertEqual(b.memory_threshold, 13_000 * MB)
         # half of what is left after the explorer's share
         self.assertEqual(b.heap_mib, (13_000 - 1_500) * MB // 2 // MIB)
-        self.assertEqual(b.z3_memory_mb, 13_000 - 1_500)
         self.assertEqual(b.cpu_deadline, 880)
 
     def test_lower_cgroup_limit_wins(self):
@@ -125,8 +124,18 @@ class MonitorTest(unittest.TestCase):
         self.assertEqual(interrupted_by(), 'memory')
         self.assertFalse(b.cpu_exceeded.is_set())
 
+    def test_query_that_does_not_stop_ends_the_run(self):
+        b = self.budget(13_100 * MB, 10)
+        with b.solver(mock.Mock()):
+            b.check()
+            b.check()
+            b.on_emergency.assert_not_called()
+            b._solver_interrupted_at -= rb.INTERRUPT_GRACE_S + 0.1
+            b.check()
+        b.on_emergency.assert_called_once()
+
     def test_explorer_alone_over_the_limit_ends_the_run(self):
-        b = self.budget(14_800 * MB, 10)
+        b = self.budget(14_100 * MB, 10)
         b.check()
         b.on_emergency.assert_called_once()
 
