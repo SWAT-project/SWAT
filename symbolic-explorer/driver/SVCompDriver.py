@@ -217,8 +217,13 @@ class SVCompDriver:
                 return ExecutionStatus.ERROR, output + [str(e)]
 
 
-    def determine_next_step(self, status: ExecutionStatus, output: List[str] ) -> Action:
+    def determine_next_step(self, status: ExecutionStatus, output: List[str], received_trace: bool = True) -> Action:
         """Determines the next step based on the execution status.
+
+        received_trace says whether the run sent a trace. The executor sends one whenever the entry
+        method was entered (also when it ends in an exception or System.exit), so a run without one
+        never reached it, e.g. because the JVM failed to start (VerifyError, missing main class) or
+        the agent failed: such a run proves nothing.
 
         A run the resource budget stopped (RESOURCE_LIMIT) still reports a violation it printed
         before. Otherwise it ended without a trace, so its path stays unexplored: on a CPU stop the
@@ -269,6 +274,13 @@ class SVCompDriver:
                     self.state.verdict = Verdict.UNKNOWN
                     return Action.REPORTVERDICT
                 return Action.SYMBOLICNEXT
+
+            if not received_trace:
+                logger.warning(f'[SVCOMP] The target sent no trace: it did not reach the entry method')
+                Database.instance().record_execution_error(ENDPOINT_ID, 'no_trace', 'the target sent no trace'
+                                                           + (f' (branch {self.no_trace_branch})' if getattr(self, 'no_trace_branch', None) is not None else ''))
+                self.state.verdict = Verdict.UNKNOWN
+                return Action.REPORTVERDICT
 
             ingest_failures = Database.instance().get_execution_errors(ENDPOINT_ID, 'trace_ingest_failed')
             if ingest_failures:
@@ -368,24 +380,26 @@ class SVCompDriver:
             executor_duration = time.perf_counter() - executor_start
             TimingManager.instance().record_executor_time(executor_duration)
 
-            # check if the target explored the branch as expected (a run stopped by the resource
-            # budget sent no trace to check)
+            # A run stopped by the resource budget sends no trace; any other run without one is
+            # handled by determine_next_step (no_trace).
+            received_trace = Database.instance().trace_count() > traces_before
+            self.no_trace_branch = None
+
+            # check if the target explored the branch as expected
             if self.state.branch_to_explore and status != ExecutionStatus.RESOURCE_LIMIT:
-                if Database.instance().trace_count() > traces_before:
+                if received_trace:
                     self.check_divergence(Database.instance().get_trace(-1)) # most recent trace
                 else:
-                    # The run ended without a trace (it halted or crashed), so whether it took the
-                    # side its solution was solved for is unknown. That side counts as solved now
-                    # and is never tried again, so an exhausted search proves nothing (see run()).
-                    logger.warning(f'[SVCOMP] The run sent no trace, so branch {self.state.branch_to_explore.id} was not checked')
-                    Database.instance().record_execution_error(ENDPOINT_ID, 'no_trace', f'branch {self.state.branch_to_explore.id}')
+                    # Whether the run took the side its solution was solved for is unknown; the
+                    # run ends UNKNOWN (determine_next_step)
+                    self.no_trace_branch = self.state.branch_to_explore.id
             self.state.branch_to_explore = None
             self.state.solution = None
             self.state.solution_is_guess = False
 
             self.log_output(output)
             logger.info(f'[STATUS] {status}')
-            next_step: Action = self.determine_next_step(status, output)
+            next_step: Action = self.determine_next_step(status, output, received_trace)
             if self.precheck.proven:
                 self.round_idx += 1
                 return self.verdict_with_proof(next_step)
