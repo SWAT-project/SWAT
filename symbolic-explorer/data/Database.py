@@ -169,6 +169,29 @@ class Database:
             ret = copy.deepcopy(self.tree[endpoint_id])
         return ret
     
+    def visit_tree(self, endpoint_id: Union[str, int], visit):
+        """Returns visit(tree, solved, unsat) for the endpoint's tree, with the gids of the solved
+        (or retired) and of the unsat branches, all under the lock and without copying: a copy of
+        the whole tree in every round costs more than the walk itself. visit must not keep the
+        sets, and must not call back into the Database (the lock is held)."""
+        endpoint_id = str(endpoint_id)
+        with lock:
+            return visit(self.tree[endpoint_id], self.solutions.keys() | self.retired_branches,
+                         set(self.unsat_branches))
+
+    def count_symbolic_vars(self, endpoint_id: Union[str, int]) -> int:
+        endpoint_id = str(endpoint_id)
+        with lock:
+            ret = len(self.tree[endpoint_id].symbolic_vars)
+        return ret
+
+    def get_execution_errors(self, endpoint_id: Union[str, int], kind: str) -> list[dict]:
+        """The execution errors of the endpoint's tree of the given kind, without copying the tree."""
+        endpoint_id = str(endpoint_id)
+        with lock:
+            ret = [dict(e) for e in self.tree[endpoint_id].execution_errors if e.get('kind') == kind]
+        return ret
+
     def get_witness_data(self, endpoint_id: Union[str, int]) -> dict | None:
         """The witness data of the latest trace of the endpoint (None if no trace arrived since the last clear)."""
         endpoint_id = str(endpoint_id)

@@ -5,6 +5,7 @@ public class BranchDTO {
     private final long iid;
 
     @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private String constraint;
 
     @SuppressWarnings("unused")
@@ -14,8 +15,10 @@ public class BranchDTO {
     private final String type;
 
     @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private String inst;
     @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
     private boolean concreteOnly;
     // See BranchElement: the branch's key and the frame stack change since the previous branch.
     @SuppressWarnings("unused")

@@ -14,6 +14,8 @@ import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.StatsStorage;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
+import de.uzl.its.swat.config.Config;
+import de.uzl.its.swat.solver.SolverMode;
 import de.uzl.its.swat.coverage.InstrCoverage;
 import de.uzl.its.swat.symbolic.trace.dto.*;
 import de.uzl.its.swat.thread.ThreadHandler;
@@ -24,6 +26,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.Formula;
@@ -35,6 +38,7 @@ import org.sosy_lab.java_smt.api.FormulaManager;
  */
 class DTOBuilder {
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
+    private static final Pattern INPUT_NAME = Pattern.compile("[A-Z].*_[0-9].*");
     /**
      * Encodes the symbolic trace as a JSON string.
      *
@@ -87,9 +91,10 @@ class DTOBuilder {
 
         FormulaManager fmgr =
                 ThreadHandler.getSolverContext(threadId).getFormulaManager();
+        FormulaDumper dumper = FormulaDumper.of(fmgr);
         for (InputElement ie : symbolicTrace.getInputs()) {
-            String lowerBound = String.valueOf(fmgr.dumpFormula(ie.getValue().getBounds(false)));
-            String upperBound = String.valueOf(fmgr.dumpFormula(ie.getValue().getBounds(true)));
+            String lowerBound = dumper.dump(ie.getValue().getBounds(false));
+            String upperBound = dumper.dump(ie.getValue().getBounds(true));
             InputDTO iDto =
                     new InputDTO(
                             ie.getName(),
@@ -100,7 +105,7 @@ class DTOBuilder {
             inputs.add(iDto);
         }
         for (BooleanFormula uf : symbolicTrace.getConstraints()) {
-            String formula = String.valueOf(fmgr.dumpFormula(uf));
+            String formula = dumper.dump(uf);
             ufs.add(new UFDTO(formula));
         }
         logger.trace("Parsing constraints...");
@@ -116,13 +121,13 @@ class DTOBuilder {
                     if(fmgr.getBooleanFormulaManager().isTrue(f) || fmgr.getBooleanFormulaManager().isFalse(f)){
                         constraint = "(assert true)";
                     } else {
-                        constraint = String.valueOf(fmgr.dumpFormula(f));
+                        constraint = dumper.dump(f);
                         symbolicPrecisionLoss |= hasImpreciseSymbol(fmgr, f);
                     }
                 } catch (InterruptedException e) {
                     BooleanFormula f = be.getConstraint();
                     logger.warn("Error while simplifying formula", e);
-                    constraint = String.valueOf(fmgr.dumpFormula(f));
+                    constraint = dumper.dump(f);
                     symbolicPrecisionLoss |= hasImpreciseSymbol(fmgr, f);
                 }
                 trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), be.isConcreteOnly())
@@ -188,6 +193,10 @@ class DTOBuilder {
 
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
-        return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload);
+        // Indented only where a person reads it (PRINT); the explorer gets the compact form.
+        if (Config.instance().getSolverMode() == SolverMode.PRINT) {
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload);
+        }
+        return objectMapper.writeValueAsString(payload);
     }
 }

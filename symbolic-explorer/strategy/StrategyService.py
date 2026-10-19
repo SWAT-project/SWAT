@@ -29,26 +29,24 @@ def declared_ufs(smt: str) -> frozenset[str]:
 
 
 class StrategyService:
+    # is_symbolic_branch per (node gid, trace id)
+    _symbolic_branches: dict[tuple[int, str], bool] = {}
     
     @staticmethod
     def select_branch(**kwargs):
         endpoint_id = kwargs.get('endpoint_id', None)
         db = Database.instance()
-        tree = db.get_tree(endpoint_id)
         visited = set()
         # With rank_by_distance, the branches are tried closest-to-an-assert first. Only the order
         # changes, so which branches exist, and hence the verdict, does not. The sort is stable:
         # ties, and branches without SA information (ranked last), keep their DFS order.
         distances = {} if kwargs.get("rank_by_distance", False) else None
-        # A branch is not offered again once it is solved, or retired (its solutions kept missing it).
-        solved = db.get_solutions().keys() | db.get_retired_branches()
-        possible_branches = dfs(visited, tree, tree.root, solved, db.get_unsat_branches(), kwargs.get("sa_node", None), distances=distances)
+        # The walk is on the Database's tree itself, so dfs records where the SA walk fell out of
+        # step there directly. The returned nodes are live: they gain children as traces arrive.
+        possible_branches = db.visit_tree(endpoint_id, lambda tree, solved, unsat: dfs(
+            visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances))
         if distances:
             possible_branches.sort(key=lambda n: distances.get(n, math.inf))
-        # dfs records where the SA walk fell out of step on its tree, which is a copy.
-        for error in tree.execution_errors:
-            if error['kind'] == 'sa_desync':
-                db.record_execution_error(endpoint_id, error['kind'], error['message'])
         
         return possible_branches
         
@@ -226,6 +224,13 @@ class StrategyService:
         """
         from solver.ConstraintCache import get_constraint_cache
 
+        # The answer depends only on the node's constraint and inputs, which are fixed when the
+        # node is created; a branch not taken stays a candidate, so it is asked again every round.
+        key = (node.gid, node.trace_id)
+        known = StrategyService._symbolic_branches.get(key)
+        if known is not None:
+            return known
+
         try:
             # Get cached parsed constraint (parse once, reuse many times).
             # On a cache miss this parses SMT-LIB via Z3 and walks the AST, which is
@@ -262,6 +267,7 @@ class StrategyService:
 
             logger.info(f"[is_symbolic_branch] Branch {node.id} is_symbolic: {is_symbolic}")
 
+            StrategyService._symbolic_branches[key] = is_symbolic
             return is_symbolic
 
         except Exception as e:

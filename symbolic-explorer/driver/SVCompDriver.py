@@ -1,3 +1,4 @@
+import copy
 import glob
 import signal
 import subprocess
@@ -141,6 +142,9 @@ class SVCompDriver:
         cmd = [
             java_path,
             f'-Xmx{mem}g',
+            # A round runs the target once, mostly for well under a second: C2 compilations
+            # would not pay off before the JVM exits, the C1 ones do.
+            '-XX:TieredStopAtLevel=1',
             f'-Dconfig.path={config}',
             f'-Dexplorer.port={port}',
             f'-javaagent:{javaagent}',
@@ -221,15 +225,14 @@ class SVCompDriver:
                     return Action.REPORTVERDICT
 
 
-            tree = Database.instance().get_tree(ENDPOINT_ID)
-            ingest_failures = [e for e in tree.execution_errors if e.get('kind') == 'trace_ingest_failed']
+            ingest_failures = Database.instance().get_execution_errors(ENDPOINT_ID, 'trace_ingest_failed')
             if ingest_failures:
                 # The tree lacks (part of) a trace, so searching on it would be incomplete.
                 logger.critical(f'[SVCOMP] A trace could not be added to the tree: {ingest_failures[0]["message"]}')
                 self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
 
-            if len(tree.symbolic_vars) == 0:
+            if Database.instance().count_symbolic_vars(ENDPOINT_ID) == 0:
                 if stack_overflow:
                     # The only execution there is overflowed the stack: its outcome is not a verdict
                     logger.info(f'[SVCOMP] No symbolic vars found, but the execution overflowed the stack')
@@ -240,7 +243,7 @@ class SVCompDriver:
                 self.state.verdict = Verdict.NO_SYMBOLIC_VARS
                 return Action.REPORTVERDICT
         
-            logger.info(f'[SVCOMP] Found {len(tree.symbolic_vars)} symbolic vars')
+            logger.info(f'[SVCOMP] Found {Database.instance().count_symbolic_vars(ENDPOINT_ID)} symbolic vars')
 
             # No assertion error found but symbolic variables present, continue with symbolic exploration
             return Action.SYMBOLICNEXT
@@ -561,8 +564,9 @@ class SVCompDriver:
             return Action.REPORTVERDICT
 
         logger.info(f'[SYMBOLIC EXPLORATION] Found solution for branch {branch.id} {"skipped" if branch.skipped is None else "branched"}')
-        # remember which branch we want to explore
-        self.state.branch_to_explore = branch
+        # remember which branch we want to explore, as it is now: the node itself is the tree's
+        # and gets its other side once the next trace arrives (check_divergence needs this one)
+        self.state.branch_to_explore = copy.copy(branch)
         self.state.solution = sol
         # A solution is a guess if its trace used an approximate model, which is precision loss, or
         # if its query is over a sampled Math function: that function is in a branch constraint of
