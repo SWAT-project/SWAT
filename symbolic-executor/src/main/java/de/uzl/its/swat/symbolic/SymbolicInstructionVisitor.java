@@ -16,6 +16,7 @@ import de.uzl.its.swat.metadata.ClassDepot;
 import de.uzl.its.swat.metadata.ClassDepotRuntime;
 import de.uzl.its.swat.symbolic.instruction.*;
 import de.uzl.its.swat.symbolic.invoke.InvocationHandler;
+import de.uzl.its.swat.symbolic.invoke.java.lang.NumberParsing;
 import de.uzl.its.swat.symbolic.invoke.java.lang.StringCallBranches;
 import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
 import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
@@ -2379,7 +2380,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @return Whether the call threw at one of its index checks
      */
     private boolean recordStringCallBranches(long iid, String name, String desc, ObjectValue<?, ?> instance, Value<?, ?>[] arguments, boolean returned) throws NoThreadContextException {
-        List<StringCallBranches.Branch> branches = StringCallBranches.of(instance, name, desc, arguments);
+        return recordCallBranches(iid, name, StringCallBranches.of(instance, name, desc, arguments), returned);
+    }
+
+    /**
+     * Records the branches of a library call (see {@link #recordStringCallBranches}): on a normal
+     * return all of them held, a call that threw failed the first one that does not hold.
+     *
+     * @return Whether the call threw at one of its branches
+     */
+    private boolean recordCallBranches(long iid, String name, List<StringCallBranches.Branch> branches, boolean returned) throws NoThreadContextException {
         int failed = -1;
         for (int i = 0; i < branches.size() && failed < 0; i++) {
             if (!branches.get(i).holds()) failed = i;
@@ -2388,7 +2398,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         // does not match the call; that is left to the model and to recordThrowingCall.
         if (branches.isEmpty() || returned == (failed >= 0)) return false;
         int last = returned ? branches.size() - 1 : failed;
-        FormulaManager fmgr = instance.context.getFormulaManager();
+        FormulaManager fmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId()).getFormulaManager();
         for (int i = 0; i <= last; i++) {
             StringCallBranches.Branch branch = branches.get(i);
             if (!fmgr.extractVariables(branch.condition()).isEmpty()) {
@@ -2531,6 +2541,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), false);
+                recordParseCallBranches(inst.iid, inst.owner, inst.name, inst.desc, arguments);
                 Value<?, ?> retVal = InvocationHandler.invoke(
                         symbolicTraceHandler,
                         inst.desc,
@@ -2542,7 +2553,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         null);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
-                recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, false);
+                recordThrowingStaticCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2551,6 +2562,42 @@ public class SymbolicInstructionVisitor implements IVisitor {
             }
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
+        }
+    }
+
+    /**
+     * Records the branches of a parse call that returned normally (see {@link NumberParsing}): its
+     * checks, which all held, then those that tell how its value is modelled.
+     */
+    private void recordParseCallBranches(long iid, String owner, String name, String desc, Value<?, ?>[] arguments) throws NoThreadContextException {
+        List<StringCallBranches.Branch> checks = NumberParsing.branches(owner, name, desc, arguments);
+        if (checks.isEmpty()) return;
+        recordCallBranches(iid, name, checks, true);
+        FormulaManager fmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId()).getFormulaManager();
+        for (StringCallBranches.Branch branch : NumberParsing.returnBranches(owner, name, desc, arguments)) {
+            if (!fmgr.extractVariables(branch.condition()).isEmpty()) {
+                symbolicTraceHandler.checkAndSetLibraryBranch(branch.holds(), branch.condition(), determineIid(iid), "#" + name);
+            }
+        }
+    }
+
+    /**
+     * As {@link #recordThrowingCall}, unless the call is a parse call that threw a
+     * NumberFormatException at one of its branches (see {@link NumberParsing#branches}), which the
+     * trace then explains.
+     */
+    private void recordThrowingStaticCall(long iid, String owner, String name, String desc, long invokeId) throws NoThreadContextException {
+        boolean explained;
+        try {
+            Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), false);
+            explained = recordCallBranches(iid, name, NumberParsing.branches(owner, name, desc, arguments), false);
+        } catch (Exception e) {
+            explained = false;
+        }
+        if (explained) {
+            recordUnmodelledException(iid);
+        } else {
+            recordThrowingCall(iid, owner, name, desc, invokeId, false);
         }
     }
 

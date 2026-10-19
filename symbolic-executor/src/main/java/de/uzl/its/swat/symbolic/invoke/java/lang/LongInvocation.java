@@ -448,26 +448,10 @@ public class LongInvocation {
             throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
-        if (args.length == 1 && args[0] instanceof StringValue sv) {
-            return parseLong(sv);
+        if (args[0] instanceof StringValue sv) {
+            return NumberParsing.parseLong(sv, args);
         }
-        // parseLong with radix not yet supported
         return PlaceHolder.instance;
-    }
-
-    /**
-     * Symbolic wrapper for Long.parseLong(String s)
-     * Parses the string argument as a signed decimal long.
-     *
-     * @param s The String containing the long representation to be parsed
-     * @return The long value represented by the argument
-     */
-    private static LongValue parseLong(StringValue s) {
-        SolverContext ctx = s.context;
-        StringFormulaManager sfm = ctx.getFormulaManager().getStringFormulaManager();
-        BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
-        return new LongValue(ctx, Long.parseLong(s.concrete),
-                bvmgr.makeBitvector(64, sfm.toIntegerFormula(s.formula)));
     }
 
     /**
@@ -847,6 +831,10 @@ public class LongInvocation {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
         if (args.length == 1 && args[0] instanceof LongValue val) {
+            return new LongObjectValue(val.context, val, ObjectValue.ADDRESS_UNKNOWN);
+        }
+        if (args[0] instanceof StringValue sv) {
+            LongValue val = NumberParsing.parseLong(sv, args);
             return new LongObjectValue(val.context, val, ObjectValue.ADDRESS_UNKNOWN);
         }
         return PlaceHolder.instance;

@@ -2,6 +2,7 @@ package de.uzl.its.swat.symbolic.invoke.java.lang;
 
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
@@ -36,7 +37,10 @@ public class DoubleInvocation {
             case "isFinite" -> invokeIsFinite(args);
             case "isInfinite" -> invokeIsInfinite(args);
             case "isNaN" -> invokeIsNaN(args);
-            case "valueOf" -> invokeValueOf(args);
+            case "parseDouble" -> args[0] instanceof StringValue sv ? NumberParsing.parseDouble(sv, symbolicTraceHandler) : PlaceHolder.instance;
+            case "valueOf" -> args[0] instanceof StringValue sv
+                    ? new DoubleObjectValue(sv.context, NumberParsing.parseDouble(sv, symbolicTraceHandler), ObjectValue.ADDRESS_UNKNOWN)
+                    : invokeValueOf(args);
 
             default -> PlaceHolder.instance;
         };
