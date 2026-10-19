@@ -94,7 +94,8 @@ class ConstraintRequest(BaseModel):
     symbolicContextLoss: bool
     symbolicPrecisionLoss: bool
     referenceSemanticChange: bool = False
-    # An approximate model (a sampled Math function) was used: solutions from this trace are guesses.
+    # An approximate model was used that is precision loss wherever it is used: solutions from this
+    # trace are guesses. Queries over sampled Math functions are recognised by their function names.
     approximateModel: bool = False
     # A StackOverflowError reached the target's code: the path depends on the JVM's stack size, so a
     # violation of this execution is not a verdict (the executor also reports context loss).

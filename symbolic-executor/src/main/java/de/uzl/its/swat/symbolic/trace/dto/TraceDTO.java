@@ -31,8 +31,10 @@ public class TraceDTO {
     private boolean symbolicPrecisionLoss = false;
     @SuppressWarnings("unused")
     private boolean referenceSemanticChange = false;
-    // Whether an approximate model (a sampled Math function) was used. Unlike symbolicPrecisionLoss,
-    // which also covers exact UF-based models, solutions from such a trace are only guesses.
+    // Whether an approximate model was used that is precision loss wherever it is used (e.g. object
+    // array elements at the concrete index). Unlike symbolicPrecisionLoss, which also covers exact
+    // UF-based models, solutions from such a trace are only guesses. Sampled Math functions are
+    // recognised per query instead, by their function names.
     @SuppressWarnings("unused")
     private boolean approximateModel = false;
     // A StackOverflowError reached the target's code: the path depends on the JVM's stack size,

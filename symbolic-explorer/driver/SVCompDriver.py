@@ -457,7 +457,8 @@ class SVCompDriver:
         failed = self.failed_solutions[branch.gid]
         for bound in RETRY_BOUNDS + (None,):
             extra = Z3Handler.retry_constraints(failed, bound)
-            sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit, extra_exprs=extra)
+            sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit, extra_exprs=extra,
+                                                    approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
             self.nr_solver_calls += 1
             if sat == SATResult.SAT or bound is None:
                 break
@@ -518,7 +519,8 @@ class SVCompDriver:
                 if branch.gid in self.failed_solutions:
                     sat, sol = self.solve_retry(branch, rlimit)
                 else:
-                    sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit)
+                    sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit,
+                                                            approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
                     self.nr_solver_calls += 1
                 if sat == SATResult.SAT:
                     return branch, sol, gave_up
@@ -562,7 +564,13 @@ class SVCompDriver:
         # remember which branch we want to explore
         self.state.branch_to_explore = branch
         self.state.solution = sol
-        self.state.solution_is_guess = Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id)
+        # A solution is a guess if its trace used an approximate model, which is precision loss, or
+        # if its query is over a sampled Math function: that function is in a branch constraint of
+        # the trace, so the trace is precision loss as well. In both cases a divergence cannot lead
+        # to a false SAFE. A solution from a trace whose Math results never reach the query is
+        # exact, and a divergence from it is an error.
+        self.state.solution_is_guess = (Database.instance().is_approximate_trace(ENDPOINT_ID, branch.trace_id)
+                                        or StrategyService.is_approximate_query(branch))
 
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
         logger.info(f'[SYMBOLIC EXPLORATION] SAT solution: {sol}')
