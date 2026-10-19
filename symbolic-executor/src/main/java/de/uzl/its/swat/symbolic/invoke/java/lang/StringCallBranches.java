@@ -1,6 +1,7 @@
 package de.uzl.its.swat.symbolic.invoke.java.lang;
 
 import de.uzl.its.swat.symbolic.value.Value;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue;
@@ -14,6 +15,7 @@ import org.sosy_lab.java_smt.api.FormulaManager;
 import org.sosy_lab.java_smt.api.IntegerFormulaManager;
 import org.sosy_lab.java_smt.api.NumeralFormula.IntegerFormula;
 import org.sosy_lab.java_smt.api.SolverContext;
+import org.sosy_lab.java_smt.api.StringFormula;
 import org.sosy_lab.java_smt.api.StringFormulaManager;
 
 /**
@@ -85,7 +87,72 @@ public final class StringCallBranches {
             case "getChars(II[CI)V" -> getChars(s, args);
             case "toCharArray()[C" -> pin(length(s));
             case "<init>([C)V" -> pin(size(args[0]));
+            case "<init>([CII)V" -> {
+                // checkBoundsOffCount(offset, count, value.length), then the chars by the concrete
+                // offset and count
+                Int offset = num(args[1]);
+                Int count = num(args[2]);
+                Int size = size(args[0]);
+                add(bmgr.and(imgr.greaterOrEquals(offset.f(), zero()), imgr.greaterOrEquals(count.f(), zero()),
+                                imgr.lessOrEquals(offset.f(), imgr.subtract(size.f(), count.f()))),
+                        offset.c() >= 0 && count.c() >= 0 && offset.c() <= size.c() - count.c());
+                pin(offset);
+                pin(count);
+                pin(size);
+            }
             case "lastIndexOf(I)I", "lastIndexOf(II)I" -> pin(num(args[0]));
+            case "codePointAt(I)I" -> index(s, args[0]);
+            case "codePointBefore(I)I" -> codePointBefore(s, args[0]);
+            case "codePointCount(II)I" -> codePointCount(s, args);
+            case "repeat(I)Ljava/lang/String;" -> {
+                Int count = num(args[0]);
+                add(imgr.greaterOrEquals(count.f(), zero()), count.c() >= 0);
+                if (count.c() >= 0) pin(count);
+            }
+            case "equalsIgnoreCase(Ljava/lang/String;)Z" -> {
+                if (args[0] instanceof StringValue other && (s.isSymbolic() || other.isSymbolic())
+                        && !StringValue.equalsIgnoreCaseByRegex(s, other)) {
+                    // Strings of different lengths differ, else the comparison by the pinned length
+                    Int len = length(s);
+                    Int otherLen = length(other);
+                    add(imgr.equal(len.f(), otherLen.f()), len.c() == otherLen.c());
+                    if (len.c() == otherLen.c()) pin(len);
+                }
+            }
+            case "regionMatches(ZILjava/lang/String;II)Z" -> {
+                // Ignoring case (maybe): the bounds check, then the comparison by the pinned len
+                BooleanValue ignoreCase = args[0].asBooleanValue();
+                if ((ignoreCase.isSymbolic() || ignoreCase.concrete) && args[2] instanceof StringValue other) {
+                    Int toffset = num(args[1]);
+                    Int ooffset = num(args[3]);
+                    Int len = num(args[4]);
+                    add(bmgr.and(imgr.greaterOrEquals(ooffset.f(), zero()), imgr.greaterOrEquals(toffset.f(), zero()),
+                                    imgr.lessOrEquals(toffset.f(), imgr.subtract(length(s).f(), len.f())),
+                                    imgr.lessOrEquals(ooffset.f(), imgr.subtract(length(other).f(), len.f()))),
+                            StringValue.regionInBounds(s.concrete, (int) toffset.c(), other.concrete, (int) ooffset.c(), (int) len.c()));
+                    if (StringValue.regionInBounds(s.concrete, (int) toffset.c(), other.concrete, (int) ooffset.c(), (int) len.c())) {
+                        pin(len);
+                    }
+                }
+            }
+            case "compareToIgnoreCase(Ljava/lang/String;)I" -> {
+                if (args[0] instanceof StringValue other) {
+                    pin(length(s));
+                    pin(length(other));
+                }
+            }
+            case "toLowerCase()Ljava/lang/String;", "toLowerCase(Ljava/util/Locale;)Ljava/lang/String;" -> {
+                if (StringValue.caseMappingLocale(args) != null) {
+                    // 'Σ' (final sigma) is not modelled, the rest by the pinned length
+                    StringFormula sigma = smgr.fromCodePoint(imgr.makeNumber('\u03a3'));
+                    boolean noSigma = s.concrete.indexOf('\u03a3') < 0;
+                    add(bmgr.not(smgr.contains(s.formula, sigma)), noSigma);
+                    if (noSigma) pin(length(s));
+                }
+            }
+            case "toUpperCase()Ljava/lang/String;", "toUpperCase(Ljava/util/Locale;)Ljava/lang/String;" -> {
+                if (StringValue.caseMappingLocale(args) != null) pin(length(s));
+            }
             default -> { }
         }
     }
@@ -93,7 +160,10 @@ public final class StringCallBranches {
     private void ofStringBuilder(StringValue s, String name, String desc, Value<?, ?>[] args) throws Exception {
         String sig = name + desc.substring(0, desc.indexOf(')') + 1);
         switch (sig) {
-            case "charAt(I)", "setCharAt(IC)", "deleteCharAt(I)" -> index(s, args[0]);
+            case "charAt(I)", "setCharAt(IC)", "deleteCharAt(I)", "codePointAt(I)" -> index(s, args[0]);
+            case "codePointBefore(I)" -> codePointBefore(s, args[0]);
+            case "codePointCount(II)" -> codePointCount(s, args);
+            case "reverse()" -> pin(length(s));
             case "delete(II)", "replace(IILjava/lang/String;)" -> {
                 // An end past the length is taken as the length: start in [0, min(end, length)].
                 Int start = num(args[0]);
@@ -168,6 +238,24 @@ public final class StringCallBranches {
         pin(srcBegin);
         pin(srcEnd);
         pin(dstBegin);
+    }
+
+    /** codePointBefore(int index): 0 <= index - 1 < length of s */
+    private void codePointBefore(StringValue s, Value<?, ?> indexArg) throws Exception {
+        Int i = num(indexArg);
+        Int len = length(s);
+        add(bmgr.and(imgr.greaterOrEquals(i.f(), imgr.makeNumber(1)), imgr.lessOrEquals(i.f(), len.f())),
+                1 <= i.c() && i.c() <= len.c());
+    }
+
+    /** codePointCount(int begin, int end): 0 <= begin <= end <= length of s, and end - begin pinned */
+    private void codePointCount(StringValue s, Value<?, ?>[] args) throws Exception {
+        Int begin = num(args[0]);
+        Int end = num(args[1]);
+        range(s, begin, end);
+        if (0 <= begin.c() && begin.c() <= end.c() && end.c() <= s.concrete.length()) {
+            pin(new Int(imgr.subtract(end.f(), begin.f()), end.c() - begin.c(), begin.symbolic() || end.symbolic()));
+        }
     }
 
     /** 0 <= index < length of s */

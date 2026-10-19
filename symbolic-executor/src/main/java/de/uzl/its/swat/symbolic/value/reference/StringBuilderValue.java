@@ -11,6 +11,7 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.CharValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.array.CharArrayValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.BoxedValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.CaseMapping;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import java.util.Set;
 import org.objectweb.asm.Type;
@@ -18,8 +19,10 @@ import org.sosy_lab.java_smt.api.*;
 
 /**
  * Shadow of a <a
- * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/StringBuilder.html">StringBuilder</a>:
- * its chars as a {@link StringValue}, which is replaced (never changed: it may be a String the
+ * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/StringBuilder.html">StringBuilder</a>
+ * or a <a
+ * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/StringBuffer.html">StringBuffer</a>
+ * (the same methods, synchronized): its chars as a {@link StringValue}, which is replaced (never changed: it may be a String the
  * program holds) on every change.
  *
  * <p>The index checks of the methods (when they throw an IndexOutOfBoundsException) and the
@@ -42,7 +45,8 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     private IntValue capacity;
 
     /** The methods that do not change the capacity. */
-    private static final Set<String> KEEP_CAPACITY = Set.of("charAt", "compareTo", "delete", "deleteCharAt",
+    private static final Set<String> KEEP_CAPACITY = Set.of("charAt", "codePointAt", "codePointBefore",
+            "codePointCount", "compareTo", "delete", "deleteCharAt",
             "getChars", "indexOf", "lastIndexOf", "length", "reverse", "setCharAt", "subSequence", "substring",
             "toString", "capacity");
 
@@ -53,8 +57,11 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     private static final Set<String> MUTATORS = Set.of("<init>", "append", "appendCodePoint", "delete",
             "deleteCharAt", "insert", "replace", "reverse", "setCharAt", "setLength");
 
+    private static final String STRING_BUILDER = "java/lang/StringBuilder";
+
     public StringBuilderValue(SolverContext context) {
         super(context, ObjectValue.ADDRESS_UNKNOWN);
+        this.className = STRING_BUILDER;
         this.smgr = context.getFormulaManager().getStringFormulaManager();
         this.imgr = context.getFormulaManager().getIntegerFormulaManager();
 
@@ -62,7 +69,13 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     }
 
     public StringBuilderValue(SolverContext context, StringValue v, int address) {
+        this(context, STRING_BUILDER, v, address);
+    }
+
+    /** @param className java/lang/StringBuilder or java/lang/StringBuffer */
+    public StringBuilderValue(SolverContext context, String className, StringValue v, int address) {
         super(context, address);
+        this.className = className;
         this.smgr = context.getFormulaManager().getStringFormulaManager();
         this.imgr = context.getFormulaManager().getIntegerFormulaManager();
         this.stringValue = v;
@@ -118,7 +131,8 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
                 case "deleteCharAt" -> invokeDeleteCharAt(args);
                 case "ensureCapacity", "trimToSize" -> VoidValue.instance; // the chars stay the same
                 case "getChars" -> invokeGetChars(args);
-                case "indexOf", "lastIndexOf" -> stringValue.invokeMethod(name, desc, args);
+                case "indexOf", "lastIndexOf", "codePointAt", "codePointBefore", "codePointCount" ->
+                        stringValue.invokeMethod(name, desc, args);
                 case "insert" -> invokeInsert(args, desc);
                 case "length" -> new IntValue(context, stringValue.concrete.length(), smgr.length(stringValue.formula));
                 case "replace" -> invokeReplace(args);
@@ -343,10 +357,35 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
     }
 
     private Value<?, ?> invokeReverse() {
-        // Only concrete chars: a symbolic string cannot be reversed in the string theory.
-        if (stringValue.isSymbolic()) return PlaceHolder.instance;
-        setChars(new StringBuilder(stringValue.concrete).reverse().toString(),
-                smgr.makeString(new StringBuilder(stringValue.concrete).reverse().toString()));
+        // By the concrete length (pinned, see StringCallBranches): the chars in reverse order,
+        // where Java then puts each surrogate pair (a low surrogate followed by a high one after
+        // the reversal) back in order, scanning from the start.
+        String reversed = new StringBuilder(stringValue.concrete).reverse().toString();
+        if (!stringValue.isSymbolic()) {
+            setChars(reversed, new CaseMapping(context.getFormulaManager()).chars(reversed));
+            return this;
+        }
+        int n = stringValue.concrete.length();
+        if (n > 256) return PlaceHolder.instance;
+        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
+        CaseMapping chars = new CaseMapping(context.getFormulaManager());
+        NumeralFormula.IntegerFormula[] r = new NumeralFormula.IntegerFormula[n];
+        for (int i = 0; i < n; i++) r[i] = chars.codeAt(stringValue.formula, imgr.makeNumber(n - 1 - i));
+        // swapped[i]: the pair at i, i + 1 is put back in order
+        BooleanFormula[] swapped = new BooleanFormula[n];
+        for (int i = 0; i < n; i++) {
+            swapped[i] = i + 1 < n
+                    ? bmgr.and(i > 0 ? bmgr.not(swapped[i - 1]) : bmgr.makeTrue(), chars.isLowSurrogate(r[i]), chars.isHighSurrogate(r[i + 1]))
+                    : bmgr.makeFalse();
+        }
+        StringFormula result = smgr.makeString("");
+        for (int i = 0; i < n; i++) {
+            NumeralFormula.IntegerFormula c = r[i];
+            if (i + 1 < n) c = bmgr.ifThenElse(swapped[i], r[i + 1], c);
+            if (i > 0) c = bmgr.ifThenElse(swapped[i - 1], r[i - 1], c);
+            result = smgr.concat(result, smgr.fromCodePoint(c));
+        }
+        setChars(reversed, result);
         return this;
     }
 
@@ -418,7 +457,7 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
                     formulaString.substring(0, Config.instance().getLoggingFormulaLength()) + "...";
         }
 
-        return "Ljava/lang/StringBuilder @"
+        return "L" + className + " @"
                 + Integer.toHexString(address)
                 + (unknown ? " (unknown)" : "")
                 + " ("

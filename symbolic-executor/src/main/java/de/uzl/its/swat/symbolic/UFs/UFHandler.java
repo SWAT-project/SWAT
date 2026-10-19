@@ -5,23 +5,7 @@ import de.uzl.its.swat.thread.ThreadHandler;
 import static java.lang.Thread.currentThread;
 
 public class UFHandler {
-    private EqualsIgnoreCaseUF equalsIgnoreCaseUF;
-    private ToLowerCaseUF toLowerCaseUF;
     private SinCosUF sinCosUF;
-
-    public EqualsIgnoreCaseUF getEqualsIgnoreCaseUF() throws NoThreadContextException {
-        if (equalsIgnoreCaseUF == null) {
-            equalsIgnoreCaseUF = new EqualsIgnoreCaseUF(ThreadHandler.getSolverContext(currentThread().getId()));
-        }
-        return equalsIgnoreCaseUF;
-    }
-
-    public ToLowerCaseUF getToLowerCaseUF() throws NoThreadContextException {
-        if (toLowerCaseUF == null) {
-            toLowerCaseUF = new ToLowerCaseUF(ThreadHandler.getSolverContext(currentThread().getId()));
-        }
-        return toLowerCaseUF;
-    }
 
     public SinCosUF getSinCosUF() throws NoThreadContextException {
         if (sinCosUF == null) {
