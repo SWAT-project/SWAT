@@ -1,6 +1,7 @@
 package de.uzl.its.swat.symbolic.value.reference.array;
 
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
@@ -87,5 +88,15 @@ public class ObjectArrayValue extends ObjectValue {
     @Override
     public String toString() {
         return "[" + className + " @" + Integer.toHexString(address) + " (" + size + " x 1" + ")";
+    }
+
+    /** Symbolic if an element is, or if the length is (e.g. {@code new Object[n]} for a symbolic n). */
+    @Override
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public boolean isSymbolic(java.util.Set visited) throws NotImplementedException, RuntimeException {
+        if (!visited.contains(this) && size != null && size.isSymbolic()) {
+            return true;
+        }
+        return super.isSymbolic(visited);
     }
 }
