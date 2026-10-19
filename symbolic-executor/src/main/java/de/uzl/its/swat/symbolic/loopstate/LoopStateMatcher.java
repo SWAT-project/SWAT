@@ -137,6 +137,53 @@ public final class LoopStateMatcher {
         }
     }
 
+    /**
+     * Notes a method call of the run. A call into code that is not tracked, other than a few pure
+     * methods, may read or change state outside the hashed state (a System property, the interrupt
+     * flag, the static fields of a class in an excluded package): the run reports no more states.
+     * Every state a run reports thus has a prefix without such calls, so the hidden state is the
+     * initial one wherever it is reported.
+     */
+    public static void call(String owner, String name, boolean isStatic) {
+        if (!stopped && !isPureCall(owner.replace('.', '/'), name, isStatic)) {
+            logger.debug("[LOOP STATE] Call to {}.{}, no more states this run", owner, name);
+            stopped = true;
+        }
+    }
+
+    /** An invokedynamic call site (lambdas, string concatenation) runs library code. */
+    public static void invokeDynamic() {
+        stopped = true;
+    }
+
+    /** Notes an access to a static field: one of an untracked class is state outside the hash. */
+    public static void staticField(String owner) {
+        if (!stopped && owner != null) {
+            String name = owner.replace('.', '/');
+            if (!name.startsWith(SWAT_PACKAGE) && !isApplicationClassName(name)) {
+                logger.debug("[LOOP STATE] Static field of {}, no more states this run", owner);
+                stopped = true;
+            }
+        }
+    }
+
+    private static boolean isPureCall(String owner, String name, boolean isStatic) {
+        if (owner.startsWith(SWAT_PACKAGE) || isApplicationClassName(owner)) {
+            return true; // tracked code (SWAT's Verifier included)
+        }
+        switch (owner) {
+            case "org/sosy_lab/sv_benchmarks/Verifier", "java/lang/Math", "java/lang/StrictMath":
+                return true;
+            case "java/lang/Object":
+                return name.equals("<init>");
+            case "java/lang/Double", "java/lang/Float", "java/lang/Integer", "java/lang/Long":
+                // getInteger and getLong read System properties
+                return isStatic && !name.equals("getInteger") && !name.equals("getLong");
+            default:
+                return false;
+        }
+    }
+
     /** The head's method must be the only application frame on the stack. */
     private static void checkStack(LoopHeads.Head head) throws Unhashable {
         List<String> app = StackWalker.getInstance().walk(s -> s
@@ -236,6 +283,8 @@ public final class LoopStateMatcher {
                 }
             }
         } catch (IOException | ReflectiveOperationException | RuntimeException | LinkageError e) {
+            // Includes a class whose initialization failed: reflection on it throws
+            // NoClassDefFoundError, and its state cannot be read, so it must stay unhashable.
             throw unhashable("reflection failed");
         }
         byte[] digest = md.digest();

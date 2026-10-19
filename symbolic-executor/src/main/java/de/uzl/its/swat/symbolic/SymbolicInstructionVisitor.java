@@ -1307,6 +1307,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitGETSTATIC(GETSTATIC inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.staticField(classDepot.getClassName(inst.cIdx));
             Value<?, ?> val;
             val = fetchStaticField(inst);
             if (val == PlaceHolder.instance) {
@@ -2335,6 +2336,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEINTERFACE(INVOKEINTERFACE inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.call(inst.owner, inst.name, false);
             stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
@@ -2372,6 +2374,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKESPECIAL(INVOKESPECIAL inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.call(inst.owner, inst.name, false);
             stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
@@ -2407,6 +2410,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKESTATIC(INVOKESTATIC inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.call(inst.owner, inst.name, true);
             stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
@@ -2441,6 +2445,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEVIRTUAL(INVOKEVIRTUAL inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.call(inst.owner, inst.name, false);
             if (previousWasUnpack && isStaticMethod(inst.owner, inst.name, inst.desc)) {
                 // A static method called through Method.invoke: the instrumentation invokes it like
                 // an instance method, with Method.invoke's (null) receiver below the arguments.
@@ -2489,6 +2494,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEDYNAMIC(INVOKEDYNAMIC inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.invokeDynamic();
             stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
@@ -3435,6 +3441,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitPUTSTATIC(PUTSTATIC inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.staticField(classDepot.getClassName(inst.cIdx));
             Value<?, ?> value;
             if (inst.desc.startsWith("D") || inst.desc.startsWith("J")) {
                 value = stack.popWideOperand();
