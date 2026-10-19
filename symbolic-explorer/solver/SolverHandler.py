@@ -383,6 +383,23 @@ class Z3Handler:
         return filepath
 
     @staticmethod
+    def lift_int2bv(cache, assertions: list) -> list:
+        """The assertions with comparisons over int_to_bv of string lengths, indices and char codes
+        made over the Integers (see Int2BvLifting), which Z3 decides much faster. Equivalent for
+        Java strings (at most 2^31 - 1 chars); on any error, the assertions as they are."""
+        from solver.Int2BvLifting import Int2BvLifting, lift_query
+        try:
+            lifting = getattr(cache, 'int2bv_lifting', None)
+            if lifting is None:
+                lifting = cache.int2bv_lifting = Int2BvLifting()
+            if not any(lifting.mentions_int2bv(a) for a in assertions):
+                return assertions
+            return lift_query(lifting, assertions)
+        except Exception as e:
+            logger.warning(f"[SOLVER] int_to_bv lifting failed, solving the query as it is: {e}")
+            return assertions
+
+    @staticmethod
     def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000, rlimit: int | None = None,
               extra_exprs: list | None = None) -> Tuple[SATResult, Dict[str, Any]]:
         """
@@ -431,14 +448,10 @@ class Z3Handler:
         # The FIRST set of expressions are from the node constraint - we need to NEGATE them
         # (We're looking for a solution that takes a different path)
         if len(node_exprs) > 0:
-            # Negate all node constraint expressions and add them
-            for expr in node_exprs:
-                negated = Not(expr)
-                solver.add(negated)
-
-            # Add all path constraint expressions (already parsed and cached)
-            for i, path_expr in enumerate(all_exprs[len(node_exprs):]):
-                solver.add(path_expr)
+            # Negate all node constraint expressions, then add all path constraint expressions
+            # (already parsed and cached)
+            assertions = [Not(expr) for expr in node_exprs] + all_exprs[len(node_exprs):]
+            solver.add(*Z3Handler.lift_int2bv(cache, assertions))
 
             for expr in extra_exprs or []:
                 solver.add(expr)

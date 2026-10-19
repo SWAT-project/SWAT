@@ -15,6 +15,7 @@ import org.sosy_lab.java_smt.api.IntegerFormulaManager;
 import org.sosy_lab.java_smt.api.NumeralFormula;
 import org.sosy_lab.java_smt.api.SolverContext;
 
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ByteValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.CharValue;
@@ -239,7 +240,6 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
         }
 
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
         FloatingPointFormulaManager fmgr = context.getFormulaManager().getFloatingPointFormulaManager();
 
         BooleanFormula isNaN1 = fmgr.isNaN(formula);
@@ -249,18 +249,12 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
         BooleanFormula gtCond = fmgr.greaterThan(formula, f.formula);
         BooleanFormula eqCond = fmgr.equalWithFPSemantics(formula, f.formula);
 
-        NumeralFormula.IntegerFormula res = bmgr.ifThenElse(
+        // Built over bit-vectors: Z3 decides int_to_bv over FP comparisons badly.
+        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
+        BitvectorFormula res = bmgr.ifThenElse(
                 isNaN,
-                imgr.makeNumber(nanResult),
-                bmgr.ifThenElse(
-                        gtCond,
-                        imgr.makeNumber(1),
-                        bmgr.ifThenElse(
-                                eqCond,
-                                imgr.makeNumber(0),
-                                imgr.makeNumber(-1)
-                        )
-                )
+                bvmgr.makeBitvector(32, nanResult),
+                BitvectorEncoding.compareResult(context.getFormulaManager(), eqCond, gtCond, 32)
         );
 
         return new IntValue(context, c, res);

@@ -15,6 +15,7 @@ import org.sosy_lab.java_smt.api.IntegerFormulaManager;
 import org.sosy_lab.java_smt.api.NumeralFormula;
 import org.sosy_lab.java_smt.api.SolverContext;
 
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ByteValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.CharValue;
@@ -278,8 +279,8 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
     }
 
     /**
-     * FCMPG instruction implementation. Compares two floats and returns: 0 if both values are
-     * equal; 1 if this float is greater or either float is NaN; -1 if the parameter is greater.
+     * Compares two floats and returns: 0 if both values are equal; 1 if this float is greater or
+     * either float is NaN; -1 if the parameter is greater
      *
      * @param f The other FloatValue
      * @return The resulting IntValue with the boolean conditions
@@ -289,8 +290,8 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
     }
 
     /**
-     * FCMPL instruction implementation. Compares two floats and returns: 0 if both values are
-     * equal; 1 if this float is greater; -1 if the parameter is greater or either float is NaN.
+     * Compares two floats and returns: 0 if both values are equal 1 if this float is greater -1 if
+     * the parameter is greater or either float is NaN
      *
      * @param f The other FloatValue
      * @return The resulting IntValue with the boolean conditions
@@ -300,42 +301,35 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
     }
 
     /**
-     * Compares two floats with IEEE 754 semantics (as FCMPG/FCMPL do, unlike Float.compareTo):
-     * nanResult if either value is NaN, 0 if both are equal (so 0.0 == -0.0), 1 if this float is
-     * greater, -1 if the parameter is greater. The formula has the NaN case too, so that the
-     * solver cannot pick a NaN input for an ordered comparison.
+     * Compares two floats as FCMPG/FCMPL do: 0 if both values are equal (also -0.0 and 0.0), 1 if
+     * this float is greater, -1 if the parameter is greater, and nanResult if either is NaN
      *
      * @param f The other FloatValue
-     * @param nanResult The result if either value is NaN
+     * @param nanResult The result if either float is NaN
      * @return The resulting IntValue with the boolean conditions
      */
     private IntValue FCMP(FloatValue f, int nanResult) {
-        float a = concrete;
-        float b = f.concrete;
         int c;
-        if (Float.isNaN(a) || Float.isNaN(b)) {
+        if (Float.isNaN(concrete) || Float.isNaN(f.concrete)) {
             c = nanResult;
-        } else if (a > b) {
+        } else if (concrete > f.concrete) {
             c = 1;
-        } else if (a == b) {
+        } else if (concrete.floatValue() == f.concrete.floatValue()) {
+            // Explicit unboxing: 'concrete' is a boxed Float, so '==' would compare references
             c = 0;
         } else {
             c = -1;
         }
 
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
         BooleanFormula isNaN = bmgr.or(fmgr.isNaN(formula), fmgr.isNaN(f.formula));
         BooleanFormula eqCond = fmgr.equalWithFPSemantics(formula, f.formula);
         BooleanFormula gtCond = fmgr.greaterThan(formula, f.formula);
-        NumeralFormula.IntegerFormula res =
-                bmgr.ifThenElse(
-                        isNaN,
-                        imgr.makeNumber(nanResult),
-                        bmgr.ifThenElse(
-                                gtCond,
-                                imgr.makeNumber(1),
-                                bmgr.ifThenElse(eqCond, imgr.makeNumber(0), imgr.makeNumber(-1))));
+        // Built over bit-vectors: Z3 decides int_to_bv over FP comparisons badly.
+        BitvectorFormula res = bmgr.ifThenElse(
+                isNaN,
+                context.getFormulaManager().getBitvectorFormulaManager().makeBitvector(32, nanResult),
+                BitvectorEncoding.compareResult(context.getFormulaManager(), eqCond, gtCond, 32));
 
         return new IntValue(context, c, res);
     }
