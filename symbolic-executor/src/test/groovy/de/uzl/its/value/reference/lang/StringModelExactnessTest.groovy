@@ -545,9 +545,10 @@ class StringModelExactnessTest extends Specification {
     def "after a change that is not modelled the chars are unknown, until resynced"() {
         given:
         def sb = builder(symbolicString("s", "ab"))
+        def unmodelled = new ObjectValue(context, "x/Unknown", new IntValue(context, 0), -1)
 
         when:
-        call(sb, "reverse", [], [])
+        call(sb, "insert", [INT, OBJECT], [new IntValue(context, 0), unmodelled])
 
         then:
         sb.unknown

@@ -322,7 +322,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         int result = concrete.codePointAt(index.concrete);
         if (!isSymbolic() && !index.isSymbolic()) return new IntValue(context, result);
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        CaseMapping chars = new CaseMapping(context.getFormulaManager());
+        Utf16 chars = new Utf16(context.getFormulaManager());
         NumeralFormula.IntegerFormula i = index.asIntegerFormula();
         NumeralFormula.IntegerFormula next = imgr.add(i, imgr.makeNumber(1));
         NumeralFormula.IntegerFormula c = chars.codeAt(formula, i);
@@ -350,7 +350,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         int result = concrete.codePointBefore(index.concrete);
         if (!isSymbolic() && !index.isSymbolic()) return new IntValue(context, result);
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        CaseMapping chars = new CaseMapping(context.getFormulaManager());
+        Utf16 chars = new Utf16(context.getFormulaManager());
         NumeralFormula.IntegerFormula before = imgr.subtract(index.asIntegerFormula(), imgr.makeNumber(1));
         NumeralFormula.IntegerFormula twoBefore = imgr.subtract(index.asIntegerFormula(), imgr.makeNumber(2));
         NumeralFormula.IntegerFormula c = chars.codeAt(formula, before);
@@ -379,9 +379,9 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         int result = concrete.codePointCount(begin.concrete, end.concrete);
         if (!isSymbolic() && !begin.isSymbolic() && !end.isSymbolic()) return new IntValue(context, result);
         int n = end.concrete - begin.concrete;
-        if (n > MAX_UNROLLED_MAPPING) return PlaceHolder.instance;
+        if (n > MAX_UNROLLED) return PlaceHolder.instance;
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        CaseMapping chars = new CaseMapping(context.getFormulaManager());
+        Utf16 chars = new Utf16(context.getFormulaManager());
         NumeralFormula.IntegerFormula[] c = new NumeralFormula.IntegerFormula[n];
         for (int k = 0; k < n; k++) c[k] = chars.codeAt(formula, imgr.add(begin.asIntegerFormula(), imgr.makeNumber(k)));
         NumeralFormula.IntegerFormula count = imgr.makeNumber(n);
@@ -489,32 +489,31 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         if (args.length != 1 || !(args[0] instanceof StringValue other)) return PlaceHolder.instance;
         int result = concrete.compareToIgnoreCase(other.concrete);
         if (!isSymbolic() && !other.isSymbolic()) return new IntValue(context, result);
-        // By the concrete lengths, which the call's branches pin (StringCallBranches).
+        // ASCII strings (the call's branches separate them, StringCallBranches) by the pinned lengths
+        if (!asciiStrings(this, other)) return PlaceHolder.instance;
         int tlen = concrete.length();
         int olen = other.concrete.length();
-        if (Math.max(tlen, olen) > MAX_UNROLLED_COMPARISON) return PlaceHolder.instance;
-        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        CaseMapping cases = new CaseMapping(context.getFormulaManager());
-        // Strings of the same coder are compared by code points (StringUTF16.compareToCI, the same
-        // as char by char for two Latin-1 strings), a Latin-1 and a UTF-16 one char by char.
-        NumeralFormula.IntegerFormula byCodePoints = cases.compareIgnoringCase(formula, imgr.makeNumber(0), tlen,
-                other.formula, imgr.makeNumber(0), olen).value();
-        NumeralFormula.IntegerFormula byChars = cases.compareCharsIgnoringCase(formula, tlen, other.formula, olen);
-        return new IntValue(context, result, bmgr.ifThenElse(
-                bmgr.equivalence(cases.isLatin1(formula), cases.isLatin1(other.formula)), byCodePoints, byChars));
+        if (Math.max(tlen, olen) > MAX_UNROLLED) return PlaceHolder.instance;
+        return new IntValue(context, result, new CaseMapping(context.getFormulaManager())
+                .compareAsciiIgnoringCase(formula, imgr.makeNumber(0), tlen, other.formula, imgr.makeNumber(0), olen).value());
     }
 
-    /** The longest string an ignore-case comparison is unrolled over; longer ones are not modelled. */
-    static final int MAX_UNROLLED_COMPARISON = 64;
+    /** Whether all chars of the strings are ASCII, concretely. */
+    public static boolean asciiStrings(StringValue... strings) {
+        for (StringValue s : strings) {
+            if (!s.concrete.chars().allMatch(c -> c < 128)) return false;
+        }
+        return true;
+    }
 
-    /** The longest string a case mapping is unrolled over; longer ones are not modelled. */
-    static final int MAX_UNROLLED_MAPPING = 256;
+    /** The longest string a model is unrolled over, char by char; longer ones are not modelled. */
+    static final int MAX_UNROLLED = 256;
 
     /**
      * Whether a.equalsIgnoreCase(b) is modelled as a regular expression: one of them is concrete
      * and has no surrogate, so the other must match it char by char (a surrogate of the other
      * matches none of its chars, also as part of a pair). Otherwise the model is unrolled over the
-     * concrete length (pinned).
+     * concrete length (pinned), for ASCII strings.
      */
     public static boolean equalsIgnoreCaseByRegex(StringValue a, StringValue b) {
         if (a.isSymbolic() == b.isSymbolic()) return false;
@@ -537,10 +536,9 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     /**
-     * toLowerCase()/toLowerCase(Locale) (kind LOWER) and toUpperCase()/toUpperCase(Locale) (UPPER),
-     * unrolled over the concrete length, which the call's branches pin (StringCallBranches). The
-     * lower case of 'Σ' depends on the word around it (final sigma), which is not modelled: the
-     * call's branches separate the strings that contain it.
+     * toLowerCase()/toLowerCase(Locale) (kind LOWER) and toUpperCase()/toUpperCase(Locale) (UPPER)
+     * of an ASCII string, which the call's branches separate (StringCallBranches), char by char
+     * over the pinned length. Other strings are not modelled (see CaseMapping).
      */
     private Value<?, ?> invokeCaseMapping(CaseMapping.Kind kind, Value<?, ?>[] args) {
         if (args.length > 1) return PlaceHolder.instance;
@@ -549,9 +547,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         String result = kind == CaseMapping.Kind.LOWER ? concrete.toLowerCase(locale) : concrete.toUpperCase(locale);
         CaseMapping cases = new CaseMapping(context.getFormulaManager());
         if (!isSymbolic()) return new StringValue(context, result, cases.chars(result), -1);
-        if (kind == CaseMapping.Kind.LOWER && concrete.indexOf('\u03a3') >= 0) return PlaceHolder.instance;
-        if (concrete.length() > MAX_UNROLLED_MAPPING) return PlaceHolder.instance;
-        return new StringValue(context, result, cases.mapChars(kind, formula, concrete.length()), -1);
+        if (!asciiStrings(this) || concrete.length() > MAX_UNROLLED) return PlaceHolder.instance;
+        return new StringValue(context, result, cases.mapAscii(kind, formula, concrete.length()), -1);
     }
 
     /**
@@ -698,14 +695,15 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             String t = isSymbolic() ? other.concrete : concrete;
             return new BooleanValue(context, result, smgr.in(symbolic.formula, cases.equalIgnoringCase(t)));
         }
-        // The call's branches (StringCallBranches): whether the lengths are equal, then the length
-        // is pinned. Strings of different lengths are not equal.
+        // The call's branches (StringCallBranches): whether both are ASCII, whether the lengths are
+        // equal, then the length is pinned. Strings of different lengths are not equal.
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
         int n = concrete.length();
+        if (!asciiStrings(this, other)) return PlaceHolder.instance;
         if (n != other.concrete.length()) return new BooleanValue(context, false, bmgr.makeFalse());
-        if (n > MAX_UNROLLED_COMPARISON) return PlaceHolder.instance;
-        return new BooleanValue(context, result, cases.compareIgnoringCase(formula, imgr.makeNumber(0), n,
-                other.formula, imgr.makeNumber(0), n).ended());
+        if (n > MAX_UNROLLED) return PlaceHolder.instance;
+        return new BooleanValue(context, result, cases.compareAsciiIgnoringCase(formula, imgr.makeNumber(0), n,
+                other.formula, imgr.makeNumber(0), n).noDifference());
     }
 
     /**
@@ -1117,9 +1115,9 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             return new BooleanValue(context, false, bmgr.makeFalse());
         }
         int n = len.concrete;
-        if (n > MAX_UNROLLED_COMPARISON) return PlaceHolder.instance;
+        if (n > MAX_UNROLLED || !asciiStrings(this, other)) return PlaceHolder.instance;
         BooleanFormula ignoringCase = n <= 0 ? bmgr.makeTrue()
-                : new CaseMapping(context.getFormulaManager()).compareIgnoringCase(formula, t, n, other.formula, o, n).ended();
+                : new CaseMapping(context.getFormulaManager()).compareAsciiIgnoringCase(formula, t, n, other.formula, o, n).noDifference();
         return new BooleanValue(context, result, ignoreCase.isSymbolic()
                 ? bmgr.ifThenElse(ignoreCase.formula, ignoringCase, matches) : ignoringCase);
     }
@@ -1146,8 +1144,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         IntValue count = args[0].asIntValue();
         if (count.concrete < 0 || (long) count.concrete * concrete.length() > Integer.MAX_VALUE) return PlaceHolder.instance;
         String result = concrete.repeat(count.concrete);
-        if (!isSymbolic()) return new StringValue(context, result, new CaseMapping(context.getFormulaManager()).chars(result), -1);
-        if (count.concrete > MAX_UNROLLED_MAPPING) return PlaceHolder.instance;
+        if (!isSymbolic()) return new StringValue(context, result, new Utf16(context.getFormulaManager()).chars(result), -1);
+        if (count.concrete > MAX_UNROLLED) return PlaceHolder.instance;
         StringFormula repeated = smgr.makeString("");
         for (int k = 0; k < count.concrete; k++) repeated = smgr.concat(repeated, formula);
         return new StringValue(context, result, repeated, -1);

@@ -11,7 +11,7 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.CharValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.array.CharArrayValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.BoxedValue;
-import de.uzl.its.swat.symbolic.value.reference.lang.CaseMapping;
+import de.uzl.its.swat.symbolic.value.reference.lang.Utf16;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import java.util.Set;
 import org.objectweb.asm.Type;
@@ -362,13 +362,13 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         // the reversal) back in order, scanning from the start.
         String reversed = new StringBuilder(stringValue.concrete).reverse().toString();
         if (!stringValue.isSymbolic()) {
-            setChars(reversed, new CaseMapping(context.getFormulaManager()).chars(reversed));
+            setChars(reversed, new Utf16(context.getFormulaManager()).chars(reversed));
             return this;
         }
         int n = stringValue.concrete.length();
         if (n > 256) return PlaceHolder.instance;
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        CaseMapping chars = new CaseMapping(context.getFormulaManager());
+        Utf16 chars = new Utf16(context.getFormulaManager());
         NumeralFormula.IntegerFormula[] r = new NumeralFormula.IntegerFormula[n];
         for (int i = 0; i < n; i++) r[i] = chars.codeAt(stringValue.formula, imgr.makeNumber(n - 1 - i));
         // swapped[i]: the pair at i, i + 1 is put back in order

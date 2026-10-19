@@ -6,6 +6,7 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue;
 import de.uzl.its.swat.symbolic.value.reference.array.CharArrayValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.CaseMapping;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +28,8 @@ import org.sosy_lab.java_smt.api.StringFormulaManager;
  *   <li>Index checks: the method returns normally iff its indices are in range, and throws an
  *       IndexOutOfBoundsException otherwise. One check per exception the method may throw, in the
  *       order Java checks them, so all inputs that fail the same check throw the same exception.
+ *   <li>Splits: a model with several cases (e.g. strings of equal and of different lengths)
+ *       records which one the call took.
  *   <li>Pins: a model that works on the concrete value of a symbolic int (e.g. a loop over the
  *       concrete length of a string) is exact only for that value. The branch {@code x == concrete}
  *       makes the solver try the other values, in other runs.
@@ -36,8 +39,11 @@ import org.sosy_lab.java_smt.api.StringFormulaManager;
  */
 public final class StringCallBranches {
 
-    /** A branch: its condition and whether it held in this run. */
-    public record Branch(BooleanFormula condition, boolean holds) {}
+    /**
+     * A branch: its condition and whether it held in this run, and whether it is a check the call
+     * throws at if it fails (else the model only distinguishes the cases, and both sides return).
+     */
+    public record Branch(BooleanFormula condition, boolean holds, boolean check) {}
 
     /** An int the checks are about, as a formula over the integers and concretely. */
     private record Int(IntegerFormula f, long c, boolean symbolic) {}
@@ -111,11 +117,11 @@ public final class StringCallBranches {
             }
             case "equalsIgnoreCase(Ljava/lang/String;)Z" -> {
                 if (args[0] instanceof StringValue other && (s.isSymbolic() || other.isSymbolic())
-                        && !StringValue.equalsIgnoreCaseByRegex(s, other)) {
+                        && !StringValue.equalsIgnoreCaseByRegex(s, other) && ascii(s, other)) {
                     // Strings of different lengths differ, else the comparison by the pinned length
                     Int len = length(s);
                     Int otherLen = length(other);
-                    add(imgr.equal(len.f(), otherLen.f()), len.c() == otherLen.c());
+                    split(imgr.equal(len.f(), otherLen.f()), len.c() == otherLen.c());
                     if (len.c() == otherLen.c()) pin(len);
                 }
             }
@@ -126,32 +132,23 @@ public final class StringCallBranches {
                     Int toffset = num(args[1]);
                     Int ooffset = num(args[3]);
                     Int len = num(args[4]);
-                    add(bmgr.and(imgr.greaterOrEquals(ooffset.f(), zero()), imgr.greaterOrEquals(toffset.f(), zero()),
+                    boolean inBounds = StringValue.regionInBounds(s.concrete, (int) toffset.c(), other.concrete, (int) ooffset.c(), (int) len.c());
+                    split(bmgr.and(imgr.greaterOrEquals(ooffset.f(), zero()), imgr.greaterOrEquals(toffset.f(), zero()),
                                     imgr.lessOrEquals(toffset.f(), imgr.subtract(length(s).f(), len.f())),
                                     imgr.lessOrEquals(ooffset.f(), imgr.subtract(length(other).f(), len.f()))),
-                            StringValue.regionInBounds(s.concrete, (int) toffset.c(), other.concrete, (int) ooffset.c(), (int) len.c()));
-                    if (StringValue.regionInBounds(s.concrete, (int) toffset.c(), other.concrete, (int) ooffset.c(), (int) len.c())) {
-                        pin(len);
-                    }
+                            inBounds);
+                    if (inBounds && ascii(s, other)) pin(len);
                 }
             }
             case "compareToIgnoreCase(Ljava/lang/String;)I" -> {
-                if (args[0] instanceof StringValue other) {
+                if (args[0] instanceof StringValue other && ascii(s, other)) {
                     pin(length(s));
                     pin(length(other));
                 }
             }
-            case "toLowerCase()Ljava/lang/String;", "toLowerCase(Ljava/util/Locale;)Ljava/lang/String;" -> {
-                if (StringValue.caseMappingLocale(args) != null) {
-                    // 'Σ' (final sigma) is not modelled, the rest by the pinned length
-                    StringFormula sigma = smgr.fromCodePoint(imgr.makeNumber('\u03a3'));
-                    boolean noSigma = s.concrete.indexOf('\u03a3') < 0;
-                    add(bmgr.not(smgr.contains(s.formula, sigma)), noSigma);
-                    if (noSigma) pin(length(s));
-                }
-            }
-            case "toUpperCase()Ljava/lang/String;", "toUpperCase(Ljava/util/Locale;)Ljava/lang/String;" -> {
-                if (StringValue.caseMappingLocale(args) != null) pin(length(s));
+            case "toLowerCase()Ljava/lang/String;", "toLowerCase(Ljava/util/Locale;)Ljava/lang/String;",
+                 "toUpperCase()Ljava/lang/String;", "toUpperCase(Ljava/util/Locale;)Ljava/lang/String;" -> {
+                if (StringValue.caseMappingLocale(args) != null && ascii(s)) pin(length(s));
             }
             default -> { }
         }
@@ -240,6 +237,19 @@ public final class StringCallBranches {
         pin(dstBegin);
     }
 
+    /**
+     * Whether the strings are ASCII, the case the case-insensitive models cover (see CaseMapping):
+     * a split between ASCII strings and the others.
+     */
+    private boolean ascii(StringValue... strings) {
+        CaseMapping cases = new CaseMapping(context.getFormulaManager());
+        BooleanFormula all = bmgr.makeTrue();
+        for (StringValue str : strings) all = bmgr.and(all, cases.isAscii(str.formula));
+        boolean holds = StringValue.asciiStrings(strings);
+        split(all, holds);
+        return holds;
+    }
+
     /** codePointBefore(int index): 0 <= index - 1 < length of s */
     private void codePointBefore(StringValue s, Value<?, ?> indexArg) throws Exception {
         Int i = num(indexArg);
@@ -303,7 +313,13 @@ public final class StringCallBranches {
         return imgr.makeNumber(0);
     }
 
+    /** A check: the call throws if it fails. */
     private void add(BooleanFormula condition, boolean holds) {
-        branches.add(new Branch(condition, holds));
+        branches.add(new Branch(condition, holds, true));
+    }
+
+    /** A branch between the cases of a model, which both return. */
+    private void split(BooleanFormula condition, boolean holds) {
+        branches.add(new Branch(condition, holds, false));
     }
 }

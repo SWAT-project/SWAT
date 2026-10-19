@@ -2320,7 +2320,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         List<StringCallBranches.Branch> branches = StringCallBranches.of(instance, name, desc, arguments);
         int failed = -1;
         for (int i = 0; i < branches.size() && failed < 0; i++) {
-            if (!branches.get(i).holds()) failed = i;
+            if (branches.get(i).check() && !branches.get(i).holds()) failed = i;
         }
         // A normal return where an index check failed (or a throw where all held): the shadow
         // does not match the call; that is left to the model and to recordThrowingCall.

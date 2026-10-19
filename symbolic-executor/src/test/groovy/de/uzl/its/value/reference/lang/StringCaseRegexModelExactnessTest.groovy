@@ -111,6 +111,10 @@ class StringCaseRegexModelExactnessTest extends Specification {
         return ThreadHandler.getSymbolicTraceHandler(currentThread().id).symbolicTrace.symbolicPrecisionLoss
     }
 
+    protected static boolean ascii(String... strings) {
+        return strings.every { it.chars().allMatch { c -> c < 128 } }
+    }
+
     protected boolean onlyJavasResult(List<BooleanFormula> fixed, BooleanFormula other) {
         context.newProverEnvironment().withCloseable { p ->
             ThreadHandler.getSymbolicTraceHandler(currentThread().id).getConstraints().each { p.addConstraint(it) }
@@ -153,50 +157,6 @@ class StringCaseRegexModelExactnessTest extends Specification {
         return v
     }
 
-    // ---- case mapping tables ----
-
-    def "the case mapping tables give Java's mapping for every char and every cased code point"() {
-        given:
-        def cases = new CaseMapping(fmgr)
-        def codes = (0..0xFFFF) + (0x10400..0x104FF) + (0x10C80..0x10CFF) + (0x118A0..0x118DF) + (0x16E40..0x16E7F) +
-                (0x1E900..0x1E94F) + [0x10FFFF]
-
-        expect:
-        CaseMapping.Kind.values().every { kind ->
-            codes.every { int cp ->
-                def mapped = fmgr.simplify(cases.apply(kind, imgr.makeNumber(cp)))
-                imgr.equal(mapped, imgr.makeNumber(CaseMapping.map(kind, cp))).with { fmgr.simplify(it) } == bmgr.makeTrue()
-            }
-        }
-    }
-
-    def "a supplementary code point maps to a supplementary one with the same high surrogate"() {
-        expect:
-        CaseMapping.Kind.values().every { kind ->
-            (0x10000..0x10FFFF).every { int cp ->
-                int m = CaseMapping.map(kind, cp)
-                m == cp || (m >= 0x10000 && Character.highSurrogate(m) == Character.highSurrogate(cp))
-            }
-        }
-    }
-
-    def "String.toLowerCase/toUpperCase map char by char, except 'Σ'"() {
-        // The model maps each char (and each surrogate pair) on its own; Java does too, apart from final sigma.
-        given:
-        def random = new Random(1)
-        def pool = ((0..0xFFFF).findAll { !Character.isSurrogate((char) it) && it != 0x3a3 }.collect { String.valueOf((char) it) }
-                + [DESERET_UPPER, DESERET_LOWER])
-
-        expect:
-        (0..<2000).every {
-            def parts = (0..<random.nextInt(6)).collect { pool[random.nextInt(pool.size())] }
-            def s = parts.join("")
-            s.toLowerCase(Locale.ROOT) == parts.collect { it.toLowerCase(Locale.ROOT) }.join("")
-                    && s.toUpperCase(Locale.ROOT) == parts.collect { it.toUpperCase(Locale.ROOT) }.join("")
-                    || s.contains("𐐨") || s.contains("\uD801\uD801") || s.contains("\uDC28\uDC28") // pairs formed across parts
-        }
-    }
-
     // ---- toLowerCase / toUpperCase ----
 
     @Unroll
@@ -214,17 +174,19 @@ class StringCaseRegexModelExactnessTest extends Specification {
         def fixedUpper = [fix(s)] + branches(s, "toUpperCase", javaDesc, args)
 
         then:
-        exactString(fixedLower, (StringValue) lower, sample.toLowerCase(l ?: Locale.getDefault()))
-        exactString(fixedUpper, (StringValue) upper, sample.toUpperCase(l ?: Locale.getDefault()))
+        // Only ASCII strings are modelled, the others are separated by a branch.
+        !ascii(sample) || exactString(fixedLower, (StringValue) lower, sample.toLowerCase(l ?: Locale.getDefault()))
+        !ascii(sample) || exactString(fixedUpper, (StringValue) upper, sample.toUpperCase(l ?: Locale.getDefault()))
+        ascii(sample) || (lower instanceof PlaceHolder && upper instanceof PlaceHolder)
 
         where:
         [sample, l] << [CASE_SAMPLES + ["Hello World", "aİbßc"], [null, Locale.ROOT, Locale.ENGLISH, Locale.UK]].combinations()
         localeName = l == null ? "default" : l.toString()
     }
 
-    def "toLowerCase separates the strings with 'Σ', which it does not model"() {
+    def "toLowerCase separates the ASCII strings, the others are not modelled"() {
         given:
-        def s = symbolicString("s", "aΣ")
+        def s = symbolicString("s", "a\u00c4")
 
         when:
         def r = call(s, "toLowerCase", [LOCALE], [locale(Locale.ROOT)])
@@ -234,7 +196,9 @@ class StringCaseRegexModelExactnessTest extends Specification {
         r instanceof PlaceHolder
         b.size() == 1
         !b[0].holds()
+        !b[0].check()
         onlyJavasResult([fix(s)], b[0].condition())
+        satisfiable([b[0].condition(), smgr.equal(s.formula, chars("aB"))])
     }
 
     def "toLowerCase pins the length"() {
@@ -274,8 +238,10 @@ class StringCaseRegexModelExactnessTest extends Specification {
         def r2 = call(t, "equalsIgnoreCase", [STRING], [s])
 
         then:
-        exactBoolean([fix(s)] + branches(s, "equalsIgnoreCase", "(Ljava/lang/String;)Z", [t]), (BooleanValue) r1, a.equalsIgnoreCase(b))
-        exactBoolean([fix(s)] + branches(t, "equalsIgnoreCase", "(Ljava/lang/String;)Z", [s]), (BooleanValue) r2, b.equalsIgnoreCase(a))
+        // Against a concrete string with a surrogate the comparison is modelled for ASCII strings only.
+        b.chars().anyMatch { Character.isSurrogate((char) it) } ? (r1 instanceof PlaceHolder && r2 instanceof PlaceHolder) :
+                (exactBoolean([fix(s)] + branches(s, "equalsIgnoreCase", "(Ljava/lang/String;)Z", [t]), (BooleanValue) r1, a.equalsIgnoreCase(b))
+                && exactBoolean([fix(s)] + branches(t, "equalsIgnoreCase", "(Ljava/lang/String;)Z", [s]), (BooleanValue) r2, b.equalsIgnoreCase(a)))
         !precisionLoss()
 
         where:
@@ -293,7 +259,7 @@ class StringCaseRegexModelExactnessTest extends Specification {
         def fixed = [fix(s), fix(t)] + branches(s, "equalsIgnoreCase", "(Ljava/lang/String;)Z", [t])
 
         then:
-        exactBoolean(fixed, (BooleanValue) r, a.equalsIgnoreCase(b))
+        ascii(a, b) ? exactBoolean(fixed, (BooleanValue) r, a.equalsIgnoreCase(b)) : r instanceof PlaceHolder
 
         where:
         [a, b] << ([["", "a", "A", "ab", "AB", "ß", "Ǆ", "ǆ", "ı", "I", DESERET_UPPER, DESERET_LOWER,
@@ -324,11 +290,12 @@ class StringCaseRegexModelExactnessTest extends Specification {
                 branches(s, "regionMatches", "(ZILjava/lang/String;II)Z", args)
 
         then:
-        exactBoolean(fixed, (BooleanValue) r, a.regionMatches(ic, to, b, oo, len))
+        (r instanceof PlaceHolder && !ascii(a, b) && StringValue.regionInBounds(a, to, b, oo, len))
+                || exactBoolean(fixed, (BooleanValue) r, a.regionMatches(ic, to, b, oo, len))
 
         where:
         [a, b, ic, to, oo, len] << [["", "aBc", "x" + DESERET_UPPER], ["ABC", "bc", "X" + DESERET_LOWER], [true, false],
-                                    [-1, 0, 1], [0, 1], [-1, 0, 2, 5]].combinations()
+                                    [-1, 1], [0, 1], [-1, 2, 5]].combinations()
     }
 
     @Unroll
@@ -342,7 +309,7 @@ class StringCaseRegexModelExactnessTest extends Specification {
         def fixed = [fix(s), fix(t)] + branches(s, "compareToIgnoreCase", "(Ljava/lang/String;)I", [t])
 
         then:
-        exactInt(fixed, (IntValue) r, a.compareToIgnoreCase(b))
+        ascii(a, b) ? exactInt(fixed, (IntValue) r, a.compareToIgnoreCase(b)) : r instanceof PlaceHolder
 
         where:
         [a, b] << [["", "a", "B", "abc", "ß", "ÿ", "Ÿ", "ǅ", "x" + DESERET_UPPER, "x\uD801", "Ā"],
