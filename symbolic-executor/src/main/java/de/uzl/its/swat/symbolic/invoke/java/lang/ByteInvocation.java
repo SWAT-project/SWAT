@@ -99,6 +99,10 @@ public class ByteInvocation {
      * Invocation handler for Byte.valueOf(byte).
      */
     private static Value<?, ?> invokeValueOf(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        if (args[0] instanceof StringValue sv) {
+            ByteValue b = NumberParsing.parseByte(sv, args);
+            return new ByteObjectValue(b.context, b, ObjectValue.ADDRESS_UNKNOWN);
+        }
         assert args.length == 1 : "Expected 1 argument for valueOf(), got " + args.length;
         ByteValue b = args[0].asByteValue();
         return new ByteObjectValue(b.context, b, ObjectValue.ADDRESS_UNKNOWN);
@@ -109,21 +113,10 @@ public class ByteInvocation {
      */
     private static Value<?, ?> invokeParseByte(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
         assert args.length == 1 || args.length == 2 : "Expected 1 or 2 arguments for parseByte(), got " + args.length;
-        if (args.length == 1 && args[0] instanceof StringValue sv) {
-            return parseByte(sv);
+        if (args[0] instanceof StringValue sv) {
+            return NumberParsing.parseByte(sv, args);
         }
         return PlaceHolder.instance;
-    }
-
-    /**
-     * Symbolic wrapper for Byte.parseByte(String s)
-     */
-    private static ByteValue parseByte(StringValue s) {
-        SolverContext ctx = s.context;
-        StringFormulaManager sfm = ctx.getFormulaManager().getStringFormulaManager();
-        BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
-        return new ByteValue(ctx, Byte.parseByte(s.concrete),
-                bvmgr.makeBitvector(8, sfm.toIntegerFormula(s.formula)));
     }
 
     /**

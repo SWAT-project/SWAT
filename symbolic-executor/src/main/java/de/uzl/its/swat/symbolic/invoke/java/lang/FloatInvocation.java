@@ -13,6 +13,7 @@ import org.sosy_lab.java_smt.api.SolverContext;
 
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
@@ -39,7 +40,10 @@ public class FloatInvocation {
             case "max" -> invokeMax(args);
             case "min" -> invokeMin(args);
             case "sum" -> invokeSum(args);
-            case "valueOf" -> invokeValueOf(args);
+            case "parseFloat" -> args[0] instanceof StringValue sv ? NumberParsing.parseFloat(sv, symbolicTraceHandler) : PlaceHolder.instance;
+            case "valueOf" -> args[0] instanceof StringValue sv
+                    ? new FloatObjectValue(sv.context, NumberParsing.parseFloat(sv, symbolicTraceHandler), ObjectValue.ADDRESS_UNKNOWN)
+                    : invokeValueOf(args);
 
             default -> PlaceHolder.instance;
         };

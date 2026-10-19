@@ -440,25 +440,10 @@ public class IntegerInvocation {
             throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
-        if (args.length == 1 && args[0] instanceof StringValue sv) {
-            return parseInt(sv);
+        if (args[0] instanceof StringValue sv) {
+            return NumberParsing.parseInt(sv, args);
         }
-        // parseInt with radix not yet supported
         return PlaceHolder.instance;
-    }
-
-    /**
-     * Symbolic wrapper for Integer.parseInt(String s)
-     * Parses the string argument as a signed decimal integer.
-     *
-     * @param s The String containing the integer representation to be parsed
-     * @return The integer value represented by the argument
-     * @see <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/Integer.html#parseInt(java.lang.String)">Integer.parseInt(String)</a>
-     */
-    private static IntValue parseInt(StringValue s) {
-        SolverContext ctx = s.context;
-        StringFormulaManager sfm = ctx.getFormulaManager().getStringFormulaManager();
-        return new IntValue(ctx, Integer.parseInt(s.concrete), sfm.toIntegerFormula(s.formula));
     }
 
     /**
@@ -846,11 +831,14 @@ public class IntegerInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeValueOf(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
         if (args.length == 1 && args[0] instanceof IntValue val) {
             return valueOf(val);
+        }
+        if (args[0] instanceof StringValue sv) {
+            return valueOf(NumberParsing.parseInt(sv, args));
         }
         return PlaceHolder.instance;
     }
