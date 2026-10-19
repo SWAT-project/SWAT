@@ -400,7 +400,8 @@ class SVCompDriver:
             self.log_output(output)
             logger.info(f'[STATUS] {status}')
             next_step: Action = self.determine_next_step(status, output, received_trace)
-            if self.precheck.proven:
+            # A run that sent no trace never reached main: the proof says nothing about it
+            if self.precheck.proven and received_trace:
                 self.round_idx += 1
                 return self.verdict_with_proof(next_step)
 

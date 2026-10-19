@@ -17,6 +17,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from driver import SVCompDriver as svcomp
+from svcomp.ResourceBudget import ResourceBudget
 
 VERIFY_ERROR_OUTPUT = [
     'Error: Unable to initialize main class Main',
@@ -34,7 +35,11 @@ class NoTraceTest(unittest.TestCase):
             self.tree.uncaught_exceptions += 1
         db = SimpleNamespace(record_execution_error=record_execution_error,
                              record_uncaught_exception=record_uncaught_exception,
-                             get_tree=lambda endpoint_id: self.tree)
+                             get_tree=lambda endpoint_id: self.tree,
+                             get_witness_data=lambda endpoint_id: None,
+                             is_stack_overflow_trace=lambda endpoint_id, trace_id: False,
+                             get_execution_errors=lambda endpoint_id, kind: [e for e in self.tree.execution_errors if e.get('kind') == kind],
+                             count_symbolic_vars=lambda endpoint_id: len(self.tree.symbolic_vars))
         patcher = mock.patch.object(svcomp.Database, 'instance', return_value=db)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -76,20 +81,25 @@ class NoTraceTest(unittest.TestCase):
 class ReceivedTraceTest(unittest.TestCase):
     """run_testcase decides received_trace from the trace count around the target run."""
 
-    def run_round(self, traces_sent, branch_to_explore=None):
+    def run_round(self, traces_sent, branch_to_explore=None, proven=False):
         traces = {'n': 0}
         tree = SimpleNamespace(symbolic_vars=set(), execution_errors=[])
         def record_execution_error(endpoint_id, kind, message):
             tree.execution_errors.append({'kind': kind, 'message': message})
         db = SimpleNamespace(trace_count=lambda: traces['n'], clear_witness_data=lambda endpoint_id: None,
                              record_execution_error=record_execution_error, get_tree=lambda endpoint_id: tree,
-                             get_trace=lambda idx: [])
+                             get_trace=lambda idx: [], get_witness_data=lambda endpoint_id: None,
+                             is_stack_overflow_trace=lambda endpoint_id, trace_id: False,
+                             get_execution_errors=lambda endpoint_id, kind: [e for e in tree.execution_errors if e.get('kind') == kind],
+                             count_symbolic_vars=lambda endpoint_id: len(tree.symbolic_vars))
         driver = svcomp.SVCompDriver.__new__(svcomp.SVCompDriver)
         driver.state = svcomp.State()
         driver.state.branch_to_explore = branch_to_explore
         driver.verification_category = svcomp.VerificationCategory.VALID_ASSERT_PRP
         driver.args = SimpleNamespace(parallel_sa=True)
         driver.sa = SimpleNamespace(start=lambda: None)
+        driver.precheck = SimpleNamespace(proven=proven, reason=None, run=lambda: None, stats=lambda: {})
+        driver.budget = ResourceBudget(cgroup_limit=0)
         driver.build_command = lambda **kwargs: []
         def run_command(cmd):
             traces['n'] += traces_sent
@@ -111,6 +121,12 @@ class ReceivedTraceTest(unittest.TestCase):
         self.assertEqual([e['kind'] for e in tree.execution_errors], ['no_trace'])
         # The latest trace is one of an earlier round: no divergence check against it
         driver.check_divergence.assert_not_called()
+
+    def test_failed_start_is_unknown_despite_a_proof(self):
+        # The property pre-check (#73) proves nothing about a run that never reached main
+        verdict, tree, _ = self.run_round(traces_sent=0, proven=True)
+        self.assertEqual(verdict, svcomp.Verdict.UNKNOWN)
+        self.assertEqual([e['kind'] for e in tree.execution_errors], ['no_trace'])
 
 
 if __name__ == '__main__':
