@@ -43,8 +43,12 @@ class StrategyService:
         distances = {} if kwargs.get("rank_by_distance", False) else None
         # The walk is on the Database's tree itself, so dfs records where the SA walk fell out of
         # step there directly. The returned nodes are live: they gain children as traces arrive.
-        possible_branches = db.visit_tree(endpoint_id, lambda tree, solved, unsat: dfs(
-            visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances))
+        def walk(tree, solved, unsat):
+            found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
+            return found, tree.loop_state_pruned
+        possible_branches, pruned = db.visit_tree(endpoint_id, walk)
+        if pruned:
+            logger.info(f'[DFS] Left out {pruned} subtrees below a repeated loop-head state')
         if distances:
             possible_branches.sort(key=lambda n: distances.get(n, math.inf))
         

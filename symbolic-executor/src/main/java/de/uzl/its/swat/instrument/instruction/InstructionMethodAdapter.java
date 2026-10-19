@@ -10,6 +10,7 @@ import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
 import de.uzl.its.swat.instrument.TryCatchBlock;
 import de.uzl.its.swat.instrument.Utils;
 import de.uzl.its.swat.metadata.ClassDepot;
+import de.uzl.its.swat.symbolic.loopstate.LoopHeads;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -111,6 +112,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         instrumentationState.setMid(mIdx);
 
         if (methodName.equals("<clinit>")) {
+            if (config.isLoopStateMatching() && !owner.startsWith("de/uzl/its/swat/")) {
+                LoopHeads.emitClassInit(mv, owner);
+            }
             int cIdx = classDepot.getClassIndex(this.owner);
             String clinit_desc = "(JIJ)V"; // (long iid, int cIdx, long invokeId)
             addJpushInsn(mv, instrumentationState.incAndGetId());
@@ -131,6 +135,27 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     private static void addJpushInsn(MethodVisitor mv, long val) {
         Utils.addJpushInsn(mv, val);
+    }
+
+    /** The method's loop heads (see LoopHeads), by the label that starts each. */
+    private java.util.Map<Label, LoopHeads.Head> loopHeads = java.util.Map.of();
+
+    public void setLoopHeads(java.util.Map<Label, LoopHeads.Head> loopHeads) {
+        this.loopHeads = loopHeads;
+    }
+
+    /**
+     * At a loop head, probes the state. The probe goes through the processor like an instruction,
+     * so the symbolic execution, which lags one instruction behind, handles it once the jump that
+     * led here has been recorded.
+     */
+    @Override
+    public void visitLabel(Label label) {
+        super.visitLabel(label);
+        LoopHeads.Head head = loopHeads.get(label);
+        if (head != null) {
+            LoopHeads.emitProbe(mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), head);
+        }
     }
     /** Push a value onto the stack. */
     private static void addBipushInsn(MethodVisitor mv, int val) {

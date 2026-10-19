@@ -67,6 +67,9 @@ class Node:
         # Whether some trace threw an exception the SA graph does not model right before this node
         # (an UNMODELLED_EXCEPTION marker, which is not a node of its own, see Tree.structural).
         self.unmodelled_exception = False
+        # Only for 'Branch' nodes: the loop-head states reached before this branch, since the
+        # previous one, each with its position (see Tree.register_loop_states).
+        self.loop_states = ()
 
         if branch is None:
             raise ValueError(f'Cannot create Node with no branch!')
@@ -87,6 +90,7 @@ class Node:
             self.pushes = branch.pushes
             self.callback = branch.callback
             self.choice = branch.choice
+            self.loop_states = getattr(branch, 'positioned_loop_states', ())
             self.constraint[branch.trace_id] = branch.constraint
 
     def is_clinit_start(self) -> bool:

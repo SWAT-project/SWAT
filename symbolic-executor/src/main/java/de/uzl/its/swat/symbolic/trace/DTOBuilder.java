@@ -132,7 +132,8 @@ class DTOBuilder {
                 }
                 trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), be.isConcreteOnly())
                         .place(be.getKey(), be.getPops(), be.getPushes(), be.isCallback())
-                        .choice(be.isChoice()));
+                        .choice(be.isChoice())
+                        .loopStates(be.getLoopStates()));
             } else if (el instanceof SpecialElement se) {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }

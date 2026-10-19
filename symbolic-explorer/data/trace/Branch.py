@@ -14,7 +14,8 @@ class Branch:
     """
 
     def __init__(self, id: int, trace_id: str, has_branched: bool, constraint: str, concrete_only: bool = False,
-                 key: str | None = None, pops: int = 0, pushes: tuple = (), callback: bool = False, choice: bool = False):
+                 key: str | None = None, pops: int = 0, pushes: tuple = (), callback: bool = False, choice: bool = False,
+                 loop_states: tuple = ()):
         """
         Initializes a new instance of the Branch class.
 
@@ -39,6 +40,8 @@ class Branch:
         self.callback = callback
         # Added by the executor to enumerate the values of a symbolic operand; not in the SA graph.
         self.choice = choice
+        # The loop-head states reached since the previous branch (see Tree.register_loop_states).
+        self.loop_states = loop_states
         
     def __str__(self):
         return f'[(B) - {self.id} - ({"T" if self.has_branched else "F"})]'

@@ -145,6 +145,7 @@ class SVCompDriver:
         self.verdict_lock = threading.Lock()
         self.verdict_reported = False
         self.stopped_by: str | None = None  # why the budget stopped the last executor run, if it did
+        Tree.LOOP_STATE_MATCHING = not getattr(args, 'no_loop_state_matching', False)
     
     @contextmanager
     def pushd(self, dirname):

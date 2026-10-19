@@ -61,6 +61,12 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         else:
             assert node.kind == "Branch"
 
+        # A state this path reached before the branch was reached at a smaller position already:
+        # nothing below can be reached only from here (Tree.register_loop_states).
+        if getattr(node, 'loop_states', ()) and tree.dominated_by_loop_state(node):
+            tree.loop_state_pruned += 1
+            return possible_nodes
+
         # The frames entered and left since the previous branch, which happened before this one.
         if sa_index is not None:
             trace_stack = apply_stack_delta(trace_stack, node.pops, node.pushes, sa_index)

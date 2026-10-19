@@ -15,6 +15,7 @@ import de.uzl.its.swat.instrument.Intrinsics;
 import de.uzl.its.swat.metadata.ClassDepot;
 import de.uzl.its.swat.metadata.ClassDepotRuntime;
 import de.uzl.its.swat.symbolic.instruction.*;
+import de.uzl.its.swat.symbolic.loopstate.LoopStateMatcher;
 import de.uzl.its.swat.symbolic.invoke.InvocationHandler;
 import de.uzl.its.swat.symbolic.invoke.java.lang.NumberParsing;
 import de.uzl.its.swat.symbolic.invoke.java.lang.StringCallBranches;
@@ -1401,6 +1402,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitGETSTATIC(GETSTATIC inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.staticField(classDepot.getClassName(inst.cIdx));
             Value<?, ?> val;
             val = fetchStaticField(inst);
             if (val == PlaceHolder.instance) {
@@ -2498,6 +2500,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEINTERFACE(INVOKEINTERFACE inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.call(inst.owner, inst.name, false);
             stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
@@ -2536,6 +2539,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKESPECIAL(INVOKESPECIAL inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.call(inst.owner, inst.name, false);
             stack.newStackFrame(inst.desc, inst.owner, inst.name, true, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
@@ -2572,6 +2576,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKESTATIC(INVOKESTATIC inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.call(inst.owner, inst.name, true);
             stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
@@ -2643,6 +2648,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEVIRTUAL(INVOKEVIRTUAL inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.call(inst.owner, inst.name, false);
             if (previousWasUnpack && isStaticMethod(inst.owner, inst.name, inst.desc)) {
                 // A static method called through Method.invoke: the instrumentation invokes it like
                 // an instance method, with Method.invoke's (null) receiver below the arguments.
@@ -2692,6 +2698,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitINVOKEDYNAMIC(INVOKEDYNAMIC inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.invokeDynamic();
             stack.newStackFrame(inst.desc, inst.owner, inst.name, false, inst.iid);
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
@@ -3644,6 +3651,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      */
     public void visitPUTSTATIC(PUTSTATIC inst) throws SymbolicInstructionException {
         try {
+            LoopStateMatcher.staticField(classDepot.getClassName(inst.cIdx));
             Value<?, ?> value;
             if (inst.desc.startsWith("D") || inst.desc.startsWith("J")) {
                 value = stack.popWideOperand();
@@ -3841,6 +3849,24 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     public void visitSPECIAL(SPECIAL inst) throws SymbolicInstructionException {
+    }
+
+    /**
+     * Reports the state at a loop head with the next branch, if it has one (see LoopStateMatcher).
+     *
+     * @param inst The LOOP_HEAD probe
+     */
+    public void visitLOOP_HEAD(LOOP_HEAD inst) throws SymbolicInstructionException {
+        try {
+            long id = currentThread().getId();
+            String state = LoopStateMatcher.stateOf(inst, stack, ThreadHandler.getStaticFields(id),
+                    ThreadHandler.getActiveThreadContextIds().size());
+            if (state != null) {
+                symbolicTraceHandler.addLoopState(state);
+            }
+        } catch (Throwable t) {
+            throw new SymbolicInstructionException(inst, t);
+        }
     }
 
     /**
