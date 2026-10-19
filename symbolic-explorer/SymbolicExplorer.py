@@ -175,6 +175,11 @@ if __name__ == '__main__':
     
     # Initialize loggers
     log.initialize_loggers(args.logdir)
+    if args.mode == 'sv-comp':
+        # The module loggers' DEBUG/INFO lines on stdout (several per branch and query) were 500 MB
+        # in 900 s on MinePump: CPU time, and memory in a BenchExec container. The explorer's own
+        # log (explorer.log) is not affected.
+        logging.getLogger().setLevel(logging.WARNING)
 
     # Set configuration flags in Database
     from data.Database import Database
