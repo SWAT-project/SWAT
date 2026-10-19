@@ -39,6 +39,12 @@ every pair the assert is `if (x > 1000 && x < HI) assert false;` with HI = 10000
 1001 (SAFE), and it is only reached after flipping an input-dependent branch that the risky
 construct sits on. Each task's comment says what it tests.
 
+`loop-state`: hand-written VIOLATION tasks against loop-head state matching, each a case where a
+match would hide a violation: an `Object[]` whose length is symbolic (also under
+`no-runtime-exception`, and with an unbounded loop), state held by the JDK (a System property, the
+thread interrupt flag), and a class in a package SWAT does not instrument. None may come out SAFE;
+the unbounded variant may time out.
+
 `real-tools` (`scripts/tools.py`, harnesses in `scripts/tools/`): harnesses around unmodified
 GNU java-getopt 1.0.13 (`getopt-minitar`, a tar-like CLI) and opencsv 2.3's `CSVParser`
 (`opencsv-import`). The tools are not in the repository: `scripts/fetch_tools.sh` downloads their

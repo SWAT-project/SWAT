@@ -21,6 +21,6 @@ for suite in $suites; do
         cp="$cp:$lib"
     done
     find "$JAVA_DIR/$suite" -mindepth 1 -maxdepth 1 -type d ! -name 'lib-*' \
-        | xargs -r -P 32 -I{} sh -c "find {} -name '*.class' -delete && javac $JAVAC_FLAGS -cp '$cp' -d {} {}/*.java"
+        | xargs -r -P 32 -I{} sh -c "find {} -name '*.class' -delete && javac $JAVAC_FLAGS -cp '$cp' -d {} \$(find {} -name '*.java')"
 done
 echo "Built $(find "$JAVA_DIR" -name Main.class | wc -l) tasks."
