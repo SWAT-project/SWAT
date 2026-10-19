@@ -65,7 +65,7 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         # nothing below can be reached only from here (Tree.register_loop_states).
         if getattr(node, 'loop_states', ()) and tree.dominated_by_loop_state(node):
             tree.loop_state_pruned += 1
-            return possible_nodes
+            continue  # this subtree only; the walk goes on with the other entries
 
         # The frames entered and left since the previous branch, which happened before this one.
         if sa_index is not None:

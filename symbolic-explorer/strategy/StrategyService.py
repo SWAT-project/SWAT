@@ -44,6 +44,7 @@ class StrategyService:
         # The walk is on the Database's tree itself, so dfs records where the SA walk fell out of
         # step there directly. The returned nodes are live: they gain children as traces arrive.
         def walk(tree, solved, unsat):
+            tree.loop_state_pruned = 0  # counted per walk; the tree itself persists
             found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
             return found, tree.loop_state_pruned
         possible_branches, pruned = db.visit_tree(endpoint_id, walk)

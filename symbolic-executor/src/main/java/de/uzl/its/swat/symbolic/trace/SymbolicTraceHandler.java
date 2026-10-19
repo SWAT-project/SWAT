@@ -84,6 +84,7 @@ public class SymbolicTraceHandler {
         BranchElement branch = new BranchElement(result, result ? constraint : fmgr.getBooleanFormulaManager().not(constraint), iid);
         branch.setChoice(true);
         place(branch, iid, suffix);
+        takeLoopStates(branch);
         symbolicTrace.addTraceElement(branch);
     }
 
@@ -99,6 +100,7 @@ public class SymbolicTraceHandler {
         BranchElement branch = new BranchElement(result, result ? constraint : bmgr.not(constraint), iid);
         place(branch, iid, suffix);
         branch.setCallback(true);
+        takeLoopStates(branch);
         symbolicTrace.addTraceElement(branch);
     }
 

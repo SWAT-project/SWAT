@@ -84,6 +84,15 @@ class LoopStateMatchingTest(unittest.TestCase):
         tree2.add(trace('t2', (1, True, ['S']), (2, False)), [], [])
         self.assertEqual(open_branches(tree2), [1])
 
+    def test_pruning_one_subtree_keeps_walking_the_others(self):
+        # The walk is iterative: a pruned subtree on one side of branch 1 must not end it, the other
+        # side's open branches are still offered.
+        tree = Tree(0)
+        tree.add(trace('t1', (1, False, ['A']), (2, True), (3, True, ['A']), (4, True)), [], [])
+        tree.add(trace('t2', (1, True, ['A']), (5, True)), [], [])
+        self.assertEqual(open_branches(tree), [2, 5])
+        self.assertEqual(tree.loop_state_pruned, 1)
+
     def test_disabled(self):
         Tree.LOOP_STATE_MATCHING = False
         tree = Tree(0)
