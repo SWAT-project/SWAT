@@ -442,7 +442,8 @@ class SVCompDriver:
         # Its unexplored side is never tried again: an exhausted search no longer proves anything,
         # unless some other run reaches that side after all (see run()).
         Database.instance().record_execution_error(ENDPOINT_ID, 'unexpected_divergence', f'branch {target.id}: {reason}')
-        self.given_up.append((target, target.branched is None))
+        # The side open when the branch was solved, on the tree's own node, which later runs extend
+        self.given_up.append((getattr(target, 'live', target), target.branched is None))
 
     def unreached_given_up_branches(self) -> list[Node]:
         """The given-up branches whose unexplored side no run has reached by now. A side reached
@@ -567,6 +568,8 @@ class SVCompDriver:
         # remember which branch we want to explore, as it is now: the node itself is the tree's
         # and gets its other side once the next trace arrives (check_divergence needs this one)
         self.state.branch_to_explore = copy.copy(branch)
+        # the tree's own node, through which a given-up branch's side reached later is seen (run())
+        self.state.branch_to_explore.live = branch
         self.state.solution = sol
         # A solution is a guess if its trace used an approximate model, which is precision loss, or
         # if its query is over a sampled Math function: that function is in a branch constraint of

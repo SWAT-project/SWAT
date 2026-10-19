@@ -9,6 +9,7 @@ Python lacks, so run it with the harness venv, from symbolic-explorer/:
     ../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_divergence -v
 """
 
+import copy
 import os
 import sys
 import unittest
@@ -104,6 +105,19 @@ class CheckDivergenceTest(DivergenceTestBase):
             self.driver.check_divergence([trace_branch(3, True), marker, trace_branch(7, True)])
         self.assertEqual(self.tree.execution_errors, [])
         self.assertEqual(self.driver.failed_solutions, {})
+
+    def test_given_up_side_reached_later_is_seen_on_the_live_node(self):
+        # The driver keeps a shallow copy of the target (the side open when it was solved); a later
+        # run that reaches that side extends the tree's own node, not the copy.
+        live = self.target
+        self.target = copy.copy(live)
+        self.target.live = live
+        self.aim(self.target, {'I_0': 1})
+        self.driver.divergence_retries = 0
+        self.check([trace_branch(7, False)])
+        self.assertEqual(self.driver.unreached_given_up_branches(), [live])
+        live.branched = object()
+        self.assertEqual(self.driver.unreached_given_up_branches(), [])
 
     def test_divergence_is_retried_first(self):
         out = self.check([trace_branch(7, False)])

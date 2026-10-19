@@ -35,6 +35,8 @@ class StackOverflowRoundTest(unittest.TestCase):
             record_execution_error=record_execution_error,
             record_uncaught_exception=record_uncaught_exception,
             get_tree=lambda endpoint_id: self.tree,
+            get_execution_errors=lambda endpoint_id, kind: [e for e in self.tree.execution_errors if e.get('kind') == kind],
+            count_symbolic_vars=lambda endpoint_id: len(self.tree.symbolic_vars),
             get_witness_data=lambda endpoint_id: {'trace_id': 't1'},
             is_stack_overflow_trace=lambda endpoint_id, trace_id: trace_id in self.overflowed_traces)
         patcher = mock.patch.object(svcomp.Database, 'instance', return_value=db)

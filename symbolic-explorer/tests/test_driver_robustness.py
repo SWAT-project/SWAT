@@ -47,6 +47,12 @@ class FakeDatabase:
     def clear_witness_data(self, endpoint_id):
         pass
 
+    def get_execution_errors(self, endpoint_id, kind):
+        return [e for e in self.tree.execution_errors if e.get('kind') == kind]
+
+    def count_symbolic_vars(self, endpoint_id):
+        return len(self.tree.symbolic_vars)
+
     def get_witness_data(self, endpoint_id):
         return None
 
