@@ -36,6 +36,7 @@ public class CharacterInvocation {
             case "toCodePoint" -> invokeToCodePoint(args);
             case "valueOf" -> invokeValueOf(args, desc);
             case "digit" -> invokeDigit(args, desc);
+            case "forDigit" -> invokeForDigit(args);
             case "toString" -> args.length == 1 && desc[0].getSort() == Type.CHAR
                     ? args[0].asCharValue().asStringValue() : PlaceHolder.instance;
             default -> invokeTabulated(name, args, desc);
@@ -103,15 +104,55 @@ public class CharacterInvocation {
     }
 
     /**
-     * Invocation handler for Character.digit(char, int) and Character.digit(int, int). Modelled for
-     * a concrete radix only, which is the usual case; a symbolic radix is left unmodelled.
+     * Invocation handler for Character.digit(char, int) and Character.digit(int, int): the value of
+     * the char in radix 36 (tabulated), if the radix is in [2, 36] and the value below it, else -1.
      */
     private static Value<?, ?> invokeDigit(Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
-        if (args.length != 2 || args[1].isSymbolic()) return PlaceHolder.instance;
-        int radix = args[1].asIntValue().concrete;
+        if (args.length != 2) return PlaceHolder.instance;
+        IntValue radix = args[1].asIntValue();
         boolean onChar = desc[0].getSort() == Type.CHAR;
-        IntUnaryOperator f = onChar ? c -> Character.digit((char) c, radix) : c -> Character.digit(c, radix);
-        return tabulated("digit/" + radix + (onChar ? "/C" : "/I"), f, Result.INT, args[0], onChar);
+        Value<?, ?> base36 = tabulated("digit/36" + (onChar ? "/C" : "/I"),
+                onChar ? c -> Character.digit((char) c, Character.MAX_RADIX) : c -> Character.digit(c, Character.MAX_RADIX),
+                Result.INT, args[0], onChar);
+        if (!(base36 instanceof IntValue value)) return PlaceHolder.instance;
+        int result = onChar ? Character.digit((char) args[0].asCharValue().concrete, radix.concrete)
+                : Character.digit(args[0].asIntValue().concrete, radix.concrete);
+        if (!value.isSymbolic() && !radix.isSymbolic()) return new IntValue(radix.context, result);
+        BitvectorFormulaManager bvmgr = radix.context.getFormulaManager().getBitvectorFormulaManager();
+        BooleanFormulaManager bmgr = radix.context.getFormulaManager().getBooleanFormulaManager();
+        BitvectorFormula r = radix.formula;
+        BitvectorFormula v = value.formula;
+        BooleanFormula valid = bmgr.and(
+                bvmgr.greaterOrEquals(r, bvmgr.makeBitvector(32, Character.MIN_RADIX), true),
+                bvmgr.lessOrEquals(r, bvmgr.makeBitvector(32, Character.MAX_RADIX), true),
+                bvmgr.greaterOrEquals(v, bvmgr.makeBitvector(32, 0), true),
+                bvmgr.lessThan(v, r, true));
+        return new IntValue(radix.context, result, bmgr.ifThenElse(valid, v, bvmgr.makeBitvector(32, -1)));
+    }
+
+    /**
+     * Invocation handler for Character.forDigit(int digit, int radix): '\0' unless digit is in
+     * [0, radix) and radix in [2, 36]; else '0' + digit below 10 and 'a' + digit - 10 from there.
+     */
+    private static Value<?, ?> invokeForDigit(Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        if (args.length != 2) return PlaceHolder.instance;
+        IntValue digit = args[0].asIntValue();
+        IntValue radix = args[1].asIntValue();
+        char result = Character.forDigit(digit.concrete, radix.concrete);
+        if (!digit.isSymbolic() && !radix.isSymbolic()) return new CharValue(digit.context, result);
+        BitvectorFormulaManager bvmgr = digit.context.getFormulaManager().getBitvectorFormulaManager();
+        BooleanFormulaManager bmgr = digit.context.getFormulaManager().getBooleanFormulaManager();
+        BitvectorFormula d = digit.formula;
+        BitvectorFormula r = radix.formula;
+        BooleanFormula valid = bmgr.and(
+                bvmgr.greaterOrEquals(d, bvmgr.makeBitvector(32, 0), true),
+                bvmgr.lessThan(d, r, true),
+                bvmgr.greaterOrEquals(r, bvmgr.makeBitvector(32, Character.MIN_RADIX), true),
+                bvmgr.lessOrEquals(r, bvmgr.makeBitvector(32, Character.MAX_RADIX), true));
+        BitvectorFormula chars = bmgr.ifThenElse(bvmgr.lessThan(d, bvmgr.makeBitvector(32, 10), true),
+                bvmgr.add(d, bvmgr.makeBitvector(32, '0')), bvmgr.add(d, bvmgr.makeBitvector(32, 'a' - 10)));
+        BitvectorFormula code = bmgr.ifThenElse(valid, chars, bvmgr.makeBitvector(32, 0));
+        return new CharValue(digit.context, result, bvmgr.extract(code, 15, 0));
     }
 
     /** Applies the tabulated function {@code f}, cached under {@code key}, to the char or code point {@code arg}. */

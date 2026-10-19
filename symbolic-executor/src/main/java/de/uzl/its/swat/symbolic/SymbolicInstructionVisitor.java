@@ -2427,7 +2427,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
     private boolean recordCallBranches(long iid, String name, List<StringCallBranches.Branch> branches, boolean returned) throws NoThreadContextException {
         int failed = -1;
         for (int i = 0; i < branches.size() && failed < 0; i++) {
-            if (!branches.get(i).holds()) failed = i;
+            if (branches.get(i).check() && !branches.get(i).holds()) failed = i;
         }
         // A normal return where an index check failed (or a throw where all held): the shadow
         // does not match the call; that is left to the model and to recordThrowingCall.
