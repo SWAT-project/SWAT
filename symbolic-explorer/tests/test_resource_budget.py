@@ -170,7 +170,10 @@ class DriverTest(unittest.TestCase):
         def record_execution_error(endpoint_id, kind, message):
             self.tree.execution_errors.append({'kind': kind, 'message': message})
         db = SimpleNamespace(record_execution_error=record_execution_error, get_tree=lambda e: self.tree,
-                             record_uncaught_exception=lambda e: None)
+                             record_uncaught_exception=lambda e: None,
+                             get_witness_data=lambda e: None, is_stack_overflow_trace=lambda e, t: False,
+                             get_execution_errors=lambda e, kind: [x for x in self.tree.execution_errors if x.get('kind') == kind],
+                             count_symbolic_vars=lambda e: len(self.tree.symbolic_vars))
         patcher = mock.patch.object(svcomp.Database, 'instance', return_value=db)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -231,7 +234,7 @@ class DriverTest(unittest.TestCase):
         self.driver.rlimit_level = {}
         self.driver.budget.cpu_exceeded.set()
         with mock.patch.object(svcomp.StrategyService, 'solve_branch') as solve:
-            found, _, gave_up = self.driver.solve_candidates([SimpleNamespace(gid=1, id=1)])
+            found, _, gave_up = self.driver.solve_candidates([SimpleNamespace(gid=1, id=1, choice=False)])
         solve.assert_not_called()
         self.assertIsNone(found)
         self.assertTrue(gave_up)  # so the verdict is not SAFE

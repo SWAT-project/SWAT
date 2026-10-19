@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from data.BinaryExecutionTree.Tree import Tree
 from driver import SVCompDriver as svcomp
+from svcomp.ResourceBudget import ResourceBudget
 
 
 def not_proven():
@@ -81,6 +82,8 @@ class DriverTest(unittest.TestCase):
         self.driver.verdict_reported = False
         self.driver.kill_current_process = lambda: None
         self.driver.precheck = not_proven()
+        self.driver.budget = ResourceBudget(cgroup_limit=0)
+        self.driver.verdict_lock = svcomp.threading.Lock()
         self.driver.given_up = []
         self.driver.divergence_retry_count = 0
 
@@ -107,6 +110,7 @@ class DriverTest(unittest.TestCase):
         for kind in svcomp.INCOMPLETE_SEARCH_ERRORS:
             with self.subTest(kind=kind):
                 self.db.tree = Tree(0)
+                self.driver.verdict_reported = False  # one verdict per run
                 self.db.tree.record_execution_error(kind, 'x')
                 self.assertIn('== DONT-KNOW', self.run_with(lambda **kwargs: svcomp.Verdict.SAFE))
 

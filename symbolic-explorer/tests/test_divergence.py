@@ -21,6 +21,7 @@ import z3
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from driver import SVCompDriver as svcomp
+from svcomp.ResourceBudget import ResourceBudget
 from solver.SolverHandler import SATResult, Z3Handler
 from strategy.StrategyService import StrategyService
 
@@ -63,6 +64,7 @@ class DivergenceTestBase(unittest.TestCase):
         self.driver.nr_solver_calls = 0
         self.driver.solver_limit_hits = 0
         self.driver.rlimit_level = {}
+        self.driver.budget = ResourceBudget(cgroup_limit=0)
         self.ctx = z3.Context()
         # Solved to take the branched side, which the tree has not explored yet.
         self.target = SimpleNamespace(id=7, gid=70, trace_id='t', branched=None, skipped=object(), parent=None, choice=False)
