@@ -138,7 +138,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
 
         # One timestamp ties this run's per-testcase logs to its results dir.
         run_timestamp = new_run_timestamp()
-        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, solver_rlimit=solver_rlimit)
+        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, solver_rlimit=solver_rlimit, cpu_limit_s=testcase_timeout_s)
         click.echo(f"Generated {len(ver_tasks_with_commands)} commands")
 
         # Check port availability

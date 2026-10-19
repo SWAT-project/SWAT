@@ -1,5 +1,6 @@
 import copy
 import glob
+import sys
 import signal
 import subprocess
 import os
@@ -10,6 +11,7 @@ from pathlib import Path
 
 
 from solver.SolverHandler import SATResult, Z3Handler
+from solver.ConstraintCache import get_constraint_cache
 
 from data.Database import Database
 from data.BinaryExecutionTree.Node import Node
@@ -24,6 +26,7 @@ from enum import Enum
 from svcomp.SymbolicStorage import SymbolicStorage, DataTypes
 from svcomp.TestcaseStats import write_testcase_stats
 from svcomp.WitnessWriter import write_violation_witness
+from svcomp.ResourceBudget import ResourceBudget, DEFAULT_MEMORY_LIMIT_MB, DEFAULT_CPU_LIMIT_S, descendants
 from timing.TimingManager import TimingManager
 
 
@@ -31,6 +34,7 @@ import log
 logger = log.get_logger()
 verdict_logger = log.get_verdict_logger()
 import platform
+import threading
 
 
 # With --solver-rlimit, each time a branch's query runs out of its resource limit, the limit for
@@ -49,6 +53,14 @@ DIVERGENCE_RETRIES = 3
 # in turn, then left unbounded. The solver likes extreme values such as 2^31-1 for a size, and then
 # the allocation fails (OutOfMemoryError) before the run gets to the branch.
 RETRY_BOUNDS = (16, 256, 65536)
+# Execution errors after which an exhausted search proves nothing: a run was cut short, so the
+# rest of its path was never explored.
+CUT_SHORT_ERRORS = ('resource_limit', 'out_of_memory')
+
+# Executor JVM options besides the heap size. Every round starts a new, short-lived JVM, in which
+# the C2 compiler spends more CPU time than it ever saves (more than a third of an executor's CPU
+# time on MinePump/TCAS); C1 alone compiles fast enough.
+EXECUTOR_JVM_OPTIONS = ['-XX:TieredStopAtLevel=1']
 
 # The (unique) endpoint ID for the SV-COMP target. As each target is handled separately, this ID is always 0.
 ENDPOINT_ID = 0 
@@ -58,6 +70,8 @@ class ExecutionStatus(Enum):
     SUCCESS = 1
     ERROR = 2
     TIMEOUT = 3
+    # Stopped by the resource budget before it ended (see svcomp/ResourceBudget.py)
+    RESOURCE_LIMIT = 4
 
 class Verdict(Enum):
     VIOLATION = "== ERROR"
@@ -116,7 +130,6 @@ class SVCompDriver:
         self.solver_limit_hits = 0 # queries that ran out of their resource limit
         # How often each branch (by gid) ran out of its resource limit; each time multiplies it.
         self.rlimit_level: dict[int, int] = {}
-        self.verdict_reported = False
         self.divergence_retries = getattr(args, 'divergence_retries', DIVERGENCE_RETRIES)
         # The solutions of each branch (by gid) whose runs did not reach it
         self.failed_solutions: dict[int, list[dict]] = {}
@@ -124,6 +137,14 @@ class SVCompDriver:
         # (True: branched), unless the solutions were only guesses (see check_divergence)
         self.given_up: list[tuple[Node, bool]] = []
         self.divergence_retry_count = 0 # branches scheduled to be re-solved
+        self.budget = ResourceBudget(memory_limit_mb=getattr(args, 'memory_limit', None) or DEFAULT_MEMORY_LIMIT_MB,
+                                     cpu_limit_s=getattr(args, 'cpu_limit', None) or DEFAULT_CPU_LIMIT_S,
+                                     cpu_used_s=getattr(args, 'cpu_used', None) or 0.0)
+        self.budget.on_emergency = self.end_run_now
+        # Only one verdict is reported, by the main thread or, in an emergency, by the monitor
+        self.verdict_lock = threading.Lock()
+        self.verdict_reported = False
+        self.stopped_by: str | None = None  # why the budget stopped the last executor run, if it did
     
     @contextmanager
     def pushd(self, dirname):
@@ -135,16 +156,15 @@ class SVCompDriver:
         finally:
             os.chdir(original_dir)
 
-    def build_command(self,javaagent:str, config:str, Z3_DIR: str, port, cp,  java_path:str = 'java', mem:int=32) -> List[str]:
-        """Builds the Java command list with given parameters."""
+    def build_command(self,javaagent:str, config:str, Z3_DIR: str, port, cp,  java_path:str = 'java', heap_mib: int | None = None) -> List[str]:
+        """Builds the Java command list with given parameters. The heap size defaults to the
+        executor's share of the memory budget."""
 
         classpath_separator = ";" if platform.system() == "Windows" else ":"
         cmd = [
             java_path,
-            f'-Xmx{mem}g',
-            # A round runs the target once, mostly for well under a second: C2 compilations
-            # would not pay off before the JVM exits, the C1 ones do.
-            '-XX:TieredStopAtLevel=1',
+            f'-Xmx{heap_mib or self.budget.heap_mib}m',
+            *EXECUTOR_JVM_OPTIONS,
             f'-Dconfig.path={config}',
             f'-Dexplorer.port={port}',
             f'-javaagent:{javaagent}',
@@ -162,20 +182,27 @@ class SVCompDriver:
                 if var.dType == DataTypes.STRING and val is not None:
                     val = escape_java_string(val)
                 sym_vars.append(f'-Dswat.input.{var.dType.value}_{var.idx}={val}')
-            cmd[3:3] = sym_vars
+            at = cmd.index(f'-Dconfig.path={config}') + 1
+            cmd[at:at] = sym_vars
         return cmd
 
 
     def run_command_with_timeout(self, cmd: List[str]) -> Tuple[ExecutionStatus, List[str]]:
         """ Executes the given command and returns output from both STDOUT and STDERR.
-            Todo: What about timeouts?
+            There is no timeout of its own: the resource budget stops the run when the memory or
+            CPU time of the whole verification run gets close to its limit (RESOURCE_LIMIT).
         """
         logger.info(f'[SVCOMP] Executing target')
         output = []
         with subprocess.Popen(cmd, stdout=subprocess.PIPE,stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True) as proc:        
             try:
-                stdout, _ = proc.communicate() #timeout=timeout
+                with self.budget.executor(proc) as stopped_by:
+                    stdout, _ = proc.communicate()
                 output = stdout.splitlines()
+                self.stopped_by = stopped_by()
+                if self.stopped_by:
+                    logger.warning(f'[SVCOMP] Executor stopped by the resource budget ({self.stopped_by})')
+                    return ExecutionStatus.RESOURCE_LIMIT, output
                 return ExecutionStatus.SUCCESS, output
     
             except subprocess.TimeoutExpired:
@@ -191,8 +218,13 @@ class SVCompDriver:
 
 
     def determine_next_step(self, status: ExecutionStatus, output: List[str] ) -> Action:
-        """Determines the next step based on the execution status."""
-        if status == ExecutionStatus.SUCCESS:
+        """Determines the next step based on the execution status.
+
+        A run the resource budget stopped (RESOURCE_LIMIT) still reports a violation it printed
+        before. Otherwise it ended without a trace, so its path stays unexplored: on a CPU stop the
+        verdict is UNKNOWN, on a memory stop exploration goes on with other branches.
+        """
+        if status == ExecutionStatus.SUCCESS or status == ExecutionStatus.RESOURCE_LIMIT:
 
             # A StackOverflowError reached the target in this execution: its outcome depends on the
             # JVM's stack size, which the task does not fix, so a violation it shows is not reported.
@@ -200,7 +232,13 @@ class SVCompDriver:
             stack_overflow = self.round_has_stack_overflow()
             if stack_overflow:
                 output = self.drop_violations(output)
+            out_of_memory_recorded = False
             for l in output:
+                if "java.lang.OutOfMemoryError" in l and not out_of_memory_recorded:
+                    # The run was cut short by the JVM's memory limit, which the task does not have
+                    logger.warning(f'[SVCOMP] Executor ran out of memory: {l.strip()}')
+                    Database.instance().record_execution_error(ENDPOINT_ID, 'out_of_memory', l.strip())
+                    out_of_memory_recorded = True
                 if "java.lang.AssertionError: [SWAT]" in l:
                     # Internal assertion error in the DSE
                     logger.critical(f'[SVCOMP] SWAT Assertion failed: {l}')
@@ -224,6 +262,13 @@ class SVCompDriver:
                     self.state.verdict = Verdict.UNKNOWN
                     return Action.REPORTVERDICT
 
+            if status == ExecutionStatus.RESOURCE_LIMIT:
+                Database.instance().record_execution_error(ENDPOINT_ID, 'resource_limit',
+                                                           f'round {self.round_idx}: executor stopped ({self.stopped_by})')
+                if self.stopped_by == 'cpu' or Database.instance().count_symbolic_vars(ENDPOINT_ID) == 0:
+                    self.state.verdict = Verdict.UNKNOWN
+                    return Action.REPORTVERDICT
+                return Action.SYMBOLICNEXT
 
             ingest_failures = Database.instance().get_execution_errors(ENDPOINT_ID, 'trace_ingest_failed')
             if ingest_failures:
@@ -323,8 +368,9 @@ class SVCompDriver:
             executor_duration = time.perf_counter() - executor_start
             TimingManager.instance().record_executor_time(executor_duration)
 
-            # check if the target explored the branch as expected
-            if self.state.branch_to_explore:
+            # check if the target explored the branch as expected (a run stopped by the resource
+            # budget sent no trace to check)
+            if self.state.branch_to_explore and status != ExecutionStatus.RESOURCE_LIMIT:
                 if Database.instance().trace_count() > traces_before:
                     self.check_divergence(Database.instance().get_trace(-1)) # most recent trace
                 else:
@@ -360,6 +406,10 @@ class SVCompDriver:
                 # Explorer time is computed as residual in TimingManager.get_aggregates()
                 # (total_time - executor_time - solver_time - witness_times)
                 next_step = self.retrieve_solution()
+                if self.budget.cpu_exceeded.is_set() and next_step != Action.REPORTVERDICT:
+                    logger.warning('[SVCOMP] CPU time deadline reached, stopping exploration')
+                    self.state.verdict = Verdict.UNKNOWN
+                    return self.state.verdict
                 
                 # If we are using SA and come to a SAFE verdict, then continue without SA
                 # this should prevent false SAFE classifications from incomplete SA
@@ -519,13 +569,20 @@ class SVCompDriver:
             limited = []
             alone = retry and len(pending) == 1
             for branch in pending:
+                if self.budget.cpu_exceeded.is_set():
+                    return None, {}, True
                 rlimit = None if alone else self.solver_rlimit_for(branch)
-                if branch.gid in self.failed_solutions:
-                    sat, sol = self.solve_retry(branch, rlimit)
-                else:
-                    sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit,
-                                                            approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
-                    self.nr_solver_calls += 1
+                with self.budget.solver(get_constraint_cache().shared_context) as interrupted_by:
+                    if branch.gid in self.failed_solutions:
+                        sat, sol = self.solve_retry(branch, rlimit)
+                    else:
+                        sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit,
+                                                                approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
+                        self.nr_solver_calls += 1
+                if interrupted_by():
+                    logger.info(f'[SYMBOLIC EXPLORATION] Query for branch {branch.id} stopped by the resource budget ({interrupted_by()})')
+                    gave_up = True
+                    continue
                 if sat == SATResult.SAT:
                     return branch, sol, gave_up
                 if sat == SATResult.LIMIT:
@@ -599,6 +656,7 @@ class SVCompDriver:
 
         # Start total timing
         TimingManager.instance().start_total_timer()
+        self.budget.start()
 
         try:
             verdict = self.run_testcase(java_path=self.args.java_path, agentpath=self.args.agent, configpath=self.args.config, z3path=self.args.z3dir, port=self.args.port, cp=self.args.classpath)
@@ -646,6 +704,11 @@ class SVCompDriver:
             logger.warning(f'[SVCOMP] The search is incomplete ({incomplete[0]["kind"]}: {incomplete[0]["message"]})')
             verdict = Verdict.UNKNOWN
 
+        if (verdict == Verdict.SAFE) and any(e.get('kind') in CUT_SHORT_ERRORS
+                                              for e in Database.instance().get_tree(ENDPOINT_ID).execution_errors):
+            logger.warning(f'[SVCOMP] An execution was cut short by a memory limit, its path is unexplored')
+            verdict = Verdict.UNKNOWN
+
         if downgrade and (verdict == Verdict.SAFE) and Database.instance().get_tree(ENDPOINT_ID).uncaught_exceptions > 0:
             logger.warning(f'[SVCOMP] Found uncaught exceptions during symbolic execution')
             verdict = Verdict.UNKNOWN
@@ -656,8 +719,12 @@ class SVCompDriver:
 
         if verdict == Verdict.NO_SYMBOLIC_VARS:
             verdict = Verdict.SAFE
-        verdict_logger.info(f'[VERDICT {self.verification_category.value}] {verdict.value}')
-        self.verdict_reported = True
+        with self.verdict_lock:
+            if self.verdict_reported:
+                return
+            self.verdict_reported = True
+            verdict_logger.info(f'[VERDICT {self.verification_category.value}] {verdict.value}')
+        self.budget.stop()
         logger.info(f'[EXPLORER] Symbolic execution terminated after {self.round_idx} iterations')
 
         # The witness is written after the verdict and never affects it
@@ -674,12 +741,40 @@ class SVCompDriver:
 
         # Write the consolidated per-testcase statistics (verdict, soundness flags, missing
         # invocations and the context-loss subset) so the analysis can rely on structured data.
-        stats_file = os.path.join(log_dir, 'stats.json')
-        write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
-                             self.round_idx, self.nr_solver_calls, self.sa.stats(self.sa_adopted_round),
-                             self.solver_limit_hits, self.precheck.stats(), self.divergence_retry_count)
+        self.write_stats(verdict)
 
         self.kill_current_process()
+
+    def write_stats(self, verdict):
+        stats_file = os.path.join(self.args.logdir if hasattr(self.args, 'logdir') else 'logs', 'stats.json')
+        write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
+                             self.round_idx, self.nr_solver_calls, self.sa.stats(self.sa_adopted_round),
+                             self.solver_limit_hits, self.precheck.stats(), self.divergence_retry_count,
+                             resources=self.budget.stats())
+
+    def end_run_now(self, why: str):
+        """Called by the resource budget's monitor when the run must end at once: reports UNKNOWN
+        (unless the main thread reported a verdict already) and exits. The main thread is stuck in
+        work the budget cannot stop, or the explorer alone is too large."""
+        with self.verdict_lock:
+            if self.verdict_reported:
+                return
+            self.verdict_reported = True
+            logger.warning(f'[SVCOMP] Ending the run with UNKNOWN: {why}')
+            verdict_logger.info(f'[VERDICT {self.verification_category.value}] {Verdict.UNKNOWN.value}')
+        try:
+            self.write_stats(Verdict.UNKNOWN)
+        except Exception as e:  # the tree may be changing under us
+            logger.error(f'[SVCOMP] Could not write the statistics: {e}')
+        for handler in logger.handlers + verdict_logger.handlers:
+            handler.flush()
+        sys.stdout.flush()
+        for pid in descendants(os.getpid()):  # the executor or the pre-analysis, if one is running
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        os._exit(0)
         
         
     def write_witness(self):

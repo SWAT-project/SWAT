@@ -153,6 +153,15 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--approximate-rlimit", type=int, default=250_000_000, help="Z3 resource limit for a query over an approximate Math model in sv-comp mode (about one to one and a half minutes); one that runs out is given up on, which rules out SAFE as the model does anyway. 0: no limit beyond --solver-rlimit")
     parser.add_argument("--parallel-sa", action="store_true", help="Run the static pre-analysis in the background and use it once it is ready (sv-comp mode). By default exploration waits for it: running it in parallel makes runs nondeterministic", default=False)
 
+    # SV-COMP resource budget, shared by the explorer and all executor JVMs (sv-comp mode). The
+    # defaults are the competition's limits (bench-defs swat.xml); a lower cgroup memory limit wins.
+    parser.add_argument("--memory-limit", type=int, default=15000,
+                        help="Memory limit of the whole run in MB (10^6 bytes); the executor heap is derived from it")
+    parser.add_argument("--cpu-limit", type=float, default=900,
+                        help="CPU time limit of the whole run in seconds; exploration stops with UNKNOWN shortly before it")
+    parser.add_argument("--cpu-used", type=float, default=0.0,
+                        help="CPU seconds the run used before the explorer started (e.g. compiling the task)")
+
     # SV-COMP witness arguments: the explorer writes the violation witness from the trace of the
     # violating execution (needs the task's input files and property file as given to the verifier)
     parser.add_argument("--witness-dir", default="witness",
@@ -180,6 +189,11 @@ if __name__ == '__main__':
     
     # Initialize loggers
     log.initialize_loggers(args.logdir)
+    if args.mode == 'sv-comp':
+        # The module loggers' DEBUG/INFO lines on stdout (several per branch and query) were 500 MB
+        # in 900 s on MinePump: CPU time, and memory in a BenchExec container. The explorer's own
+        # log (explorer.log) is not affected.
+        logging.getLogger().setLevel(logging.WARNING)
 
     # Set configuration flags in Database
     from data.Database import Database

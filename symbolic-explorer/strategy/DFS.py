@@ -4,8 +4,12 @@ from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, is_interesting, 
     apply_stack_delta, check_branch, resync
 from data.trace.Special import UNMODELLED_EXCEPTION
 
+import logging
+
 import log
 logger = log.get_logger()
+# Log level of the per-node trace of the walk (enable with logger.setLevel(TRACE))
+TRACE = logging.DEBUG - 5
 
 def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set[int], unsat_branch_ids: set[int], sa_node: SANode | None = None, clinit_depth: int = 0, sa_stack: CallStack = None, distances: dict[Node, float] | None = None, sa_index=None, trace_stack=None) -> list[Node]:
     # sa_node and sa_stack together are where the SA walk stands: the node, and the call stack of
@@ -97,8 +101,10 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         skip_is_interesting = unpruned or is_interesting(sa_node.get_fallthrough_child(), sa_stack)
         branch_is_interesting = unpruned or is_interesting(sa_node.get_branched_child(), sa_stack)
         
-        if sa_index is not None: # without a graph the line has nothing to say, at every node every round
-            logger.info(f"[DFS] @{node.id}/{("CALLBACK" if node.callback else "CHOICE" if node.choice else "CLINIT") if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
+        # One line per branch node and round: at INFO this was most of the log (270 MB in 900 s on
+        # MinePump) and much of the explorer's own CPU time, so it is below DEBUG.
+        if logger.isEnabledFor(TRACE):
+            logger.log(TRACE, f"[DFS] @{node.id}/{("CALLBACK" if node.callback else "CHOICE" if node.choice else "CLINIT") if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
         
         # Add the node itself, if eligible
         if (node.skipped is None and skip_is_interesting) or (node.branched is None and branch_is_interesting):
