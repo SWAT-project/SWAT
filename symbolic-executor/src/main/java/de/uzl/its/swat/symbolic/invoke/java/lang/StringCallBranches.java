@@ -117,12 +117,17 @@ public final class StringCallBranches {
             }
             case "equalsIgnoreCase(Ljava/lang/String;)Z" -> {
                 if (args[0] instanceof StringValue other && (s.isSymbolic() || other.isSymbolic())
-                        && !StringValue.equalsIgnoreCaseByRegex(s, other) && ascii(s, other)) {
-                    // Strings of different lengths differ, else the comparison by the pinned length
+                        && !StringValue.equalsIgnoreCaseByRegex(s, other)) {
+                    // Strings of different lengths differ, else the comparison of ASCII strings by
+                    // the pinned length. (The pin comes first: with the length fixed, the solver
+                    // decides the other side of the ASCII split easily.)
                     Int len = length(s);
                     Int otherLen = length(other);
                     split(imgr.equal(len.f(), otherLen.f()), len.c() == otherLen.c());
-                    if (len.c() == otherLen.c()) pin(len);
+                    if (len.c() == otherLen.c()) {
+                        pin(len);
+                        ascii(s, other);
+                    }
                 }
             }
             case "regionMatches(ZILjava/lang/String;II)Z" -> {
@@ -137,18 +142,18 @@ public final class StringCallBranches {
                                     imgr.lessOrEquals(toffset.f(), imgr.subtract(length(s).f(), len.f())),
                                     imgr.lessOrEquals(ooffset.f(), imgr.subtract(length(other).f(), len.f()))),
                             inBounds);
-                    if (inBounds && ascii(s, other)) pin(len);
+                    if (inBounds) {
+                        pin(len);
+                        ascii(s, other);
+                    }
                 }
             }
             case "compareToIgnoreCase(Ljava/lang/String;)I" -> {
-                if (args[0] instanceof StringValue other && ascii(s, other)) {
+                if (args[0] instanceof StringValue other) {
                     pin(length(s));
                     pin(length(other));
+                    ascii(s, other);
                 }
-            }
-            case "toLowerCase()Ljava/lang/String;", "toLowerCase(Ljava/util/Locale;)Ljava/lang/String;",
-                 "toUpperCase()Ljava/lang/String;", "toUpperCase(Ljava/util/Locale;)Ljava/lang/String;" -> {
-                if (StringValue.caseMappingLocale(args) != null && ascii(s)) pin(length(s));
             }
             default -> { }
         }

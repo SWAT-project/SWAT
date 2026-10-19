@@ -536,19 +536,18 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     /**
-     * toLowerCase()/toLowerCase(Locale) (kind LOWER) and toUpperCase()/toUpperCase(Locale) (UPPER)
-     * of an ASCII string, which the call's branches separate (StringCallBranches), char by char
-     * over the pinned length. Other strings are not modelled (see CaseMapping).
+     * toLowerCase()/toLowerCase(Locale) and toUpperCase()/toUpperCase(Locale) of a concrete string.
+     * Of a symbolic one they are not modelled: unrolled over a pinned length, the search reached
+     * hardly any other length, and unrolled up to a bound Z3 took seconds per query (see
+     * CaseMapping for the chars beyond ASCII).
      */
-    private Value<?, ?> invokeCaseMapping(CaseMapping.Kind kind, Value<?, ?>[] args) {
+    private Value<?, ?> invokeCaseMapping(boolean lower, Value<?, ?>[] args) {
         if (args.length > 1) return PlaceHolder.instance;
         java.util.Locale locale = caseMappingLocale(args);
         if (locale == null) return PlaceHolder.instance;
-        String result = kind == CaseMapping.Kind.LOWER ? concrete.toLowerCase(locale) : concrete.toUpperCase(locale);
-        CaseMapping cases = new CaseMapping(context.getFormulaManager());
-        if (!isSymbolic()) return new StringValue(context, result, cases.chars(result), -1);
-        if (!asciiStrings(this) || concrete.length() > MAX_UNROLLED) return PlaceHolder.instance;
-        return new StringValue(context, result, cases.mapAscii(kind, formula, concrete.length()), -1);
+        String result = lower ? concrete.toLowerCase(locale) : concrete.toUpperCase(locale);
+        if (isSymbolic()) return PlaceHolder.instance;
+        return new StringValue(context, result, new Utf16(context.getFormulaManager()).chars(result), -1);
     }
 
     /**
@@ -695,13 +694,12 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             String t = isSymbolic() ? other.concrete : concrete;
             return new BooleanValue(context, result, smgr.in(symbolic.formula, cases.equalIgnoringCase(t)));
         }
-        // The call's branches (StringCallBranches): whether both are ASCII, whether the lengths are
-        // equal, then the length is pinned. Strings of different lengths are not equal.
+        // The call's branches (StringCallBranches): whether the lengths are equal, then the length
+        // is pinned and the ASCII strings separated. Strings of different lengths are not equal.
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
         int n = concrete.length();
-        if (!asciiStrings(this, other)) return PlaceHolder.instance;
         if (n != other.concrete.length()) return new BooleanValue(context, false, bmgr.makeFalse());
-        if (n > MAX_UNROLLED) return PlaceHolder.instance;
+        if (n > MAX_UNROLLED || !asciiStrings(this, other)) return PlaceHolder.instance;
         return new BooleanValue(context, result, cases.compareAsciiIgnoringCase(formula, imgr.makeNumber(0), n,
                 other.formula, imgr.makeNumber(0), n).noDifference());
     }
@@ -1487,7 +1485,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeToLowerCase(Value<?, ?>[] args, Type[] desc) {
-        return invokeCaseMapping(CaseMapping.Kind.LOWER, args);
+        return invokeCaseMapping(true, args);
     }
 
     /**
@@ -1517,7 +1515,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
      * @return The resulting Value or PlaceHolder::instance
      */
     private Value<?, ?> invokeToUpperCase(Value<?, ?>[] args, Type[] desc) {
-        return invokeCaseMapping(CaseMapping.Kind.UPPER, args);
+        return invokeCaseMapping(false, args);
     }
 
     /**

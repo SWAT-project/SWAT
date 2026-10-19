@@ -15,22 +15,15 @@ import org.sosy_lab.java_smt.api.StringFormula;
 import org.sosy_lab.java_smt.api.StringFormulaManager;
 
 /**
- * Java's case mappings as formulas: the ignore-case comparison against a concrete string as a
- * regular expression of the chars' case classes (tabulated from the running JVM), and the case
- * mappings and ignore-case comparisons of ASCII strings char by char.
+ * Java's ignore-case comparisons as formulas: against a concrete string as a regular expression
+ * of the chars' case classes (tabulated from the running JVM), and of two ASCII strings char by
+ * char.
  *
- * <p>Beyond ASCII the mappings are tables of a few hundred ranges; unrolled over a string, Z3 does
- * not decide queries over them (even simple ones time out), so a model separates the ASCII strings
- * by a branch and leaves the others unmodelled.
+ * <p>Beyond ASCII the case mappings are tables of a few hundred ranges; unrolled over a string, Z3
+ * does not decide queries over them (even simple ones time out), so a model separates the ASCII
+ * strings by a branch and leaves the others unmodelled.
  */
 public final class CaseMapping {
-
-    public enum Kind {
-        /** Character.toLowerCase / String.toLowerCase */
-        LOWER,
-        /** Character.toUpperCase / String.toUpperCase */
-        UPPER
-    }
 
     /** The chars by their key Character.toLowerCase(Character.toUpperCase(c)), by which the ignore-case comparisons compare. */
     private static final class FoldClasses {
@@ -65,15 +58,6 @@ public final class CaseMapping {
     public static boolean rootRules(Locale locale) {
         String lang = locale.getLanguage();
         return !lang.equals("tr") && !lang.equals("az") && !lang.equals("lt");
-    }
-
-    /** The chars of a Java string, one SMT char per UTF-16 char (makeString would join surrogate pairs). */
-    public StringFormula chars(String s) {
-        StringFormula f = smgr.makeString("");
-        for (char c : s.toCharArray()) {
-            f = smgr.concat(f, smgr.fromCodePoint(imgr.makeNumber(c)));
-        }
-        return f;
     }
 
     /**
@@ -111,20 +95,6 @@ public final class CaseMapping {
     /** The key of an ASCII char: the lower case of a letter, else the char itself. */
     public IntegerFormula foldAscii(IntegerFormula c) {
         return bmgr.ifThenElse(between(c, 'A', 'Z'), imgr.add(c, imgr.makeNumber('a' - 'A')), c);
-    }
-
-    /** toLowerCase/toUpperCase of the first n chars of s, all ASCII (for a locale with the root rules). */
-    public StringFormula mapAscii(Kind kind, StringFormula s, int n) {
-        StringFormula result = smgr.makeString("");
-        for (int i = 0; i < n; i++) {
-            StringFormula ch = smgr.charAt(s, imgr.makeNumber(i));
-            IntegerFormula c = smgr.toCodePoint(ch);
-            StringFormula mapped = kind == Kind.LOWER
-                    ? bmgr.ifThenElse(between(c, 'A', 'Z'), smgr.fromCodePoint(imgr.add(c, imgr.makeNumber('a' - 'A'))), ch)
-                    : bmgr.ifThenElse(between(c, 'a', 'z'), smgr.fromCodePoint(imgr.subtract(c, imgr.makeNumber('a' - 'A'))), ch);
-            result = smgr.concat(result, mapped);
-        }
-        return result;
     }
 
     /** The result of an ignore-case comparison: whether no char differed, and the int compareToIgnoreCase returns. */

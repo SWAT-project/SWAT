@@ -159,70 +159,17 @@ class StringCaseRegexModelExactnessTest extends Specification {
 
     // ---- toLowerCase / toUpperCase ----
 
-    @Unroll
-    def "toLowerCase and toUpperCase are exact: '#sample' #localeName"() {
+    def "toLowerCase/toUpperCase of a concrete string are concrete, of a symbolic one not modelled"() {
         given:
-        def s = symbolicString("s", sample)
-        def args = l == null ? [] : [locale(l)]
-        def desc = l == null ? [] : [LOCALE]
-        def javaDesc = l == null ? "()Ljava/lang/String;" : "(Ljava/util/Locale;)Ljava/lang/String;"
-
-        when:
-        def lower = call(s, "toLowerCase", desc, args)
-        def upper = call(s, "toUpperCase", desc, args)
-        def fixedLower = [fix(s)] + branches(s, "toLowerCase", javaDesc, args)
-        def fixedUpper = [fix(s)] + branches(s, "toUpperCase", javaDesc, args)
-
-        then:
-        // Only ASCII strings are modelled, the others are separated by a branch.
-        !ascii(sample) || exactString(fixedLower, (StringValue) lower, sample.toLowerCase(l ?: Locale.getDefault()))
-        !ascii(sample) || exactString(fixedUpper, (StringValue) upper, sample.toUpperCase(l ?: Locale.getDefault()))
-        ascii(sample) || (lower instanceof PlaceHolder && upper instanceof PlaceHolder)
-
-        where:
-        [sample, l] << [CASE_SAMPLES + ["Hello World", "aİbßc"], [null, Locale.ROOT, Locale.ENGLISH, Locale.UK]].combinations()
-        localeName = l == null ? "default" : l.toString()
-    }
-
-    def "toLowerCase separates the ASCII strings, the others are not modelled"() {
-        given:
-        def s = symbolicString("s", "a\u00c4")
-
-        when:
-        def r = call(s, "toLowerCase", [LOCALE], [locale(Locale.ROOT)])
-        def b = StringCallBranches.of(s, "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;", [locale(Locale.ROOT)] as Value<?, ?>[])
-
-        then:
-        r instanceof PlaceHolder
-        b.size() == 1
-        !b[0].holds()
-        !b[0].check()
-        onlyJavasResult([fix(s)], b[0].condition())
-        satisfiable([b[0].condition(), smgr.equal(s.formula, chars("aB"))])
-    }
-
-    def "toLowerCase pins the length"() {
-        given:
+        def c = new StringValue(context, "Ab\u00df", -1)
         def s = symbolicString("s", "Ab")
 
-        when:
-        def b = branches(s, "toLowerCase", "()Ljava/lang/String;", [])
-
-        then:
-        onlyJavasResult(b, bmgr.not(imgr.equal(smgr.length(s.formula), imgr.makeNumber(2))))
-        satisfiable(b + [smgr.equal(s.formula, chars("xy"))])
-    }
-
-    def "toLowerCase with the Turkish locale or an unknown one is not modelled"() {
-        given:
-        def s = symbolicString("s", "I")
-        def unknown = new ObjectValue(context, "java/util/Locale", new IntValue(context, 0), -1)
-
         expect:
-        call(s, "toLowerCase", [LOCALE], [locale(new Locale("tr"))]) instanceof PlaceHolder
-        call(s, "toUpperCase", [LOCALE], [locale(new Locale("lt"))]) instanceof PlaceHolder
-        call(s, "toLowerCase", [LOCALE], [unknown]) instanceof PlaceHolder
-        StringCallBranches.of(s, "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;", [locale(new Locale("tr"))] as Value<?, ?>[]).isEmpty()
+        ((StringValue) call(c, "toLowerCase", [LOCALE], [locale(Locale.UK)])).concrete == "ab\u00df"
+        ((StringValue) call(c, "toUpperCase", [], [])).concrete == "AbSS".toUpperCase()
+        call(s, "toLowerCase", [], []) instanceof PlaceHolder
+        call(c, "toLowerCase", [LOCALE], [locale(new Locale("tr"))]) instanceof PlaceHolder
+        StringCallBranches.of(s, "toLowerCase", "()Ljava/lang/String;", [] as Value<?, ?>[]).isEmpty()
     }
 
     // ---- equalsIgnoreCase / regionMatches(true, ...) / compareToIgnoreCase ----
@@ -238,8 +185,9 @@ class StringCaseRegexModelExactnessTest extends Specification {
         def r2 = call(t, "equalsIgnoreCase", [STRING], [s])
 
         then:
-        // Against a concrete string with a surrogate the comparison is modelled for ASCII strings only.
-        b.chars().anyMatch { Character.isSurrogate((char) it) } ? (r1 instanceof PlaceHolder && r2 instanceof PlaceHolder) :
+        // Against a concrete string with a surrogate the comparison is modelled for strings of
+        // different lengths and ASCII strings only.
+        b.chars().anyMatch { Character.isSurrogate((char) it) } && a.length() == b.length() ? (r1 instanceof PlaceHolder && r2 instanceof PlaceHolder) :
                 (exactBoolean([fix(s)] + branches(s, "equalsIgnoreCase", "(Ljava/lang/String;)Z", [t]), (BooleanValue) r1, a.equalsIgnoreCase(b))
                 && exactBoolean([fix(s)] + branches(t, "equalsIgnoreCase", "(Ljava/lang/String;)Z", [s]), (BooleanValue) r2, b.equalsIgnoreCase(a)))
         !precisionLoss()
@@ -259,7 +207,7 @@ class StringCaseRegexModelExactnessTest extends Specification {
         def fixed = [fix(s), fix(t)] + branches(s, "equalsIgnoreCase", "(Ljava/lang/String;)Z", [t])
 
         then:
-        ascii(a, b) ? exactBoolean(fixed, (BooleanValue) r, a.equalsIgnoreCase(b)) : r instanceof PlaceHolder
+        (ascii(a, b) || a.length() != b.length()) ? exactBoolean(fixed, (BooleanValue) r, a.equalsIgnoreCase(b)) : r instanceof PlaceHolder
 
         where:
         [a, b] << ([["", "a", "A", "ab", "AB", "ß", "Ǆ", "ǆ", "ı", "I", DESERET_UPPER, DESERET_LOWER,
