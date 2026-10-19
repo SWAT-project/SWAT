@@ -90,5 +90,32 @@ class BranchToExploreTest(unittest.TestCase):
             driver.check_divergence(Database.instance().get_trace(-1))
 
 
+class ExtractVariablesTest(unittest.TestCase):
+    """A formula is a DAG: with shared subterms it is exponentially larger as a tree, and it can
+    be deeper than the recursion limit."""
+
+    def test_shared_subterms_are_visited_once(self):
+        from z3 import BitVec, Context
+        from solver.ConstraintManager import ConstraintManager
+        ctx = Context()
+        x, y = BitVec('x', 64, ctx), BitVec('y', 64, ctx)
+        e = x
+        for _ in range(200):  # 2^200 paths through the DAG
+            e = e + e
+        mgr = ConstraintManager(shared_context=ctx)
+        self.assertEqual(mgr._extract_variables(e == y), {'x', 'y'})
+
+    def test_deep_terms(self):
+        from z3 import BitVec, Context
+        from solver.ConstraintManager import ConstraintManager
+        ctx = Context()
+        x = BitVec('x', 32, ctx)
+        e = x
+        for i in range(5000):
+            e = e - (i % 7)
+        mgr = ConstraintManager(shared_context=ctx)
+        self.assertEqual(mgr._extract_variables(e == 0), {'x'})
+
+
 if __name__ == '__main__':
     unittest.main()
