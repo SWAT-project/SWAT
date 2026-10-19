@@ -66,10 +66,15 @@ def cgroup_memory_limit(proc_root: str = '/proc', cgroup_root: str = '/sys/fs/cg
     BenchExec (and a systemd scope with MemoryMax) enforce the limit through the cgroup, so it is
     the limit that actually applies when it is lower than the configured one.
     """
+    return limiting_cgroup(proc_root, cgroup_root)[0]
+
+
+def limiting_cgroup(proc_root: str = '/proc', cgroup_root: str = '/sys/fs/cgroup') -> tuple[int | None, str | None]:
+    """(limit, directory) of the cgroup with the tightest memory limit, see cgroup_memory_limit()."""
     try:
         lines = open(f'{proc_root}/self/cgroup').read().splitlines()
     except OSError:
-        return None
+        return None, None
     limits = []
     for line in lines:
         parts = line.split(':', 2)
@@ -87,13 +92,27 @@ def cgroup_memory_limit(proc_root: str = '/proc', cgroup_root: str = '/sys/fs/cg
             try:
                 value = open(f'{base}{path}/{name}').read().strip()
                 if value.isdigit() and int(value) < 2**60:  # v1 reports "no limit" as a huge number
-                    limits.append(int(value))
+                    limits.append((int(value), f'{base}{path}'))
             except OSError:
                 pass
             if not path:
                 break
             path = path.rsplit('/', 1)[0]
-    return min(limits) if limits else None
+    return min(limits) if limits else (None, None)
+
+
+def cgroup_cpu_time(directory: str | None) -> float | None:
+    """CPU seconds of all processes in a cgroup (v2 cpu.stat), or None."""
+    if directory is None:
+        return None
+    try:
+        with open(f'{directory}/cpu.stat') as f:
+            for line in f:
+                if line.startswith('usage_usec '):
+                    return int(line.split()[1]) / 1e6
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def _stat(pid: int, proc_root: str = '/proc') -> tuple[int, float, int] | None:
@@ -141,7 +160,11 @@ class ResourceBudget:
         which counts against the same limit. cgroup_limit: the cgroup's memory limit; read from the
         system unless given."""
         self.configured_memory_limit = memory_limit_mb * MB
-        self.cgroup_memory_limit = cgroup_limit if cgroup_limit is not None else cgroup_memory_limit()
+        if cgroup_limit is None:
+            cgroup_limit, self._cgroup_dir = limiting_cgroup()
+        else:
+            self._cgroup_dir = None
+        self.cgroup_memory_limit = cgroup_limit
         self.memory_limit = min(self.configured_memory_limit, self.cgroup_memory_limit or self.configured_memory_limit)
         self.memory_threshold = self.memory_limit - HEADROOM_MB * MB
         self.hard_memory_threshold = self.memory_limit - HARD_HEADROOM_MB * MB
@@ -181,7 +204,9 @@ class ResourceBudget:
 
     def usage(self) -> tuple[int, float]:
         """(RSS bytes, CPU seconds) of the run so far: the explorer and all its descendants, plus the
-        CPU time used before the explorer started."""
+        CPU time used before the explorer started. Where the memory limit comes from a cgroup (as
+        under BenchExec), the CPU time is at least that of the cgroup, which also counts the wrapper
+        scripts that started the explorer and keep running next to it."""
         own = _stat(os.getpid())
         rss = own[2] if own else 0
         t = os.times()
@@ -195,7 +220,7 @@ class ResourceBudget:
             if st is not None:
                 cpu += st[1]
                 rss += st[2]
-        return rss, cpu
+        return rss, max(cpu, cgroup_cpu_time(self._cgroup_dir) or 0.0)
 
     # ---- the work the monitor may stop ----
 

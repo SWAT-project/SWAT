@@ -50,6 +50,16 @@ class CgroupLimitTest(unittest.TestCase):
         self.assertEqual(rb.cgroup_memory_limit(**roots), 8_000_000_000)
 
 
+    def test_cpu_time_of_the_limiting_cgroup(self):
+        roots = self.fs('0::/bench/run', {'/bench': 'max', '/bench/run': '15000000000'})
+        limit, directory = rb.limiting_cgroup(**roots)
+        self.assertEqual(limit, 15_000_000_000)
+        with open(f'{directory}/cpu.stat', 'w') as f:
+            f.write('usage_usec 12500000\nuser_usec 10000000\n')
+        self.assertEqual(rb.cgroup_cpu_time(directory), 12.5)
+        self.assertIsNone(rb.cgroup_cpu_time(None))
+
+
 class LimitsTest(unittest.TestCase):
 
     def test_competition_defaults(self):
