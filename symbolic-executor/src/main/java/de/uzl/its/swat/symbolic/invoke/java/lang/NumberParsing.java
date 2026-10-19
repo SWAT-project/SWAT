@@ -140,12 +140,12 @@ public final class NumberParsing {
                 List<Branch> branches = new ArrayList<>();
                 Integer radix = radix(s.context, args, branches);
                 if (radix == null) return branches;
-                branches.add(new Branch(intValid(s.context, s.formula, radix, type), type.parse(s.concrete, radix) != null));
+                branches.add(new Branch(intValid(s.context, s.formula, radix, type), type.parse(s.concrete, radix) != null, true));
                 return branches;
             }
             Boolean dbl = floating(owner, name, desc);
             if (dbl != null) {
-                return List.of(new Branch(floatValid(s.context, s.formula), parseFloating(s.concrete, dbl) != null));
+                return List.of(new Branch(floatValid(s.context, s.formula), parseFloating(s.concrete, dbl) != null, true));
             }
         } catch (Exception e) {
             // Arguments of unexpected types: the model returns a PlaceHolder for them as well.
@@ -161,7 +161,8 @@ public final class NumberParsing {
         if (args.length == 0 || !(args[0] instanceof StringValue s) || !s.isSymbolic()) return List.of();
         Boolean dbl = floating(owner, name, desc);
         if (dbl == null || parseFloating(s.concrete, dbl) == null) return List.of();
-        return List.of(new Branch(floatExact(s.context, s.formula, dbl), floatExactConcrete(s.concrete, dbl)));
+        // Both sides return: the model only tells the exact fragment apart
+        return List.of(new Branch(floatExact(s.context, s.formula, dbl), floatExactConcrete(s.concrete, dbl), false));
     }
 
     /**
@@ -178,11 +179,11 @@ public final class NumberParsing {
             BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
             IntegerFormula f = r.asIntegerFormula();
             branches.add(new Branch(bmgr.and(imgr.greaterOrEquals(f, imgr.makeNumber(Character.MIN_RADIX)),
-                    imgr.lessOrEquals(f, imgr.makeNumber(Character.MAX_RADIX))), inRange));
-            if (inRange) branches.add(new Branch(imgr.equal(f, imgr.makeNumber(r.concrete)), true));
+                    imgr.lessOrEquals(f, imgr.makeNumber(Character.MAX_RADIX))), inRange, true));
+            if (inRange) branches.add(new Branch(imgr.equal(f, imgr.makeNumber(r.concrete)), true, true));
         } else if (!inRange) {
             // Throws for every string: a branch without variables, which fails.
-            branches.add(new Branch(ctx.getFormulaManager().getBooleanFormulaManager().makeFalse(), false));
+            branches.add(new Branch(ctx.getFormulaManager().getBooleanFormulaManager().makeFalse(), false, true));
         }
         return inRange ? r.concrete : null;
     }
