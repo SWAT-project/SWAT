@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.trace
 
+import de.uzl.its.swat.symbolic.invoke.java.lang.SampledMath
+import de.uzl.its.swat.symbolic.value.Value
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue
 import de.uzl.its.swat.symbolic.value.reference.array.IntArrayValue
@@ -73,19 +75,21 @@ class SymbolRegistrySpec extends Specification {
         !tracePrecisionLoss()
     }
 
-    def "an approximate model function is a precision loss"() {
+    def "an approximate model function is a precision loss once a branch mentions it"() {
         given:
         DoubleValue d = new DoubleValue(context, 0.5d)
         d.MAKE_SYMBOLIC(4L)
 
         when:
-        def sin = ThreadHandler.getUFHandler(currentThread().id).getSinCosUF().applySin(d.formula)
-        def f = fmgr.floatingPointFormulaManager.lessThan(sin, fmgr.floatingPointFormulaManager.makeNumber(0.1d, DoubleValue.precision))
+        def sth = ThreadHandler.getSymbolicTraceHandler(currentThread().id)
+        def sin = SampledMath.unary("sin", false, [d] as Value[], sth)
+        def name = fmgr.extractVariablesAndUFs(sin.formula).keySet().find { it.startsWith("math_sin_") }
+        def f = fmgr.floatingPointFormulaManager.lessThan(sin.formula, fmgr.floatingPointFormulaManager.makeNumber(0.1d, DoubleValue.precision))
 
         then:
-        SymbolRegistry.kindOf("sin") == SymbolRegistry.Kind.APPROXIMATE_MODEL_FUNCTION
+        name != null
+        SymbolRegistry.kindOf(name) == SymbolRegistry.Kind.APPROXIMATE_MODEL_FUNCTION
         DTOBuilder.hasImpreciseSymbol(fmgr, f)
-        tracePrecisionLoss()
     }
 
     def "an undeclared function is a precision loss"() {

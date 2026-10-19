@@ -188,7 +188,7 @@ class SolveRetryTest(DivergenceTestBase):
         self.calls = []
 
     def solver(self, results):
-        def solve(b, solver_timeout_ms=None, solver_rlimit=None, extra_exprs=None):
+        def solve(b, solver_timeout_ms=None, solver_rlimit=None, extra_exprs=None, approximate_rlimit=None):
             self.calls.append((b.gid, solver_rlimit, len(extra_exprs or [])))
             result = results[len(self.calls) - 1]
             return result, ({'I_0': 3} if result == SATResult.SAT else {})
@@ -305,7 +305,7 @@ class SolveBranchTest(unittest.TestCase):
 
     def test_unsat_with_extra_constraints_is_not_recorded(self):
         db = mock.Mock()
-        branch = SimpleNamespace(gid=1, id=1, trace_id='t', parent=None, inputs=[], ufs=[])
+        branch = SimpleNamespace(gid=1, id=1, trace_id='t', parent=None, inputs=[], ufs=[], constraint={})
         with mock.patch('strategy.StrategyService.Database.instance', return_value=db), \
              mock.patch('strategy.StrategyService.Z3Handler.solve', return_value=(SATResult.UNSAT, {})):
             StrategyService.solve_branch(branch, extra_exprs=['x'])

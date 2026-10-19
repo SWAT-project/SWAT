@@ -1,6 +1,7 @@
 package de.uzl.its.swat.symbolic.invoke.java.lang;
 
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
+import de.uzl.its.swat.symbolic.trace.SymbolRegistry;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -141,8 +142,11 @@ final class SampledMath {
         FormulaManager fmgr = ctx.getFormulaManager();
         List<FormulaType<?>> argTypes = new ArrayList<>();
         for (FloatingPointFormula arg : args) argTypes.add(DOUBLE);
-        FunctionDeclaration<FloatingPointFormula> uf = fmgr.getUFManager()
-                .declareUF(UF_PREFIX + key + "_" + CALLS.getAndIncrement(), DOUBLE, argTypes);
+        String name = UF_PREFIX + key + "_" + CALLS.getAndIncrement();
+        FunctionDeclaration<FloatingPointFormula> uf = fmgr.getUFManager().declareUF(name, DOUBLE, argTypes);
+        // The table is exact only at the samples: a branch over the function is a precision loss
+        // (DTOBuilder). The definition alone constrains nothing else, as the function is fresh.
+        SymbolRegistry.declare(name, SymbolRegistry.Kind.APPROXIMATE_MODEL_FUNCTION);
         FloatingPointFormula application = fmgr.getUFManager().callUF(uf, Arrays.asList(args));
         sth.addConstraint(fmgr.getFloatingPointFormulaManager().assignment(application, value));
         return application;
