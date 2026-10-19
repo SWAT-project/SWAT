@@ -145,6 +145,13 @@ class Database:
         lock.release()
         return ret
 
+    def trace_count(self) -> int:
+        """The number of traces received so far, over all endpoints."""
+        lock.acquire()
+        ret = len(self.traces)
+        lock.release()
+        return ret
+
     def get_trace(self, idx: int):
         lock.acquire()
         ret = copy.deepcopy(self.traces[idx])

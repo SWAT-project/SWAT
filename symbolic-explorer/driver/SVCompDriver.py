@@ -161,8 +161,14 @@ class SVCompDriver:
                 return ExecutionStatus.ERROR, output + [str(e)]
 
 
-    def determine_next_step(self, status: ExecutionStatus, output: List[str] ) -> Action:
-        """Determines the next step based on the execution status."""
+    def determine_next_step(self, status: ExecutionStatus, output: List[str], received_trace: bool = True) -> Action:
+        """Determines the next step based on the execution status.
+
+        received_trace says whether the run sent a trace. The executor sends one whenever the entry
+        method was entered (also when it ends in an exception or System.exit), so a run without one
+        never reached it, e.g. because the JVM failed to start (VerifyError, missing main class) or
+        the agent failed: such a run proves nothing.
+        """
         if status == ExecutionStatus.SUCCESS:
 
             
@@ -190,6 +196,11 @@ class SVCompDriver:
                     self.state.verdict = Verdict.UNKNOWN
                     return Action.REPORTVERDICT
 
+            if not received_trace:
+                logger.warning(f'[SVCOMP] The target sent no trace: it did not reach the entry method')
+                Database.instance().record_execution_error(ENDPOINT_ID, 'no_trace', 'the target sent no trace')
+                self.state.verdict = Verdict.UNKNOWN
+                return Action.REPORTVERDICT
 
             if len(Database.instance().get_tree(ENDPOINT_ID).symbolic_vars) == 0:
                 # No symbolic vars found, safe to assume no violation
@@ -246,20 +257,23 @@ class SVCompDriver:
             # Run the target with DSE - Time the symbolic executor
             status: ExecutionStatus
             output: List[str]
+            traces_before = Database.instance().trace_count()
             executor_start = time.perf_counter()
             status, output = self.run_command_with_timeout(cmd=command)
             executor_duration = time.perf_counter() - executor_start
             TimingManager.instance().record_executor_time(executor_duration)
 
+            received_trace = Database.instance().trace_count() > traces_before
+
             # check if the target explored the branch as expected
-            if self.state.branch_to_explore:
+            if self.state.branch_to_explore and received_trace:
                 self.check_divergence(Database.instance().get_trace(-1)) # most recent trace
             self.state.branch_to_explore = None
             self.state.solution_is_guess = False
 
             self.log_output(output)
             logger.info(f'[STATUS] {status}')
-            next_step: Action = self.determine_next_step(status, output)
+            next_step: Action = self.determine_next_step(status, output, received_trace)
 
             # Visualize DB tree
             # print("Plotting DB Tree...", flush=True)
