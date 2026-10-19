@@ -11,6 +11,8 @@ ORIGINAL_CWD = os.getcwd()
 # The explorer writes the violation witness (witness.yml, witness.graphml) here; BenchExec collects
 # it via the `**/witness.*` result-files pattern of the benchmark definition.
 WITNESS_DIR = os.path.join(SCRIPT_DIR, 'witness')
+# The explorer's logs and testcase statistics (stats.json)
+LOG_DIR = os.path.join(SCRIPT_DIR, 'logs')
 
 
 class ExecutionStatus(enum.Enum):
@@ -104,7 +106,6 @@ def generate_command(args, property_file: str, property_path: str, input_paths: 
     agent_path = os.path.join(SCRIPT_DIR, 'symbolic-executor', 'lib', 'symbolic-executor.jar')
     config_path = os.path.join(SCRIPT_DIR, config_file)
     library_path = os.path.join(SCRIPT_DIR, 'libs', 'java-library-path')
-    logging_dir =  os.path.join(SCRIPT_DIR, 'logs')
 
     # Same interpreter (and PYTHONPATH, via the inherited environment) as run-swat.sh set up.
     base_command = [ sys.executable, "-u", os.path.join(SCRIPT_DIR, 'symbolic-explorer', 'SymbolicExplorer.py'),
@@ -112,7 +113,7 @@ def generate_command(args, property_file: str, property_path: str, input_paths: 
                      "--agent", agent_path,
                      "--config", config_path,
                      "-z3", library_path,
-                     "--logdir", logging_dir,
+                     "--logdir", LOG_DIR,
                      "--mode", "sv-comp",
                      '--port', "8000",
                      "--witness-dir", WITNESS_DIR,
@@ -148,20 +149,6 @@ def compile_target(args, local_target_dir):
     _, output = run_command_with_timeout(cmd)
     log_output(output)
 
-
-def extract_last_round(out, marker="============================== ROUND"):
-
-    return "\n ".join(out).split(marker)[-1]
-
-
-def extract_markers(out, markers):
-    if isinstance(markers, str):
-        markers = (markers,)
-    res = []
-    for line in out.split("\n"):
-        if any(marker in line for marker in markers):
-            res.append(line)
-    return res
 
 def swat_version():
     """The package version from BUILD_INFO.txt, written by scripts/package-svcomp.sh."""
@@ -221,6 +208,8 @@ if __name__ == "__main__":
     cmd = generate_command(sys.argv[1:], property_file, property_path, input_paths)
     # Exactly one witness per run: drop whatever an earlier run left behind
     shutil.rmtree(WITNESS_DIR, ignore_errors=True)
+    if os.path.exists(os.path.join(LOG_DIR, 'stats.json')):
+        os.remove(os.path.join(LOG_DIR, 'stats.json'))
     local_target_dir = copy_target(target_dir)
     compile_target(sys.argv[1:], local_target_dir)
 
@@ -238,17 +227,22 @@ if __name__ == "__main__":
         os.system(f'rm -rf {log_dir}')
     os.makedirs(log_dir)
     with pushd(path):
-        execution_status, output = run_command_with_timeout(cmd)
-        log_output(output)
-        print(f"Execution status: {execution_status}")
-        if execution_status == ExecutionStatus.TIMEOUT or execution_status == ExecutionStatus.ERROR:
-            print(f'Error: {output}')
-            exit(1)
+        # The explorer's output goes straight to ours: on long runs it is hundreds of MB, and
+        # collecting and re-logging it here took tens of seconds of CPU time and as much memory,
+        # after the explorer had already stopped in time for the limits.
+        logger.info(f'[TARGET EXECUTION]: Running command: {cmd}')
+        sys.stdout.flush()
+        sys.stderr.flush()
+        returncode = subprocess.run(cmd, stderr=subprocess.STDOUT).returncode
+        print(f"Execution status: {returncode}")
 
-
-        out = extract_last_round(output)
-        verdict = extract_markers(out, f'[VERDICT {property_file}]')
-        if "== ERROR" in str(verdict):
+        # The explorer records its verdict in the testcase statistics
+        try:
+            with open(os.path.join(LOG_DIR, 'stats.json')) as f:
+                verdict = json.load(f)['verdict_raw']
+        except (OSError, ValueError, KeyError):
+            verdict = None
+        if verdict == Verdict.VIOLATION.value:
             # The explorer wrote the witness from the trace of the violating execution
             print_witness()
         print(f'Verdict:\n {verdict}')
