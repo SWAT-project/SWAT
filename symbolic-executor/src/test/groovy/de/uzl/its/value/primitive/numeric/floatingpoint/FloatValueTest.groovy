@@ -374,6 +374,22 @@ class FloatValueTest extends Specification {
         greater << [true, false]
     }
 
+    def "asStringValue of a concrete float is String.valueOf"(float c1) {
+        expect:
+        new FloatValue(context, c1).asStringValue().concrete == String.valueOf(c1)
+
+        where:
+        c1 << [0.0f, -0.0f, 1.5f, -7.01f, Float.NaN, Float.POSITIVE_INFINITY, Float.MIN_VALUE, 1.0e10f]
+    }
+
+    def "asStringValue of a concrete double is String.valueOf"(double c1) {
+        expect:
+        new DoubleValue(context, c1).asStringValue().concrete == String.valueOf(c1)
+
+        where:
+        c1 << [0.0d, -0.0d, 1.5d, -7.01d, Double.NaN, Double.NEGATIVE_INFINITY, Double.MIN_VALUE, 1.0e100d]
+    }
+
     // ========================================================================
     // Float Narrowing Conversions - Testing fpToIntFormula Fix
     // ========================================================================

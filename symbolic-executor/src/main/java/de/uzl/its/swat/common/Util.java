@@ -229,19 +229,18 @@ public class Util {
         return interfaces;
     }
 
-    private static final List<String> allowlistedClassNames = List.of("LinkedList", "LogOutput"); // Benign names beginning with 'L'
-
+    /**
+     * Asserts that a class name is not a type descriptor. A reference descriptor has the form
+     * {@code Lpkg/Name;}, so the trailing ';' identifies it; a leading 'L' alone does not, as
+     * class names such as {@code LinkedList} or {@code LinkedListEntry} start with it too.
+     */
     private static void checkClassName(String className) {
         if (className.startsWith("[")) {
             return; // array class, skip check for now
         }
-        if (allowlistedClassNames.contains(className)) {
-            return;
-        }
         SWATAssert.check(
-                !className.contains(";") && !className.contains("(") && !className.contains(")")
-                        && !className.startsWith("L"),
-                "Class name '{}' should not contain ';', '(', ')', or start with 'L'", className);
+                !className.contains(";") && !className.contains("(") && !className.contains(")"),
+                "Class name '{}' should not be a descriptor (contains ';', '(' or ')')", className);
     }
 
     /**

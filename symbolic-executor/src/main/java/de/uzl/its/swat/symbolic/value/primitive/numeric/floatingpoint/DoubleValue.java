@@ -25,6 +25,11 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ShortValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.DoubleObjectValue;
 import lombok.Getter;
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import de.uzl.its.swat.thread.ThreadHandler;
+
+import static java.lang.Thread.currentThread;
 
 /**
  * Wrapper for doubles to represent symbolic and concrete information on the symbolic stack

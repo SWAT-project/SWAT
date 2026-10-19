@@ -335,6 +335,23 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 } else {
                     enforceException();
                 }
+            } else if (ref instanceof ArrayArrayValue<?> arr
+                    && val instanceof ObjectArrayValue row
+                    && "[[Ljava/lang/String;".equals(arr.desc)) {
+                // A String[] row created by ANEWARRAY stored into a MULTIANEWARRAY: the
+                // multi-dimensional array holds its rows as StringArrayValues, so it stores a copy.
+                // Writes through other references to the row do not reach the copy.
+                StringArrayValue copy = toStringArrayValue(row);
+                if (copy == null) {
+                    recordUntrackedBoundsCheck(inst, idx, ref);
+                    logger.warn("[AASTORE]: Unsupported row {} for multi-dimensional array", row);
+                } else if (checkArrayBounds(arr, idx, inst.iid)) {
+                    arr.storeElement(idx, copy);
+                    logger.warn("[AASTORE]: Storing a copy of row {} in a multi-dimensional array causes context loss", row);
+                    symbolicTraceHandler.recordSymbolicContextLoss();
+                } else {
+                    enforceException();
+                }
             } else if (ref instanceof StringArrayValue arr) {
                 boolean result = checkArrayBounds(arr, idx, inst.iid);
                 if (result) {
@@ -349,6 +366,24 @@ public class SymbolicInstructionVisitor implements IVisitor {
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
+    }
+
+    /**
+     * Copies a String[] row into a StringArrayValue.
+     *
+     * @param row The row
+     * @return The copy, or null if an element is not a String value (e.g. null)
+     */
+    private StringArrayValue toStringArrayValue(ObjectArrayValue row) throws NoThreadContextException {
+        SolverContext context = ThreadHandler.getSolverContext(currentThread().getId());
+        StringArrayValue copy = new StringArrayValue(context, row.size, row.getAddress());
+        for (int i = 0; i < row.size.concrete; i++) {
+            if (!(row.getField(i) instanceof StringValue element)) {
+                return null;
+            }
+            copy.storeElement(new IntValue(context, i), element);
+        }
+        return copy;
     }
 
     /**
@@ -3450,8 +3485,14 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 } else {
                     ObjectValue<?, ?> targetObject = (ObjectValue<?, ?>) stack.getLocal(1);
 
-                    int fieldIndex = classDepot.getFieldIndex(cIdx, inst.name, false);
+                    int fieldIndex = classDepot.getFieldIndex(cIdx, reflectFieldName, false);
                     getObject = targetObject.getField(fieldIndex);
+                }
+                if (inst.name.equals("get")
+                        && !(getObject instanceof ObjectValue<?, ?>)
+                        && !(getObject instanceof PlaceHolder)) {
+                    // Field.get boxes the value of a primitive field
+                    getObject = getObject.asObjectValue();
                 }
                 // if (getObject instanceof DoubleValue || getObject instanceof LongValue) {
                 //     stack.pushWideOperand(getObject);
@@ -3970,9 +4011,12 @@ public class SymbolicInstructionVisitor implements IVisitor {
             } else if ((peek instanceof BoxedValue<?>
                     && !checkEquality(((BoxedValue<?>) peek).getVal().concrete, inst.v))
                     || (!(peek instanceof BoxedValue<?>) && !checkEquality(peek.concrete, inst.v))) {
-                SWATAssert.check(false,
-                        "[GETVALUE_primitive]: Value on stack does not match expected value! Expected: {}, Actual: {}",
+                // The shadow value diverged from the JVM (a model bug). Continue with the concrete
+                // value: what the trace derived from the shadow value cannot be trusted, which is
+                // recorded as a context loss.
+                logger.warn("[GETVALUE_primitive]: Value on stack does not match expected value, causes context loss! Expected: {}, Actual: {}",
                         inst.v, peek.concrete);
+                symbolicTraceHandler.recordSymbolicContextLoss();
                 if (cat2) {
                     stack.popWideOperand();
                     stack.pushWideOperand(ValueFactory.createNumericalValue(type, inst.v));

@@ -80,6 +80,64 @@ public final class ThreadHandler {
         }
     }
 
+    /**
+     * Marks the thread's execution as started before its endpoint was entered.
+     *
+     * @param id the thread id
+     */
+    public static void setStartedBeforeEndpoint(long id) throws NoThreadContextException {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            context.setStartedBeforeEndpoint(true);
+        } else {
+            throw new NoThreadContextException(id);
+        }
+    }
+
+    /**
+     * Enters the endpoint of an execution that was started before it.
+     *
+     * @param id the thread id
+     * @return true if the execution was waiting for its endpoint, false otherwise
+     */
+    public static boolean enterStartedEndpoint(long id) {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null && context.isStartedBeforeEndpoint()) {
+            context.setStartedBeforeEndpoint(false);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Records that an endpoint was entered on a thread whose symbolic execution is already running.
+     *
+     * @param id the thread id
+     */
+    public static void enterNestedEndpoint(long id) throws NoThreadContextException {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            context.setNestedEndpoints(context.getNestedEndpoints() + 1);
+        } else {
+            throw new NoThreadContextException(id);
+        }
+    }
+
+    /**
+     * Leaves a nested endpoint if one is open.
+     *
+     * @param id the thread id
+     * @return true if a nested endpoint was left, false if the outermost endpoint ends
+     */
+    public static boolean leaveNestedEndpoint(long id) {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null && context.getNestedEndpoints() > 0) {
+            context.setNestedEndpoints(context.getNestedEndpoints() - 1);
+            return true;
+        }
+        return false;
+    }
+
     public static void removeThreadContext(long id) throws NoThreadContextException {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {

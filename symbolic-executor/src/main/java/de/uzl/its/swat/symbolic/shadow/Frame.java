@@ -123,6 +123,11 @@ public class Frame {
         locals.set(index, o);
     }
 
+    /** Removes all symbolic locals */
+    public void clearLocals() {
+        locals.clear();
+    }
+
     /**
      * Gets a Value from the symbolic locals
      *
