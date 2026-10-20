@@ -1,6 +1,6 @@
 buildscript {
     ext {
-        asmAsmVersion = "9.6" // https://gitlab.ow2.org/asm/asm/-/tags
+        asmAsmVersion = "9.11.1" // https://gitlab.ow2.org/asm/asm/-/tags
     }
     configurations {
         classpath {
