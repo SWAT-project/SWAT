@@ -8,7 +8,8 @@ set -euo pipefail
 # Set SWAT_SVCOMP_ARTIFACT_DIR only if those generated files live somewhere
 # else. The artifact root must contain:
 #
-# - symbolic-executor/lib/symbolic-executor.jar
+# - symbolic-executor/lib/symbolic-executor.jar, or symbolic-executor.jar at the
+#   root (actions/upload-artifact drops the directories of a single-file upload)
 #
 # Set SWAT_SVCOMP_PYTHON_DIR to the Python dependency directory produced by
 # scripts/build-svcomp-python-runtime.sh (it includes the witnesscreator
@@ -127,6 +128,7 @@ install -m 0644 targets/sv-comp/sv-comp.cfg "$PACKAGE_DIR/sv-comp.cfg"
 
 EXECUTOR_JAR="$(first_artifact_file \
   symbolic-executor/lib/symbolic-executor.jar \
+  symbolic-executor.jar \
   symbolic-executor/build/libs/symbolic-executor-all.jar)"
 copy_artifact_file "$EXECUTOR_JAR" "$PACKAGE_DIR/symbolic-executor/lib/symbolic-executor.jar"
 

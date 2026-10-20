@@ -7,6 +7,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for arg in "$@"
 do
   if [ "$arg" == "-v" ] || [ "$arg" == "--version" ]; then
+    # The package version (e.g. svcomp27-rc1) from BUILD_INFO.txt, written by
+    # scripts/package-svcomp.sh.
+    version="$(sed -n 's/^version=//p' "$SCRIPT_DIR/BUILD_INFO.txt" 2>/dev/null)"
+    if [ -n "$version" ]; then
+      echo "$version"
+      exit 0
+    fi
     exec java -cp "$SCRIPT_DIR/symbolic-executor/lib/symbolic-executor.jar" de.uzl.its.swat.Version
   fi
 done
