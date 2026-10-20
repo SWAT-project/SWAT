@@ -373,6 +373,8 @@ public interface InstructionProcessor {
 
     void LOOP_BEGIN(long iid);
 
+    void LOOP_HEAD(long iid, String head, Object[] locals);
+
     void LOOP_END(long iid);
 
     void SPECIAL(long iid, int i);

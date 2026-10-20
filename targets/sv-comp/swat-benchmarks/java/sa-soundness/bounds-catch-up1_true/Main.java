@@ -1,0 +1,26 @@
+// Expected verdict: SAFE. the assert needs x > 1000 && x < 1001 for an int x: unsatisfiable.
+// Paired VIOLATION inputs (must not fail here): int:1001 int:7
+import org.sosy_lab.sv_benchmarks.Verifier;
+// The assert is in a catch (ArrayIndexOutOfBoundsException) one frame above the array read.
+public class Main {
+    static final int[] TABLE = {1, 2, 3};
+
+    static int get(int i) {
+        int v = TABLE[i];
+        if (v > 1) v--;
+        return v;
+    }
+
+    public static void main(String[] args) {
+        int a = Verifier.nondetInt();
+        int b = Verifier.nondetInt();
+        int r;
+        try {
+            r = get(b);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (a > 1000 && a < 1001) assert false;
+            r = 0;
+        }
+        if (r > 1) r--;
+    }
+}

@@ -24,7 +24,7 @@ echo "Clone target Repository"
 "$SCRIPT_DIR/checkout.sh"
 
 echo "Running Tests..."
-python3 "$SCRIPT_DIR/target_execution.py"
+python3 "$SCRIPT_DIR/svcomp.py" test run --mode parallel --categories valid-assert.prp
 
 # Deactivate the virtual environment (optional)
 deactivate

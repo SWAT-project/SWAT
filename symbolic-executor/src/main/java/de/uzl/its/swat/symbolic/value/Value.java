@@ -7,6 +7,7 @@ import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
+import de.uzl.its.swat.symbolic.trace.SymbolRegistry;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -69,19 +70,23 @@ public abstract class Value<T, K> {
         SWATAssert.enforce(namePrefix != null, "Name prefix cannot be null");
         name = namePrefix + "_" + symbol;
         symbol = symbol + inc;
+        SymbolRegistry.declare(name, SymbolRegistry.Kind.VALUE);
     }
     //Todo: this is a hotfix...
     protected void initSymbolicWithoutIdx(String symbolicName) {
         SWATAssert.enforce(symbolicName != null, "Name prefix cannot be null");
         name = symbolicName;
+        SymbolRegistry.declare(name, SymbolRegistry.Kind.VALUE);
     }
 
     protected void initSymbolic(String namePrefix, long idx) {
         name = namePrefix + "_" + idx;
+        SymbolRegistry.declare(name, SymbolRegistry.Kind.VALUE);
     }
 
     protected void initSymbolic(String namePrefix, String idx) {
         name = namePrefix + "_" + idx;
+        SymbolRegistry.declare(name, SymbolRegistry.Kind.VALUE);
     }
 
 

@@ -359,6 +359,8 @@ public interface IVisitor {
 
     void visitLOOP_BEGIN(LOOP_BEGIN inst) throws SymbolicInstructionException;
 
+    void visitLOOP_HEAD(LOOP_HEAD inst) throws SymbolicInstructionException;
+
     void visitLOOP_END(LOOP_END inst) throws SymbolicInstructionException;
 
     void visitSPECIAL(SPECIAL inst) throws SymbolicInstructionException;

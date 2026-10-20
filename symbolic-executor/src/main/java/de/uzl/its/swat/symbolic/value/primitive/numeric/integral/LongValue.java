@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.value.primitive.numeric.integral;
 
+import de.uzl.its.swat.symbolic.invoke.java.lang.NumberStrings;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -268,16 +270,11 @@ public class LongValue extends NumericalValue<BitvectorFormula, Long> {
     public IntValue LCMP(LongValue l) {
         int c = concrete.compareTo(l.concrete);
 
-        BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
-
         // Use signed comparison for bitvectors
         BooleanFormula eqCond = bvmgr.equal(formula, l.formula);
         BooleanFormula gtCond = bvmgr.greaterThan(formula, l.formula, true); // true = signed
 
-        NumeralFormula.IntegerFormula tmp =
-                bmgr.ifThenElse(gtCond, imgr.makeNumber(1), imgr.makeNumber(-1));
-        NumeralFormula.IntegerFormula res = bmgr.ifThenElse(eqCond, imgr.makeNumber(0), tmp);
+        BitvectorFormula res = BitvectorEncoding.compareResult(context.getFormulaManager(), eqCond, gtCond, 32);
 
         return new IntValue(context, c, res);
     }
@@ -402,12 +399,11 @@ public class LongValue extends NumericalValue<BitvectorFormula, Long> {
 
     @Override
     public StringValue asStringValue() {
-        // String theory requires IntegerFormula, so convert BV to Int
-        NumeralFormula.IntegerFormula intFormula = bvmgr.toIntegerFormula(formula, true);
+        // str.from_int of a negative number is "", so the sign is handled separately
         return new StringValue(
                 this.context,
                 String.valueOf(concrete),
-                context.getFormulaManager().getStringFormulaManager().toStringFormula(intFormula),
+                NumberStrings.decimal(context, formula, 64, true),
                 -1);
     }
 

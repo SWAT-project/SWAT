@@ -3,6 +3,12 @@ name: Java CI with Gradle
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+env:
+  # Python of the SV-COMP execution environment (SV-COMP 2027: Ubuntu 26.04).
+  SVCOMP_PYTHON_VERSION: '3.14'
+  SVCOMP_BASE_IMAGE: docker.io/ubuntu:26.04
 
 jobs:
   build:
@@ -10,16 +16,172 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
+      uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+    - name: Prepare Solver Dependencies
+      run: ./gradlew copyNativeLibs
     - name: Build
-      run: ./gradlew build -x test
+      run: ./gradlew --no-daemon build -x test
+    - name: Upload JARs
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-jars-${{ github.sha }}
+        path: symbolic-executor/lib/symbolic-executor.jar
+        if-no-files-found: error
+        retention-days: 1
+
+  package:
+    needs: build
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && (
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/dev' ||
+        startsWith(github.ref, 'refs/tags/')
+      ))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      channel: ${{ steps.meta.outputs.channel }}
+      zip-name: ${{ steps.meta.outputs.zip-name }}
+      rolling: ${{ steps.meta.outputs.rolling }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      artifact-name: ${{ steps.meta.outputs.artifact-name }}
+    steps:
+    - uses: actions/checkout@v7
+    - name: Download JARs
+      uses: actions/download-artifact@v8
+      with:
+        name: release-jars-${{ github.sha }}
+        path: ${{ runner.temp }}/release-jars
+    - name: Determine release channel
+      id: meta
+      run: |
+        ref_type="${GITHUB_REF_TYPE}"
+        ref_name="${GITHUB_REF_NAME}"
+        sha_short="${GITHUB_SHA::7}"
+
+        channel=""          # release/tag name; empty -> build artifact only, no release
+        release="false"
+        rolling="false"     # rolling channels move their tag to the current commit
+        prerelease="false"
+
+        if [[ "$ref_type" == "tag" ]]; then
+          channel="$ref_name"
+          release="true"
+        elif [[ "$ref_name" == "main" ]]; then
+          channel="latest"
+          release="true"
+          rolling="true"
+        elif [[ "$ref_name" == "dev" ]]; then
+          channel="latest-dev"
+          release="true"
+          rolling="true"
+          prerelease="true"
+        fi
+
+        # Channel-stable asset name gives the nightly cron a fixed download URL;
+        # the exact commit is recorded in the release notes and BUILD_INFO.txt.
+        if [[ -n "$channel" ]]; then
+          version="$channel"
+        else
+          version="$sha_short"
+        fi
+        zip_name="swat-svcomp-${version}.zip"
+
+        {
+          echo "channel=${channel}"
+          echo "version=${version}"
+          echo "zip-name=${zip_name}"
+          echo "artifact-name=swat-svcomp-${version}"
+          echo "release=${release}"
+          echo "rolling=${rolling}"
+          echo "prerelease=${prerelease}"
+        } >> "${GITHUB_OUTPUT}"
+    - name: Build SV-COMP Python runtime
+      env:
+        SWAT_SVCOMP_PYTHON_VERSION: ${{ env.SVCOMP_PYTHON_VERSION }}
+      run: scripts/build-svcomp-python-runtime.sh "${RUNNER_TEMP}/svcomp-python"
+    - name: Pack SV-COMP ZIP
+      env:
+        SWAT_SVCOMP_VERSION: ${{ steps.meta.outputs.version }}
+        SWAT_SVCOMP_ARTIFACT_DIR: ${{ runner.temp }}/release-jars
+        SWAT_SVCOMP_PYTHON_DIR: ${{ runner.temp }}/svcomp-python
+        SWAT_SVCOMP_COMMIT: ${{ github.sha }}
+        SWAT_SVCOMP_REF: ${{ github.ref_name }}
+        SWAT_SVCOMP_CHANNEL: ${{ steps.meta.outputs.channel }}
+      run: scripts/package-svcomp.sh
+    - name: Check SV-COMP ZIP in competition base image
+      run: scripts/check-svcomp-package.sh "build/distributions/${{ steps.meta.outputs.zip-name }}" "${SVCOMP_BASE_IMAGE}"
+    - name: Upload SV-COMP ZIP artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.meta.outputs.artifact-name }}
+        path: build/distributions/${{ steps.meta.outputs.zip-name }}
+        if-no-files-found: error
+
+  publish-release:
+    needs: package
+    if: >-
+      github.event_name == 'push' && (
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/dev' ||
+        startsWith(github.ref, 'refs/tags/')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download SV-COMP ZIP artifact
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ needs.package.outputs.artifact-name }}
+        path: ${{ runner.temp }}/svcomp-package
+    - name: Publish release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        CHANNEL: ${{ needs.package.outputs.channel }}
+        ZIP_NAME: ${{ needs.package.outputs.zip-name }}
+        ROLLING: ${{ needs.package.outputs.rolling }}
+        PRERELEASE: ${{ needs.package.outputs.prerelease }}
+      run: |
+        zip_path="${RUNNER_TEMP}/svcomp-package/${ZIP_NAME}"
+        notes="$(printf 'Automated SWAT SV-COMP package.\n\nRef: %s\nCommit: %s\nRun: %s/%s/actions/runs/%s\n' \
+          "$GITHUB_REF_NAME" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
+
+        prerelease_flag=()
+        [[ "$PRERELEASE" == "true" ]] && prerelease_flag=(--prerelease)
+
+        if [[ "$ROLLING" == "true" ]]; then
+          # Refresh the rolling channel: drop the old release + tag, then recreate
+          # it at the current commit so the tag always tracks the channel head.
+          # Uses the default GITHUB_TOKEN, so the new tag does not retrigger CI.
+          gh release delete "$CHANNEL" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$CHANNEL" "$zip_path" \
+            --target "$GITHUB_SHA" \
+            --title "SWAT ${CHANNEL} (${GITHUB_SHA::7})" \
+            --notes "$notes" \
+            "${prerelease_flag[@]}"
+        else
+          # Permanent, version-tagged release (the tag already points at this commit).
+          if gh release view "$CHANNEL" >/dev/null 2>&1; then
+            gh release upload "$CHANNEL" "$zip_path" --clobber
+          else
+            gh release create "$CHANNEL" "$zip_path" \
+              --title "SWAT ${CHANNEL}" \
+              --notes "$notes" \
+              "${prerelease_flag[@]}"
+          fi
+        fi
 
   test:
     needs: build
@@ -27,21 +189,21 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
+      uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
     - name: Copy Z3
       run: ./gradlew copyNativeLibs
     - name: Test
       run: ./gradlew test
     - name: Upload test reports
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: test-reports
         path: symbolic-executor/build/reports/tests
@@ -53,18 +215,18 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
+      uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
     - name: Generate Javadoc
       run: ./gradlew :symbolic-executor:javadoc
     - name: Upload Javadoc
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: javadoc
         path: symbolic-executor/build/docs/javadoc
@@ -75,11 +237,11 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
     - name: Generate and submit dependency graph
-      uses: gradle/actions/dependency-submission@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
+      uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0

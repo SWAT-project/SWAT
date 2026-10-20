@@ -229,6 +229,9 @@ public class Config {
     // Fontus options
     // ------------------------------------
     @Getter private boolean useStringInterning;
+    /** Probe loop heads and report their concrete states with the trace (see symbolic/loopstate). */
+    @Getter private boolean loopStateMatching;
+    private static final boolean DEFAULT_LOOP_STATE_MATCHING = false;
     private static final boolean DEFAULT_STRING_INTERNING = true;
     @Getter private String stringProxy;
     private static final String DEFAULT_STRING_PROXY = "Ljava/lang/String;";
@@ -446,6 +449,7 @@ public class Config {
         // Fontus options
         // ------------------------------------
         useStringInterning = readBoolean("useStringInterning", DEFAULT_STRING_INTERNING);
+        loopStateMatching = readBoolean("loopStateMatching", DEFAULT_LOOP_STATE_MATCHING);
         stringProxy = readString("stringProxy", DEFAULT_STRING_PROXY);
     }
 
