@@ -1,7 +1,7 @@
 import org.gradle.internal.os.OperatingSystem
 
 plugins {
-    id 'com.diffplug.spotless' version '6.9.0'
+    id 'com.diffplug.spotless' version '8.10.4'
 }
 
 tasks.register('copyNativeLibs', Copy) { // copies correct native z3 files to libs/

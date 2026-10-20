@@ -18,8 +18,8 @@ plugins {
     id 'groovy'
     id 'eclipse'
     id 'application'
-    id 'io.freefair.lombok' version '8.4'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'io.freefair.lombok' version '8.14.4'
+    id 'com.gradleup.shadow' version '8.3.11'
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -28,10 +28,13 @@ tasks.withType(JavaCompile).configureEach {
 
 
 repositories {
-    // JavaSMT built by scripts/build-javasmt.sh; its dependencies come from Maven Central
-    maven {
-        url = rootProject.file('libs/maven')
-        content { includeModule('org.sosy-lab', 'java-smt') }
+    // JavaSMT built by scripts/build-javasmt.sh, only from there; its dependencies come from
+    // Maven Central
+    exclusiveContent {
+        forRepository {
+            maven { url = rootProject.file('libs/maven') }
+        }
+        filter { includeModule('org.sosy-lab', 'java-smt') }
     }
     mavenCentral()
 }
