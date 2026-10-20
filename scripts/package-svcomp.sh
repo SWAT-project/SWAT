@@ -91,11 +91,11 @@ copy_artifact_tree() {
 }
 
 # Installs <path> of the vendored Linux Z3 distribution (relative to its root) into
-# libs/java-library-path/ under its file name.
+# libs/java-library-path/ under its file name, or under [name] if given.
 install_z3_runtime_file() {
   local path="$1"
   local mode="${2:-0644}"
-  local dest="${PACKAGE_DIR}/libs/java-library-path/$(basename "$path")"
+  local dest="${PACKAGE_DIR}/libs/java-library-path/${3:-$(basename "$path")}"
 
   [[ -f "$LINUX_Z3_ZIP" ]] || fail "missing vendored Linux Z3 distribution: ${LINUX_Z3_ZIP}"
   mkdir -p "$(dirname "$dest")"
@@ -117,7 +117,6 @@ mkdir -p "$PACKAGE_DIR"
 } > "$PACKAGE_DIR/BUILD_INFO.txt"
 
 install -m 0644 LICENSE "$PACKAGE_DIR/LICENSE"
-install -m 0644 Third-Party-Licenses.html "$PACKAGE_DIR/Third-Party-Licenses.html"
 install -m 0644 "$SUPPORT_DIR/README.md" "$PACKAGE_DIR/README.md"
 install -m 0755 "$SUPPORT_DIR/run-swat.sh" "$PACKAGE_DIR/run-swat.sh"
 install -m 0755 "$SUPPORT_DIR/compile-target.sh" "$PACKAGE_DIR/compile-target.sh"
@@ -138,6 +137,7 @@ install_z3_runtime_file bin/z3 0755
 install_z3_runtime_file bin/libz3.so
 install_z3_runtime_file bin/libz3java.so
 install_z3_runtime_file java/com.microsoft.z3.jar
+install_z3_runtime_file LICENSE.txt 0644 z3-LICENSE.txt
 # The JavaSMT build the executor uses (scripts/build-javasmt.sh); it is shaded into the executor JAR
 # and shipped next to it for reference.
 JAVA_SMT_JARS=("$JAVA_SMT_DIR"/*/java-smt-*.jar)
@@ -151,6 +151,9 @@ copy_tree_files "$SUPPORT_DIR/smoketest" "$PACKAGE_DIR/smoketest"
 [[ -f "$PYTHON_DIR/PYTHON_VERSION" ]] || fail "missing ${PYTHON_DIR}/PYTHON_VERSION; build it with scripts/build-svcomp-python-runtime.sh"
 [[ -d "$PYTHON_DIR/witnesscreator" ]] || fail "missing witnesscreator package in ${PYTHON_DIR}; build it with scripts/build-svcomp-python-runtime.sh"
 copy_artifact_tree "$PYTHON_DIR" "${PACKAGE_DIR}/libs/python"
+
+# Fails if a bundled component has no determinable license or license text.
+python3 "$SUPPORT_DIR/third_party_licenses.py" "$PACKAGE_DIR"
 
 mkdir -p "$DIST_DIR"
 ZIP_PATH="${DIST_DIR}/${PACKAGE_NAME}.zip"
