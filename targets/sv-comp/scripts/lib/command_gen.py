@@ -1,11 +1,12 @@
-from .selection import extract_testcases
+from .selection import extract_testcases, task_rel_dir
 import datetime
+import json
 import logging
 import socket
 from pathlib import Path
 from pprint import pformat
 from typing import Optional
-from .dtypes import Command, VerificationTask
+from .dtypes import Command, VerificationCategory, VerificationTask
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,13 +35,17 @@ def is_port_available(port: int) -> bool:
         return False
 
 
-def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg') -> list[str]:
+def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None) -> list[str]:
 
 
     test_case_dir = ver_task['file_path'].parent
     agent_path = BASE_PATH / 'symbolic-executor' / 'lib' / 'symbolic-executor.jar'
     config_path = SCRIPT_DIR / '..' / config_file
     library_path = BASE_PATH / 'libs' / 'java-library-path'
+    sa_path = BASE_PATH.parent / 'cfg-extraction'
+    # The pre-analysis only targets asserts, so it can only prune for valid-assert (the explorer
+    # enforces this too).
+    no_sa = no_sa or ver_task['category'] != VerificationCategory.VALID_ASSERT_PRP
 
     base_command: list[str] = [str(PYENV_PATH), "-u", str(BASE_PATH / 'symbolic-explorer' / 'SymbolicExplorer.py'),
                     "-prp", ver_task['category'].value,
@@ -49,14 +54,31 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     "-z3", str(library_path),
                     "--logdir", str(logging_dir),
                     "--mode", "sv-comp",
-                    '--port', str(port),
-                    "--classpath"]
+                    "--port", str(port),
+                    "--target", "Main"] + \
+                    ([] if no_sa else ["--sa-path", str(sa_path)]) + \
+                    (["--sa-retry-without"] if sa_retry_without and not no_sa else []) + \
+                    (["--parallel-sa"] if parallel_sa and not no_sa else []) + \
+                    (["--sa-rank-distance"] if sa_rank_distance and not no_sa else []) + \
+                    (["--sa-no-callback-targets"] if sa_no_callback_targets and not no_sa else []) + \
+                    (["--solver-rlimit", str(solver_rlimit)] if solver_rlimit else []) + \
+                    (["--cpu-limit", str(cpu_limit_s)] if cpu_limit_s else [])
 
     cp: list[str] = []
+    inputs: list[str] = []
     for input_file in ver_task['input_files']:
-        cp.append(str((test_case_dir / input_file).resolve()))
+        inputs.append(str((test_case_dir / input_file).resolve()))
+        cp.append(inputs[-1])
         cp.append(str(BASE_PATH / 'libs' / 'java-library-path' / 'com.microsoft.z3.jar'))
-    return base_command + cp 
+
+    # The explorer writes the violation witness (witness.yml/witness.graphml) to <logging_dir>/witness
+    # from the trace of the violating execution; it needs the task's input files and property file.
+    property_path = test_case_dir.parent / 'properties' / ver_task['category'].value
+    witness_args: list[str] = ["--witness-dir", "witness",
+                               "--witness-property", str(property_path.resolve()),
+                               "--producer-version", "local",
+                               "--witness-input"] + inputs
+    return base_command + witness_args + ["--classpath"] + cp
 
 
 
@@ -71,7 +93,19 @@ def run_dir(run_timestamp: str) -> Path:
     return SCRIPT_DIR / '..' / 'runs' / f"run_{run_timestamp}"
 
 
-def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None) -> list[VerificationTask]:
+def write_run_info(run_dir: Path, **settings) -> Path:
+    """Writes run_info.json with the settings of a run into its run dir.
+
+    sa_mode is 'none', 'sequential' (the default: exploration waits for the pre-analysis) or
+    'parallel' (--parallel-sa: the pre-analysis runs in the background). In 'parallel' runs the
+    static_pre_analysis timing stage is ~0 and its wall time is static_pre_analysis_wall.
+    """
+    path = run_dir / 'run_info.json'
+    path.write_text(json.dumps({'format_version': 1, **settings}, indent=2) + '\n')
+    return path
+
+
+def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None) -> list[VerificationTask]:
 
     port = 9000
     skipped_ports = []
@@ -96,9 +130,8 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
         # Extract unique identifier for the target (based on its relative path and the name of the .yml file)
         target_dir = ver_task['file_path'].parent
 
-        # Get relative path from sv-benchmarks/java/
-        sv_benchmarks_java = Path('sv-benchmarks') / 'java'
-        rel_target_path = target_dir.relative_to(target_dir.parents[len(target_dir.parts) - list(target_dir.parts).index('sv-benchmarks') - 1] / sv_benchmarks_java)
+        # Relative path below the benchmark dir's java/ folder
+        rel_target_path = task_rel_dir(ver_task)
 
         target_name = ver_task['file_path'].stem
         target = rel_target_path / target_name
@@ -117,7 +150,7 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
             'target_dir': target_dir,
             'target': target,
             'log_dir': logging_dir,
-            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file)
+            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, solver_rlimit=solver_rlimit, cpu_limit_s=cpu_limit_s)
         }
         ver_task['command'] = command
         port += 1

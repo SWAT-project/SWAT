@@ -42,6 +42,10 @@ class ConstraintController:
         symbolicContextLoss = request.symbolicContextLoss
         symbolicPrecisionLoss = request.symbolicPrecisionLoss
         referenceSemanticChange = request.referenceSemanticChange
+        nondetReturns = request.nondetReturns
+        violation = request.violation
+        approximateModel = request.approximateModel
+        stackOverflow = request.stackOverflow
 
         # Start a new thread to add constraints
         thread = threading.Thread(target=ConstraintService.add_constraints, kwargs={
@@ -53,7 +57,11 @@ class ConstraintController:
             'missing_invocations': missingInvocations,
             'symbolic_context_loss': symbolicContextLoss,
             'symbolic_precision_loss': symbolicPrecisionLoss,
-            'reference_semantic_change': referenceSemanticChange})
+            'reference_semantic_change': referenceSemanticChange,
+            'nondet_returns': nondetReturns,
+            'violation': violation,
+            'approximate_model': approximateModel,
+            'stack_overflow': stackOverflow})
         thread.start()
         thread.join() # To ensure trace is added in SV-Comp mode
         # Return a response indicating that the request has been accepted

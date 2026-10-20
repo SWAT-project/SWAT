@@ -377,6 +377,9 @@ public class DummyInstructionProcessor implements InstructionProcessor {
     public void LOOP_BEGIN(long iid) {}
 
     @Override
+    public void LOOP_HEAD(long iid, String head, Object[] locals) {}
+
+    @Override
     public void LOOP_END(long iid) {}
 
     public void SPECIAL(long iid, int i) {}

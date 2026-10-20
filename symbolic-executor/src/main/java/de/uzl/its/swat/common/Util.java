@@ -42,10 +42,6 @@ public class Util {
 
     private static final HashMap<String, Boolean> shouldInstrumentCache = new HashMap<>();
 
-    // Maintain a set of class names that have been de-interned
-    private static final Set<String> deInternedClasses = new HashSet<>(Arrays.asList(
-            String.class.getName(), Boolean.class.getName(), Byte.class.getName(), Short.class.getName(),
-            Character.class.getName(), Integer.class.getName(), Long.class.getName()));
 
     /**
      * Just a method for validating the engine!
@@ -233,14 +229,18 @@ public class Util {
         return interfaces;
     }
 
+    /**
+     * Asserts that a class name is not a type descriptor. A reference descriptor has the form
+     * {@code Lpkg/Name;}, so the trailing ';' identifies it; a leading 'L' alone does not, as
+     * class names such as {@code LinkedList} or {@code LinkedListEntry} start with it too.
+     */
     private static void checkClassName(String className) {
         if (className.startsWith("[")) {
             return; // array class, skip check for now
         }
         SWATAssert.check(
-                !className.contains(";") && !className.contains("(") && !className.contains(")")
-                        && !className.startsWith("L"),
-                "Class name '{}' should not contain ';' or brackets", className);
+                !className.contains(";") && !className.contains("(") && !className.contains(")"),
+                "Class name '{}' should not be a descriptor (contains ';', '(' or ')')", className);
     }
 
     /**
@@ -412,21 +412,6 @@ public class Util {
         String symbolicMethodPattern = config.getInstrumentationParameterSymbolicMethodNames().get(cidx);
 
         return Pattern.matches(symbolicMethodPattern, name);
-    }
-
-    static boolean shouldUseValueEquality(Object a, Object b) {
-        // If either is null, Objects.equals handles it correctly anyway
-        if (a == null || b == null) {
-            return true;
-        }
-
-        // Check if either object's class has been de-interned
-        return isDeInternedClass(a.getClass()) || isDeInternedClass(b.getClass());
-    }
-
-    private static boolean isDeInternedClass(Class<?> clazz) {
-        // Check the exact class and optionally superclasses if inheritance matters
-        return deInternedClasses.contains(clazz.getName());
     }
 
 }

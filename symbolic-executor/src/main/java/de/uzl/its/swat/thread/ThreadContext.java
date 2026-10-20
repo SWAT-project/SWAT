@@ -31,7 +31,6 @@ import org.sosy_lab.common.ShutdownManager;
 import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.ConfigurationBuilder;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
-import org.sosy_lab.common.log.BasicLogManager;
 import org.sosy_lab.common.log.LogManager;
 import org.sosy_lab.java_smt.SolverContextFactory;
 import org.sosy_lab.java_smt.api.SolverContext;
@@ -64,6 +63,14 @@ public class ThreadContext {
 
     @Setter @Getter private int endpointID;
     @Setter @Getter private String endpointName;
+
+    // Number of endpoints entered while this context was already running, e.g. a harness main
+    // that calls another main. Their init/terminate calls only adjust this count.
+    @Getter @Setter private int nestedEndpoints = 0;
+
+    // Set while the execution was started by the entry class's static initializer and the
+    // endpoint itself has not been entered yet.
+    @Getter @Setter private boolean startedBeforeEndpoint = false;
 
     // Tracks if liftValue is called multiple times with the same index.
     @Getter private final HashMap<String, Integer> symbolicIdxOccurrence = new java.util.HashMap<>();
@@ -116,7 +123,9 @@ public class ThreadContext {
 
         logger.info(SMTConfig.asPropertiesString());
 
-        LogManager logger = BasicLogManager.create(SMTConfig);
+        // java-smt's own log is not read; a BasicLogManager would also register a JMX bean, which
+        // loads the JMX classes in every run
+        LogManager logger = LogManager.createNullLogManager();
         ShutdownManager shutdown = ShutdownManager.create();
 
         // SolverContext is a class wrapping a solver context.
@@ -189,6 +198,15 @@ public class ThreadContext {
             statics.put(cIdx, new Value<?, ?>[nStaticFields]);
         }
         statics.get(cIdx)[fIdx] = value;
+    }
+
+    /** The shadow values of the static fields accessed so far, keyed by class name. */
+    public java.util.Map<String, Value<?, ?>[]> getStaticFields() {
+        java.util.Map<String, Value<?, ?>[]> byName = new java.util.HashMap<>();
+        for (java.util.Map.Entry<Integer, Value<?, ?>[]> e : statics.entrySet()) {
+            byName.put(classDepot.getClassName(e.getKey()), e.getValue());
+        }
+        return byName;
     }
 
     public Value<?, ?> getStaticField(int classIndex, int runtimeFieldIndex)

@@ -4,7 +4,9 @@ import ch.qos.logback.classic.Logger;
 import com.sap.fontus.taintaware.unified.IASString;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.SWATException;
 import de.uzl.its.swat.common.exceptions.ThreadAlreadyDisabledException;
@@ -64,39 +66,82 @@ public class Intrinsics {
      */
     public static void init(String endpoint) {
         try {
-            int endpointID;
-            if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
-                endpointID = 0;
-            } else {
-                endpointID = endpoint.hashCode();
+            long threadId = currentThread().getId();
+            if (ThreadHandler.hasThreadContext(threadId)) {
+                if (ThreadHandler.enterStartedEndpoint(threadId)) {
+                    // The entry class's static initializer started the execution (initBeforeEntry).
+                    // Its locals live in the initial frame that the endpoint now runs in.
+                    ThreadHandler.getSymbolicVisitor(threadId).getStack().getActiveFrame().clearLocals();
+                    logger.info("Entering endpoint {} started by its static initializer (Thread: {})",
+                            endpoint, threadId);
+                    return;
+                }
+                // An endpoint called from within a running one (e.g. a harness main calling
+                // another main) continues the running symbolic execution.
+                ThreadHandler.enterNestedEndpoint(threadId);
+                logger.info("Entering nested endpoint {} (Thread: {})", endpoint, threadId);
+                return;
             }
-            ThreadHandler.addThreadContext(currentThread().getId(), endpoint, endpointID);
-
-            logger.info(
-                    new PrintBox(
-                            60,
-                            "Symbolic execution started (Thread: "
-                                    + Thread.currentThread().getId()
-                                    + ")",
-                            new ArrayList<>(
-                                    List.of(
-                                            new String[]{
-                                                    "Execution started (Thread: "
-                                                            + Thread.currentThread().getId()
-                                                            + ")",
-                                                    "Threads (tracked / active): ("
-                                                            + ThreadHandler.getThreadCount()
-                                                            + " / "
-                                                            + Thread.activeCount()
-                                                            + ")",
-                                                    "Method: " + endpoint,
-                                                    "ID: " + endpointID
-                                            })))
-                            .toString());
+            startExecution(endpoint);
         } catch (Throwable t) {
             // The ErrorHandler has to be here as this method transfers control to the target domain
             new ErrorHandler().handleException("Error during initialization of symbolic engine: ", t);
         }
+    }
+
+    /**
+     * Starts symbolic tracking in the static initializer of the entry class, which the JVM runs
+     * before the entry method, so that inputs read there (e.g. a static field initialised with a
+     * Verifier.nondet* call) are tracked. The entry method's init call then continues this
+     * execution. Does nothing if the thread's execution is already running. The method call is
+     * added during instrumentation.
+     *
+     * @param endpoint The name of the endpoint whose class is being initialised.
+     */
+    public static void initBeforeEntry(String endpoint) {
+        try {
+            long threadId = currentThread().getId();
+            if (ThreadHandler.hasThreadContext(threadId)) {
+                return;
+            }
+            startExecution(endpoint);
+            ThreadHandler.setStartedBeforeEndpoint(threadId);
+        } catch (Throwable t) {
+            // The ErrorHandler has to be here as this method transfers control to the target domain
+            new ErrorHandler().handleException("Error during initialization of symbolic engine: ", t);
+        }
+    }
+
+    private static void startExecution(String endpoint) throws Exception {
+        int endpointID;
+        if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
+            endpointID = 0;
+        } else {
+            endpointID = endpoint.hashCode();
+        }
+        ThreadHandler.addThreadContext(currentThread().getId(), endpoint, endpointID);
+
+        logger.info(
+                new PrintBox(
+                        60,
+                        "Symbolic execution started (Thread: "
+                                + Thread.currentThread().getId()
+                                + ")",
+                        new ArrayList<>(
+                                List.of(
+                                        new String[]{
+                                                "Execution started (Thread: "
+                                                        + Thread.currentThread().getId()
+                                                        + ")",
+                                                "Threads (tracked / active): ("
+                                                        + ThreadHandler.getThreadCount()
+                                                        + " / "
+                                                        + Thread.activeCount()
+                                                        + ")",
+                                                "Method: " + endpoint,
+                                                "ID: " + endpointID
+                                        })))
+                        .toString());
     }
 
 
@@ -106,6 +151,10 @@ public class Intrinsics {
      */
     public static void terminate() {
         try {
+            if (ThreadHandler.leaveNestedEndpoint(currentThread().getId())) {
+                logger.info("Leaving nested endpoint (Thread: {})", currentThread().getId());
+                return;
+            }
             Transformer.logMissedClasses();
             ThreadHandler.disableThreadContext(currentThread().getId());
             logger.info(
@@ -138,7 +187,7 @@ public class Intrinsics {
                     break;
                 case PRINT:
                     if (!ThreadHandler.isThreadContextAborted(currentThread().getId())) {
-                        System.out.println(ThreadHandler.getSymbolicVisitor(currentThread().getId()).getSymbolicTraceHandler().getTraceDTO(ThreadHandler.getStatsStorage(currentThread().getId())));
+                        printTrace(currentThread().getId());
                     }
                     break;
                 case NONE:
@@ -148,7 +197,12 @@ public class Intrinsics {
             }
 
             SymbolicInstructionDispatcher.flush(); // TODO WTF does that do? calls log(null) <- I think what this does is removing that last symbolic instruction from the pipeline as symbolic execution is always one behind.
-            ThreadHandler.removeSolverContext(currentThread().getId());
+            // An SV-COMP run is one execution per JVM, which exits right after it. Closing the
+            // solver context there only costs time: Z3 frees the terms of the trace one by one,
+            // which takes minutes after a long trace.
+            if (!config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
+                ThreadHandler.removeSolverContext(currentThread().getId());
+            }
             ThreadHandler.removeThreadContext(currentThread().getId());
         } catch (NoThreadContextException | ThreadAlreadyDisabledException e) {
             logger.warn(e.toString());
@@ -159,6 +213,46 @@ public class Intrinsics {
         } catch (Throwable t) {
             // The ErrorHandler has to be here as this method transfers control to the target domain
             new ErrorHandler().handleException("Error terminating symbolic tracking", t);
+        }
+    }
+
+    private static void printTrace(long threadId) throws NoThreadContextException, NotImplementedException, JsonProcessingException {
+        System.out.println(ThreadHandler.getSymbolicVisitor(threadId).getSymbolicTraceHandler().getTraceDTO(ThreadHandler.getStatsStorage(threadId), threadId));
+    }
+
+    /**
+     * Sends (HTTP) or prints (PRINT) the traces of target threads whose symbolic execution is still
+     * active when the JVM shuts down, i.e. the target ended the run abruptly (System.exit) before
+     * reaching the instrumented end of its entry method. Executions that terminated normally have
+     * removed their context already, so this is a no-op for them. Runs in the shutdown hook
+     * registered by the Transformer, hence on another thread than the target; errors are logged
+     * only. Instrumented exit calls end the execution before the JVM shuts down ({@link
+     * de.uzl.its.swat.instrument.svcomp.SystemExit}); this hook is the fallback for the exits that
+     * bypass them (uninstrumented callers, reflection).
+     */
+    public static void terminateOnShutdown() {
+        for (long threadId : ThreadHandler.getActiveThreadContextIds()) {
+            try {
+                logger.warn(
+                        "JVM shutdown with an active symbolic execution (thread {}), e.g. System.exit in the target: sending its trace",
+                        threadId);
+                ThreadHandler.disableThreadContext(threadId);
+                if (ThreadHandler.isThreadContextAborted(threadId)) {
+                    continue;
+                }
+                switch (config.getSolverMode()) {
+                    case HTTP:
+                        ThreadHandler.sendData(threadId);
+                        break;
+                    case PRINT:
+                        printTrace(threadId);
+                        break;
+                    default:
+                        break;
+                }
+            } catch (Throwable t) {
+                logger.error("Error sending the trace of thread {} on shutdown", threadId, t);
+            }
         }
     }
 

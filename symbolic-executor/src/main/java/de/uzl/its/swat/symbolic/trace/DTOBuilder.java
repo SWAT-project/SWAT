@@ -8,18 +8,25 @@ import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.StackOverflowGuard;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.StatsStorage;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
+import de.uzl.its.swat.config.Config;
+import de.uzl.its.swat.solver.SolverMode;
 import de.uzl.its.swat.coverage.InstrCoverage;
 import de.uzl.its.swat.symbolic.trace.dto.*;
 import de.uzl.its.swat.thread.ThreadHandler;
+import de.uzl.its.swat.witness.Witness;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.Formula;
@@ -31,14 +38,17 @@ import org.sosy_lab.java_smt.api.FormulaManager;
  */
 class DTOBuilder {
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
+    private static final Pattern INPUT_NAME = Pattern.compile("[A-Z].*_[0-9].*");
     /**
      * Encodes the symbolic trace as a JSON string.
      *
      * @param symbolicTrace The symbolic trace to be encoded.
+     * @param statsStorage The per-execution statistics of the thread.
+     * @param threadId The thread whose solver context the formulas belong to.
      * @return The symbolic trace encoded as a JSON string.
      */
-    protected static String encodeTrace(SymbolicTrace symbolicTrace, StatsStorage statsStorage) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
-        return buildRequestBody(buildTraceDTO(symbolicTrace, statsStorage));
+    protected static String encodeTrace(SymbolicTrace symbolicTrace, StatsStorage statsStorage, long threadId) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
+        return buildRequestBody(buildTraceDTO(symbolicTrace, statsStorage, threadId));
     }
 
     /**
@@ -74,16 +84,17 @@ class DTOBuilder {
      * @return A {@link TraceDTO ConstraintDTO} that contains relevant all relevant information
      *     to transfer symbolic traces
      */
-    private static TraceDTO buildTraceDTO(SymbolicTrace symbolicTrace, StatsStorage statsStorage) throws NoThreadContextException, NotImplementedException {
+    private static TraceDTO buildTraceDTO(SymbolicTrace symbolicTrace, StatsStorage statsStorage, long threadId) throws NoThreadContextException, NotImplementedException {
         ArrayList<InputDTO> inputs = new ArrayList<>();
         ArrayList<UFDTO> ufs = new ArrayList<>();
         ArrayList<BranchDTO> trace = new ArrayList<>();
 
         FormulaManager fmgr =
-                ThreadHandler.getSolverContext(currentThread().getId()).getFormulaManager();
+                ThreadHandler.getSolverContext(threadId).getFormulaManager();
+        FormulaDumper dumper = FormulaDumper.of(fmgr);
         for (InputElement ie : symbolicTrace.getInputs()) {
-            String lowerBound = String.valueOf(fmgr.dumpFormula(ie.getValue().getBounds(false)));
-            String upperBound = String.valueOf(fmgr.dumpFormula(ie.getValue().getBounds(true)));
+            String lowerBound = dumper.dump(ie.getValue().getBounds(false));
+            String upperBound = dumper.dump(ie.getValue().getBounds(true));
             InputDTO iDto =
                     new InputDTO(
                             ie.getName(),
@@ -94,11 +105,13 @@ class DTOBuilder {
             inputs.add(iDto);
         }
         for (BooleanFormula uf : symbolicTrace.getConstraints()) {
-            String formula = String.valueOf(fmgr.dumpFormula(uf));
+            String formula = dumper.dump(uf);
             ufs.add(new UFDTO(formula));
         }
         logger.trace("Parsing constraints...");
-        boolean symbolicPrecisionLoss = false;
+        // A constraint over an approximate model function, or over a symbol no model declared,
+        // means the encoding may be imprecise (see SymbolRegistry).
+        boolean symbolicPrecisionLoss = symbolicTrace.isSymbolicPrecisionLoss();
         for (Element el : symbolicTrace.getTrace()) {
             if (el instanceof BranchElement be) {
                 String constraint;
@@ -108,33 +121,50 @@ class DTOBuilder {
                     if(fmgr.getBooleanFormulaManager().isTrue(f) || fmgr.getBooleanFormulaManager().isFalse(f)){
                         constraint = "(assert true)";
                     } else {
-                        constraint = String.valueOf(fmgr.dumpFormula(f));
-                        if (!fmgr.extractVariablesAndUFs(f).isEmpty() &&
-                            !fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(s -> s.matches("[A-Z].*_[0-9].*"))) {
-                            symbolicPrecisionLoss = true;
-                        }
+                        constraint = dumper.dump(f);
+                        symbolicPrecisionLoss |= hasImpreciseSymbol(fmgr, f);
                     }
-                    //fmgr.extractVariablesAndUFs(f).keySet().forEach(System.out::println);
-                    // assert fmgr.extractVariablesAndUFs(f).keySet().stream()
-                    //         .allMatch(s -> s.matches("[A-Z].*_[0-9].*")): "[SWAT] UF introduced in: " + constraint;
-
                 } catch (InterruptedException e) {
                     BooleanFormula f = be.getConstraint();
                     logger.warn("Error while simplifying formula", e);
-                    constraint = String.valueOf(fmgr.dumpFormula(f));
-                    //fmgr.extractVariablesAndUFs(f).keySet().forEach(System.out::println);
-                    // assert fmgr.extractVariablesAndUFs(f).keySet().stream()
-                    //         .allMatch(s -> s.matches("[A-Z].*_[0-9].*")): "[SWAT] UF introduced in: " + constraint;
-                    if (!fmgr.extractVariablesAndUFs(f).keySet().stream().allMatch(s -> s.matches("[A-Z].*_[0-9].*"))) {
-                        symbolicPrecisionLoss = true;
-                    }
+                    constraint = dumper.dump(f);
+                    symbolicPrecisionLoss |= hasImpreciseSymbol(fmgr, f);
                 }
-                trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched()));
+                trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), be.isConcreteOnly())
+                        .place(be.getKey(), be.getPops(), be.getPushes(), be.isCallback())
+                        .choice(be.isChoice())
+                        .loopStates(be.getLoopStates()));
             } else if (el instanceof SpecialElement se) {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
             }
         }
-        return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), symbolicTrace.isSymbolicContextLoss(), symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange());
+        // Symbolic tracking stopped at a stack overflow: the rest of the execution is not in the trace
+        boolean stackOverflow = StackOverflowGuard.isOverflowed();
+        if (stackOverflow) {
+            logger.warn("Stack overflow during the execution (in SWAT: {}, reached the target: {}): recording symbolic context loss",
+                    StackOverflowGuard.trackingLost, StackOverflowGuard.targetOverflowed);
+        }
+        return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), Witness.getNondetReturns(), Witness.getViolation(), symbolicTrace.isSymbolicContextLoss() || stackOverflow, symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange(),
+                symbolicTrace.isSymbolicPrecisionLoss(), StackOverflowGuard.targetOverflowed);
+    }
+
+    /** Symbols already reported as undeclared, so each is logged once. */
+    private static final Set<String> reportedUndeclared = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Whether the formula mentions a symbol whose constraints are not encoded precisely: an
+     * approximate model function, or a symbol that was never declared in the {@link SymbolRegistry}.
+     */
+    static boolean hasImpreciseSymbol(FormulaManager fmgr, Formula f) {
+        boolean imprecise = false;
+        for (String name : fmgr.extractVariablesAndUFs(f).keySet()) {
+            if (SymbolRegistry.isPrecise(name)) continue;
+            if (SymbolRegistry.kindOf(name) == null && reportedUndeclared.add(name)) {
+                logger.warn("Undeclared symbol {} in a branch constraint; treating it as imprecise", name);
+            }
+            imprecise = true;
+        }
+        return imprecise;
     }
 
     protected static String encodeCoverage(InstrCoverage instrCoverage) throws JsonProcessingException {
@@ -164,6 +194,10 @@ class DTOBuilder {
 
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
-        return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload);
+        // Indented only where a person reads it (PRINT); the explorer gets the compact form.
+        if (Config.instance().getSolverMode() == SolverMode.PRINT) {
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload);
+        }
+        return objectMapper.writeValueAsString(payload);
     }
 }

@@ -116,6 +116,9 @@ public class ValueFactory {
             return new StringValue(context, s, address);
         } else if (concrete instanceof IASString s) {
             return new StringValue(context, s.getString(), address);
+        } else if (concrete instanceof StringBuilder || concrete instanceof StringBuffer) {
+            return new StringBuilderValue(context, Util.formatClassName(concrete.getClass().getName()),
+                    new StringValue(context, concrete.toString(), -1), address);
         } else if (concrete instanceof Boolean b) {
             return new BooleanObjectValue(context, new BooleanValue(context, b), address);
         } else if (concrete instanceof Byte b) {
@@ -152,10 +155,15 @@ public class ValueFactory {
             Class<?> cls = concrete.getClass();
             String className = cls.getName();
             int fieldCount = classDepot.getFieldCountWithReflection(className, cls, false);
-            return new ObjectValue<>(
+            ObjectValue<Object, Object> object = new ObjectValue<>(
                     context,
                     Util.formatClassName(className),
                     createNumericalValue(ValueType.intValue, fieldCount).asIntValue(), address);
+            if (concrete instanceof Locale) {
+                // Immutable: the case mappings of String depend on its language.
+                object.concrete = concrete;
+            }
+            return object;
         }
         // throw new RuntimeException("ERROR: Unknown type in getObjectValue");
     }
@@ -163,7 +171,7 @@ public class ValueFactory {
     public static ObjectValue<?, ?> createObjectValue(int nFields, String className) throws NoThreadContextException, NotImplementedException, TypeException, ValueConversionException {
         SolverContext context = ThreadHandler.getSolverContext(Thread.currentThread().getId());
         List<String> classInterfacesAndParents =
-                ClassDepot.getRuntimeInstance().getInterfacesForClass(className);
+                new ArrayList<>(ClassDepot.getRuntimeInstance().getInterfacesForClass(className));
         classInterfacesAndParents.addAll(
                 ClassDepot.getRuntimeInstance().getParentsForClass(className));
 
@@ -194,8 +202,9 @@ public class ValueFactory {
                 || classInterfacesAndParents.contains(Util.formatClassName(Character.class.getName()))) {
             ret = new CharacterObjectValue(context, new CharValue(context, '\u0000'), ObjectValue.ADDRESS_UNKNOWN);
         } else if (className.equals(Util.formatClassName(StringBuilder.class.getName()))
-                || classInterfacesAndParents.contains(Util.formatClassName(StringBuilder.class.getName()))) {
-            ret = new StringBuilderValue(context, null, ObjectValue.ADDRESS_UNKNOWN); //Todo what is the correct initialization value here?
+                || className.equals(Util.formatClassName(StringBuffer.class.getName()))) {
+            // The chars are set by the constructor, which is the next call.
+            ret = new StringBuilderValue(context, className, null, ObjectValue.ADDRESS_UNKNOWN);
         } else if (className.equals(Util.formatClassName(String.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(String.class.getName()))) {
             ret = new StringValue(context, "", ObjectValue.ADDRESS_UNKNOWN); // This is not correct but _normally_ the next call should be the <init> function

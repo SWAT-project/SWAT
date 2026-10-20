@@ -8,6 +8,9 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.commons.JSRInlinerAdapter;
 import org.objectweb.asm.commons.TryCatchBlockSorter;
+import org.objectweb.asm.tree.MethodNode;
+import de.uzl.its.swat.config.Config;
+import de.uzl.its.swat.symbolic.loopstate.LoopHeads;
 
 /**
  * A visitor to visit a Java class. The methods of this class must be called in the following order:
@@ -17,6 +20,8 @@ import org.objectweb.asm.commons.TryCatchBlockSorter;
  */
 public class InstructionClassAdapter extends ClassVisitor {
     private final String cname;
+    /** Whether the class has a static initializer (see visitEnd). */
+    private boolean hasClinit = false;
     /**
      * Constructor that calls the super from the default ClassVisitor
      *
@@ -61,6 +66,9 @@ public class InstructionClassAdapter extends ClassVisitor {
     public MethodVisitor visitMethod(
             int access, String name, String desc, String signature, String[] exceptions) {
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
+        if (name.equals("<clinit>")) {
+            hasClinit = true;
+        }
         if (cname.equals("de/uzl/its/swat/instrument/svcomp/Verifier") && !name.equals("assume")) {
             return mv;
         }
@@ -82,9 +90,39 @@ public class InstructionClassAdapter extends ClassVisitor {
                             name,
                             desc,
                             cname);
+            if (Config.instance().isLoopStateMatching() && !cname.startsWith("de/uzl/its/swat/")) {
+                // Collect the method to find its loop heads, then hand it on
+                return new MethodNode(Opcodes.ASM9, access, name, desc, signature, exceptions) {
+                    @Override
+                    public void visitEnd() {
+                        super.visitEnd();
+                        ima.setLoopHeads(LoopHeads.analyze(cname, this));
+                        accept(ima);
+                    }
+                };
+            }
             return ima;
         }
 
         return null;
+    }
+
+    /**
+     * With loop-state matching, gives a class without a static initializer one that records its
+     * initialization (see ClassInits), as the existing ones do.
+     */
+    @Override
+    public void visitEnd() {
+        if (Config.instance().isLoopStateMatching() && !hasClinit && !cname.startsWith("de/uzl/its/swat/")) {
+            MethodVisitor mv = cv.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+            if (mv != null) {
+                mv.visitCode();
+                LoopHeads.emitClassInit(mv, cname);
+                mv.visitInsn(Opcodes.RETURN);
+                mv.visitMaxs(1, 0);
+                mv.visitEnd();
+            }
+        }
+        super.visitEnd();
     }
 }

@@ -6,7 +6,7 @@ from enum import Enum
 
 from data.Database import Database
 from driver.SymbolicStorage import SymbolicStorage
-# import logging
+from data.StaticAnalysisGraph.SAGraph import SAGraph
 
 import log
 logger = log.get_logger()
@@ -43,7 +43,7 @@ class INPUTTYPE(Enum):
 
 class State:
     def __init__(self):
-        self.verdict = Verdict.UNKNOWN
+        self.verdict = Verdict.SAFE
 
 
 class TargetDriver:
@@ -52,8 +52,10 @@ class TargetDriver:
         self.sym_storage = SymbolicStorage()
         self.endpoint_id = None
         self.args = args
+        self.branch_log = None  # Log file for branches
+        self.sa_graph = SAGraph() # static analysis graph
 
-    def build_command(self, mem: int = 32) -> [str]:
+    def build_command(self, mem: int = 32) -> list[str]:
         """Builds the Java command list with given parameters."""
         cmd = [
             'java',
@@ -63,13 +65,23 @@ class TargetDriver:
             f"-Djava.library.path={self.args.z3dir}",
             '-Dsolver.mode=HTTP',
             '-Dagent.logging.level=DEBUG',
-            '-ea',
-            '-jar' if ".jar" in self.args.target else '',
-            self.args.target
+            '-ea',  # Enable assertions
         ]
+
+        # Add target
+        if self.args.target.endswith('.jar'):
+            cmd.extend(['-jar', self.args.target])
+        else:
+            # Assume target is a class name with classpath provided
+            if self.args.classpath:
+                cmd.extend(['-cp', ':'.join(self.args.classpath), self.args.target])
+            else:
+                logger.error('[EXPLORE] No classpath provided for class target')
+                cmd.extend([self.args.target])
+
         return cmd
 
-    def add_values(self, cmd: [str]) -> [str]:
+    def add_values(self, cmd: list[str]) -> list[str]:
         cmd = cmd.copy()
         """Adds the symbolic values to the Java command."""
         for var in self.sym_storage.vars.values():
@@ -78,21 +90,28 @@ class TargetDriver:
             else:
                 val = var.newValue
                 var.value = var.newValue
+            if val is None:
+                # Neither a solver value nor a concrete fallback is known; skipping the
+                # assignment lets the executor keep the target's original value instead
+                # of crashing on parsing a literal 'None'.
+                logger.error(f'[EXPLORER] No value known for {var.dType.value}_{var.idx}, skipping assignment')
+                continue
             if self.args.mode == "args":
                 cmd.append(f'{val}')
             else:
                 cmd.insert(1, f'-Dswat.assignment.{var.dType.value}_{var.idx}={val}')
         return cmd
 
-    def run_command_with_timeout(self, cmd: [str], timeout: int = 60) -> (ExecutionStatus, dict):
+    def run_command_with_timeout(self, cmd: list[str], timeout: int = 60) -> tuple[ExecutionStatus, dict]:
         """Executes the given command and returns the status and message."""
 
+        logger.debug(f'[EXPLORER] Running command: {" ".join(cmd)}')
         logger.info(f'[EXPLORER] Java Output Begin')
         try:
             stdout = []
             with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
                                   universal_newlines=True) as proc:
-                for line in proc.stdout:
+                for line in proc.stdout or []:
                     logger.info(f'[EXECUTOR] --> {line.strip()}')
                     stdout.append(line)
             logger.info(f'[EXPLORER] Java Output End')
@@ -117,7 +136,7 @@ class TargetDriver:
         db = Database.instance()
         db.add_violation(endpoint_id=self.endpoint_id, sym_vars=list(self.sym_storage.vars.values()))
 
-    def determine_next_step(self, status: ExecutionStatus, stdout: [str]) -> Action:
+    def determine_next_step(self, status: ExecutionStatus, stdout: list[str]) -> Action:
         """Determines the next step based on the execution status."""
         match status:
             case ExecutionStatus.SUCCESS:
@@ -125,53 +144,66 @@ class TargetDriver:
             case ExecutionStatus.VIOLATION:
                 self.record_violation()
                 logger.info(f'[EXPLORER] Violation recorded!')
-                return Action.SYMBOLICNEXT
+                self.state.verdict = Verdict.VIOLATION
+                # return Action.SYMBOLICNEXT
+                return Action.REPORTVERDICT
             case ExecutionStatus.TIMEOUT:
                 logger.info(f'[EXPLORER] Timeout!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
             case ExecutionStatus.CRASH:
                 logger.info(f'[EXPLORER] Crash!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
             case ExecutionStatus.ERROR:
                 logger.info(f'[EXPLORER] Error!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
 
         raise Exception(f'Unknown execution status: {status}')
 
     def retrieve_solution(self):
-        possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id)
+        possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance)
+        # possible_branches = possible_branches[::-1]  # Reverse the order to prioritize deeper branches
         logger.info(f'[EXPLORER] Found {len(possible_branches)} possible branches')
-        symbolic_vars = None
         sat = None
         branch_found = False
         for branch in possible_branches:
             if not StrategyService.is_symbolic_branch(branch):
                 continue
             branch_found = True
+
             sat, sol = StrategyService.solve_branch(branch)
 
+            if self.branch_log is None:
+                self.branch_log = open("branches.log", "w")
+            branch_id = branch.id & 0xFFFFFFFFFFFFFFFF
+            print(f"Branch 0x{branch_id:016x} ({branch_id}) {sat}", flush=True, file=self.branch_log)
+
             if sat == SATResult.SAT:
-                symbolic_vars = branch.inputs
-                break
+                sol_viz = {key: val.get('plain_value', val.get('encoded_value'))
+                          for key, val in sol.items()}
+                logger.info(f'[EXPLORER] Solved branch {branch.id}')
+                logger.info(f'[EXPLORER] Solution: {sol_viz}')
+
+                # Register the solution in symbolic storage
+                self.sym_storage.register_inputs(branch.inputs)
+                self.sym_storage.store_solution(sol)
+                return Action.SYMBOLICNEXT
 
         if not branch_found or sat == SATResult.UNSAT:
-            self.state.verdict = Verdict.SAFE
+            # self.state.verdict = Verdict.SAFE
             logger.info(f'[EXPLORER] No symbolic branch found or UNSAT')
             return Action.REPORTVERDICT
 
         if sat == SATResult.UNKNOWN:
             logger.info(f'[EXPLORER] SAT result is UNKNOWN')
-            self.state.verdict = Verdict.UNKNOWN
+            if self.state.verdict != Verdict.VIOLATION:
+                self.state.verdict = Verdict.UNKNOWN
             return Action.REPORTVERDICT
-
-        sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
-        logger.info(f'[EXPLORER] Found new solution: {sol_viz}')
-        self.sym_storage.register_vars([var.name.split('_')[0] for var in symbolic_vars])
-        self.sym_storage.store_solution(sol)
-        return Action.SYMBOLICNEXT
 
     def run(self):
         verdict = self.exec()
@@ -179,8 +211,8 @@ class TargetDriver:
         self.kill_current_process()
 
     def exec(self):
-
         """Runs the symbolic execution on the given testcase."""
+        
         logger.info(f'[EXPLORER] Beginning testcase analysis')
         # Register symbolic variables (in case of cmd line argument mode)
         if self.args.mode == "args":
@@ -188,8 +220,31 @@ class TargetDriver:
             self.sym_storage.init_values()
         # Build the command to execute target
         base_cmd = self.build_command()
+        
+        # Get static pre-analysis information if provided
+        try:
+            if self.args.sa_file:
+                self.sa_graph.load_json_graph(self.args.sa_file)
+            elif self.args.sa_path:
+                logger.info(f'[EXPLORER] Running static pre-analysis...')
+                subprocess.run(["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
+                                ':'.join(os.path.abspath(p) for p in self.args.classpath), self.args.logdir, self.args.target, "main", "inter"],
+                               check=True, timeout=5)
+                
+                self.sa_graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"))
+                logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
+        except Exception as e:
+            logger.error(f'[EXPLORER] Failed to get static pre-analysis information. Exception: {e}')
+        
+        
         # Main execution loop
-        while True:
+        iteration = 1
+        while iteration <= 150:
+            logger.info('')
+            logger.info('='*70)
+            logger.info(f'ITERATION {iteration}')
+            logger.info('='*70)
+
             # Add the symbolic values
             cmd = self.add_values(base_cmd)
             # Run the command
@@ -199,6 +254,13 @@ class TargetDriver:
             # Select the (only!) endpoint
             assert len(Database.instance().get_endpoints()) == 1
             self.endpoint_id = Database.instance().get_endpoints()[0]
+
+            # Visualize DB tree
+            # print("Plotting DB Tree...", flush=True)
+            # Database.instance().get_tree(self.endpoint_id).plot_tree(iteration)
+            
+            iteration += 1
+
             if next_step == Action.REPORTVERDICT:
                 break
 
@@ -209,12 +271,14 @@ class TargetDriver:
                 if next_step == Action.REPORTVERDICT:
                     break
 
-        logger.info(f'[EXPLORER] Symbolic execution terminated')
+        logger.info(f'[EXPLORER] Symbolic execution terminated after {iteration-1} iterations')
         violations = Database.instance().get_violations(self.endpoint_id)
         logger.info(f'[EXPLORER] Found {len(violations)} violations')
         if len(violations) > 0:
             for v in violations:
                 logger.info(f'[EXPLORER] Violation: {[vv.__str__() for vv in v]}')
+        
+        return self.state.verdict
 
     def kill_current_process(self):
         pid = os.getpid()
