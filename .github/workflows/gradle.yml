@@ -16,20 +16,20 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
+      uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
     - name: Prepare Solver Dependencies
       run: ./gradlew copyNativeLibs
     - name: Build
       run: ./gradlew --no-daemon build -x test
     - name: Upload JARs
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: release-jars-${{ github.sha }}
         path: symbolic-executor/lib/symbolic-executor.jar
@@ -56,9 +56,9 @@ jobs:
       prerelease: ${{ steps.meta.outputs.prerelease }}
       artifact-name: ${{ steps.meta.outputs.artifact-name }}
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
     - name: Download JARs
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: release-jars-${{ github.sha }}
         path: ${{ runner.temp }}/release-jars
@@ -122,7 +122,7 @@ jobs:
     - name: Check SV-COMP ZIP in competition base image
       run: scripts/check-svcomp-package.sh "build/distributions/${{ steps.meta.outputs.zip-name }}" "${SVCOMP_BASE_IMAGE}"
     - name: Upload SV-COMP ZIP artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ steps.meta.outputs.artifact-name }}
         path: build/distributions/${{ steps.meta.outputs.zip-name }}
@@ -141,7 +141,7 @@ jobs:
       contents: write
     steps:
     - name: Download SV-COMP ZIP artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: ${{ needs.package.outputs.artifact-name }}
         path: ${{ runner.temp }}/svcomp-package
@@ -189,21 +189,21 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
+      uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
     - name: Copy Z3
       run: ./gradlew copyNativeLibs
     - name: Test
       run: ./gradlew test
     - name: Upload test reports
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: test-reports
         path: symbolic-executor/build/reports/tests
@@ -215,18 +215,18 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
+      uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
     - name: Generate Javadoc
       run: ./gradlew :symbolic-executor:javadoc
     - name: Upload Javadoc
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: javadoc
         path: symbolic-executor/build/docs/javadoc
@@ -237,11 +237,11 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
     - name: Generate and submit dependency graph
-      uses: gradle/actions/dependency-submission@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4
+      uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
