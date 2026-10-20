@@ -50,7 +50,7 @@ public class RefEqualityTransformer implements ClassFileTransformer {
 
             ClassReader cr = new ClassReader(cbuf);
             ClassWriter cw = new SafeClassWriter(cr, loader, ClassWriter.COMPUTE_FRAMES);
-            ClassVisitor cv = new RefEqualityClassAdapter(new CheckClassAdapter(cw, true), cname);
+            ClassVisitor cv = new RefEqualityClassAdapter(Util.withCheckClassAdapter(cw, cname), cname);
             try {
                 cr.accept(cv, ClassReader.SKIP_FRAMES);
                 if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {

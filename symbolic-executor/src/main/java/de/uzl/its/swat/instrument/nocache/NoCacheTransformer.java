@@ -47,7 +47,7 @@ public class NoCacheTransformer implements ClassFileTransformer {
 
             ClassReader cr = new ClassReader(cbuf);
             ClassWriter cw = new SafeClassWriter(cr, loader, ClassWriter.COMPUTE_FRAMES);
-            ClassVisitor cv = new NoCacheClassAdapter(new CheckClassAdapter(cw, true), cname);
+            ClassVisitor cv = new NoCacheClassAdapter(Util.withCheckClassAdapter(cw, cname), cname);
             try {
                 cr.accept(cv, ClassReader.SKIP_FRAMES);
                 if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {

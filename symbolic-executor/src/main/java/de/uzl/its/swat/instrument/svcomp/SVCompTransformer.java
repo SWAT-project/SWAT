@@ -74,7 +74,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             ClassWriter cw =
                     new SafeClassWriter(
                             cr, loader, ClassWriter.COMPUTE_FRAMES);
-            ClassVisitor cv = new SVCompClassAdapter(new CheckClassAdapter(cw, true), cname);
+            ClassVisitor cv = new SVCompClassAdapter(Util.withCheckClassAdapter(cw, cname), cname);
             cr.accept(cv, ClassReader.SKIP_FRAMES);
 
             if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {
