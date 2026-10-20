@@ -13,6 +13,15 @@ from data.Database import Database
 
 logger = logging.getLogger("explorer.log")
 
+# Z3 5.1 made a new regex solver the default (smt.seq.regex_monadic). On the string queries of
+# String/Character method models (str.in_re over re.range with many char bounds) it is much
+# slower than the previous one (e.g. jbmc-regression/StaticCharMethods02/03: seconds before,
+# minutes or no answer after), so keep the previous solver. Older Z3 has no such parameter.
+try:
+    z3.set_param("smt.seq.regex_monadic", False)
+except z3.Z3Exception:
+    pass
+
 
 class SATResult(Enum):
     SAT = 'sat'
