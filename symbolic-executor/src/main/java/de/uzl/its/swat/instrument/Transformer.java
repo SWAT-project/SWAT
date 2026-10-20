@@ -144,7 +144,9 @@ public abstract class Transformer implements ClassFileTransformer {
             StackOverflowGuard.init();
             new ErrorHandler();
             ThreadHandler.init();
+            Profile.mark("premain.handlers");
             ThreadHandler.addThreadContext(-1, "SymbolicThread", -1); // Main thread used during initialization and instrumentation
+            Profile.mark("premain.context");
 
             if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
                 Verifier.retrieveInputs(); // ToDo only conditionally and at a petter place
@@ -153,6 +155,7 @@ public abstract class Transformer implements ClassFileTransformer {
             }
 
 
+            Profile.mark("premain.inputs");
             instrumentation = inst;
             logMissedClasses();
             if (config.getInstrumentationTransformer().equals(TransformerType.NONE)) {
