@@ -120,7 +120,69 @@ jar {
 
 }
 
+// Lists the third-party components bundled into the shadow JAR as META-INF/swat-third-party.json,
+// with license and project URL from each module's POM (or the nearest parent POM declaring them).
+// scripts/svcomp-package/third_party_licenses.py turns it into THIRD-PARTY-LICENSES.md.
+def thirdPartyDir = layout.buildDirectory.dir('generated/third-party')
+tasks.register('thirdPartyList') {
+    description = 'Writes META-INF/swat-third-party.json for the shadow JAR'
+    def classpath = configurations.runtimeClasspath
+    inputs.files(classpath)
+    outputs.dir(thirdPartyDir)
+    notCompatibleWithConfigurationCache('resolves POMs at execution time')
+    doLast {
+        def pomOf = { String g, String a, String v ->
+            def result = project.dependencies.createArtifactResolutionQuery()
+                    .forModule(g, a, v)
+                    .withArtifacts(MavenModule, MavenPomArtifact)
+                    .execute()
+            def artifacts = result.resolvedComponents*.getArtifacts(MavenPomArtifact).flatten()
+                    .findAll { it instanceof ResolvedArtifactResult }
+            if (artifacts.isEmpty()) throw new GradleException("No POM found for ${g}:${a}:${v}")
+            new groovy.xml.XmlSlurper().parse(artifacts[0].file)
+        }
+        def entries = []
+        classpath.incoming.artifacts.each { ResolvedArtifactResult art ->
+            def id = art.id.componentIdentifier
+            if (id instanceof ProjectComponentIdentifier) return // first-party code
+            def name = art.file.name
+            boolean hasClasses = name.endsWith('.jar') &&
+                    project.zipTree(art.file).matching { include '**/*.class' }.files.size() > 0
+            if (!hasClasses) return // e.g. guava's empty listenablefuture placeholder
+            if (id instanceof ModuleComponentIdentifier) {
+                def license = null, url = null
+                def pom = pomOf(id.group, id.module, id.version)
+                while (pom != null && (license == null || url == null)) {
+                    if (license == null && pom.licenses.license.size() > 0) {
+                        license = pom.licenses.license.collect {
+                            [name: it.name.text().trim(), url: it.url.text().trim()]
+                        }
+                    }
+                    if (url == null && pom.url.text().trim()) url = pom.url.text().trim()
+                    def parent = pom.parent
+                    pom = parent.size() > 0 ?
+                            pomOf(parent.groupId.text(), parent.artifactId.text(), parent.version.text()) : null
+                }
+                entries << [group: id.group, name: id.module, version: id.version,
+                            licenses: license ?: [], url: url ?: '']
+            } else if (name == 'com.microsoft.z3.jar') {
+                // File dependency from libs/java-library-path (copyNativeLibs in the root build)
+                entries << [group: 'com.microsoft', name: 'z3', version: '5.3.1',
+                            licenses: [[name: 'MIT', url: 'https://github.com/Z3Prover/z3/blob/master/LICENSE.txt']],
+                            url: 'https://github.com/Z3Prover/z3']
+            } else {
+                throw new GradleException("Unknown bundled file dependency ${name}: add it to thirdPartyList")
+            }
+        }
+        def out = thirdPartyDir.get().file('META-INF/swat-third-party.json').asFile
+        out.parentFile.mkdirs()
+        out.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(
+                entries.sort { "${it.group}:${it.name}" }))
+    }
+}
+
 shadowJar {
+    from(tasks.named('thirdPartyList'))
     mainClassName = ""
     relocate 'ch.qos.logback', 'shadow.swat.ch.qos.logback'
     relocate 'org.slf4j', 'shadow.swat.org.slf4j'
