@@ -75,7 +75,7 @@ public class ParameterTransformer implements ClassFileTransformer {
 
         if (classBeingRedefined != null || cname == null
                 || !Util.isSymbolicClass(cname)) {
-            return cbuf;
+            return null;
         }
         getPrintBox().addMsg("Class: " + cname);
         try {
@@ -104,6 +104,6 @@ public class ParameterTransformer implements ClassFileTransformer {
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.PARAMETER);
         if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
-        return cbuf;
+        return null;
     }
 }

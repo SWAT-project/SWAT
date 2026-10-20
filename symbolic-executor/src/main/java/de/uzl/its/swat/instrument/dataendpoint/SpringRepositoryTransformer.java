@@ -65,7 +65,7 @@ public class SpringRepositoryTransformer implements ClassFileTransformer {
             byte[] cbuf) {
 
         if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) {
-            return cbuf;
+            return null;
         }
 
         printBox.addMsg("Class: " + cname);
@@ -105,6 +105,6 @@ public class SpringRepositoryTransformer implements ClassFileTransformer {
             logger.debug(printBox.toString());
         }
 
-        return cbuf;
+        return null;
     }
 }

@@ -65,7 +65,7 @@ public class InstructionTransformer implements ClassFileTransformer {
             byte[] cbuf) {
         try {
 
-            if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return cbuf;
+            if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return null;
             getPrintBox().addMsg("Class: " + cname);
             getPrintBox().setContentPresent(true);
 
@@ -110,7 +110,7 @@ public class InstructionTransformer implements ClassFileTransformer {
 
         Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
         if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
-        return cbuf;
+        return null;
     }
 
     public void saveClass(byte[] transformedClass, String cname) throws Exception {

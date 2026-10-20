@@ -85,7 +85,7 @@ public class SpringExceptionTransformer implements ClassFileTransformer {
         // System.out.println("!!!!!!!!!!!!! " + cname);
 
         if (classBeingRedefined != null || cname == null || !shouldInstrument(cname)) { // TODO only temporary
-            return cbuf;
+            return null;
         }
         getPrintBox().addMsg("Class: " + cname);
 
@@ -101,7 +101,7 @@ public class SpringExceptionTransformer implements ClassFileTransformer {
             //     }
             // }
             // if (!restController) {
-            //     return cbuf;
+            //     return null;
             // }
             ClassWriter cw = new ClassWriter(cr, 0); // For some reason changing this to 0 from
             // ClassWriter.COMPUTE_FRAMES helps??
@@ -126,6 +126,6 @@ public class SpringExceptionTransformer implements ClassFileTransformer {
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SPRING_EXCEPTION);
         if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
 
-        return cbuf;
+        return null;
     }
 }

@@ -39,11 +39,11 @@ public class RefEqualityTransformer implements ClassFileTransformer {
                             ProtectionDomain d, byte[] cbuf) {
 
         try {
-            if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return cbuf;
+            if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return null;
 
             // Don't touch UtilInstrumented because it needs to contain reference equality checks
             if(Util.isInstrumentedUtilClass(cname)) {
-                return cbuf;
+                return null;
             }
             getPrintBox().addMsg("Class: " + cname);
             getPrintBox().setContentPresent(true);
@@ -81,6 +81,6 @@ public class RefEqualityTransformer implements ClassFileTransformer {
 
         Transformer.addInstrumentedClass(cname, InternalTransformerType.INSTRUCTION);
         if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
-        return cbuf;
+        return null;
     }
 }

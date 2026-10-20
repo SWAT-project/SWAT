@@ -36,7 +36,7 @@ public class ClassInfoTransformer implements ClassFileTransformer {
         try {
         // Only process new classes that should be instrumented.
         if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) {
-            return cbuf;
+            return null;
         }
 
         getPrintBox().addMsg("Processing class: " + cname);
@@ -71,7 +71,7 @@ public class ClassInfoTransformer implements ClassFileTransformer {
             new ErrorHandler().handleException(new InstrumentationException(cname, t));
         }
         // Return the original bytecode (this transformer does not modify the class).
-        return cbuf;
+        return null;
     }
 
     /**

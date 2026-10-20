@@ -66,7 +66,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             ProtectionDomain d,
             byte[] cbuf) {
 
-        if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return cbuf;
+        if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return null;
         getPrintBox().addMsg("Class: " + cname);
         getPrintBox().setContentPresent(true);
         try {
@@ -94,6 +94,6 @@ public class SVCompTransformer implements ClassFileTransformer {
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SV_COMP);
         if (getPrintBox().isContentPresent()) logger.info(getPrintBox().toString());
 
-        return cbuf;
+        return null;
     }
 }
