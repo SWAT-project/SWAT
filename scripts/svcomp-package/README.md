@@ -9,6 +9,7 @@ Important entry points:
 - `compile-target.sh`: helper used by `run_swat.py` to compile Java benchmark sources.
 - `smoketest.sh`: runs SWAT on the bundled smoke-test target.
 - `sv-comp.cfg`: SWAT configuration for SV-COMP mode.
+- `THIRD-PARTY-LICENSES.md`: bundled third-party components and their licenses.
 
 Requirements (SV-COMP 2027 environment, Ubuntu 26.04): `python3` (3.14) and
 Java 17 (`openjdk-17-jdk-headless`, which also provides `javac`).

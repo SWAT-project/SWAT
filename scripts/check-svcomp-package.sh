@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Checks an SV-COMP ZIP built by scripts/package-svcomp.sh against the archive
-# requirements (single top-level directory, LICENSE, README, smoketest.sh,
-# one-line --version) and runs it in a bare competition base image with only
+# requirements (single top-level directory, LICENSE, THIRD-PARTY-LICENSES.md,
+# README, smoketest.sh, one-line --version) and runs it in a bare competition base image with only
 # the fm-tools required_ubuntu_packages installed, like `fm-weck smoke-test`.
 #
 # Usage: scripts/check-svcomp-package.sh <zip> [base-image]
@@ -30,6 +30,7 @@ tool_dir="${check_dir}/${top_dirs}"
 for f in LICENSE README.md smoketest.sh run-swat.sh libs/python/PYTHON_VERSION; do
   [[ -f "${tool_dir}/${f}" ]] || fail "missing ${f} in archive root ${top_dirs}/"
 done
+[[ -s "${tool_dir}/THIRD-PARTY-LICENSES.md" ]] || fail "missing or empty THIRD-PARTY-LICENSES.md in archive root ${top_dirs}/"
 [[ -x "${tool_dir}/run-swat.sh" && -x "${tool_dir}/smoketest.sh" ]] || fail "run-swat.sh and smoketest.sh must be executable"
 
 echo "Running checks in ${BASE_IMAGE} (packages: ${UBUNTU_PACKAGES})"
