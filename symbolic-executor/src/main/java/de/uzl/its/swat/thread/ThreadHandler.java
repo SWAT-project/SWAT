@@ -1,5 +1,6 @@
 package de.uzl.its.swat.thread;
 
+import de.uzl.its.swat.common.Profile;
 import ch.qos.logback.classic.Logger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import de.uzl.its.swat.common.exceptions.*;
@@ -223,8 +224,10 @@ public final class ThreadHandler {
 
             }
             if(!config.isCoverageOnly()) {
-                ConstraintRequest.sendConstraints(
-                        symbolicStateHandler.getTraceDTO(context.getStatsStorage(), id), endpointID, traceID);
+                String traceDTO = symbolicStateHandler.getTraceDTO(context.getStatsStorage(), id);
+                Profile.mark("trace.serialized");
+                ConstraintRequest.sendConstraints(traceDTO, endpointID, traceID);
+                Profile.mark("trace.sent");
             }
 
         } else {
