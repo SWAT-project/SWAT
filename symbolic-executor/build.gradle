@@ -28,6 +28,11 @@ tasks.withType(JavaCompile).configureEach {
 
 
 repositories {
+    // JavaSMT built by scripts/build-javasmt.sh; its dependencies come from Maven Central
+    maven {
+        url = rootProject.file('libs/maven')
+        content { includeModule('org.sosy-lab', 'java-smt') }
+    }
     mavenCentral()
 }
 

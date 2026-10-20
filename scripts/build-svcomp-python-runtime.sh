@@ -59,6 +59,7 @@ $PIP_CMD install \
   --abi none \
   --platform manylinux_2_17_x86_64 \
   --platform manylinux2014_x86_64 \
+  --platform manylinux_2_27_x86_64 \
   --platform manylinux_2_28_x86_64 \
   --platform manylinux_2_34_x86_64 \
   --platform any \

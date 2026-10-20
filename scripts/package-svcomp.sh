@@ -15,7 +15,7 @@ set -euo pipefail
 # package that writes the witnesses). It is shipped as libs/python/ and used
 # with the competition machine's system python3 (no bundled venv).
 #
-# Z3 and JavaSMT are taken from the vendored files in this repository.
+# Z3 and JavaSMT are taken from the vendored files in this repository (libs/).
 #
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -31,9 +31,9 @@ DIST_DIR="${ROOT_DIR}/build/distributions"
 SUPPORT_DIR="${ROOT_DIR}/scripts/svcomp-package"
 ARTIFACT_DIR="$(cd "${SWAT_SVCOMP_ARTIFACT_DIR:-$ROOT_DIR}" && pwd)"
 PYTHON_DIR="${SWAT_SVCOMP_PYTHON_DIR:-}"
-LINUX_Z3_DIST="z3-4.15.4-x64-glibc-2.39"
+LINUX_Z3_DIST="z3-5.3.1-x64-glibc-2.39"
 LINUX_Z3_ZIP="${ROOT_DIR}/libs/${LINUX_Z3_DIST}.zip"
-JAVA_SMT_JAR="${ROOT_DIR}/libs/java-library-path/java-smt-latest.jar"
+JAVA_SMT_DIR="${ROOT_DIR}/libs/maven/org/sosy-lab/java-smt"
 
 if [[ -n "$PYTHON_DIR" ]]; then
   PYTHON_DIR="$(cd "$PYTHON_DIR" && pwd)"
@@ -89,14 +89,17 @@ copy_artifact_tree() {
   cp -a "$src" "$dest"
 }
 
+# Installs <path> of the vendored Linux Z3 distribution (relative to its root) into
+# libs/java-library-path/ under its file name.
 install_z3_runtime_file() {
-  local name="$1"
+  local path="$1"
   local mode="${2:-0644}"
-  local dest="${PACKAGE_DIR}/libs/java-library-path/${name}"
+  local dest="${PACKAGE_DIR}/libs/java-library-path/$(basename "$path")"
 
   [[ -f "$LINUX_Z3_ZIP" ]] || fail "missing vendored Linux Z3 distribution: ${LINUX_Z3_ZIP}"
   mkdir -p "$(dirname "$dest")"
-  unzip -p "$LINUX_Z3_ZIP" "${LINUX_Z3_DIST}/bin/${name}" > "$dest"
+  unzip -p "$LINUX_Z3_ZIP" "${LINUX_Z3_DIST}/${path}" > "$dest"
+  [[ -s "$dest" ]] || fail "missing ${path} in ${LINUX_Z3_ZIP}"
   chmod "$mode" "$dest"
 }
 
@@ -129,12 +132,15 @@ copy_artifact_file "$EXECUTOR_JAR" "$PACKAGE_DIR/symbolic-executor/lib/symbolic-
 
 copy_tree_files symbolic-explorer "$PACKAGE_DIR/symbolic-explorer"
 
-install_z3_runtime_file z3 0755
-install_z3_runtime_file libz3.so
-install_z3_runtime_file libz3java.so
-install_z3_runtime_file com.microsoft.z3.jar
-install_z3_runtime_file libz3.a
-[[ -f "$JAVA_SMT_JAR" ]] || fail "missing JavaSMT JAR: ${JAVA_SMT_JAR}"
+install_z3_runtime_file bin/z3 0755
+install_z3_runtime_file bin/libz3.so
+install_z3_runtime_file bin/libz3java.so
+install_z3_runtime_file java/com.microsoft.z3.jar
+# The JavaSMT build the executor uses (scripts/build-javasmt.sh); it is shaded into the executor JAR
+# and shipped next to it for reference.
+JAVA_SMT_JARS=("$JAVA_SMT_DIR"/*/java-smt-*.jar)
+[[ ${#JAVA_SMT_JARS[@]} -eq 1 && -f "${JAVA_SMT_JARS[0]}" ]] || fail "expected one JavaSMT JAR in ${JAVA_SMT_DIR}, found: ${JAVA_SMT_JARS[*]}"
+JAVA_SMT_JAR="${JAVA_SMT_JARS[0]}"
 copy_artifact_file "$JAVA_SMT_JAR" "$PACKAGE_DIR/libs/java-library-path/java-smt-latest.jar"
 
 copy_tree_files "$SUPPORT_DIR/smoketest" "$PACKAGE_DIR/smoketest"
