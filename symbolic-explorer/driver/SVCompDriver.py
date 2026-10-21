@@ -27,6 +27,7 @@ from svcomp.SymbolicStorage import SymbolicStorage, DataTypes
 from svcomp.TestcaseStats import write_testcase_stats
 from svcomp.WitnessWriter import write_violation_witness
 from svcomp.ResourceBudget import ResourceBudget, DEFAULT_MEMORY_LIMIT_MB, DEFAULT_CPU_LIMIT_S, descendants
+from svcomp.ExecutorCDS import ExecutorCDS
 from timing.TimingManager import TimingManager
 
 
@@ -115,6 +116,9 @@ def escape_java_string(s: str) -> str:
 
 
 class SVCompDriver:
+    # Disabled default for drivers built without __init__ (tests)
+    cds = ExecutorCDS(enabled=False)
+
     def __init__(self, args):
         self.args = args
         self.state = State()
@@ -146,6 +150,11 @@ class SVCompDriver:
         self.verdict_reported = False
         self.stopped_by: str | None = None  # why the budget stopped the last executor run, if it did
         Tree.LOOP_STATE_MATCHING = not getattr(args, 'no_loop_state_matching', False)
+        # AppCDS archive of the classes every executor JVM loads (see svcomp/ExecutorCDS.py)
+        # In the log directory, so that a run that is killed leaves no files behind elsewhere
+        logdir = getattr(args, 'logdir', None)
+        self.cds = ExecutorCDS(enabled=not getattr(args, 'no_executor_cds', False),
+                               base_dir=logdir if logdir and os.path.isdir(logdir) else None)
     
     @contextmanager
     def pushd(self, dirname):
@@ -162,16 +171,22 @@ class SVCompDriver:
         executor's share of the memory budget."""
 
         classpath_separator = ";" if platform.system() == "Windows" else ":"
+        class_path = list(cp) + [Z3_DIR]
+        cds_options = []
+        if classpath_separator == ':':
+            class_path = self.cds.class_path(class_path, javaagent)
+            cds_options = self.cds.jvm_options(self.round_idx)
         cmd = [
             java_path,
             f'-Xmx{heap_mib or self.budget.heap_mib}m',
             *EXECUTOR_JVM_OPTIONS,
+            *cds_options,
             f'-Dconfig.path={config}',
             f'-Dexplorer.port={port}',
             f'-javaagent:{javaagent}',
             f"-Djava.library.path={Z3_DIR}",
             '-cp',
-            f'{classpath_separator.join(cp)}{classpath_separator}{Z3_DIR}',
+            classpath_separator.join(class_path),
             '-ea',
             'Main'
         ]
@@ -366,6 +381,9 @@ class SVCompDriver:
 
             # Only a trace of this round may provide the witness data of the violating execution
             Database.instance().clear_witness_data(ENDPOINT_ID)
+
+            # Dump the executor's class data sharing archive once the run proves long enough
+            self.cds.prepare_round(self.round_idx, java_path, lambda: [f'-Xmx{self.budget.heap_mib}m', *EXECUTOR_JVM_OPTIONS])
 
             # Build the java command to run DSE
             command: List[str] = self.build_command(javaagent=agentpath, config=configpath, Z3_DIR=z3path, port=port, cp=cp, java_path=java_path)
@@ -682,6 +700,7 @@ class SVCompDriver:
             Database.instance().record_execution_error(ENDPOINT_ID, 'explorer_crash', f'{type(e).__name__}: {e}')
             verdict = Verdict.UNKNOWN
         finally:
+            self.cds.cleanup()
             # Exploration can finish before the pre-analysis: stop it, so no extractor outlives us.
             self.sa.cancel()
             if self.sa.duration is not None:

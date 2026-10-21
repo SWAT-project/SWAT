@@ -41,13 +41,13 @@ public class NoCacheTransformer implements ClassFileTransformer {
                             ProtectionDomain d, byte[] cbuf) {
 
         try {
-        if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return cbuf;
+        if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return null;
         getPrintBox().addMsg("Class: " + cname);
         getPrintBox().setContentPresent(true);
 
             ClassReader cr = new ClassReader(cbuf);
             ClassWriter cw = new SafeClassWriter(cr, loader, ClassWriter.COMPUTE_FRAMES);
-            ClassVisitor cv = new NoCacheClassAdapter(new CheckClassAdapter(cw, true), cname);
+            ClassVisitor cv = new NoCacheClassAdapter(Util.withCheckClassAdapter(cw, cname), cname);
             try {
                 cr.accept(cv, ClassReader.SKIP_FRAMES);
                 if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {
@@ -81,7 +81,7 @@ public class NoCacheTransformer implements ClassFileTransformer {
 
         Transformer.addInstrumentedClass(cname, InternalTransformerType.REF_EQUALITY);
         if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
-        return cbuf;
+        return null;
     }
 }
 

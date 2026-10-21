@@ -66,7 +66,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             ProtectionDomain d,
             byte[] cbuf) {
 
-        if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return cbuf;
+        if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) return null;
         getPrintBox().addMsg("Class: " + cname);
         getPrintBox().setContentPresent(true);
         try {
@@ -74,7 +74,7 @@ public class SVCompTransformer implements ClassFileTransformer {
             ClassWriter cw =
                     new SafeClassWriter(
                             cr, loader, ClassWriter.COMPUTE_FRAMES);
-            ClassVisitor cv = new SVCompClassAdapter(new CheckClassAdapter(cw, true), cname);
+            ClassVisitor cv = new SVCompClassAdapter(Util.withCheckClassAdapter(cw, cname), cname);
             cr.accept(cv, ClassReader.SKIP_FRAMES);
 
             if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {
@@ -94,6 +94,6 @@ public class SVCompTransformer implements ClassFileTransformer {
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SV_COMP);
         if (getPrintBox().isContentPresent()) logger.info(getPrintBox().toString());
 
-        return cbuf;
+        return null;
     }
 }
