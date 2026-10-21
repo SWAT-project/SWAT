@@ -13,6 +13,7 @@ import de.uzl.its.swat.common.exceptions.ThreadAlreadyDisabledException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.solver.LocalSolver;
+import de.uzl.its.swat.common.Profile;
 import de.uzl.its.swat.symbolic.dispatcher.SymbolicInstructionDispatcher;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
@@ -113,6 +114,7 @@ public class Intrinsics {
     }
 
     private static void startExecution(String endpoint) throws Exception {
+        Profile.mark("exec.start");
         int endpointID;
         if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
             endpointID = 0;
@@ -120,6 +122,7 @@ public class Intrinsics {
             endpointID = endpoint.hashCode();
         }
         ThreadHandler.addThreadContext(currentThread().getId(), endpoint, endpointID);
+        Profile.mark("exec.context");
 
         logger.info(
                 new PrintBox(
@@ -150,6 +153,7 @@ public class Intrinsics {
      * added during instrumentation.
      */
     public static void terminate() {
+        Profile.mark("terminate.start");
         try {
             if (ThreadHandler.leaveNestedEndpoint(currentThread().getId())) {
                 logger.info("Leaving nested endpoint (Thread: {})", currentThread().getId());
@@ -204,6 +208,7 @@ public class Intrinsics {
                 ThreadHandler.removeSolverContext(currentThread().getId());
             }
             ThreadHandler.removeThreadContext(currentThread().getId());
+            Profile.mark("terminate.end");
         } catch (NoThreadContextException | ThreadAlreadyDisabledException e) {
             logger.warn(e.toString());
             logger.warn(

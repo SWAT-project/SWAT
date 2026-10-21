@@ -87,7 +87,7 @@ public class SpringEndpointTransformer implements ClassFileTransformer {
             byte[] cbuf) {
 
         if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) {
-            return cbuf;
+            return null;
         }
         getPrintBox().addMsg("Class: " + cname);
 
@@ -108,7 +108,7 @@ public class SpringEndpointTransformer implements ClassFileTransformer {
                 }
             }
             if (!restController) {
-                return cbuf;
+                return null;
             }
 
 
@@ -163,7 +163,7 @@ public class SpringEndpointTransformer implements ClassFileTransformer {
         Transformer.addInstrumentedClass(cname, InternalTransformerType.SPRING_ENDPOINT);
         if (getPrintBox().isContentPresent()) logger.debug(getPrintBox().toString());
 
-        return cbuf;
+        return null;
     }
 
     public static void addInstrumentedEndpoint(String name) {

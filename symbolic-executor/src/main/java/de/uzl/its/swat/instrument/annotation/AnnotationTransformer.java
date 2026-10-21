@@ -68,7 +68,7 @@ public class AnnotationTransformer implements ClassFileTransformer {
         try {
         // Skip redefinitions and classes that should not be instrumented.
         if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) {
-            return cbuf;
+            return null;
         }
         getPrintBox().addMsg("Class: " + cname);
             ClassReader cr = new ClassReader(cbuf);
@@ -93,6 +93,6 @@ public class AnnotationTransformer implements ClassFileTransformer {
             new ErrorHandler().handleException("Error while instrumenting class: " + cname, e);
         }
         // Return the original bytecode (this transformer does not modify the class).
-        return cbuf;
+        return null;
     }
 }
