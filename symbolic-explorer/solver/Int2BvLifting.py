@@ -15,24 +15,39 @@ the Integers instead, where Z3 is fast.
   ubv_to_int, + - * and ite of those),
 - bvadd/bvsub/bvneg/bvmul/ite of liftable terms, as long as the range still fits,
 - zero/sign extension of liftable terms.
-A char code (str.to_code, in [-1, max char]) does not fit 16 bits; it is lifted as
-ite(t < 0, t + 2^16, ite(t < 2^16, t, t mod 2^16)), which is exact.
+A char code (str.to_code) of an SMT string lies in [-1, 0x10FFFF], which does not fit 16 bits: it is
+lifted as ite(t < 0, t + 2^16, ite(t < 2^16, t, t mod 2^16)), which is exact, but the mod makes
+Z3 slow. The executor encodes a Java string with one SMT char per UTF-16 char, so in a query in
+which every char comes from a Java char, a char code lies in [-1, 0xFFFF] and is lifted as
+ite(t < 0, t + 2^16, t) (Int2BvLifting(java_chars=True), for queries that `java_chars_only` accepts).
 
 `rewrite(e)` replaces every comparison (=, distinct, bvs*, bvu*) between two liftable bit-vectors that
 involves int_to_bv by the Integer comparison of their lifts, and ubv_to_int of a liftable term by its
 lift. Everything else is left as it is.
 
 The ranges of str.len and str.indexof assume that every string has at most 2^31 - 1 chars, as Java
-strings do. `rewrite` records the strings whose length it relied on; `lift_query` adds the bound for
-each of them to the query, so that the rewritten query is equivalent to the original one under that
-bound in every model (and its models are models of the original query).
+strings do, and with java_chars=True the range of str.to_code assumes that every char is a Java
+char. `rewrite` records the strings whose length and the char codes whose range it relied on;
+`lift_query` adds the bound for each of them to the query, so that the rewritten query is
+equivalent to the original one under these bounds in every model (and its models are models of
+the original query).
+
+The char code bounds hold in every model in which each string variable is a Java string, as long as
+every char that the query itself puts into a string is a Java char: a string constant, and the
+argument of str.from_code (taking the range of str.to_code as [-1, 0xFFFF], which holds for the
+strings below it by induction over the term). `java_chars_only` checks that; other queries are
+lifted with the full range (java_chars=False).
 """
+
+import ctypes
 
 import z3
 
 JAVA_MAX_STRING_LENGTH = 2 ** 31 - 1
 # Upper bound of str.to_code; Z3's char sort is never larger than Unicode.
-MAX_CHAR_CODE = 0x10FFFF
+MAX_CODE_POINT = 0x10FFFF
+# Upper bound of a Java char (one UTF-16 code unit).
+MAX_JAVA_CHAR = 0xFFFF
 
 _SIGNED_CMP = {z3.Z3_OP_SLEQ, z3.Z3_OP_SLT, z3.Z3_OP_SGEQ, z3.Z3_OP_SGT}
 _UNSIGNED_CMP = {z3.Z3_OP_ULEQ, z3.Z3_OP_ULT, z3.Z3_OP_UGEQ, z3.Z3_OP_UGT}
@@ -59,15 +74,20 @@ class Int2BvLifting:
     expression that serves as a key is kept alive in self._alive.
     """
 
-    def __init__(self):
+    def __init__(self, java_chars=False):
+        """java_chars: take the range of str.to_code as [-1, 0xFFFF] and record each char code
+        that relies on it, for queries that java_chars_only accepts."""
+        self.java_chars = java_chars
         self._alive = []
         self._rewritten = {}
         self._lifted = {}
         self._ranges = {}
         self._mentions_int2bv = {}
-        # Strings whose length bound a rewrite relied on, by expression id
+        # Strings whose length bound (and char codes whose Java char bound) a rewrite relied on,
+        # by expression id
         self._bounded = {}
         self._needs = {}
+        self._java_chars_only = {}
 
     # Integer ranges
 
@@ -100,7 +120,9 @@ class Int2BvLifting:
         if k == z3.Z3_OP_SEQ_INDEX:
             return (-1, JAVA_MAX_STRING_LENGTH), (args[0],)
         if k == z3.Z3_OP_STR_TO_CODE:
-            return (-1, MAX_CHAR_CODE), ()
+            if self.java_chars:
+                return (-1, MAX_JAVA_CHAR), (t,)
+            return (-1, MAX_CODE_POINT), ()
         if k == z3.Z3_OP_BV2INT:
             return (0, 2 ** args[0].size() - 1), ()
         if k == z3.Z3_OP_SBV2INT:
@@ -128,6 +150,40 @@ class Int2BvLifting:
                 return None, ()
             return (min(ra[0], rb[0]), max(ra[1], rb[1])), self._needs_of(args[1], args[2])
         return None, ()
+
+    def java_chars_only(self, e):
+        """Whether every char that e puts into a string is a Java char (at most 0xFFFF): no string
+        constant has a larger char, every str.from_code argument is at most 0xFFFF (by its range,
+        with str.to_code in [-1, 0xFFFF]) and there is no Char-sorted term. Needs java_chars=True."""
+        assert self.java_chars
+        memo = self._java_chars_only
+        # Iterative post-order: string concatenations can be deeper than Python's recursion limit.
+        stack = [(e, False)]
+        while stack:
+            t, expanded = stack.pop()
+            key = t.get_id()
+            if key in memo:
+                continue
+            children = t.children() if z3.is_app(t) else []
+            if not expanded and children:
+                stack.append((t, True))
+                stack.extend((c, False) for c in children if c.get_id() not in memo)
+                continue
+            self._alive.append(t)
+            if t.sort().kind() == z3.Z3_CHAR_SORT:
+                ok = False
+            elif z3.is_string_value(t):
+                ok = all(c <= MAX_JAVA_CHAR for c in _string_codes(t))
+            elif z3.is_app(t):
+                ok = all(memo[c.get_id()] for c in children)
+                if ok and _kind(t) == z3.Z3_OP_STR_FROM_CODE:
+                    r = self.int_range(t.arg(0))
+                    ok = r is not None and r[1] <= MAX_JAVA_CHAR
+            else:
+                # quantifiers and bound variables: the executor builds none
+                ok = False
+            memo[key] = ok
+        return memo[e.get_id()]
 
     # Bit-vector lifting
 
@@ -288,6 +344,14 @@ def _wrap(t, r, lo_view, hi_view, m):
     return result
 
 
+def _string_codes(e):
+    """The char codes of a string constant."""
+    n = z3.Z3_get_string_length(e.ctx_ref(), e.as_ast())
+    buf = (ctypes.c_uint * n)()
+    z3.Z3_get_string_contents(e.ctx_ref(), e.as_ast(), n, buf)
+    return list(buf)
+
+
 def _int_const(e):
     """The value of an Integer numeral, also when written as (- n); else None."""
     if z3.is_int_value(e):
@@ -320,11 +384,13 @@ def _signed_bv2int_operand(e):
 
 
 def lift_query(lifting, exprs):
-    """The rewritten expressions, plus the length bounds of the strings they rely on."""
+    """The rewritten expressions, plus the length bounds of the strings and the Java char bounds of
+    the char codes they rely on."""
     out = [lifting.rewrite(x) for x in exprs]
-    strings = {}
+    needed = {}
     for x in exprs:
         for s in lifting.needs(x):
-            strings[s.get_id()] = s
-    out.extend(z3.Length(s) <= JAVA_MAX_STRING_LENGTH for s in strings.values())
+            needed[s.get_id()] = s
+    for s in needed.values():
+        out.append(z3.Length(s) <= JAVA_MAX_STRING_LENGTH if z3.is_string(s) else s <= MAX_JAVA_CHAR)
     return out
