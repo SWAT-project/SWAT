@@ -46,6 +46,8 @@ class Database:
             self.witness_data = {}
             self.optimize_solutions = False  # Whether to use Z3 Optimize() to minimize values
             self.log_smt_formulas = False  # Whether to log SMT formulas and models to disk for debugging
+            # Whether queries with floating-point terms go to Z3's qffp tactic first (see Z3Handler.check_query)
+            self.fp_tactic = True
 
     def reset(self):
 
