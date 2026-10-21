@@ -141,6 +141,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-p", "--port", help="The port to use for the server", default=8078)
     parser.add_argument("-i", "--ip_addr", help="IP address to Listen on", default="127.0.0.1")
     parser.add_argument("--optimize", action="store_true", help="Enable Z3 optimizer to minimize variable values (slower but may produce simpler solutions)", default=False)
+    parser.add_argument("--no-fp-tactic", action="store_true", help="Solve queries with floating-point terms with Z3's default solver only, instead of its qffp tactic (eager bit-blasting of floating point) first", default=False)
     parser.add_argument("--log-smt-formulas", action="store_true", help="Log SMT formulas and models to disk for debugging", default=False)
     parser.add_argument("--sa-file", help="Path to a file with static pre-analysis results for informing branch exploration (optional)")
     parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
@@ -200,6 +201,7 @@ if __name__ == '__main__':
     from data.Database import Database
     Database.instance().optimize_solutions = args.optimize
     Database.instance().log_smt_formulas = args.log_smt_formulas
+    Database.instance().fp_tactic = not args.no_fp_tactic
     Database.instance().args = args  # Store args for access to logdir
 
     s = SymbolicExplorer(args)
