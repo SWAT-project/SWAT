@@ -8,13 +8,11 @@ public class Example {
 
     public static void test(@Symbolic int val, @Symbolic int distract) {
         if (distract > 0) {
-            int sum = 0;
-            for (int i = 0; i < 10; i++) {
-                if (distract > i) {
-                    sum += i;
+            for (int i = 0; i < 100; i++) {
+                if (i < val) {
+                    System.out.println(i);
                 }
             }
-            System.out.println(sum);
         } else {
             assert val != 3141592;
         }
