@@ -45,7 +45,18 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         this.smgr = context.getFormulaManager().getStringFormulaManager();
         this.imgr = context.getFormulaManager().getIntegerFormulaManager();
         this.concrete = concrete;
-        this.formula = smgr.makeString(concrete);
+        this.formula = literal(smgr, imgr, concrete);
+    }
+
+    /**
+     * A Java string as the solver's string: one char per UTF-16 char. makeString would take a
+     * surrogate pair for one char (and rejects code points above the third plane).
+     */
+    public static StringFormula literal(StringFormulaManager smgr, IntegerFormulaManager imgr, String s) {
+        if (s.chars().noneMatch(c -> Character.isSurrogate((char) c))) return smgr.makeString(s);
+        StringFormula chars = smgr.makeString("");
+        for (char c : s.toCharArray()) chars = smgr.concat(chars, smgr.fromCodePoint(imgr.makeNumber(c)));
+        return chars;
     }
 
     public StringValue(SolverContext context, String concrete, StringFormula formula, int address) {
@@ -810,13 +821,15 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             throws NotImplementedException, ValueConversionException {
         if (args.length == 1) {
             return switch (desc[0].getDescriptor()) {
-                case "I" -> invokeIndexOf(args[0].asIntValue());
+                case "I" -> args[0] instanceof CharValue c
+                        ? invokeIndexOf(c, new IntValue(context, 0)) : invokeIndexOf(args[0].asIntValue());
                 case "Ljava/lang/String;" -> invokeIndexOf(args[0].asStringValue());
                 default -> PlaceHolder.instance;
             };
         } else if (args.length == 2) {
             return switch (desc[0].getDescriptor()) {
-                case "I" -> invokeIndexOf(args[0].asIntValue(), args[1].asIntValue());
+                case "I" -> args[0] instanceof CharValue c
+                        ? invokeIndexOf(c, args[1].asIntValue()) : invokeIndexOf(args[0].asIntValue(), args[1].asIntValue());
                 case "Ljava/lang/String;" -> invokeIndexOf(
                         args[0].asStringValue(), args[1].asIntValue());
                 default -> PlaceHolder.instance;
@@ -856,13 +869,25 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         return new IntValue(context, result, bmgr.ifThenElse(isCodePoint(ch), index.asIntegerFormula(), imgr.makeNumber(-1)));
     }
 
+    /**
+     * indexOf(int) of a char: a char is a code point in the BMP, so it is searched for as itself,
+     * without the surrogate pair and range cases of an int (whose div and mod slow Z3 down).
+     */
+    private Value<?, ?> invokeIndexOf(CharValue ch, IntValue fromIndex) {
+        int result = concrete.indexOf(ch.concrete, fromIndex.concrete);
+        if (!isSymbolic() && !ch.isSymbolic() && !fromIndex.isSymbolic()) return new IntValue(context, result);
+        IntValue index = (IntValue) invokeIndexOf(
+                new StringValue(context, "", smgr.fromCodePoint(ch.asIntegerFormula()), -1), fromIndex);
+        return new IntValue(context, result, index.formula);
+    }
+
     /** Whether ch is a code point, i.e. in [0, 0x10FFFF]: the chars indexOf(int)/lastIndexOf(int) can find. */
     private BooleanFormula isCodePoint(IntValue ch) {
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
         if (!ch.isSymbolic()) return bmgr.makeBoolean(Character.isValidCodePoint(ch.concrete));
-        NumeralFormula.IntegerFormula c = ch.asIntegerFormula();
-        return bmgr.and(imgr.greaterOrEquals(c, imgr.makeNumber(0)),
-                imgr.lessOrEquals(c, imgr.makeNumber(Character.MAX_CODE_POINT)));
+        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
+        // Unsigned: the negative ints are above every code point.
+        return bvmgr.lessOrEquals(ch.formula, bvmgr.makeBitvector(32, Character.MAX_CODE_POINT), false);
     }
 
     /**
@@ -878,13 +903,23 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             for (char c : Character.toChars(ch.concrete)) chars = smgr.concat(chars, smgr.fromCodePoint(imgr.makeNumber(c)));
             return chars;
         }
-        NumeralFormula.IntegerFormula c = ch.asIntegerFormula();
-        NumeralFormula.IntegerFormula offset = imgr.subtract(c, imgr.makeNumber(Character.MIN_SUPPLEMENTARY_CODE_POINT));
-        NumeralFormula.IntegerFormula high = imgr.add(imgr.makeNumber(Character.MIN_HIGH_SURROGATE), imgr.divide(offset, imgr.makeNumber(1024)));
-        NumeralFormula.IntegerFormula low = imgr.add(imgr.makeNumber(Character.MIN_LOW_SURROGATE), imgr.modulo(offset, imgr.makeNumber(1024)));
-        return bmgr.ifThenElse(imgr.lessThan(c, imgr.makeNumber(Character.MIN_SUPPLEMENTARY_CODE_POINT)),
-                smgr.fromCodePoint(c),
-                smgr.concat(smgr.fromCodePoint(high), smgr.fromCodePoint(low)));
+        // Over bit-vectors, as ch is one: Integer div and mod of a converted bit-vector slow Z3 down
+        // badly (a query on s.indexOf(ch) went from minutes to under a second).
+        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
+        BitvectorFormula c = ch.formula;
+        BitvectorFormula offset = bvmgr.subtract(c, bvmgr.makeBitvector(32, Character.MIN_SUPPLEMENTARY_CODE_POINT));
+        BitvectorFormula high = bvmgr.add(bvmgr.makeBitvector(32, Character.MIN_HIGH_SURROGATE),
+                bvmgr.shiftRight(offset, bvmgr.makeBitvector(32, 10), false));
+        BitvectorFormula low = bvmgr.add(bvmgr.makeBitvector(32, Character.MIN_LOW_SURROGATE),
+                bvmgr.and(offset, bvmgr.makeBitvector(32, 0x3FF)));
+        return bmgr.ifThenElse(bvmgr.lessThan(c, bvmgr.makeBitvector(32, Character.MIN_SUPPLEMENTARY_CODE_POINT), false),
+                smgr.fromCodePoint(charCode(bvmgr, c)),
+                smgr.concat(smgr.fromCodePoint(charCode(bvmgr, high)), smgr.fromCodePoint(charCode(bvmgr, low))));
+    }
+
+    /** The low 16 bits of b as an Integer: a char code, where b is known to fit them. */
+    private static NumeralFormula.IntegerFormula charCode(BitvectorFormulaManager bvmgr, BitvectorFormula b) {
+        return bvmgr.toIntegerFormula(bvmgr.extract(b, 15, 0), false);
     }
 
     /**
@@ -1250,7 +1285,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         StringValue replacement = (StringValue) args[1];
         String result = concrete.replaceFirst(((StringValue) args[0]).concrete, replacement.concrete);
         if (!isSymbolic()) return new StringValue(context, result, -1);
-        return new StringValue(context, result, smgr.replace(formula, smgr.makeString(target), replacement.formula), -1);
+        return new StringValue(context, result, smgr.replace(formula, literal(smgr, imgr, target), replacement.formula), -1);
     }
 
     /**
