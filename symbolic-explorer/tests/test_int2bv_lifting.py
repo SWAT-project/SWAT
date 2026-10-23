@@ -155,6 +155,23 @@ class LiftingTest(unittest.TestCase):
         out = lift_query(Int2BvLifting(), [e])
         self.assertFalse(any(mixes_sorts(x) for x in out))
 
+    def test_char_widened_to_int_is_the_char_code(self):
+        # (int) s.charAt(0) as the executor builds it: the signed bv2int of the zero-extended char,
+        # with ubv_to_int(concat ...) expanded as Z3 does it.
+        s = z3.String('s')
+        code = z3.StrToCode(z3.SubString(s, z3.IntVal(0), z3.IntVal(1)))
+        char = z3.Int2BV(code, 16)
+        x = z3.Concat(z3.BitVecVal(0, 16), char)
+        unsigned = 65536 * z3.BV2Int(z3.BitVecVal(0, 16)) + z3.BV2Int(char)
+        widened = z3.If(z3.BitVecVal(0, 32) <= x, unsigned, z3.IntVal(-2 ** 32) + unsigned)
+        e = z3.StrFromCode(widened) == z3.StringVal('a')
+        out = lift_query(Int2BvLifting(java_chars=True), [e])
+        self.assertFalse(any(mixes_sorts(x) for x in out))
+        solver = z3.Solver()
+        solver.add(*out)
+        self.assertEqual(solver.check(), z3.sat)
+        self.assertEqual(solver.model().eval(z3.SubString(s, 0, 1)).as_string(), 'a')
+
     def test_terms_without_int2bv_are_left_alone(self):
         y = z3.BitVec('y', 32)
         e = z3.And(y + 1 > z3.BitVecVal(3, 32), z3.BV2Int(y) < 7)

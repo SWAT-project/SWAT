@@ -124,6 +124,8 @@ class Int2BvLifting:
                 return (-1, MAX_JAVA_CHAR), (t,)
             return (-1, MAX_CODE_POINT), ()
         if k == z3.Z3_OP_BV2INT:
+            if z3.is_bv_value(args[0]):
+                return (args[0].as_long(), args[0].as_long()), ()
             return (0, 2 ** args[0].size() - 1), ()
         if k == z3.Z3_OP_SBV2INT:
             return _view_range(args[0].size(), True), ()
@@ -248,6 +250,9 @@ class Int2BvLifting:
             if not signed and k == z3.Z3_OP_SIGN_EXT:
                 return None
             return inner
+        if k == z3.Z3_OP_CONCAT and len(args) == 2 and z3.is_bv_value(args[0]) and args[0].as_long() == 0:
+            # A zero extension, as the executor widens a char to an int
+            return self.lift(args[1], False)
         return None
 
     def _lift_ranged(self, e, signed):
@@ -288,7 +293,7 @@ class Int2BvLifting:
         return result
 
     def needs(self, e):
-        """The strings whose length bound rewrite(e) relies on."""
+        """The strings whose length bound (and char codes whose Java char bound) rewrite(e) relies on."""
         self.rewrite(e)
         return self._bounded[e.get_id()]
 
@@ -361,16 +366,31 @@ def _int_const(e):
     return None
 
 
+def _normal(e):
+    """e simplified to a fixpoint (one simplify of ubv_to_int(concat ...) leaves 2^k * ubv_to_int(0))."""
+    for _ in range(4):
+        n = z3.simplify(e)
+        if n.eq(e):
+            break
+        e = n
+    return e
+
+
 def _signed_bv2int_operand(e):
     """x if e is the signed bv2int ite(bvsle(0, x), ubv_to_int(x), ubv_to_int(x) - 2^w) (in the
-    forms JavaSMT builds it), else None."""
+    forms JavaSMT builds it, or with ubv_to_int(x) expanded, as Z3 does for a concat), else None."""
     cond, then, other = e.children()
-    if _kind(cond) != z3.Z3_OP_SLEQ or _kind(then) != z3.Z3_OP_BV2INT:
+    if _kind(cond) != z3.Z3_OP_SLEQ:
         return None
     zero, x = cond.children()
-    if not (z3.is_bv_value(zero) and zero.as_long() == 0 and then.arg(0).eq(x)):
+    if not (z3.is_bv_value(zero) and zero.as_long() == 0):
         return None
     m = 2 ** x.size()
+    if _kind(then) != z3.Z3_OP_BV2INT or not then.arg(0).eq(x):
+        unsigned = z3.BV2Int(x)
+        if _normal(then).eq(_normal(unsigned)) and _normal(other).eq(_normal(unsigned - m)):
+            return x
+        return None
     if _kind(other) == z3.Z3_OP_ADD and other.num_args() == 2:
         a, b = other.children()
         for u, c in ((a, b), (b, a)):
@@ -392,5 +412,6 @@ def lift_query(lifting, exprs):
         for s in lifting.needs(x):
             needed[s.get_id()] = s
     for s in needed.values():
-        out.append(z3.Length(s) <= JAVA_MAX_STRING_LENGTH if z3.is_string(s) else s <= MAX_JAVA_CHAR)
+        # (A char code's index may itself be lifted.)
+        out.append(z3.Length(s) <= JAVA_MAX_STRING_LENGTH if z3.is_string(s) else lifting.rewrite(s) <= MAX_JAVA_CHAR)
     return out
