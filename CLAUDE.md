@@ -105,6 +105,11 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   10 s). A branch that runs out is retried later with 5x the limit, after the cheaper queries; a
   lone retry runs unlimited. Off by default. Each query's time and rlimit use are in the
   `[SOLVER]` debug lines of `explorer.log`.
+- **Int/string queries:** `solver/Int2BvLifting.py` rewrites the executor's bit-vector ints where
+  they meet string lengths, indices and char codes into Integer arithmetic before solving, and
+  solves bit-vector inputs used only as numbers over Integer stand-ins (`lift_inputs`, mapped back
+  to the inputs by `Z3Handler.map_lifted_inputs`). Mixed `int_to_bv`/`ubv_to_int` queries are
+  what makes Z3 slow on string code.
 - **Benchmarks:** `targets/sv-comp/sv-benchmarks/` is a sparse checkout of `java/` from
   SWAT-project/SV-Benchmarks, which mirrors upstream sv-benchmarks with precompiled `.class` files;
   `.last_sv_commit` names the upstream commit. Older suites are kept next to it as
