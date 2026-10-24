@@ -76,6 +76,25 @@ class StaticPreAnalysis:
         return self.targets is not None
 
     @property
+    def entry(self) -> tuple[str, str]:
+        """
+        The class and method the graph starts at: main of the target class, or the method that
+        --sa-entry names (`pkg.Class#method`, e.g. an HTTP endpoint, where the executor starts
+        tracing). The extractor finds the method by name, so it must not be overloaded.
+        """
+        sa_entry = getattr(self.args, "sa_entry", None)
+        if sa_entry:
+            entry_class, _, entry_method = sa_entry.partition("#")
+            return entry_class, entry_method
+        return self.args.target, "main"
+
+    @property
+    def graph_file(self) -> str:
+        """Where the extractor writes the graph: named after the entry's simple class name and method."""
+        entry_class, entry_method = self.entry
+        return os.path.join(self.args.logdir, f"{entry_class.rsplit('.', 1)[-1]}_{entry_method}_interprocedural.json")
+
+    @property
     def targets(self) -> str | None:
         """The graph's metadata field with the target points of the property, or None."""
         return SA_TARGETS.get(os.path.basename(getattr(self.args, "property", None) or ""))
@@ -138,8 +157,7 @@ class StaticPreAnalysis:
                 if not self._run_extractor():
                     return
                 logger.info(f'[EXPLORER] Loading static pre-analysis graph...')
-                graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"),
-                                      self.targets)
+                graph.load_json_graph(self.graph_file, self.targets)
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
             async_sites = graph.async_entry_sites()
             if self._cancelled.is_set():
@@ -179,7 +197,7 @@ class StaticPreAnalysis:
         """Runs the extractor; False if it was cancelled or timed out."""
         cmd = ["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
                ':'.join(os.path.abspath(p) for p in self.args.classpath if not self._is_swat_library(p)),
-               self.args.logdir, self.args.target, "main", "inter"] \
+               self.args.logdir, *self.entry, "inter"] \
               + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else [])
         with self._lock:
             if self._cancelled.is_set():
@@ -207,7 +225,7 @@ class StaticPreAnalysis:
             'enabled': self.enabled,
             'requested': self.requested,
             'property_supported': self.property_supported,
-            'mode': 'parallel' if self.args.parallel_sa else 'sequential',
+            'mode': 'parallel' if getattr(self.args, "parallel_sa", False) else 'sequential',
             'callback_targets': not getattr(self.args, "sa_no_callback_targets", False),
             'status': self.status.value,
             'failed': self.status in (SAStatus.FAILED, SAStatus.TIMEOUT),

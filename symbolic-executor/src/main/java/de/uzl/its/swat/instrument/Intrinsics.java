@@ -25,6 +25,7 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.thread.ThreadHandler;
+import de.uzl.its.swat.witness.Witness;
 import lombok.Getter;
 import lombok.Setter;
 import org.objectweb.asm.Type;
@@ -206,6 +207,9 @@ public class Intrinsics {
             // which takes minutes after a long trace.
             if (!config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
                 ThreadHandler.removeSolverContext(currentThread().getId());
+                // A long-running target (an HTTP endpoint) executes many times in one JVM: the
+                // witness data (the violation) belongs to the trace just sent, not to the next.
+                Witness.reset();
             }
             ThreadHandler.removeThreadContext(currentThread().getId());
             Profile.mark("terminate.end");

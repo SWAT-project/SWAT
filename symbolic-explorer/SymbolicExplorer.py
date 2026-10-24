@@ -184,6 +184,9 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--http-port", help="HTTP target port", type=int, default=8080)
     parser.add_argument("-u", "--url-template", help="URL template with symbolic variables (e.g., /api/path/<int_0>?x=<float_1>)")
     parser.add_argument("--http-method", choices=['GET', 'POST', 'PUT', 'DELETE'], default='GET', help="HTTP method")
+    parser.add_argument("--sa-entry", help="The method the static pre-analysis graph starts at, as pkg.Class#method (http mode: the endpoint method; default: main of --target)")
+    parser.add_argument("--time-limit", type=float, default=0, help="Wall-clock limit in seconds for the exploration (http mode); 0: none")
+    parser.add_argument("--stop-on-violation", action="store_true", default=False, help="End the exploration at the first violation (http mode)")
 
 
 if __name__ == '__main__':
