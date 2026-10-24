@@ -49,6 +49,9 @@ class Database:
             # Whether queries with floating-point terms go to Z3's qffp tactic first (see Z3Handler.check_query)
             self.fp_tactic = True
             self.prefer_short_strings = False  # Whether to shrink the string inputs of a model (Z3Handler.shorten_strings)
+            # A long-running target (http mode): static initializers are taken out of the traces,
+            # see data.trace.StaticInitializers
+            self.strip_static_initializers = False
 
     def reset(self):
 
@@ -116,6 +119,9 @@ class Database:
                   approximate_model: bool = False,
                   stack_overflow: bool = False):
         endpoint_id = str(endpoint_id)
+        if self.strip_static_initializers:
+            from data.trace.StaticInitializers import strip_static_initializers
+            trace = strip_static_initializers(trace)
 
         with lock:
             self._add_endpoint(endpoint_id)

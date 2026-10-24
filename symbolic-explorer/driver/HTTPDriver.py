@@ -62,6 +62,8 @@ class HTTPDriver:
         if not getattr(args, 'property', None):
             args.property = 'valid-assert.prp'
         self.sa = StaticPreAnalysis(args)
+        # The target serves every request in one JVM, so a static initializer is in one trace only
+        Database.instance().strip_static_initializers = True
         self.sa_graph = SAGraph()
         self.stats = {'requests': 0, 'solver_calls': 0, 'violations': 0, 'first_violation_s': None,
                       'first_violation_request': None, 'server_errors': 0, 'exhausted': False, 'timed_out': False}
