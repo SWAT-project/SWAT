@@ -73,6 +73,10 @@ class Int2BvLifting:
         # Bounds (see bound_fact) a rewrite relied on, by expression id
         self._bounded = {}
         self._needs = {}
+        # Integer stand-ins for bit-vector inputs (see lift_inputs): their range, by expression id
+        self._input_ranges = {}
+        # The inputs under ubv_to_int in an assertion, by expression id
+        self._bv2int_inputs = {}
 
     # Integer ranges
 
@@ -98,6 +102,8 @@ class Int2BvLifting:
         v = _int_const(t)
         if v is not None:
             return (v, v), ()
+        if t.get_id() in self._input_ranges:
+            return self._input_ranges[t.get_id()], ()
         k = _kind(t)
         args = t.children() if z3.is_app(t) else []
         if k == z3.Z3_OP_SEQ_LENGTH:
@@ -362,3 +368,88 @@ def lift_query(lifting, exprs):
     # (A char code's index may itself be lifted.)
     out.extend(bound_fact(lifting.rewrite(t)) for t in terms.values())
     return out
+
+
+def _bv2int_inputs(lifting, exprs):
+    """The bit-vector variables that occur as ubv_to_int(v) in exprs (cached per expression: the
+    path constraints recur in every query below them)."""
+    found = {}
+    for e in exprs:
+        key = e.get_id()
+        if key not in lifting._bv2int_inputs:
+            lifting._alive.append(e)
+            lifting._bv2int_inputs[key] = _bv2int_inputs_of(e)
+        for v in lifting._bv2int_inputs[key]:
+            found[v.get_id()] = v
+    return list(found.values())
+
+
+def _bv2int_inputs_of(expr):
+    found, seen = {}, set()
+    stack = [expr]
+    while stack:
+        e = stack.pop()
+        if e.get_id() in seen:
+            continue
+        seen.add(e.get_id())
+        if _kind(e) == z3.Z3_OP_BV2INT:
+            v = e.arg(0)
+            if z3.is_const(v) and v.decl().kind() == z3.Z3_OP_UNINTERPRETED:
+                found[v.get_id()] = v
+        if z3.is_app(e):
+            stack.extend(e.children())
+    return list(found.values())
+
+
+def _remaining_int2bv_args(exprs):
+    """The ids of the terms t that still occur as int_to_bv(t) in exprs."""
+    found, seen = set(), set()
+    stack = list(exprs)
+    while stack:
+        e = stack.pop()
+        if e.get_id() in seen:
+            continue
+        seen.add(e.get_id())
+        if _kind(e) == z3.Z3_OP_INT2BV:
+            found.add(e.arg(0).get_id())
+        if z3.is_app(e):
+            stack.extend(e.children())
+    return found
+
+
+def input_stand_in(v):
+    """The Integer variable that stands in for the bit-vector input v (named so that it is not
+    taken for an input itself)."""
+    return z3.Int(f'int!{v.decl().name()}', v.ctx)
+
+
+def lift_inputs(lifting, exprs):
+    """(out, inputs): lift_query of exprs, with bit-vector inputs that are only used as numbers
+    solved over the Integers.
+
+    The executor's ints are bit-vectors, but a string index is an Integer: s.charAt(i) reads
+    (str.at s (ubv_to_int i)), with the signed conversion around it. Z3 decides such mixed queries
+    badly. Every input v that occurs under ubv_to_int is replaced by int_to_bv(x), for a new
+    Integer x in [0, 2^w) (exact: that is a bijection), and lifted as above. Where an occurrence
+    cannot be lifted (bit operations, extracts, ...), int_to_bv(x) would remain; such inputs are
+    put back as they were. `inputs` maps each lifted x to its v: a model gives v = x."""
+    candidates = _bv2int_inputs(lifting, exprs)
+    if not candidates and not any(lifting.mentions_int2bv(e) for e in exprs):
+        return list(exprs), {}
+    while candidates:
+        stand_ins = {}
+        for v in candidates:
+            x = input_stand_in(v)
+            lifting._alive.append(x)
+            lifting._input_ranges[x.get_id()] = (0, 2 ** v.size() - 1)
+            stand_ins[x.get_id()] = (x, v)
+        subs = [(v, z3.Int2BV(x, v.size())) for x, v in stand_ins.values()]
+        out = lift_query(lifting, [z3.substitute(e, *subs) for e in exprs])
+        remaining = _remaining_int2bv_args(out)
+        failed = [v for xid, (x, v) in stand_ins.items() if xid in remaining]
+        if not failed:
+            out.extend(z3.And(x >= 0, x <= 2 ** v.size() - 1) for x, v in stand_ins.values())
+            return out, {x.get_id(): (x, v) for x, v in stand_ins.values()}
+        failed_ids = {v.get_id() for v in failed}
+        candidates = [v for v in candidates if v.get_id() not in failed_ids]
+    return lift_query(lifting, exprs), {}

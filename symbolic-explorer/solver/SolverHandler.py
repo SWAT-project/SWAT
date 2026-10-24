@@ -392,21 +392,38 @@ class Z3Handler:
         return filepath
 
     @staticmethod
-    def lift_int2bv(cache, assertions: list) -> list:
-        """The assertions with comparisons over int_to_bv of string lengths, indices and char codes
-        made over the Integers (see Int2BvLifting), which Z3 decides much faster. Equivalent for
-        Java strings (at most 2^31 - 1 chars); on any error, the assertions as they are."""
-        from solver.Int2BvLifting import Int2BvLifting, lift_query
+    def lift_int2bv(cache, assertions: list) -> Tuple[list, dict]:
+        """(assertions, inputs): the assertions with comparisons over int_to_bv of string lengths,
+        indices and char codes made over the Integers, and bit-vector inputs used only as numbers
+        replaced by Integers (see Int2BvLifting.lift_inputs), which Z3 decides much faster.
+        Equivalent for Java strings (at most 2^31 - 1 chars); `inputs` maps each Integer stand-in
+        to its input (see map_lifted_inputs). On any error, the assertions as they are."""
+        from solver.Int2BvLifting import Int2BvLifting, lift_inputs
         try:
             lifting = getattr(cache, 'int2bv_lifting', None)
             if lifting is None:
                 lifting = cache.int2bv_lifting = Int2BvLifting()
-            if not any(lifting.mentions_int2bv(a) for a in assertions):
-                return assertions
-            return lift_query(lifting, assertions)
+            return lift_inputs(lifting, assertions)
         except Exception as e:
             logger.warning(f"[SOLVER] int_to_bv lifting failed, solving the query as it is: {e}")
-            return assertions
+            return assertions, {}
+
+    @staticmethod
+    def map_lifted_inputs(model, inputs: dict, encoded: Dict[str, Any]) -> None:
+        """Adds the values of the bit-vector inputs that the query had replaced by Integer
+        stand-ins (see lift_int2bv) to the encoded solution: v = x mod 2^w."""
+        for x, v in inputs.values():
+            value = model.eval(x, model_completion=True)
+            if not z3.is_int_value(value):
+                continue
+            bv = z3.BitVecVal(value.as_long() % 2 ** v.size(), v.size(), v.ctx)
+            name = str(v.decl().name())
+            prefix, _, idx = name.partition('_')
+            encoded[name] = {
+                'encoded_value': Z3Handler.encode_value(prefix, bv),
+                'plain_value': bv,
+                'index': idx,
+            }
 
     @staticmethod
     def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000, rlimit: int | None = None,
@@ -459,11 +476,12 @@ class Z3Handler:
         if len(node_exprs) > 0:
             # Negate all node constraint expressions, then add all path constraint expressions
             # (already parsed and cached)
-            assertions = [Not(expr) for expr in node_exprs] + all_exprs[len(node_exprs):]
-            solver.add(*Z3Handler.lift_int2bv(cache, assertions))
-
-            for expr in extra_exprs or []:
-                solver.add(expr)
+            # (The extra constraints restrict inputs too, so they are lifted with the rest.)
+            assertions = [Not(expr) for expr in node_exprs] + all_exprs[len(node_exprs):] + list(extra_exprs or [])
+            lifted, lifted_inputs = Z3Handler.lift_int2bv(cache, assertions)
+            solver.add(*lifted)
+        else:
+            lifted_inputs = {}
 
         # Building the solver is Z3 work (SMT-LIB parsing on cache misses, assertion
         # construction), so it counts towards the SMT solver stage rather than the
@@ -535,6 +553,7 @@ class Z3Handler:
                         logger.warning(f"[SOLVER] Model does not satisfy assertion: {constraint}")
 
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
+            Z3Handler.map_lifted_inputs(sol, lifted_inputs, encoded_sol)
             t_encode = time.perf_counter() - t_start
             TimingManager.instance().record_solver_time(t_encode, count=False)
             logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s model={t_encode:.3f}s rlimit={rlimit_used}")
