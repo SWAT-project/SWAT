@@ -41,9 +41,20 @@ and used in `strategy/DFS.py`.
 - **`<clinit>` and callbacks are masked:** static initializers are not in the graph, and neither is
   application code that library code calls back (the executor flags those branches `callback`,
   see `ShadowContext.inCallback`), so the walk is frozen inside them.
-- **Asserts are only the first target:** pruning aims at assertion points for now because they
-  are easy to test (SV-COMP's valid-assert). Later targets include shell calls, SQL statement
-  building and uncaught exceptions, so prefer changes that work for any kind of target point.
+- **Targets per property:** pruning aims at the graph's target points for the property being
+  checked (`StaticPreAnalysis.SA_TARGETS`): assertion points (`assertionPointIds`) under
+  valid-assert, and under no-runtime-exception the sites that may raise a RuntimeException plus the
+  `uncaught[T]` nodes of RuntimeException types (`runtimeExceptionPointIds`, from the property
+  pre-check's value analysis, cfg-extraction `RaiseSites`). `SANode.isAssert` marks a target point
+  of either kind. Later targets include shell calls and SQL statement building, so prefer changes
+  that work for any kind of target point.
+  - **No-runtime-exception is opt-in in the harness** (`svcomp test run --sa-no-runtime-exception`;
+    the explorer prunes whenever it gets `--sa-path`). On the 736 tasks (300 s, 2026-10-24) it is
+    sound (no false SAFE) and cuts queries on the solved SAFE tasks by a third, but solves nothing
+    new: the pre-check already proves 426 tasks, the extractor costs 3 to 6 s per task, and 10 tasks
+    hit SA desyncs (9 SAFE lost to UNKNOWN). The desyncs are not from the new targets: the
+    extractor's `RefEqualityEmitter` still models the old `UtilInstrumented.refEquals` (two
+    branches), and the graph does not follow `Verifier.nondetObject` into the factory it calls.
 - **Exceptions the graph does not model** (null dereferences, casts, library calls, Errors): the
   extractor gives them pseudo types (`?Exception`, `?Error`) whose escapes SAGraph treats as
   caught by any handler listed for them (`unknown_handlers`), so paths into such handlers stay
