@@ -48,6 +48,7 @@ class Database:
             self.log_smt_formulas = False  # Whether to log SMT formulas and models to disk for debugging
             # Whether queries with floating-point terms go to Z3's qffp tactic first (see Z3Handler.check_query)
             self.fp_tactic = True
+            self.prefer_short_strings = False  # Whether to shrink the string inputs of a model (Z3Handler.shorten_strings)
 
     def reset(self):
 

@@ -147,6 +147,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
     parser.add_argument("--sa-retry-without", action="store_true", help="On a SAFE verdict reached with static pre-analysis, disable it and explore again (guards against false SAFE from incomplete SA)", default=False)
     parser.add_argument("--sa-no-callback-targets", action="store_true", help="Do not count library calls as possible asserts when application code that library code may call back (overrides of library methods, lambdas) can reach an assert. Unsound: an assert reached only through such a callback can then give a false SAFE", default=False)
+    parser.add_argument("--prefer-short-strings", action="store_true", default=False, help="Shrink each string input of a solution to the shortest length the query allows")
     parser.add_argument("--search-order", choices=["dfs", "shallow", "coverage", "coverage-dfs", "generational"], default="dfs", help="Order in which the open branches are tried: dfs (pre-order of the execution tree), shallow (closest to the root first), coverage (sides no trace took yet first, then shallow), coverage-dfs (the same, then dfs), generational (coverage, then the branches of the traces that covered the most first)")
     parser.add_argument("--sa-rank-distance", action="store_true", help="Try branches closest to an assert (by static pre-analysis graph distance) first, instead of in plain DFS order", default=False)
     parser.add_argument("--no-executor-cds", action="store_true", help="Do not share the classes the executor JVMs load through a class data sharing (AppCDS) archive dumped during the run (sv-comp mode)", default=False)
@@ -204,6 +205,7 @@ if __name__ == '__main__':
     Database.instance().optimize_solutions = args.optimize
     Database.instance().log_smt_formulas = args.log_smt_formulas
     Database.instance().fp_tactic = not args.no_fp_tactic
+    Database.instance().prefer_short_strings = args.prefer_short_strings
     Database.instance().args = args  # Store args for access to logdir
 
     s = SymbolicExplorer(args)
