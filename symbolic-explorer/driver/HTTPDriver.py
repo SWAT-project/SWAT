@@ -5,6 +5,7 @@ import copy
 import signal
 import time
 import requests
+import z3
 from enum import Enum
 from typing import Dict, List, Tuple, Optional, Any
 
@@ -734,6 +735,11 @@ class HTTPDriver:
                 break
             sat, sol = StrategyService.solve_branch(branch)
             self.stats['solver_calls'] += 1
+            if sat == SATResult.SAT and self.has_surrogate(sol):
+                # Rarely needed, and UNSAT under the restriction says nothing about the branch, so
+                # it is not recorded: the branch would be re-solved in every round.
+                sat, sol = StrategyService.solve_branch(branch, extra_exprs=self.sendable_strings(branch))
+                self.stats['solver_calls'] += 1
             if sat == SATResult.SAT:
                 break
             if sat != SATResult.UNSAT:
@@ -760,9 +766,42 @@ class HTTPDriver:
 
     def run(self):
         """Main execution method."""
-        verdict = self.exec()
+        try:
+            verdict = self.exec()
+        except BaseException:
+            # Without this, the HTTP server would keep the explorer alive with no driver.
+            logger.exception('[HTTP DRIVER] The exploration failed')
+            verdict = Verdict.VIOLATION if self.state.verdict == Verdict.VIOLATION else Verdict.UNKNOWN
+            self.stats['crashed'] = True
+            self.write_stats(verdict)
         logger.info(f'[HTTP DRIVER] Verdict: {verdict}')
         self.kill_current_process()
+
+    @staticmethod
+    def sendable_strings(branch) -> list:
+        """
+        Restricts the string inputs to chars that can be sent: a request is UTF-8, so a lone UTF-16
+        surrogate (which Java strings, and so the solver's, may hold) cannot be part of it.
+        UNSAT under this restriction is not recorded as the branch being infeasible.
+        """
+        from solver.ConstraintCache import get_constraint_cache
+        ctx = get_constraint_cache().shared_context
+        no_surrogates = z3.Star(z3.Union(z3.Range('\u0000', '\ud7ff', ctx=ctx), z3.Range('\ue000', '\uffff', ctx=ctx)))
+        names = {i.name for i in branch.inputs if i.name.startswith(DataTypes.STRING.value + '_')
+                 or i.name.startswith('List_') and DataTypes.STRING.value in i.name}
+        return [z3.InRe(z3.String(name, ctx=ctx), no_surrogates) for name in sorted(names)]
+
+    @staticmethod
+    def has_surrogate(sol: dict) -> bool:
+        """Whether a string of the solution holds a UTF-16 surrogate, see sendable_strings."""
+        for val in sol.values():
+            v = val.get('plain_value')
+            if z3.is_expr(v) and z3.is_string_value(v):
+                text = v.as_string()
+                if re.search(r'\\u\{d[89a-f][0-9a-f]{2}\}', text, re.IGNORECASE) \
+                        or any('\ud800' <= c <= '\udfff' for c in text):
+                    return True
+        return False
 
     def out_of_time(self) -> bool:
         return bool(self.args.time_limit) and time.perf_counter() - self.start_time > self.args.time_limit
