@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -20,12 +21,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from driver import SVCompDriver as svcomp
 from svcomp import PropertyPreCheck as precheck
 
-RESULT = {"exception_free": True, "reason": "no throw", "assertion_free": False, "assertion_reason": "Main.main: assert"}
+RESULT = {"tool": "cfg-extraction", "version": "v1-0-gabc", "exception_free": True, "reason": "no throw",
+          "assertion_free": False, "assertion_reason": "Main.main: assert"}
 
 
 def args(**kw):
     a = dict(classpath=['/task/common', '/task/Main', '/libs/com.microsoft.z3.jar'], agent='/swat/executor.jar',
-             java_path='java', no_property_precheck=False)
+             java_path='java', no_property_precheck=False, precheck_jar='/sa/cfg-extractor-precheck.jar')
     a.update(kw)
     return SimpleNamespace(**a)
 
@@ -57,8 +59,28 @@ class PropertyPreCheckTest(unittest.TestCase):
     def test_command_leaves_out_z3(self):
         _, _, run = self.run_check('no-runtime-exception.prp')
         cmd = run.call_args[0][0]
-        self.assertEqual(cmd[:4], ['java', '-Xmx2g', '-cp', '/swat/executor.jar'])
+        self.assertEqual(cmd[:5], ['java', '-Xmx2g', '-cp', '/sa/cfg-extractor-precheck.jar', precheck.CHECK_CLASS])
         self.assertEqual(cmd[-2:], ['/task/common', '/task/Main'])
+
+    def test_reported_version_is_recorded(self):
+        check, _, _ = self.run_check('no-runtime-exception.prp')
+        self.assertEqual(check.stats()['version'], 'v1-0-gabc')
+
+    def test_without_the_option_the_jar_is_found_next_to_the_explorer(self):
+        with tempfile.TemporaryDirectory() as d:
+            jar = os.path.join(d, precheck.JAR_NAME)
+            open(jar, 'w').close()
+            with mock.patch.object(precheck, 'DEFAULT_JARS', (os.path.join(d, 'missing.jar'), jar)):
+                _, proven, run = self.run_check('no-runtime-exception.prp', precheck_jar=None)
+        self.assertTrue(proven)
+        self.assertEqual(run.call_args[0][0][3], jar)
+
+    def test_a_missing_jar_proves_nothing(self):
+        with mock.patch.object(precheck, 'DEFAULT_JARS', ('/nonexistent/' + precheck.JAR_NAME,)):
+            check, proven, run = self.run_check('no-runtime-exception.prp', precheck_jar=None)
+        self.assertFalse(proven)
+        self.assertEqual(check.status, 'missing_jar')
+        run.assert_not_called()
 
     def test_other_property_and_flag_disable_it(self):
         for check, proven, run in (self.run_check('no-deadlock.prp'),
