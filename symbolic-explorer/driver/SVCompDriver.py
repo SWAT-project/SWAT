@@ -621,7 +621,8 @@ class SVCompDriver:
 
     def retrieve_solution(self):
         self.adopt_sa_graph()
-        possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance)
+        possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance,
+                                                         search_order=getattr(self.args, 'search_order', 'dfs'))
         logger.info(f'[SYMBOLIC EXPLORATION] Found {len(possible_branches)} possible branches')
         logger.info(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
         candidates = [b for b in possible_branches if StrategyService.is_symbolic_branch(b)]
