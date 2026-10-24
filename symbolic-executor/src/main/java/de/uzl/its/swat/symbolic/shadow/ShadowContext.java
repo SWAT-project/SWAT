@@ -98,9 +98,26 @@ public class ShadowContext {
     /** How many frames on the stack are SWAT helper frames (see {@link #isSwatHelper}). */
     private int helperFrames = 0;
 
+    /** How deep code SWAT inlined into the target runs (see {@link #enterInlinedSwatCode}). */
+    private int inlinedSwatCode = 0;
+
     /** Whether a SWAT helper runs, e.g. a rewritten reference comparison: its branches are not in the graph. */
     public boolean inSwatHelper() {
-        return helperFrames > 0;
+        return helperFrames > 0 || inlinedSwatCode > 0;
+    }
+
+    /**
+     * Code SWAT inlines into the target's own method starts, e.g. the loop lifting the elements of
+     * a list parameter of an endpoint. It is not in the original bytecode, so not in the graph
+     * either: its branches are reported like a helper's (Intrinsics.enterInlinedSwatCode).
+     */
+    public void enterInlinedSwatCode() {
+        inlinedSwatCode++;
+    }
+
+    /** See {@link #enterInlinedSwatCode}. */
+    public void leaveInlinedSwatCode() {
+        if (inlinedSwatCode > 0) inlinedSwatCode--;
     }
 
     /**

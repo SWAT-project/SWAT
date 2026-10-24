@@ -287,8 +287,12 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         // Create instrumentation for the list itself
         InsnList listInstrumentation = Utils.liftListVariable(paramIdx, addAssignment, false);
 
-        // Apply the instrumentation
+        // Apply the instrumentation. Its loop over the elements has branches the original method
+        // (and so the SA graph) does not have: they are reported like those of SWAT's helpers.
+        String intrinsics = Type.getInternalName(Intrinsics.class);
+        visitMethodInsn(Opcodes.INVOKESTATIC, intrinsics, "enterInlinedSwatCode", "()V", false);
         listInstrumentation.accept(this);
+        visitMethodInsn(Opcodes.INVOKESTATIC, intrinsics, "leaveInlinedSwatCode", "()V", false);
     }
 
     private void instrumentEntryPointParameters(int access, String descriptor) {

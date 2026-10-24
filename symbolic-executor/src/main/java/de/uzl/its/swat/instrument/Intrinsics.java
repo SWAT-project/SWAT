@@ -153,6 +153,15 @@ public class Intrinsics {
      * Finishes symbolic tracking and initializes constrain transfer to coordinator. Method call
      * added during instrumentation.
      */
+    /**
+     * Marks the start of code SWAT inlined into a target method. Only the symbolic side acts on it
+     * (InternalInvocation, ShadowContext.enterInlinedSwatCode).
+     */
+    public static void enterInlinedSwatCode() {}
+
+    /** Marks the end of code SWAT inlined into a target method, see {@link #enterInlinedSwatCode}. */
+    public static void leaveInlinedSwatCode() {}
+
     public static void terminate() {
         Profile.mark("terminate.start");
         try {
