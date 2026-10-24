@@ -7,7 +7,7 @@ WORKDIR /usr/local/tomcat
 
 RUN mkdir -p /swat/libs/java-library-path
 COPY ./libs/z3/bin/libz3.so /swat/libs/java-library-path
-COPY ./libs/z3/bin/com.microsoft.z3.jar /swat/libs/java-library-path
+COPY ./libs/z3/java/com.microsoft.z3.jar /swat/libs/java-library-path
 COPY ./libs/z3/bin/libz3java.so /swat/libs/java-library-path
 COPY ./libs/z3/bin/z3 /swat/libs/java-library-path
 

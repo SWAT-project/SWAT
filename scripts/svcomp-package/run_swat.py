@@ -111,6 +111,7 @@ def generate_command(args, property_file: str, property_path: str, input_paths: 
     base_command = [ sys.executable, "-u", os.path.join(SCRIPT_DIR, 'symbolic-explorer', 'SymbolicExplorer.py'),
                      "-prp", property_file,
                      "--agent", agent_path,
+                     "--precheck-jar", os.path.join(SCRIPT_DIR, 'cfg-extraction', 'cfg-extractor-precheck.jar'),
                      "--config", config_path,
                      "-z3", library_path,
                      "--logdir", LOG_DIR,
