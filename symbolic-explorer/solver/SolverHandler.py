@@ -426,6 +426,38 @@ class Z3Handler:
             }
 
     @staticmethod
+    def shorten_strings(solver, model, t_check: float):
+        """A model of the solver's assertions in which each string input is as short as they allow
+        (shortest first for the first input, then the next, ...), or `model` where finding one
+        takes too long. Z3 fills the chars a query leaves open with whatever it likes, often more of
+        them than needed; in a parser, every extra char is one more step down an error path.
+        Each check gets a short timeout (twice the first check's time, at least 0.2 s)."""
+        solver.set("timeout", max(200, int(2000 * t_check)))
+        for d in model.decls():
+            if d.arity() > 0 or not z3.is_string(d()) or not re.match(r'[\w/]+_\d+$', d.name()):
+                continue
+            s = d()
+            lo, hi = 0, model.eval(z3.Length(s), model_completion=True).as_long()
+            while lo < hi:
+                mid = (lo + hi) // 2
+                solver.push()
+                solver.add(z3.Length(s) <= mid)
+                res = solver.check()
+                if res == z3.sat:
+                    model = solver.model()
+                    hi = model.eval(z3.Length(s), model_completion=True).as_long()
+                    solver.pop()
+                elif res == z3.unsat:
+                    solver.pop()
+                    lo = mid + 1
+                else:
+                    solver.pop()
+                    return model
+            # Keep this input at its length while shrinking the next ones.
+            solver.add(z3.Length(s) == hi)
+        return model
+
+    @staticmethod
     def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000, rlimit: int | None = None,
               extra_exprs: list | None = None) -> Tuple[SATResult, Dict[str, Any]]:
         """
@@ -526,6 +558,8 @@ class Z3Handler:
         if str(res) == SATResult.SAT.value:
             t_start = time.perf_counter()
             sol = solver.model()
+            if Database.instance().prefer_short_strings:
+                sol = Z3Handler.shorten_strings(solver, sol, t_check)
 
             # Log model to disk for debugging (if enabled)
             if Database.instance().log_smt_formulas:
