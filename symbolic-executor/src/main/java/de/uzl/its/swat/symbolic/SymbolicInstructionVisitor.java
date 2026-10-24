@@ -1509,10 +1509,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     stack.pushOperand(ValueFactory.createNULLValue());
                 } else if (inst.val != null) {
                     if (inst.val instanceof String s) {
-                        SWATAssert.check(inst.val.equals(peek.concrete),
-                                "Concrete value of the object does not match the value in the stack: {} | {}",
-                                inst.val, peek.concrete);
-                        if (peek.formula == null) {
+                        if (!inst.val.equals(peek.concrete)) {
+                            // The shadow String diverged from the JVM (e.g. after a Reader call SWAT
+                            // does not model filled a buffer). As for primitives, continue with the
+                            // concrete value and record the context loss.
+                            logger.warn("[GETVALUE_Object]: String on stack does not match expected value, causes context loss! Expected: {}, Actual: {}",
+                                    inst.val, peek.concrete);
+                            symbolicTraceHandler.recordSymbolicContextLoss();
+                            stack.popOperand();
+                            StringValue val = ValueFactory.createStringValue(s, inst.address);
+                            stack.pushOperand(val);
+                            stack.putToHeap(inst.address, val);
+                        } else if (peek.formula == null) {
                             // TODO This needs to be cleaned up!
                             stack.popOperand();
                             StringValue val = ValueFactory.createStringValue(s, inst.address);

@@ -7,9 +7,10 @@ Every run starts the instrumented application afresh (so no state carries over b
 the explorer in http mode against it, and stops the application again. The explorer's log and
 http_stats.json are kept in <out>/<label>_<sa|nosa>/.
 
-The SA graph is built from the application's own classes only (BOOT-INF/classes of the boot jar):
-with all of Spring's jars the extractor takes minutes. Library calls are leaves of the graph either
-way; what is lost is telling application methods that override library methods apart (callbacks).
+The SA graph is built from the application's own classes (BOOT-INF/classes of the boot jar) and the
+library jars the executor instruments (swat.cfg's includePackages): with all of Spring's jars the
+extractor takes minutes. Calls into the other libraries are leaves of the graph either way; what is
+lost is telling application methods that override their methods apart (callbacks).
 
 Example:
     ./http_sa_experiment.py --jar swat-artificial/target-1/build/libs/target-1-0.0.1-SNAPSHOT.jar \\
@@ -36,17 +37,37 @@ CFG_EXTRACTION = ROOT.parent / 'cfg-extraction'
 VENV_PYTHON = ROOT / 'targets' / 'sv-comp' / 'scripts' / '.venv' / 'bin' / 'python3'
 
 
-def app_classes(jar: Path, out: Path) -> Path:
-    """The application's classes from a Spring Boot jar (BOOT-INF/classes), extracted under out."""
+def instrumented_packages(cfg: Path) -> list[str]:
+    """The packages swat.cfg instruments (instrumentation.includePackages), as path prefixes."""
+    for line in cfg.read_text().splitlines():
+        if line.strip().startswith('instrumentation.includePackages='):
+            return [p.strip() for p in line.split('=', 1)[1].split(':') if p.strip()]
+    return []
+
+
+def sa_classpath(jar: Path, cfg: Path, out: Path) -> list[Path]:
+    """
+    The classpath for the SA graph: the application's classes from the Spring Boot jar
+    (BOOT-INF/classes), plus the library jars of BOOT-INF/lib with classes in a package the
+    executor instruments (e.g. gson for the gson endpoints), all extracted under out.
+    """
     dest = out / 'classes' / jar.stem
     marker = dest / '.extracted'
+    packages = instrumented_packages(cfg)
     if not marker.exists() or marker.stat().st_mtime < jar.stat().st_mtime:
         with zipfile.ZipFile(jar) as z:
             for name in z.namelist():
                 if name.startswith('BOOT-INF/classes/') and name.endswith('.class'):
                     z.extract(name, dest)
+                elif name.startswith('BOOT-INF/lib/') and name.endswith('.jar'):
+                    z.extract(name, dest)
         marker.touch()
-    return dest / 'BOOT-INF' / 'classes'
+    classpath = [dest / 'BOOT-INF' / 'classes']
+    for lib in sorted((dest / 'BOOT-INF' / 'lib').glob('*.jar')):
+        with zipfile.ZipFile(lib) as z:
+            if any(n.startswith(p) for n in z.namelist() for p in packages):
+                classpath.append(lib)
+    return classpath
 
 
 def start_app(args, logfile: Path) -> subprocess.Popen:
@@ -74,7 +95,7 @@ def stop(proc: subprocess.Popen):
     proc.wait()
 
 
-def run(args, with_sa: bool, classes: Path) -> dict:
+def run(args, with_sa: bool, classpath: list[Path]) -> dict:
     run_dir = Path(args.out) / f'{args.label}_{"sa" if with_sa else "nosa"}'
     run_dir.mkdir(parents=True, exist_ok=True)
     for f in ('http_stats.json', 'explorer.log'):
@@ -87,7 +108,7 @@ def run(args, with_sa: bool, classes: Path) -> dict:
         if args.stop_on_violation:
             cmd.append('--stop-on-violation')
         if with_sa:
-            cmd += ['--sa-path', str(CFG_EXTRACTION), '--sa-entry', args.sa_entry, '-cp', str(classes)]
+            cmd += ['--sa-path', str(CFG_EXTRACTION), '--sa-entry', args.sa_entry, '-cp', *map(str, classpath)]
         with open(run_dir / 'explorer.out', 'w') as out:
             # The explorer ends itself with SIGTERM once it has a verdict.
             subprocess.run(cmd, stdout=out, stderr=subprocess.STDOUT, cwd=ROOT / 'symbolic-explorer',
@@ -128,10 +149,11 @@ def main():
     p.add_argument('--python', default=str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable))
     args = p.parse_args()
 
-    classes = app_classes(Path(args.jar).resolve(), Path(args.out))
+    classpath = sa_classpath(Path(args.jar).resolve(), Path(args.cfg).resolve(), Path(args.out))
+    print(f'SA classpath: {" ".join(p.name for p in classpath)}', flush=True)
     results = {}
     for mode in args.modes.split(','):
-        results[mode] = run(args, mode == 'sa', classes)
+        results[mode] = run(args, mode == 'sa', classpath)
         print(summary(args.label, mode, results[mode]), flush=True)
     with open(Path(args.out) / f'{args.label}_summary.json', 'w') as f:
         json.dump(results, f, indent=2)

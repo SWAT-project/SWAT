@@ -577,6 +577,13 @@ class HTTPDriver:
         try:
             # Prepare headers
             headers = {}
+            if isinstance(json_body, str):
+                # A body template that is a JSON string ("<string_0>") is the raw request body,
+                # e.g. for a @RequestBody String parameter.
+                headers['Content-Type'] = 'text/plain; charset=utf-8'
+                response = requests.request(self.http_method, url, data=json_body.encode('utf-8'),
+                                            timeout=timeout, headers=headers)
+                return self._response_status(response)
             if json_body:
                 headers['Content-Type'] = 'application/json'
 
@@ -607,29 +614,8 @@ class HTTPDriver:
                 logger.error(f'[HTTP DRIVER] Unsupported HTTP method: {self.http_method}')
                 return ExecutionStatus.ERROR, {'error': f'Unsupported method: {self.http_method}'}
 
-            logger.info(f'[HTTP DRIVER] Response status: {response.status_code}')
+            return self._response_status(response)
 
-            response_data = {
-                'status_code': response.status_code,
-                'headers': dict(response.headers),
-                'url': response.url,
-                'text': response.text[:1000]  # Limit response text for logging
-            }
-            
-            # Only treat 5xx server errors as ERROR status
-            # 4xx client errors are valid responses from the target and should be treated as SUCCESS
-            if response.status_code >= 500:
-                logger.warning(f'[HTTP DRIVER] Server error: {response.status_code}')
-                return ExecutionStatus.ERROR, response_data
-            
-            # All other responses (1xx, 2xx, 3xx, 4xx) are considered successful communication with target
-            if response.status_code >= 400:
-                logger.info(f'[HTTP DRIVER] Client error response: {response.status_code} (valid target response)')
-            else:
-                logger.info(f'[HTTP DRIVER] Successful response: {response.status_code}')
-            
-            return ExecutionStatus.SUCCESS, response_data
-            
         except requests.exceptions.Timeout:
             logger.warning(f'[HTTP DRIVER] Request timeout after {timeout}s')
             return ExecutionStatus.TIMEOUT, {'error': 'timeout'}
@@ -639,6 +625,31 @@ class HTTPDriver:
         except Exception as e:
             logger.critical(f'[HTTP DRIVER] Exception during request: {e}')
             return ExecutionStatus.CRASH, {'error': str(e)}
+
+    def _response_status(self, response) -> Tuple[ExecutionStatus, Dict]:
+        """The execution status of a request from its response."""
+        logger.info(f'[HTTP DRIVER] Response status: {response.status_code}')
+
+        response_data = {
+            'status_code': response.status_code,
+            'headers': dict(response.headers),
+            'url': response.url,
+            'text': response.text[:1000]  # Limit response text for logging
+        }
+        
+        # Only treat 5xx server errors as ERROR status
+        # 4xx client errors are valid responses from the target and should be treated as SUCCESS
+        if response.status_code >= 500:
+            logger.warning(f'[HTTP DRIVER] Server error: {response.status_code}')
+            return ExecutionStatus.ERROR, response_data
+        
+        # All other responses (1xx, 2xx, 3xx, 4xx) are considered successful communication with target
+        if response.status_code >= 400:
+            logger.info(f'[HTTP DRIVER] Client error response: {response.status_code} (valid target response)')
+        else:
+            logger.info(f'[HTTP DRIVER] Successful response: {response.status_code}')
+        
+        return ExecutionStatus.SUCCESS, response_data
 
     def record_violation(self):
         """Records the violation in the database."""
