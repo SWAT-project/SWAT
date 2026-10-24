@@ -124,7 +124,8 @@ public class SymbolicTraceHandler {
         String key = BranchKeys.keyOf(iid);
         branch.setKey(key == null ? null : key + suffix);
         ShadowContext stack = ThreadHandler.getSymbolicVisitor(Thread.currentThread().getId()).getStack();
-        branch.setCallback(stack.inCallback());
+        // Neither callbacks nor SWAT's helpers are in the static pre-analysis graph: the walk holds its place.
+        branch.setCallback(stack.inCallback() || stack.inSwatHelper());
         ShadowContext.StackDelta delta = stack.takeStackDelta();
         branch.setPops(delta.popped());
         List<String> pushes = new ArrayList<>(delta.pushed().size());

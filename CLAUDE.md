@@ -51,10 +51,14 @@ and used in `strategy/DFS.py`.
   - **No-runtime-exception is opt-in in the harness** (`svcomp test run --sa-no-runtime-exception`;
     the explorer prunes whenever it gets `--sa-path`). On the 736 tasks (300 s, 2026-10-24) it is
     sound (no false SAFE) and cuts queries on the solved SAFE tasks by a third, but solves nothing
-    new: the pre-check already proves 426 tasks, the extractor costs 3 to 6 s per task, and 10 tasks
-    hit SA desyncs (9 SAFE lost to UNKNOWN). The desyncs are not from the new targets: the
-    extractor's `RefEqualityEmitter` still models the old `UtilInstrumented.refEquals` (two
-    branches), and the graph does not follow `Verifier.nondetObject` into the factory it calls.
+    new: the pre-check already proves 426 tasks and the extractor costs 3 to 6 s per task. (Its
+    first run also lost 9 SAFE to desyncs, fixed since: see SWAT helpers below.)
+- **SWAT helpers and `nondetObject` in the walk:** branches taken inside SWAT's own helpers (the
+  reference-comparison rewrite `UtilInstrumented.refEquals`) are flagged like callbacks
+  (`ShadowContext.inSwatHelper`), since how many there are depends on runtime types; the graph has
+  none of them. `Verifier.nondetObject(type, factory)`, which the executor runs as
+  `factory.createObject()`, is expanded and keyed as that call by the extractor. Before these, 73 of
+  978 valid-assert tasks had an SA desync.
 - **Exceptions the graph does not model** (null dereferences, casts, library calls, Errors): the
   extractor gives them pseudo types (`?Exception`, `?Error`) whose escapes SAGraph treats as
   caught by any handler listed for them (`unknown_handlers`), so paths into such handlers stay
