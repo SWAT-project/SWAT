@@ -1,5 +1,7 @@
 package de.uzl.its.targets.finance_engine.service;
 
+import de.uzl.its.targets.finance_engine.Bugs;
+
 import de.uzl.its.targets.finance_engine.util.CsvParser;
 import org.springframework.stereotype.Service;
 import de.uzl.its.targets.finance_engine.model.*;
@@ -50,6 +52,10 @@ public class AccountService {
                 if (fl.indexOf("date") >= 0 || fl.indexOf("amount") >= 0 || fl.indexOf("merchant") >= 0) { headerLike = true; break; }
             }
             if (headerLike) start = 1;
+            if (Bugs.HEADER_ONE_COLUMN) {
+                // Inserted bug: a header-like first row with a single column
+                assert !(headerLike && first.size() == 1) : "BUG import: one-column header";
+            }
         }
         Account a = accounts.get(accountId);
         if (a == null) return;
@@ -92,6 +98,10 @@ public class AccountService {
                 boolean found = false;
                 for (int j = 0; j < a.transactions.size(); j++) {
                     if (a.transactions.get(j).raw.equals(tx.raw)) { found = true; break; }
+                }
+                if (Bugs.MERGE_DUPLICATE) {
+                    // Inserted bug: a duplicate row with a merchant was meant to update the existing one
+                    assert !(found && tx.merchant != null && tx.merchant.length() > 3) : "BUG merge: duplicate dropped";
                 }
                 if (!found) a.transactions.add(tx);
             }
