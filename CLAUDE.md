@@ -25,6 +25,9 @@ and used in `strategy/DFS.py`.
   `[DFS] SA desync`, stops the walk on that path and records `sa_desync`, which turns SAFE into
   UNKNOWN. When the walk has no node, `SAGraph.resync` finds the next branch by key, with the call
   stack rebuilt from the trace. The extractor computes the same keys; change both together.
+- **Guards that cannot raise:** a phantom guard the extractor marks `cannotRaise` (the property
+  pre-check proves its implicit exception cannot happen, cfg-extraction `RaiseSites`) gets a dead
+  node as its exception side in `SAGraph.load_json_graph`, so that side is never interesting.
 - **Concrete branches count:** they are in the tree too. Filtering to symbolic branches happens
   after `dfs`.
 - **Walker giving up is safe:** when `walk_till_branch` returns `None`, the walker has no

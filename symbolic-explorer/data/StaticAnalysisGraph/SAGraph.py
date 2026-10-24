@@ -579,6 +579,10 @@ class SAGraph:
             if isinstance(metadata, str) and metadata.startswith("method: "):
                 self.nodes[id].method = metadata[len("method: "):]
             self.nodes[id].key = json_node.get("key")
+        # Phantom guards whose implicit exception the property pre-check proves cannot happen
+        # (the extractor's cannotRaise, see RaiseSites in cfg-extraction): their exception side
+        # leads nowhere, below.
+        cannot_raise = {n["id"] for n in self.json_graph["nodes"] if n.get("cannotRaise") is True}
         keys: dict[str, SANode] = {}
         duplicates = set()
         for n in self.nodes.values():
@@ -627,6 +631,16 @@ class SAGraph:
 
             elif etype == "EXCEPTIONAL_RETURN":
                 source.add_exceptional_return_child(target)
+
+            elif etype == "PHANTOM_FALSE_BRANCH" and source.id in cannot_raise:
+                # The exception side of a guard that cannot raise: a dead end, from which nothing is
+                # reachable. Should an execution take it after all, the walk ends there with no
+                # information, which prunes nothing.
+                dead = SANode(f"dead[{source.id}]")
+                self.nodes[dead.id] = dead
+                source.add_fallthrough_child(dead)
+                dead.prev.append(source)
+                continue
 
             elif etype in FALLTHROUGH_EDGES:
                 source.add_fallthrough_child(target)
