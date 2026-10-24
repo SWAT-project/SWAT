@@ -105,6 +105,14 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   10 s). A branch that runs out is retried later with 5x the limit, after the cheaper queries; a
   lone retry runs unlimited. Off by default. Each query's time and rlimit use are in the
   `[SOLVER]` debug lines of `explorer.log`.
+- **Property pre-check:** before round 0, `svcomp/PropertyPreCheck.py` runs cfg-extraction's
+  `cfg-extractor-precheck.jar` (`de.uzl.its.cfg.staticcheck.ExceptionFreedomCheck`, an ASM pass,
+  about 0.2 s). A proof of no-runtime-exception or valid-assert gives SAFE without exploring
+  (round 0 still runs as a cross-check). The jar comes from `--precheck-jar`, else from next to
+  `symbolic-explorer/` (the SV-COMP archive), else `../cfg-extraction/build/libs/`; without it the
+  check is skipped (`missing_jar`). CI builds it at the cfg-extraction tag in `cfg-extraction.ref`
+  and the archive ships it as `cfg-extraction/cfg-extractor-precheck.jar`. Its soundness gate is
+  `cfg-extraction/scripts/precheck_gate.py` (0 contradictions over sv-benchmarks).
 - **Search order:** `--search-order` picks which open branch is flipped next (`StrategyService`):
   `dfs` (default), `shallow`, `coverage` (sides no trace took yet, then the shallowest),
   `coverage-dfs`, `generational`. Plain DFS keeps unrolling input-parsing loops one char per round

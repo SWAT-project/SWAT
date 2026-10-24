@@ -10,6 +10,9 @@ set -euo pipefail
 #
 # - symbolic-executor/lib/symbolic-executor.jar, or symbolic-executor.jar at the
 #   root (actions/upload-artifact drops the directories of a single-file upload)
+# - cfg-extraction/build/libs/cfg-extractor-precheck.jar, or cfg-extractor-precheck.jar
+#   at the root: the property pre-check, built from cfg-extraction at the ref pinned in
+#   cfg-extraction.ref (./gradlew precheckJar)
 #
 # Set SWAT_SVCOMP_PYTHON_DIR to the Python dependency directory produced by
 # scripts/build-svcomp-python-runtime.sh (it includes the witnesscreator
@@ -130,6 +133,12 @@ EXECUTOR_JAR="$(first_artifact_file \
   symbolic-executor.jar \
   symbolic-executor/build/libs/symbolic-executor-all.jar)"
 copy_artifact_file "$EXECUTOR_JAR" "$PACKAGE_DIR/symbolic-executor/lib/symbolic-executor.jar"
+
+# The property pre-check from cfg-extraction (svcomp/PropertyPreCheck.py, --precheck-jar).
+PRECHECK_JAR="$(first_artifact_file \
+  cfg-extraction/build/libs/cfg-extractor-precheck.jar \
+  cfg-extractor-precheck.jar)"
+copy_artifact_file "$PRECHECK_JAR" "$PACKAGE_DIR/cfg-extraction/cfg-extractor-precheck.jar"
 
 copy_tree_files symbolic-explorer "$PACKAGE_DIR/symbolic-explorer"
 
