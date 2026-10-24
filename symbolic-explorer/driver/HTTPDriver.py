@@ -697,18 +697,21 @@ class HTTPDriver:
                 self.stats['server_errors'] += 1
                 if not new_trace:
                     logger.info(f'[HTTP DRIVER] Server error without a trace')
-                    self.state.verdict = Verdict.UNKNOWN
+                    if self.state.verdict != Verdict.VIOLATION:
+                        self.state.verdict = Verdict.UNKNOWN
                     return Action.REPORTVERDICT
                 logger.info(f'[HTTP DRIVER] Server error (exception {violation and violation.get("throwable")}), continuing')
             return Action.SYMBOLICNEXT
         match status:
             case ExecutionStatus.TIMEOUT:
                 logger.info(f'[HTTP DRIVER] Timeout!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
             case ExecutionStatus.CRASH:
                 logger.info(f'[HTTP DRIVER] Crash!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
 
         raise Exception(f'Unknown execution status: {status}')
@@ -725,6 +728,10 @@ class HTTPDriver:
         for branch in possible_branches:
             if not StrategyService.is_symbolic_branch(branch):
                 continue
+            if self.out_of_time():
+                gave_up = True
+                sol = None
+                break
             sat, sol = StrategyService.solve_branch(branch)
             self.stats['solver_calls'] += 1
             if sat == SATResult.SAT:
@@ -736,7 +743,8 @@ class HTTPDriver:
         if sol is None:
             if gave_up:
                 logger.info(f'[HTTP DRIVER] No solution found, but the solver gave up on some branch')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
             else:
                 logger.info(f'[HTTP DRIVER] No symbolic branch found or UNSAT')
                 if self.state.verdict != Verdict.VIOLATION:
@@ -755,6 +763,9 @@ class HTTPDriver:
         verdict = self.exec()
         logger.info(f'[HTTP DRIVER] Verdict: {verdict}')
         self.kill_current_process()
+
+    def out_of_time(self) -> bool:
+        return bool(self.args.time_limit) and time.perf_counter() - self.start_time > self.args.time_limit
 
     def load_sa_graph(self):
         """Runs the static pre-analysis for the endpoint (--sa-entry) and adopts its graph."""
@@ -802,7 +813,7 @@ class HTTPDriver:
 
         # Main execution loop
         while True:
-            if self.args.time_limit and time.perf_counter() - self.start_time > self.args.time_limit:
+            if self.out_of_time():
                 logger.info(f'[HTTP DRIVER] Time limit of {self.args.time_limit}s reached')
                 if self.state.verdict != Verdict.VIOLATION:
                     self.state.verdict = Verdict.UNKNOWN
@@ -834,6 +845,9 @@ class HTTPDriver:
 
                 next_step = self.retrieve_solution()
                 if next_step == Action.REPORTVERDICT:
+                    if self.out_of_time():
+                        logger.info(f'[HTTP DRIVER] Time limit of {self.args.time_limit}s reached')
+                        self.stats['timed_out'] = True
                     break
 
         logger.info(f'[HTTP DRIVER] Symbolic execution terminated')

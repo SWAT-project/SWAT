@@ -12,6 +12,7 @@ import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.annotation.AnnotationTransformer;
+import de.uzl.its.swat.instrument.assertion.AssertionThrowTransformer;
 import de.uzl.its.swat.instrument.classinfo.ClassInfoTransformer;
 import de.uzl.its.swat.instrument.classvariables.ClassVariablesTransformer;
 import de.uzl.its.swat.instrument.dataendpoint.SpringRepositoryTransformer;
@@ -192,6 +193,7 @@ public abstract class Transformer implements ClassFileTransformer {
                 }
                 case SPRING_ENDPOINT -> {
                     inst.addTransformer(new SpringEndpointTransformer());
+                    inst.addTransformer(new AssertionThrowTransformer());
                     // inst.addTransformer(new SpringExceptionTransformer());
                     if (Config.instance().isUseDataEndpointAdapter()) {
                         inst.addTransformer(new SpringRepositoryTransformer());
