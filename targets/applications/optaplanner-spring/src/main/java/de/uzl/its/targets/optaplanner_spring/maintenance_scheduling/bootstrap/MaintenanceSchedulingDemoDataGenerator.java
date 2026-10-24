@@ -1,5 +1,7 @@
 package de.uzl.its.targets.optaplanner_spring.maintenance_scheduling.bootstrap;
 
+import de.uzl.its.targets.optaplanner_spring.Bugs;
+
 
 import de.uzl.its.targets.optaplanner_spring.maintenance_scheduling.domain.Crew;
 import de.uzl.its.targets.optaplanner_spring.maintenance_scheduling.domain.Job;
@@ -90,6 +92,10 @@ public class MaintenanceSchedulingDemoDataGenerator {
 
             Set<String> tagSet;
             if (i % 10 == 3) {
+                if (Bugs.GENERATOR_TAGS) {
+                    // Inserted bug: subway jobs were not meant to be spread over this many targets
+                    assert jobAreaTargetLimit < 30 : "BUG generator: subway job with too many targets";
+                }
                 tagSet = Set.of(jobArea, "Subway");
             } else {
                 tagSet = Set.of(jobArea);
