@@ -82,7 +82,7 @@ spot a walk that has fallen out of step with the execution.
 
 ```bash
 cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --categories valid-assert.prp
-./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --parallel-sa, --sa-rank-distance, --solver-rlimit, --testcase-timeout-s ...
+./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --parallel-sa, --sa-rank-distance, --search-order, --solver-rlimit, --testcase-timeout-s ...
 ```
 
 - **Duration:** a full valid-assert run takes about 40 min with the default 900 s timeout, and
@@ -105,6 +105,11 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   10 s). A branch that runs out is retried later with 5x the limit, after the cheaper queries; a
   lone retry runs unlimited. Off by default. Each query's time and rlimit use are in the
   `[SOLVER]` debug lines of `explorer.log`.
+- **Search order:** `--search-order` picks which open branch is flipped next (`StrategyService`):
+  `dfs` (default), `shallow`, `coverage` (sides no trace took yet, then the shallowest),
+  `coverage-dfs`, `generational`. Plain DFS keeps unrolling input-parsing loops one char per round
+  with ever larger queries; `coverage` found 6 more violations than `dfs` on 978 valid-assert tasks
+  (300 s, no SA) and lost none. The order changes only how fast violations are found, not SAFE.
 - **Int/string queries:** `solver/Int2BvLifting.py` rewrites the executor's bit-vector ints where
   they meet string lengths, indices and char codes into Integer arithmetic before solving, and
   solves bit-vector inputs used only as numbers over Integer stand-ins (`lift_inputs`, mapped back
