@@ -81,7 +81,7 @@ def main():
     p.add_argument('--app-port', type=int, default=18080)
     p.add_argument('--explorer-port', type=int, default=18078)
     args = p.parse_args()
-    out = Path(args.out)
+    out = Path(args.out).resolve()
 
     results = {}
     results_file = out / 'campaign.json'

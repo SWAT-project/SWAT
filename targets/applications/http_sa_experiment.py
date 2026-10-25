@@ -149,6 +149,7 @@ def main():
     p.add_argument('--python', default=str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable))
     args = p.parse_args()
 
+    args.out = str(Path(args.out).resolve())
     classpath = sa_classpath(Path(args.jar).resolve(), Path(args.cfg).resolve(), Path(args.out))
     print(f'SA classpath: {" ".join(p.name for p in classpath)}', flush=True)
     results = {}
