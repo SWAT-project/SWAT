@@ -102,7 +102,7 @@ public class InstructionClassAdapter extends ClassVisitor {
                             ima.setLoopHeads(LoopHeads.analyze(cname, this));
                         }
                         if (summaries) {
-                            ima.setLoopSummaries(de.uzl.its.swat.symbolic.summary.LoopSummaries.analyze(this));
+                            ima.setLoopSummaries(de.uzl.its.swat.symbolic.summary.LoopSummaries.analyze(cname, this));
                         }
                         accept(ima);
                     }

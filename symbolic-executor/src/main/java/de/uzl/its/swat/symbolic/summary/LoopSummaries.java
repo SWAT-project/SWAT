@@ -106,10 +106,19 @@ public final class LoopSummaries {
 
     /** Finds the diamonds and counting loops of a method. */
     public static MethodPlans analyze(MethodNode mn) {
+        return analyze("java/lang/Object", mn);
+    }
+
+    /**
+     * Finds the diamonds and counting loops of a method of {@code owner} whose merged values stay
+     * symbolic (see TaintCheck).
+     */
+    public static MethodPlans analyze(String owner, MethodNode mn) {
         InsnList insns = mn.instructions;
         if (insns.size() == 0) {
             return MethodPlans.NONE;
         }
+        TaintCheck taint = null;
         // Labels something jumps to (or a handler starts at): code between two of them is entered
         // only at its start.
         Map<LabelNode, Boolean> targets = new IdentityHashMap<>();
@@ -140,20 +149,57 @@ public final class LoopSummaries {
             }
             int jumpOrdinal = ordinal++;
             if (isIntCondition(j.getOpcode())) {
-                Diamond d = diamond(insns, j, targets, joins);
+                Map<Label, Integer> joinCandidate = new IdentityHashMap<>();
+                Diamond d = diamond(insns, j, targets, joinCandidate, joins);
                 if (d != null) {
-                    byJump.put(jumpOrdinal, d);
+                    if (taint == null && (taint = TaintCheck.of(owner, mn)) == null) {
+                        return MethodPlans.NONE;
+                    }
+                    LabelNode join = joinLabel(insns, joinCandidate.keySet().iterator().next());
+                    java.util.Set<Integer> slots = new java.util.HashSet<>(written(d.fallThrough()));
+                    slots.addAll(written(d.jump()));
+                    if (!taint.leaks(join, slots, d.stackDelta() == 1)) {
+                        joins.putAll(joinCandidate);
+                        byJump.put(jumpOrdinal, d);
+                    }
                     continue;
                 }
             }
             if (j.getOpcode() == Opcodes.GOTO && insns.indexOf(j.label) < insns.indexOf(j)) {
                 Map.Entry<JumpInsnNode, CountingLoop> loop = countingLoop(insns, j, targets);
                 if (loop != null) {
-                    byJump.put(jumpOrdinal(insns, loop.getKey()), loop.getValue());
+                    if (taint == null && (taint = TaintCheck.of(owner, mn)) == null) {
+                        return MethodPlans.NONE;
+                    }
+                    CountingLoop l = loop.getValue();
+                    java.util.Set<Integer> slots = new java.util.HashSet<>(l.steps().keySet());
+                    slots.addAll(l.constants().keySet());
+                    if (!taint.leaks(loop.getKey().label, slots, false)) {
+                        byJump.put(jumpOrdinal(insns, loop.getKey()), l);
+                    }
                 }
             }
         }
         return new MethodPlans(byJump, joins);
+    }
+
+    private static java.util.Set<Integer> written(List<Op> ops) {
+        java.util.Set<Integer> slots = new java.util.HashSet<>();
+        for (Op op : ops) {
+            if (op.opcode() == Opcodes.ISTORE || op.opcode() == Opcodes.IINC) {
+                slots.add(op.operand());
+            }
+        }
+        return slots;
+    }
+
+    private static LabelNode joinLabel(InsnList insns, Label label) {
+        for (AbstractInsnNode n : insns) {
+            if (n instanceof LabelNode l && l.getLabel() == label) {
+                return l;
+            }
+        }
+        throw new IllegalStateException("join label not in its method");
     }
 
     private static int jumpOrdinal(InsnList insns, JumpInsnNode target) {
@@ -268,7 +314,7 @@ public final class LoopSummaries {
     }
 
     private static Diamond diamond(InsnList insns, JumpInsnNode j, Map<LabelNode, Boolean> targets,
-            Map<Label, Integer> joins) {
+            Map<Label, Integer> joins, Map<Label, Integer> existingJoins) {
         LabelNode jumpTarget = j.label;
         if (insns.indexOf(jumpTarget) < insns.indexOf(j)) {
             return null;
@@ -304,7 +350,10 @@ public final class LoopSummaries {
         if (fallDepth == 0 && !writes(fallOps) && !writes(jumpOps)) {
             return null;
         }
-        Integer id = joins.computeIfAbsent(join.getLabel(), l -> joinIds.incrementAndGet());
+        // Diamonds that meet at the same label share its probe
+        Integer id = existingJoins.containsKey(join.getLabel()) ? existingJoins.get(join.getLabel())
+                : Integer.valueOf(joinIds.incrementAndGet());
+        joins.put(join.getLabel(), id);
         return new Diamond(List.copyOf(fallOps), List.copyOf(jumpOps), id, fallDepth);
     }
 

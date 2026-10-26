@@ -81,8 +81,11 @@ class LoopSummariesTest extends Specification {
         "s = s + x (not a constant)" | Opcodes.IF_ICMPGE    | { mn -> mn.visitIincInsn(2, 1); mn.visitVarInsn(Opcodes.ILOAD, 3); mn.visitVarInsn(Opcodes.ILOAD, 2); mn.visitInsn(Opcodes.IADD); mn.visitVarInsn(Opcodes.ISTORE, 3) }
     }
 
-    /** static int f(int i, int v) { int c = 0; <diamond on i < v>; return c; }, c in slot 2. */
-    private static MethodNode diamond(Closure sides) {
+    /**
+     * static int f(int i, int v) { int c = 0; <diamond on i < v>; <use of c> }, c in slot 2; by
+     * default the use is {@code return c == 0 ? 0 : 1} (only a comparison).
+     */
+    private static MethodNode diamond(Closure sides, Closure use = null) {
         MethodNode mn = new MethodNode(Opcodes.ASM9, Opcodes.ACC_STATIC, "f", "(II)I", null, null)
         mn.visitCode()
         mn.visitInsn(Opcodes.ICONST_0)
@@ -90,11 +93,40 @@ class LoopSummariesTest extends Specification {
         mn.visitVarInsn(Opcodes.ILOAD, 0)
         mn.visitVarInsn(Opcodes.ILOAD, 1)
         sides(mn)
-        mn.visitVarInsn(Opcodes.ILOAD, 2)
-        mn.visitInsn(Opcodes.IRETURN)
+        if (use == null) {
+            Label nonZero = new Label()
+            mn.visitVarInsn(Opcodes.ILOAD, 2)
+            mn.visitJumpInsn(Opcodes.IFNE, nonZero)
+            mn.visitInsn(Opcodes.ICONST_0)
+            mn.visitInsn(Opcodes.IRETURN)
+            mn.visitLabel(nonZero)
+            mn.visitInsn(Opcodes.ICONST_1)
+            mn.visitInsn(Opcodes.IRETURN)
+        } else {
+            use(mn)
+        }
         mn.visitMaxs(3, 3)
         mn.visitEnd()
         return mn
+    }
+
+    def "no diamond if the merged value reaches #what"() {
+        given:
+        Label join = new Label()
+
+        expect:
+        LoopSummaries.analyze(diamond({ mn ->
+            mn.visitJumpInsn(Opcodes.IF_ICMPGE, join)
+            mn.visitIincInsn(2, 1)
+            mn.visitLabel(join)
+        }, use)).byJump().isEmpty()
+
+        where:
+        what            | use
+        "a return"      | { mn -> mn.visitVarInsn(Opcodes.ILOAD, 2); mn.visitInsn(Opcodes.IRETURN) }
+        "a call"        | { mn -> mn.visitVarInsn(Opcodes.ILOAD, 2); mn.visitMethodInsn(Opcodes.INVOKESTATIC, "X", "g", "(I)V", false); mn.visitInsn(Opcodes.ICONST_0); mn.visitInsn(Opcodes.IRETURN) }
+        "a field store" | { mn -> mn.visitVarInsn(Opcodes.ILOAD, 2); mn.visitFieldInsn(Opcodes.PUTSTATIC, "X", "f", "I"); mn.visitInsn(Opcodes.ICONST_0); mn.visitInsn(Opcodes.IRETURN) }
+        "a call through arithmetic" | { mn -> mn.visitVarInsn(Opcodes.ILOAD, 2); mn.visitInsn(Opcodes.ICONST_1); mn.visitInsn(Opcodes.IADD); mn.visitVarInsn(Opcodes.ISTORE, 0); mn.visitVarInsn(Opcodes.ILOAD, 0); mn.visitMethodInsn(Opcodes.INVOKESTATIC, "X", "g", "(I)V", false); mn.visitInsn(Opcodes.ICONST_0); mn.visitInsn(Opcodes.IRETURN) }
     }
 
     def "if (i < v) c++ is a diamond"() {

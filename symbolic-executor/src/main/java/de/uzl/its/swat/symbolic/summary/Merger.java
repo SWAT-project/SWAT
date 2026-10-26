@@ -105,7 +105,10 @@ public final class Merger {
             IntValue f = fall.top;
             top = new IntValue(context, (jumped ? j : f).concrete, bm.ifThenElse(jumpCondition, j.formula, f.formula));
         }
-        frame.summaryJoins().put(d.join(), new PendingJoin(merged, top, branch));
+        Object replaced = frame.summaryJoins().put(d.join(), new PendingJoin(merged, top, branch));
+        if (replaced instanceof PendingJoin old) {
+            old.branch().setMerged(false); // its join was never reached: its merge never happened
+        }
         branch.setMerged(true);
     }
 
