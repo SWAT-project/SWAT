@@ -654,3 +654,100 @@ structure (nodes, edges, keys) is unchanged.
 - Poisoning for masked branches (callbacks, choice branches, static initializers) is conservative:
   it poisons every open region, also one that closed before the masked code ran but had no
   verified branch after it.
+
+## Loop summarization, 2026-10-26
+
+Same branch (`niklas/relevance-slicing`), on top of relevance. Slicing cannot help when the loop's
+branches *are* relevant: `for (i < n) if (i < val) count++; if (count == K) ...` needs one round
+per iteration, because `count` is concrete and only the per-iteration branches can be flipped.
+**Loop summaries** make the executor merge such code into formulas (`symbolic/summary` in the
+executor):
+
+- **Diamonds**: an int `if` whose two sides are straight-line int arithmetic on locals and meet
+  again (`if (c) x++`, `if (c) x = a; else x = b`, `x = c ? a : b`). At the `if` the executor
+  computes both sides symbolically; a `SUMMARY_JOIN` probe at the join gives the written locals
+  (and a conditional expression's value) `ite(c, jump side, fall-through side)`.
+- **Counting loops**: head `i < b` (or `i > b`), body straight-line int arithmetic that steps `i`
+  by +1 (-1) and adds constants to or sets constants in other locals, `b` unchanged. At the exit the
+  locals get closed forms in `N = max(b - i0, 0)`: `i = ite(i0 < b, b, i0)`, `x = x0 + d * N`,
+  `y = ite(N > 0, c, y0)`. A strict bound and a step of one rule out overflow of `i`; bit-vector
+  arithmetic wraps like Java's ints, so the closed forms are exact.
+
+The branches involved are flagged `merged`. The explorer treats them like sliced branches: not
+flipped, constraints left out, not part of a path's relevant decisions. Ignoring the flag is
+always sound (the merged formulas plus the kept constraints describe the same path), which is why
+`Tree.add` keeps a node merged only if every trace through it merged it. A summary whose concrete
+result differs from the execution's is dropped. Config `loopSummaries` (on in `sv-comp.cfg`);
+`--no-loop-summaries` in the explorer and the harness.
+
+### Results
+
+`loop-summary` (30 tasks: `count-below`, `ternary-sum`, `found-index` are diamonds in a loop of
+length n; `count-up`, `count-down` are counting loops up to an input bound), SAFE tasks, rounds
+with vs without summaries:
+
+| family | n = 10 | n = 100 | n = 1000 |
+|---|---|---|---|
+| `count-below` (`if (i < val) count++`) | 1 vs 11 | 1 vs 101 | 1 vs TO |
+| `ternary-sum` (`s = i < val ? s + 2 : s`) | 1 vs 11 | 1 vs 101 | 1 vs TO |
+| `found-index` (`if (i == val) found = i`) | 1 vs 11 | 1 vs 101 | 1 vs TO |
+| `count-up` (`while (i < val) { i++; s += 3; }`) | 1 vs TO | 1 vs TO | 1 vs TO |
+| `count-down` (`while (i > 0) { i--; c += 2; }`) | 1 vs TO | 1 vs TO | 1 vs TO |
+
+VIOLATION tasks: 2 rounds each with summaries. Without summaries the counting loops time out at
+every n: after the first flip of the loop head the solver picks a bound like 2^31 - 1, and the
+executor run never ends. 30/30 correct with summaries, 15/30 without.
+
+`loop-summary-soundness` (18): 12 correct with summaries, 9 without; no false SAFE either way.
+Summaries add `step-overflow` (an accumulator that must wrap around), `negative-start` (input start
+and bound) and `nested-loops` (a counting loop inside a loop). The 6 UNKNOWN in both
+configurations are the loops that must not be summarized (a call, a branch or a list in the body):
+there the solver's huge bound makes the executor time out, as above.
+
+All swat-benchmarks (459): 436 correct with summaries, 416 without, no task lost
+(`run_20261026_184010` / `run_20261026_180911`). sv-benchmarks valid-assert (1013 points,
+`run_20261026_184605`) and no-runtime-exception (1279 points, `run_20261026_185901`) are identical
+to the runs without summaries, apart from a crash in `rtems-lock-model/lock-00-01-10` that also
+happens without them. **The shapes do not occur there**: the pre-pass finds no counting loop in
+any sv-benchmarks class and 134 diamonds in all (95 of them in `java-ranger-regression`); their loops
+access arrays, call methods or read inputs in their bodies.
+
+So summaries work well for **counters, flags and accumulators that a loop updates under
+input-dependent conditions and that the target then checks** (counting matches, remembering an
+index, summing weights), and for **counting loops up to an input bound with arithmetic-only
+bodies**. Then the search is constant in the loop length, and a SAFE proof needs one query.
+
+### Bug found and fixed: merged values that get concretized (13 false SAFE)
+
+The first version gave 13 false SAFE on sv-benchmarks (`algorithms/InsertionSort-*`,
+`MergeSortIterative-*`, `RedBlackTree-*`, `Tsp-*`, `SortedListInsert-*`, `BellmanFord-*`,
+`float-nonlinear-calculation/coral79`). `Verifier.assume(N > 0)` compiles to a conditional
+expression (`N <= 0 ? 0 : 1`) followed by the call: it was merged, the branch's constraint `N > 0`
+was dropped, and SWAT's `assume` only looks at the concrete boolean. So solutions with `N <= 0` were
+allowed, and the program halted on them unnoticed. In general a merged branch's outcome lives on
+only in the merged formulas, so it is lost wherever the executor concretizes a value.
+`TaintCheck` now follows the merged values forward through the method and drops a summary if
+anything computed from them reaches a call, a field or array store, an array index or size, or a
+return. Diamonds sharing a join label share its probe, and a pending merge whose join is never
+reached unflags its branch.
+
+### Limitations and next steps
+
+- **Bodies with other code**: a call, an array access or a field access in a side or loop body
+  rules a summary out, which is why sv-benchmarks is unaffected. Calls cannot change the caller's
+  locals, so the closed forms of the locals stay exact with any body. What the body does elsewhere
+  (heap, output, callee branches) is the problem, and relevance can decide that: let the executor
+  flag such loops as `merged if irrelevant`, and have the explorer honor the flag only if the
+  loop's region writes nothing relevant besides the summarized locals (Relevance's region
+  writes). That combines both analyses and is safe because ignoring a flag is always sound.
+- **Nested conditions**: a side containing another branch (`if (i < val) { if (i % 2 == 0) even++;
+  else odd++; }`, `diamond-then-check`) is not merged; nested diamonds could be merged inside out.
+- **Non-strict bounds and other steps**: `i <= b` never ends for `b = 2^31 - 1`, and steps other
+  than one can skip the bound and overflow; both need a case split (e.g. `b < MAX` as a flippable
+  side condition).
+- **Values passed on**: the taint check also rules out a merged value passed to an *instrumented*
+  application method, or returned, although the executor keeps those symbolic. Following them into
+  the callee (or allowing calls to application methods) would merge more.
+- **Unsummarized loops with an input bound** make the solver pick huge bounds and the executor
+  time out (the 6 UNKNOWN above). Preferring small values for loop-head flips (as the divergence
+  retries already do) would help independently of summaries.

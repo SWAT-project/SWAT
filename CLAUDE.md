@@ -97,6 +97,17 @@ and used in `strategy/DFS.py`.
     slice is context-insensitive (fix: a "return value relevant / not" variant per method, chosen
     per call site and looked up by the walk's stack).
 
+- **Loop summaries** (executor `symbolic/summary`, 2026-10-26): diamonds (an int `if` whose sides
+  are straight-line int arithmetic on locals) and counting loops (`i < b`, step one, arithmetic
+  body) are merged into formulas; their branches are flagged `merged` and the explorer treats them
+  like sliced ones. `TaintCheck` drops a summary whose merged values could reach a call, a heap or
+  array store, an array index or size, or a return, since a dropped constraint must not be needed
+  where the executor concretizes (13 false SAFE before, via `Verifier.assume`). Ignoring a
+  `merged` flag is always sound. Config `loopSummaries` (on in `sv-comp.cfg`),
+  `--no-loop-summaries`. Results, limits, next steps: swat-benchmarks/RESULTS.md, "Loop
+  summarization". Pre-pass tests: `./gradlew :symbolic-executor:test --tests
+  'de.uzl.its.swat.symbolic.summary.*'`.
+
 Tests for the walk, runnable without a SWAT run:
 
 ```bash
