@@ -68,6 +68,7 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--sa-retry-without', 'sa_retry_without', is_flag=True, default=False, help='On a SAFE verdict reached with static pre-analysis, retry the exploration without it')
 @click.option('--parallel-sa', 'parallel_sa', is_flag=True, default=False, help='Run the static pre-analysis in the background while exploring, instead of waiting for it (nondeterministic)')
 @click.option('--sa-no-callback-targets', 'sa_no_callback_targets', is_flag=True, default=False, help='Do not count library calls as possible asserts when a callback from library code may reach one (unsound)')
+@click.option('--no-prefer-small-models', 'no_prefer_small_models', is_flag=True, default=False, help='Use solutions with extreme integral inputs as they are (by default they are re-solved with bounded inputs first)')
 @click.option('--no-loop-summaries', 'no_loop_summaries', is_flag=True, default=False, help='Do not let the executor merge diamonds and counting loops into formulas (loop summaries)')
 @click.option('--no-sa-slicing', 'no_sa_slicing', is_flag=True, default=False, help='Do not use the static pre-analysis relevance analysis (slicing): flip branches that cannot affect a target too')
 @click.option('--sa-no-runtime-exception', 'sa_no_runtime_exception', is_flag=True, default=False, help='Also prune with the static pre-analysis under no-runtime-exception (by default only under valid-assert)')
@@ -77,7 +78,7 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--testcase-timeout-s', type=int, default=15 * 60, help='Timeout of the symbolic-explorer in seconds for each test case')
 @click.pass_context
 def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, categories, suite, limit_nr_tests: int | None, target: str,
-              no_witness: bool, no_sa: bool, sa_retry_without: bool, parallel_sa: bool, sa_rank_distance: bool, sa_no_callback_targets: bool, no_sa_slicing: bool, no_loop_summaries: bool, solver_rlimit: int, search_order: str, testcase_timeout_s: int, sa_no_runtime_exception: bool):
+              no_witness: bool, no_sa: bool, sa_retry_without: bool, parallel_sa: bool, sa_rank_distance: bool, sa_no_callback_targets: bool, no_sa_slicing: bool, no_loop_summaries: bool, no_prefer_small_models: bool, solver_rlimit: int, search_order: str, testcase_timeout_s: int, sa_no_runtime_exception: bool):
     """Run verification tests."""
     from lib import (
         extract_testcases,
@@ -142,7 +143,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
 
         # One timestamp ties this run's per-testcase logs to its results dir.
         run_timestamp = new_run_timestamp()
-        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, no_sa_slicing=no_sa_slicing, no_loop_summaries=no_loop_summaries, solver_rlimit=solver_rlimit, cpu_limit_s=testcase_timeout_s, search_order=search_order, sa_no_runtime_exception=sa_no_runtime_exception)
+        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, no_sa_slicing=no_sa_slicing, no_loop_summaries=no_loop_summaries, no_prefer_small_models=no_prefer_small_models, solver_rlimit=solver_rlimit, cpu_limit_s=testcase_timeout_s, search_order=search_order, sa_no_runtime_exception=sa_no_runtime_exception)
         click.echo(f"Generated {len(ver_tasks_with_commands)} commands")
 
         # Check port availability
@@ -187,6 +188,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, catego
                            sa_callback_targets=not sa_no_callback_targets and not no_sa,
                            sa_slicing=not no_sa_slicing and not no_sa,
                            loop_summaries=not no_loop_summaries,
+                           prefer_small_models=not no_prefer_small_models,
                            solver_rlimit=solver_rlimit, search_order=search_order,
                            sa_no_runtime_exception=sa_no_runtime_exception and not no_sa)
             

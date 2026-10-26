@@ -775,6 +775,12 @@ class Z3Handler:
         return {name: val['plain_value'] for name, val in sol.items() if z3.is_expr(val.get('plain_value'))}
 
     @staticmethod
+    def bound_constraints(sol: dict, bound: int, ctx=None) -> list:
+        """Constraints restricting every integral input of the solution `sol` to [-bound, bound]
+        (chars: [0, bound]), without excluding `sol` itself (see retry_constraints)."""
+        return Z3Handler.retry_constraints([sol], bound, ctx)[1:]
+
+    @staticmethod
     def retry_constraints(failed: list, bound: int | None = None, ctx=None) -> list:
         """Constraints for re-solving a branch whose earlier solutions `failed` did not lead the
         run to it: each of them is excluded (by its scalar inputs), and with `bound`, every

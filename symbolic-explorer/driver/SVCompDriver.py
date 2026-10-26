@@ -55,6 +55,10 @@ DIVERGENCE_RETRIES = 3
 # in turn, then left unbounded. The solver likes extreme values such as 2^31-1 for a size, and then
 # the allocation fails (OutOfMemoryError) before the run gets to the branch.
 RETRY_BOUNDS = (16, 256, 65536)
+# A solution with an integral input beyond this magnitude is re-solved with the inputs bounded by
+# RETRY_BOUNDS first (see prefer_small): solvers like extreme values, and a loop bound of 2^31 - 1
+# makes the next run never end.
+LARGE_INPUT = 65536
 # Execution errors after which an exhausted search proves nothing: a run was cut short, so the
 # rest of its path was never explored.
 CUT_SHORT_ERRORS = ('resource_limit', 'out_of_memory')
@@ -580,6 +584,42 @@ class SVCompDriver:
                 and not (getattr(n, 'ident', None) is not None
                          and Database.instance().projected_covered(ENDPOINT_ID, n.ident, branched))]
 
+    @staticmethod
+    def is_large(sol: dict) -> bool:
+        """Whether a solution has an integral input beyond LARGE_INPUT in magnitude."""
+        import z3
+        for value in Z3Handler.solution_values(sol).values():
+            if z3.is_bv_value(value):
+                n = value.as_signed_long()
+            elif z3.is_int_value(value):
+                n = value.as_long()
+            else:
+                continue
+            if abs(n) > LARGE_INPUT:
+                return True
+        return False
+
+    def prefer_small(self, branch: Node, sol: dict, rlimit: int | None) -> dict:
+        """A solution for the branch with small inputs if there is one, else `sol`.
+
+        Re-solves the same query with every integral input bounded by RETRY_BOUNDS in turn; any
+        model of it is one of the query, so this only picks another execution of the same path
+        prefix, one that is cheaper to run. Bounded queries without a model prove nothing and are
+        not recorded (see solve_branch)."""
+        if not self.is_large(sol):
+            return sol
+        for bound in RETRY_BOUNDS:
+            extra = Z3Handler.bound_constraints(sol, bound)
+            if not extra:
+                return sol
+            sat, small = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit, extra_exprs=extra,
+                                                      approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
+            self.nr_solver_calls += 1
+            if sat == SATResult.SAT:
+                logger.info(f'[SYMBOLIC EXPLORATION] Branch {branch.id}: smaller solution with inputs bounded by {bound}')
+                return small
+        return sol  # still the recorded one: bounded queries without a model record nothing
+
     def solve_retry(self, branch: Node, rlimit: int | None) -> tuple[SATResult, dict]:
         """Re-solves a branch whose solutions so far did not lead the run to it, excluding them.
 
@@ -664,6 +704,9 @@ class SVCompDriver:
                     gave_up = True
                     continue
                 if sat == SATResult.SAT:
+                    if not getattr(self.args, 'no_prefer_small_models', False):
+                        with self.budget.solver(get_constraint_cache().shared_context):
+                            sol = self.prefer_small(branch, sol, rlimit)
                     return branch, sol, gave_up
                 if sat == SATResult.LIMIT:
                     self.solver_limit_hits += 1
