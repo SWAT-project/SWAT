@@ -188,6 +188,7 @@ class SVCompDriver:
             *EXECUTOR_JVM_OPTIONS,
             *cds_options,
             f'-Dconfig.path={config}',
+            *(['-DloopSummaries=false'] if getattr(self.args, 'no_loop_summaries', False) else []),
             f'-Dexplorer.port={port}',
             f'-javaagent:{javaagent}',
             f"-Djava.library.path={Z3_DIR}",

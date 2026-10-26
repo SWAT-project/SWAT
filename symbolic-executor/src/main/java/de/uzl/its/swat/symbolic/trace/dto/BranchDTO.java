@@ -45,6 +45,16 @@ public class BranchDTO {
         return this;
     }
 
+    // See BranchElement: merged by a loop summary.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private boolean merged;
+
+    public BranchDTO merged(boolean merged) {
+        this.merged = merged;
+        return this;
+    }
+
     // See BranchElement: the loop-head states reached since the previous branch.
     @SuppressWarnings("unused")
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)

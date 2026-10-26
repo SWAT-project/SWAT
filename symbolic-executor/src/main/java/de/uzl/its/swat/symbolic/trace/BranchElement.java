@@ -10,7 +10,7 @@ import org.sosy_lab.java_smt.api.FormulaManager;
 
 /** Represents a branch element in the symbolic trace. */
 @Getter
-final class BranchElement extends Element {
+public final class BranchElement extends Element {
 
     // Indicates whether the branch was taken or not
     private final boolean branched;
@@ -40,6 +40,9 @@ final class BranchElement extends Element {
     // The loop-head states the execution reached since the previous branch, in order (see
     // LoopStateMatcher).
     @lombok.Setter private java.util.List<String> loopStates = java.util.List.of();
+    // Merged by a loop summary (see symbolic/summary): both outcomes lead to the same, merged state,
+    // so the explorer neither flips the branch nor keeps its constraint.
+    @lombok.Setter private boolean merged;
 
     /**
      * Constructs a branch element.

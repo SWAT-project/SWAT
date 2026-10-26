@@ -148,13 +148,19 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
                 open_regions = open_regions[1]
         sliced = (SLICING and verified and sa_node.irrelevant
                   and not getattr(node, 'poisoned', False))
-        node.sliced = sliced
-        if not sliced and open_regions is not None:
+        # A branch a loop summary merged is no decision either: both outcomes lead to the merged
+        # state, so it is not flipped and its constraint is left out like a sliced one's. It needs
+        # no region: its code has no effects beyond the merged locals.
+        merged = getattr(node, 'merged', False)
+        node.sliced = sliced or merged
+        if not sliced and not merged and open_regions is not None:
             _poison(tree, open_regions, f"branch {node.key or node.id} in its region"
                     + ("" if verified else " (not paired with the graph)"))
         ident = (sig, node.key if node.key is not None else ('id', node.id))
         node.ident = ident
-        if sliced:
+        if merged and not sliced:
+            sig_skipped = sig_branched = sig
+        elif sliced:
             tree.sliced_in_walk += 1
             open_regions = ((node, sa_node, sa_stack), open_regions)
             sig_skipped = sig_branched = sig
@@ -174,7 +180,7 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             logger.log(TRACE, f"[DFS] @{node.id}/{("CALLBACK" if node.callback else "CHOICE" if node.choice else "CLINIT") if mask_sa_node else sa_node and sa_node.id} ({"branched" if node.branched else ""}{"skipped" if node.skipped else ""}): skip_is_interesting={skip_is_interesting}, branch_is_interesting={branch_is_interesting}")
         
         # Add the node itself, if eligible
-        if not sliced and not walk_only and ((node.skipped is None and skip_is_interesting) or (node.branched is None and branch_is_interesting)):
+        if not node.sliced and not walk_only and ((node.skipped is None and skip_is_interesting) or (node.branched is None and branch_is_interesting)):
             if node.gid not in solved_branches \
             and node.gid not in unsat_branch_ids \
             and node.kind != "Special" \

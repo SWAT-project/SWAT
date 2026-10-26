@@ -206,6 +206,10 @@ class Tree:
                 node.unmodelled_exception = True
             if isinstance(element, Branch):
                 node.constraint[element.trace_id] = element.constraint
+                # Merged only if every trace through it merged it (a summary the executor dropped
+                # leaves the constraint in force)
+                if not getattr(element, 'merged', False):
+                    node.merged = False
             if element.has_branched:
                 if node.branched is None and node.skipped is not None:
                     logger.info(f"New branch from node {node.id} (branched)")

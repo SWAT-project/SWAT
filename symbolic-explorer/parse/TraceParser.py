@@ -25,6 +25,7 @@ class Parser:
                                      pushes=tuple(branch.pushes),
                                      callback=branch.callback,
                                      choice=branch.choice,
+                                     merged=branch.merged,
                                      loop_states=tuple(branch.loopStates)))
             else:
                 _trace.append(Special(id=branch.iid,

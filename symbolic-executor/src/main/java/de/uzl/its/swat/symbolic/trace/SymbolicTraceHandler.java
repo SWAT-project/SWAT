@@ -43,8 +43,8 @@ public class SymbolicTraceHandler {
      * @param constraint The constraint of the branch.
      * @param iid The iid of the branch instruction.
      */
-    public void checkAndSetBranch(boolean result, BooleanFormula constraint, long iid) throws NoThreadContextException {
-        checkAndSetBranch(result, constraint, iid, "");
+    public BranchElement checkAndSetBranch(boolean result, BooleanFormula constraint, long iid) throws NoThreadContextException {
+        return checkAndSetBranch(result, constraint, iid, "");
     }
 
     /**
@@ -52,7 +52,7 @@ public class SymbolicTraceHandler {
      * instruction reports: {@code suffix} tells them apart in the branch's key ({@code #<case
      * value>} for a switch case, {@code #<n>} for the n-th dimension MULTIANEWARRAY checks).
      */
-    public void checkAndSetBranch(boolean result, BooleanFormula constraint, long iid, String suffix) throws NoThreadContextException {
+    public BranchElement checkAndSetBranch(boolean result, BooleanFormula constraint, long iid, String suffix) throws NoThreadContextException {
 
         long threadId = Thread.currentThread().getId();
         BranchElement current;
@@ -66,6 +66,7 @@ public class SymbolicTraceHandler {
         place(current, iid, suffix);
         takeLoopStates(current);
         symbolicTrace.addTraceElement(current);
+        return current;
     }
 
     /**
