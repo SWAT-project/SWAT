@@ -294,12 +294,21 @@ class Relevance:
         branches = [n for n in nodes if n.is_branch()]
         self.stats.branches = len(branches)
         no_ipdom = set()
+        # Statements that may throw to somewhere that matters (a local handler, or a harmful
+        # escape) are implicit branches: whether they throw depends on what they read (a null
+        # receiver, a cast's operand, a callee's arguments), so they get a region too, and their
+        # reads become relevant when it is. They are no tree branches: nothing flips them.
+        throwers = []
         for m, method_nodes in self.by_method.items():
+            ipdom, succ = None, None
             mbranches = [n for n in method_nodes if n.is_branch()]
-            if not mbranches:
+            if not mbranches and not any(n.next_exceptional or n.is_call_site() or n.exceptionChain
+                                         for n in method_nodes):
                 continue
             ipdom, succ = self._postdominators(method_nodes)
-            for b in mbranches:
+            mthrowers = [n for n in method_nodes if not n.is_branch() and len(set(succ[n])) >= 2]
+            throwers.extend(mthrowers)
+            for b in mbranches + mthrowers:
                 stop = ipdom.get(b)
                 if stop is None or stop == END:
                     # No post-dominator (no path to the end), or the outcomes leave the method
@@ -344,7 +353,7 @@ class Relevance:
                             writes |= self.scoped(m, [x.call["result"]])
                 regions[b] = RegionFacts(region_nodes, frozenset(writes), reaches_target, term,
                                          tuple(rbranches), frozenset(cmethods))
-        self.stats.no_postdominator = len(no_ipdom)
+        self.stats.no_postdominator = sum(1 for b in no_ipdom if b.is_branch())
 
         # The least fixpoint: relevant locations and relevant branches.
         relevant_locations: set = set()
@@ -377,16 +386,30 @@ class Relevance:
             if n.terminates:
                 add(self.scoped(n.method, n.control))
 
+        def reads_of(n):
+            """What a branch's decision depends on; for an implicit branch (a thrower), everything
+            it reads."""
+            if n.is_branch():
+                return self.scoped(n.method, n.control)
+            read = set(self.scoped(n.method, n.control))
+            for _, r in n.dataflow:
+                read |= self.scoped(n.method, r)
+            if n.call is not None:
+                for arg in n.call.get("args", []):
+                    read |= self.scoped(n.method, arg)
+                read |= self.scoped(n.method, n.call.get("base", []))
+            return read
+
         relevant = set(no_ipdom)
         for b in no_ipdom:
-            add(self.scoped(b.method, b.control))
-        candidates = [b for b in branches if b in regions]
+            add(reads_of(b))
+        candidates = [b for b in branches + throwers if b in regions]
         changed = True
         while changed and not everything:
             self.stats.iterations += 1
             changed = False
             # Methods that run a relevant branch, callees included.
-            relevant_methods = {b.method for b in relevant}
+            relevant_methods = {b.method for b in relevant if b.is_branch()}
             callers_of: dict[str, set] = {}
             for m, cs in callees_of.items():
                 for c in cs:
@@ -408,7 +431,7 @@ class Relevance:
                         or any(x in relevant for x in r.branches)
                         or not r.callee_methods.isdisjoint(relevant_methods)):
                     relevant.add(b)
-                    add(self.scoped(b.method, b.control))
+                    add(reads_of(b))
                     changed = True
         self.stats.all_relevant = everything
         self.relevant_locations = relevant_locations

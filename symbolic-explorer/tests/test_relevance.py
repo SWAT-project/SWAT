@@ -178,6 +178,25 @@ class RelevanceTest(unittest.TestCase):
         g = example({'call': {'args': [['l:i']], 'base': []}}, extra).load()
         self.assertEqual(irrelevant(g), {'h', 'b', 'me'})
 
+    def test_what_decides_a_caught_exception_is_relevant(self):
+        # sa-soundness/npe-catch-local: box = b == 7 ? null : new Box(); try { r = box.v; }
+        # catch (NullPointerException e) { assert ... }. The dereference is an implicit branch.
+        g = FactGraph()
+        g.at('in', dataflow=[(['l:b', 'g:input'], ['g:input'])])
+        g.at('t', control=['l:b'])
+        g.at('nul', dataflow=[(['l:box'], [])])
+        g.at('new', dataflow=[(['l:box'], [])])
+        g.at('deref', dataflow=[(['l:r'], ['l:box', 'f:v:int'])])
+        g.at('hd', dataflow=[(['l:e'], ['g:exc'])])
+        g.at('ae', assertion=True)
+        g.at('ret', exit=True)
+        g.edge('in', 't')
+        g.branch('t', 'new', 'nul')
+        g.edge('nul', 'deref').edge('new', 'deref')
+        g.edge('deref', 'ret').edge('deref', 'hd', 'EXCEPTION')
+        g.edge('hd', 'ae').edge('ae', 'ret')
+        self.assertEqual(irrelevant(g.load()), set())
+
     def test_without_facts_nothing_is_irrelevant(self):
         g = example()
         g.metadata.pop('dataflowFacts')
