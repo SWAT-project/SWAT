@@ -57,8 +57,15 @@ import org.objectweb.asm.tree.VarInsnNode;
  */
 public final class LoopSummaries {
 
-    /** An instruction of a side or loop body: opcode, operand (slot or constant), increment. */
-    public record Op(int opcode, int operand, int increment) {}
+    /**
+     * An instruction of a side: opcode, operand (slot or constant), increment; or, with {@code
+     * nested}, a diamond inside the side, whose opcode is that of its {@code if}.
+     */
+    public record Op(int opcode, int operand, int increment, Diamond nested) {
+        public Op(int opcode, int operand, int increment) {
+            this(opcode, operand, increment, null);
+        }
+    }
 
     public sealed interface Plan permits Diamond, CountingLoop, BackEdge {}
 
@@ -69,14 +76,15 @@ public final class LoopSummaries {
     public record Diamond(List<Op> fallThrough, List<Op> jump, int join, int stackDelta) implements Plan {}
 
     /**
-     * A counting loop with head {@code i < b} (step +1) or {@code i > b} (step -1). {@code bound} is
+     * A counting loop with head {@code i < b} (step +1) or {@code i > b} (step -1), or with
+     * {@code inclusive}, {@code i <= b} or {@code i >= b}. {@code bound} is
      * a local slot, or -1 with {@code boundConstant}. {@code exitOnJump}: the head's branch leaves
      * the loop when it jumps. {@code steps}: the locals the body adds a constant to (the induction
      * variable among them), {@code constants}: those it sets to a constant.
      */
     public record CountingLoop(int i, int step, int bound, int boundConstant, boolean exitOnJump,
                                Map<Integer, Integer> steps, Map<Integer, Integer> constants,
-                               boolean pure) implements Plan {}
+                               boolean pure, boolean inclusive) implements Plan {}
 
     /**
      * The back edge of a counting loop: tells the executor that the loop's head is reached again
@@ -147,6 +155,22 @@ public final class LoopSummaries {
         for (TryCatchBlockNode tc : mn.tryCatchBlocks) {
             targets.put(tc.handler, Boolean.TRUE);
         }
+        // Who jumps to each label (a switch or a handler counts as a source no diamond owns).
+        Map<LabelNode, List<AbstractInsnNode>> sources = new IdentityHashMap<>();
+        for (AbstractInsnNode n : insns) {
+            if (n instanceof JumpInsnNode j) {
+                sources.computeIfAbsent(j.label, k -> new ArrayList<>()).add(n);
+            } else if (n instanceof TableSwitchInsnNode t) {
+                sources.computeIfAbsent(t.dflt, k -> new ArrayList<>()).add(n);
+                t.labels.forEach(l -> sources.computeIfAbsent(l, k -> new ArrayList<>()).add(n));
+            } else if (n instanceof LookupSwitchInsnNode l) {
+                sources.computeIfAbsent(l.dflt, k -> new ArrayList<>()).add(n);
+                l.labels.forEach(x -> sources.computeIfAbsent(x, k -> new ArrayList<>()).add(n));
+            }
+        }
+        for (TryCatchBlockNode tc : mn.tryCatchBlocks) {
+            sources.computeIfAbsent(tc.handler, k -> new ArrayList<>()).add(tc.handler);
+        }
 
         Map<Integer, Plan> byJump = new HashMap<>();
         Map<Label, Integer> joins = new IdentityHashMap<>();
@@ -158,7 +182,7 @@ public final class LoopSummaries {
             int jumpOrdinal = ordinal++;
             if (isIntCondition(j.getOpcode())) {
                 Map<Label, Integer> joinCandidate = new IdentityHashMap<>();
-                Diamond d = diamond(insns, j, targets, joinCandidate, joins);
+                Diamond d = diamond(insns, j, targets, joinCandidate, joins, sources);
                 if (d != null) {
                     if (taint == null && (taint = TaintCheck.of(owner, mn)) == null) {
                         return MethodPlans.NONE;
@@ -198,7 +222,10 @@ public final class LoopSummaries {
     private static java.util.Set<Integer> written(List<Op> ops) {
         java.util.Set<Integer> slots = new java.util.HashSet<>();
         for (Op op : ops) {
-            if (op.opcode() == Opcodes.ISTORE || op.opcode() == Opcodes.IINC) {
+            if (op.nested() != null) {
+                slots.addAll(written(op.nested().fallThrough()));
+                slots.addAll(written(op.nested().jump()));
+            } else if (op.opcode() == Opcodes.ISTORE || op.opcode() == Opcodes.IINC) {
                 slots.add(op.operand());
             }
         }
@@ -268,6 +295,9 @@ public final class LoopSummaries {
 
     /** How an op changes the stack depth: {pops, pushes}. */
     private static int[] stackEffect(Op op) {
+        if (op.nested() != null) {
+            return new int[] {op.opcode() <= Opcodes.IFLE ? 1 : 2, op.nested().stackDelta()};
+        }
         return switch (op.opcode()) {
             case Opcodes.ILOAD, Opcodes.LDC -> new int[] {0, 1};
             case Opcodes.ISTORE -> new int[] {1, 0};
@@ -278,12 +308,14 @@ public final class LoopSummaries {
     }
 
     /**
-     * The ops from {@code from} (exclusive) up to the first real instruction or label that ends
-     * the block: returns the ops and the node that ended it, or null if something not allowed
-     * comes first (an instruction, or a label something jumps to other than {@code allowedLabel}).
+     * The ops from {@code from} (exclusive) up to the first label in {@code ends} or the first
+     * instruction that is not one: returns the ops and the node that ended the block, or null if a
+     * label something else jumps to comes first. An {@code if} whose sides are blocks again and
+     * meet within this one becomes a nested op; a division is allowed by a nonzero constant only
+     * (it cannot throw then).
      */
     private static Map.Entry<List<Op>, AbstractInsnNode> block(AbstractInsnNode from,
-            Map<LabelNode, Boolean> targets, Set<LabelNode> ends) {
+            Map<LabelNode, Boolean> targets, Set<LabelNode> ends, Map<LabelNode, List<AbstractInsnNode>> sources) {
         List<Op> ops = new ArrayList<>();
         for (AbstractInsnNode n = from.getNext(); n != null; n = n.getNext()) {
             if (n instanceof LabelNode l) {
@@ -296,6 +328,31 @@ public final class LoopSummaries {
                 continue;
             }
             if (!isReal(n)) {
+                continue;
+            }
+            if (n instanceof JumpInsnNode k && isIntCondition(k.getOpcode()) && sources != null) {
+                Parsed inner = parse(k, targets, sources);
+                if (inner == null) {
+                    return Map.entry(ops, n);
+                }
+                // Control enters the rest of this block only from the inner diamond's own jumps.
+                for (AbstractInsnNode src : sources.getOrDefault(inner.join(), List.of())) {
+                    if (src != k && src != inner.gotoNode() && !ends.contains(inner.join())) {
+                        return null;
+                    }
+                }
+                ops.add(new Op(k.getOpcode(), 0, 0, new Diamond(inner.fall(), inner.jump(), -1, inner.depth())));
+                if (ends.contains(inner.join())) {
+                    return Map.entry(ops, inner.join());
+                }
+                n = inner.join();
+                continue;
+            }
+            int opc = n.getOpcode();
+            if ((opc == Opcodes.IDIV || opc == Opcodes.IREM) && !ops.isEmpty()
+                    && ops.get(ops.size() - 1).opcode() == Opcodes.LDC && ops.get(ops.size() - 1).nested() == null
+                    && ops.get(ops.size() - 1).operand() != 0) {
+                ops.add(new Op(opc, 0, 0));
                 continue;
             }
             Op op = op(n);
@@ -322,31 +379,37 @@ public final class LoopSummaries {
     }
 
     private static boolean writes(List<Op> ops) {
-        return ops.stream().anyMatch(o -> o.opcode() == Opcodes.ISTORE || o.opcode() == Opcodes.IINC);
+        return !written(ops).isEmpty();
     }
 
-    private static Diamond diamond(InsnList insns, JumpInsnNode j, Map<LabelNode, Boolean> targets,
-            Map<Label, Integer> joins, Map<Label, Integer> existingJoins) {
+    /** A diamond's sides, its join, the GOTO that ends its fall-through side (if any), its depth. */
+    private record Parsed(List<Op> fall, List<Op> jump, LabelNode join, AbstractInsnNode gotoNode, int depth) {}
+
+    /** The diamond of the {@code if} {@code j}, or null. */
+    private static Parsed parse(JumpInsnNode j, Map<LabelNode, Boolean> targets,
+            Map<LabelNode, List<AbstractInsnNode>> sources) {
         LabelNode jumpTarget = j.label;
-        if (insns.indexOf(jumpTarget) < insns.indexOf(j)) {
+        if (!isBefore(j, jumpTarget)) {
             return null;
         }
-        Map.Entry<List<Op>, AbstractInsnNode> fall = block(j, targets, Set.of(jumpTarget));
+        Map.Entry<List<Op>, AbstractInsnNode> fall = block(j, targets, Set.of(jumpTarget), sources);
         if (fall == null) {
             return null;
         }
         List<Op> fallOps = fall.getKey();
         List<Op> jumpOps;
         LabelNode join;
+        AbstractInsnNode gotoNode = null;
         if (fall.getValue() == jumpTarget) {
             // if (c) { fall-through side }  -- the jump side is empty
             jumpOps = List.of();
             join = jumpTarget;
         } else if (fall.getValue() instanceof JumpInsnNode g && g.getOpcode() == Opcodes.GOTO
-                && insns.indexOf(g.label) > insns.indexOf(jumpTarget) && nextLabelIs(g, jumpTarget)) {
+                && isBefore(jumpTarget, g.label) && nextLabelIs(g, jumpTarget)) {
             // if (c) { fall-through side } else { jump side }
             join = g.label;
-            Map.Entry<List<Op>, AbstractInsnNode> jump = block(jumpTarget, targets, Set.of(join));
+            gotoNode = g;
+            Map.Entry<List<Op>, AbstractInsnNode> jump = block(jumpTarget, targets, Set.of(join), sources);
             if (jump == null || jump.getValue() != join) {
                 return null;
             }
@@ -359,14 +422,41 @@ public final class LoopSummaries {
         if (fallDepth < 0 || fallDepth != jumpDepth || fallDepth > 1) {
             return null;
         }
-        if (fallDepth == 0 && !writes(fallOps) && !writes(jumpOps)) {
+        // The jump target is entered only by this if (the fall-through side may also end there)
+        for (AbstractInsnNode src : sources.getOrDefault(jumpTarget, List.of())) {
+            if (src != j && join != jumpTarget) {
+                return null;
+            }
+        }
+        return new Parsed(List.copyOf(fallOps), List.copyOf(jumpOps), join, gotoNode, fallDepth);
+    }
+
+    /** Whether {@code a} comes before {@code b} in their method. */
+    private static boolean isBefore(AbstractInsnNode a, AbstractInsnNode b) {
+        for (AbstractInsnNode n = a.getNext(); n != null; n = n.getNext()) {
+            if (n == b) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Diamond diamond(InsnList insns, JumpInsnNode j, Map<LabelNode, Boolean> targets,
+            Map<Label, Integer> joins, Map<Label, Integer> existingJoins,
+            Map<LabelNode, List<AbstractInsnNode>> sources) {
+        Parsed p = parse(j, targets, sources);
+        if (p == null) {
             return null;
         }
+        if (p.depth() == 0 && !writes(p.fall()) && !writes(p.jump())) {
+            return null;
+        }
+        LabelNode join = p.join();
         // Diamonds that meet at the same label share its probe
         Integer id = existingJoins.containsKey(join.getLabel()) ? existingJoins.get(join.getLabel())
                 : Integer.valueOf(joinIds.incrementAndGet());
         joins.put(join.getLabel(), id);
-        return new Diamond(List.copyOf(fallOps), List.copyOf(jumpOps), id, fallDepth);
+        return new Diamond(p.fall(), p.jump(), id, p.depth());
     }
 
     /** Whether nothing but non-instructions separates {@code from} and the label {@code label}. */
@@ -454,10 +544,19 @@ public final class LoopSummaries {
         }
         // The head exits (jumps) on i >= b (the loop runs while i < b) or on i <= b (while i > b).
         int step;
+        boolean inclusive = false;
         if (opcode == Opcodes.IF_ICMPGE) {
             step = 1;
         } else if (opcode == Opcodes.IF_ICMPLE) {
             step = -1;
+        } else if (opcode == Opcodes.IF_ICMPGT) {
+            // runs while i <= b: never ends for b = 2^31 - 1, where nothing after it runs either,
+            // so closed forms that are wrong only there add no execution that exists
+            step = 1;
+            inclusive = true;
+        } else if (opcode == Opcodes.IF_ICMPLT) {
+            step = -1; // while i >= b, likewise
+            inclusive = true;
         } else {
             return null;
         }
@@ -478,7 +577,7 @@ public final class LoopSummaries {
             return null;
         }
         return Map.entry(cond, new CountingLoop(i, step, bound, boundConstant, true,
-                Collections.unmodifiableMap(steps), Collections.unmodifiableMap(constants), body.pure()));
+                Collections.unmodifiableMap(steps), Collections.unmodifiableMap(constants), body.pure(), inclusive));
     }
 
     /** The method's frames (types of locals and stack values), or null if it cannot be analysed. */

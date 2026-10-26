@@ -99,6 +99,43 @@ public class Main {
 }
 ''', lambda n: 2 * n, lambda n: 2 * n + 1, lambda n: ints([n]),
         'c is even.'),
+    'count-even': ('''IMPORT
+// loop-summary/count-even: a nested condition per iteration (i % 2 on a constant divisor).
+public class Main {
+    public static void main(String[] args) {
+        int val = Verifier.nondetInt();
+        int even = 0;
+        int odd = 0;
+        for (int i = 0; i < @N@; i++) {
+            if (i < val) {
+                if (i % 2 == 0) {
+                    even++;
+                } else {
+                    odd++;
+                }
+            }
+        }
+        if (even == @K@) assert false;
+    }
+}
+''', lambda n: (n - 3 + 1) // 2, lambda n: n // 2 + 1, lambda n: ints([n - 3]),
+        'even counts the even i < min(val, n): at most n / 2.'),
+    'count-upto': ('''IMPORT
+// loop-summary/count-upto: a counting loop up to and including an input bound.
+public class Main {
+    public static void main(String[] args) {
+        int val = Verifier.nondetInt();
+        int i = 1;
+        int s = 0;
+        while (i <= val) {
+            i++;
+            s += 2;
+        }
+        if (s == @K@) assert false;
+    }
+}
+''', lambda n: 2 * n, lambda n: 2 * n + 1, lambda n: ints([n]),
+        's is even.'),
     'count-up-print': ('''IMPORT
 // loop-summary/count-up-print: a counting loop up to an input bound that also prints.
 public class Main {

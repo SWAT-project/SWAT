@@ -120,10 +120,12 @@ public final class Merger {
             IntValue f = fall.top;
             top = new IntValue(context, (jumped ? j : f).concrete, bm.ifThenElse(jumpCondition, j.formula, f.formula));
         }
-        Object replaced = frame.summaryJoins().put(d.join(), new PendingJoin(merged, top, branch));
-        if (replaced instanceof PendingJoin old) {
-            old.branch().setMerged(false); // its join was never reached: its merge never happened
-        }
+        // Diamonds may share a join (an if inside the side of another that meets at the same label):
+        // their merges are applied there innermost first.
+        @SuppressWarnings("unchecked")
+        java.util.Deque<PendingJoin> pending = (java.util.Deque<PendingJoin>) frame.summaryJoins()
+                .computeIfAbsent(d.join(), k -> new java.util.ArrayDeque<PendingJoin>());
+        pending.push(new PendingJoin(merged, top, branch));
         branch.setMerged(true);
     }
 
@@ -135,48 +137,9 @@ public final class Merger {
         Map<Integer, IntValue> locals = new HashMap<>();
         java.util.Set<Integer> written = new java.util.HashSet<>();
         List<IntValue> st = new ArrayList<>();
-        BitvectorFormulaManager bv = context.getFormulaManager().getBitvectorFormulaManager();
         try {
-            for (Op op : ops) {
-                switch (op.opcode()) {
-                    case Opcodes.ILOAD -> {
-                        IntValue v = local(locals, frame, op.operand());
-                        if (v == null) {
-                            return null;
-                        }
-                        st.add(v);
-                    }
-                    case Opcodes.ISTORE -> {
-                        locals.put(op.operand(), st.remove(st.size() - 1));
-                        written.add(op.operand());
-                    }
-                    case Opcodes.IINC -> {
-                        IntValue v = local(locals, frame, op.operand());
-                        if (v == null) {
-                            return null;
-                        }
-                        locals.put(op.operand(), v.IINC(op.increment()));
-                        written.add(op.operand());
-                    }
-                    case Opcodes.LDC -> st.add(new IntValue(context, op.operand()));
-                    case Opcodes.INEG -> st.add(st.remove(st.size() - 1).INEG());
-                    default -> {
-                        IntValue y = st.remove(st.size() - 1);
-                        IntValue x = st.remove(st.size() - 1);
-                        st.add(switch (op.opcode()) {
-                            case Opcodes.IADD -> x.IADD(y);
-                            case Opcodes.ISUB -> x.ISUB(y);
-                            case Opcodes.IMUL -> x.IMUL(y);
-                            case Opcodes.ISHL -> x.ISHL(y);
-                            case Opcodes.ISHR -> x.ISHR(y);
-                            case Opcodes.IUSHR -> x.IUSHR(y);
-                            case Opcodes.IAND -> x.IAND(y);
-                            case Opcodes.IOR -> x.IOR(y);
-                            case Opcodes.IXOR -> x.IXOR(y);
-                            default -> throw new IllegalStateException("op " + op.opcode());
-                        });
-                    }
-                }
+            if (!run(ops, frame, context, locals, written, st)) {
+                return null;
             }
         } catch (RuntimeException e) {
             return null;
@@ -188,6 +151,121 @@ public final class Merger {
             }
         }
         return new Side(new LocalsView(locals, frame), written, st.isEmpty() ? null : st.get(st.size() - 1));
+    }
+
+    /** Runs ops on the given locals (falling back to the frame's) and stack; false if it cannot. */
+    private boolean run(List<Op> ops, Frame frame, SolverContext context, Map<Integer, IntValue> locals,
+                        java.util.Set<Integer> written, List<IntValue> st) {
+        for (Op op : ops) {
+            if (op.nested() != null) {
+                if (!nested(op, frame, context, locals, written, st)) {
+                    return false;
+                }
+                continue;
+            }
+            switch (op.opcode()) {
+                case Opcodes.ILOAD -> {
+                    IntValue v = local(locals, frame, op.operand());
+                    if (v == null) {
+                        return false;
+                    }
+                    st.add(v);
+                }
+                case Opcodes.ISTORE -> {
+                    locals.put(op.operand(), st.remove(st.size() - 1));
+                    written.add(op.operand());
+                }
+                case Opcodes.IINC -> {
+                    IntValue v = local(locals, frame, op.operand());
+                    if (v == null) {
+                        return false;
+                    }
+                    locals.put(op.operand(), v.IINC(op.increment()));
+                    written.add(op.operand());
+                }
+                case Opcodes.LDC -> st.add(new IntValue(context, op.operand()));
+                case Opcodes.INEG -> st.add(st.remove(st.size() - 1).INEG());
+                default -> {
+                    IntValue y = st.remove(st.size() - 1);
+                    IntValue x = st.remove(st.size() - 1);
+                    st.add(switch (op.opcode()) {
+                        case Opcodes.IADD -> x.IADD(y);
+                        case Opcodes.ISUB -> x.ISUB(y);
+                        case Opcodes.IMUL -> x.IMUL(y);
+                        case Opcodes.IDIV -> x.IDIV(y); // by a nonzero constant (LoopSummaries.block)
+                        case Opcodes.IREM -> x.IREM(y);
+                        case Opcodes.ISHL -> x.ISHL(y);
+                        case Opcodes.ISHR -> x.ISHR(y);
+                        case Opcodes.IUSHR -> x.IUSHR(y);
+                        case Opcodes.IAND -> x.IAND(y);
+                        case Opcodes.IOR -> x.IOR(y);
+                        case Opcodes.IXOR -> x.IXOR(y);
+                        default -> throw new IllegalStateException("op " + op.opcode());
+                    });
+                }
+            }
+        }
+        return true;
+    }
+
+    /** A diamond inside a side: both of its sides run, and their results are merged by its condition. */
+    private boolean nested(Op op, Frame frame, SolverContext context, Map<Integer, IntValue> locals,
+                           java.util.Set<Integer> written, List<IntValue> st) {
+        int opcode = op.opcode();
+        IntValue y = opcode <= Opcodes.IFLE ? null : st.remove(st.size() - 1);
+        IntValue x = st.remove(st.size() - 1);
+        BooleanFormula condition = switch (opcode) {
+            case Opcodes.IFEQ -> x.IFEQ();
+            case Opcodes.IFNE -> x.IFNE();
+            case Opcodes.IFLT -> x.IFLT();
+            case Opcodes.IFGE -> x.IFGE();
+            case Opcodes.IFGT -> x.IFGT();
+            case Opcodes.IFLE -> x.IFLE();
+            case Opcodes.IF_ICMPEQ -> x.IF_ICMPEQ(y);
+            case Opcodes.IF_ICMPNE -> x.IF_ICMPNE(y);
+            case Opcodes.IF_ICMPLT -> x.IF_ICMPLT(y);
+            case Opcodes.IF_ICMPGE -> x.IF_ICMPGE(y);
+            case Opcodes.IF_ICMPGT -> x.IF_ICMPGT(y);
+            case Opcodes.IF_ICMPLE -> x.IF_ICMPLE(y);
+            default -> throw new IllegalStateException("if " + opcode);
+        };
+        int a = x.concrete;
+        int b = y == null ? 0 : y.concrete;
+        boolean jumps = switch (opcode) {
+            case Opcodes.IFEQ, Opcodes.IF_ICMPEQ -> a == b;
+            case Opcodes.IFNE, Opcodes.IF_ICMPNE -> a != b;
+            case Opcodes.IFLT, Opcodes.IF_ICMPLT -> a < b;
+            case Opcodes.IFGE, Opcodes.IF_ICMPGE -> a >= b;
+            case Opcodes.IFGT, Opcodes.IF_ICMPGT -> a > b;
+            default -> a <= b;
+        };
+        Map<Integer, IntValue> jl = new HashMap<>(locals);
+        Map<Integer, IntValue> fl = new HashMap<>(locals);
+        java.util.Set<Integer> jw = new java.util.HashSet<>();
+        java.util.Set<Integer> fw = new java.util.HashSet<>();
+        List<IntValue> js = new ArrayList<>(st);
+        List<IntValue> fs = new ArrayList<>(st);
+        if (!run(op.nested().jump(), frame, context, jl, jw, js) || !run(op.nested().fallThrough(), frame, context, fl, fw, fs)) {
+            return false;
+        }
+        BooleanFormulaManager bm = context.getFormulaManager().getBooleanFormulaManager();
+        java.util.Set<Integer> slots = new java.util.TreeSet<>(jw);
+        slots.addAll(fw);
+        for (int slot : slots) {
+            IntValue j = local(jl, frame, slot);
+            IntValue f = local(fl, frame, slot);
+            if (j == null || f == null) {
+                return false;
+            }
+            locals.put(slot, new IntValue(context, (jumps ? j : f).concrete, bm.ifThenElse(condition, j.formula, f.formula)));
+            written.add(slot);
+        }
+        if (op.nested().stackDelta() == 1) {
+            IntValue j = js.get(js.size() - 1);
+            IntValue f = fs.get(fs.size() - 1);
+            st.add(new IntValue(context, (jumps ? j : f).concrete, bm.ifThenElse(condition, j.formula, f.formula)));
+        }
+        return true;
     }
 
     /** A side's locals: those it wrote, else the frame's current ones. */
@@ -228,9 +306,16 @@ public final class Merger {
             return;
         }
         Object p = frame.summaryJoinsIfAny().remove(join);
-        if (!(p instanceof PendingJoin pending)) {
+        if (!(p instanceof java.util.Deque<?> queue)) {
             return;
         }
+        while (!queue.isEmpty()) {
+            apply(frame, (PendingJoin) queue.pop());
+        }
+    }
+
+    /** Gives the locals (and the stack top) of a diamond whose join was reached their merge. */
+    private void apply(Frame frame, PendingJoin pending) {
         // The execution must have computed what the summary says, or the summary is wrong here.
         for (Map.Entry<Integer, IntValue> e : pending.locals().entrySet()) {
             IntValue current = asInt(frame, e.getKey());
@@ -316,19 +401,26 @@ public final class Merger {
         BooleanFormulaManager bm = context.getFormulaManager().getBooleanFormulaManager();
         BitvectorFormula i0 = a.i0.formula;
         BitvectorFormula b = a.bound.formula;
-        BooleanFormula runs = l.step() > 0 ? bv.lessThan(i0, b, true) : bv.greaterThan(i0, b, true);
+        // With an inclusive bound the loop stops one past b: count from b + step (it never ends
+        // when b + step overflows, and then nothing after it runs).
+        BitvectorFormula one = bv.makeBitvector(BITS, l.step());
+        BitvectorFormula stop = l.inclusive() ? bv.add(b, one) : b;
+        BooleanFormula runs = l.step() > 0
+                ? (l.inclusive() ? bv.lessOrEquals(i0, b, true) : bv.lessThan(i0, b, true))
+                : (l.inclusive() ? bv.greaterOrEquals(i0, b, true) : bv.greaterThan(i0, b, true));
         BitvectorFormula zero = bv.makeBitvector(BITS, 0);
-        BitvectorFormula n = bm.ifThenElse(runs, l.step() > 0 ? bv.subtract(b, i0) : bv.subtract(i0, b), zero);
+        BitvectorFormula n = bm.ifThenElse(runs, l.step() > 0 ? bv.subtract(stop, i0) : bv.subtract(i0, stop), zero);
         int ci0 = a.i0.concrete;
         int cb = a.bound.concrete;
-        boolean cruns = l.step() > 0 ? ci0 < cb : ci0 > cb;
-        int cn = cruns ? (l.step() > 0 ? cb - ci0 : ci0 - cb) : 0;
+        int cstop = l.inclusive() ? cb + l.step() : cb;
+        boolean cruns = l.step() > 0 ? (l.inclusive() ? ci0 <= cb : ci0 < cb) : (l.inclusive() ? ci0 >= cb : ci0 > cb);
+        int cn = cruns ? (l.step() > 0 ? cstop - ci0 : ci0 - cstop) : 0;
         Map<Integer, IntValue> merged = new HashMap<>();
         for (Map.Entry<Integer, Integer> s : l.steps().entrySet()) {
             int slot = s.getKey();
             IntValue x0 = a.entry.get(slot);
             if (slot == l.i()) {
-                merged.put(slot, new IntValue(context, cruns ? cb : ci0, bm.ifThenElse(runs, b, i0)));
+                merged.put(slot, new IntValue(context, cruns ? cstop : ci0, bm.ifThenElse(runs, stop, i0)));
             } else {
                 int d = s.getValue();
                 merged.put(slot, new IntValue(context, x0.concrete + d * cn,
