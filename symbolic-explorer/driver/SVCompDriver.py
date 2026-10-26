@@ -588,7 +588,10 @@ class SVCompDriver:
     def is_large(sol: dict) -> bool:
         """Whether a solution has an integral input beyond LARGE_INPUT in magnitude."""
         import z3
-        for value in Z3Handler.solution_values(sol).values():
+        values = [v.get('plain_value') for v in sol.values() if isinstance(v, dict)] if isinstance(sol, dict) else []
+        for value in values:
+            if not z3.is_expr(value):
+                continue
             if z3.is_bv_value(value):
                 n = value.as_signed_long()
             elif z3.is_int_value(value):
