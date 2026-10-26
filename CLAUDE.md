@@ -98,15 +98,25 @@ and used in `strategy/DFS.py`.
     per call site and looked up by the walk's stack).
 
 - **Loop summaries** (executor `symbolic/summary`, 2026-10-26): diamonds (an int `if` whose sides
-  are straight-line int arithmetic on locals) and counting loops (`i < b`, step one, arithmetic
-  body) are merged into formulas; their branches are flagged `merged` and the explorer treats them
-  like sliced ones. `TaintCheck` drops a summary whose merged values could reach a call, a heap or
+  are straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting
+  loops (`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged
+  `merged` and the explorer treats them like sliced ones. A counting loop whose body does other
+  things too (calls, heap) is flagged `mergedConditional`, honored only if `Relevance.summary_ok`
+  (the loop changes nothing relevant but its locals); its branches are flagged only when it leaves
+  through its head (`BackEdge` plans tell iterations from re-entries). `TaintCheck` drops a summary whose merged values could reach a call, a heap or
   array store, an array index or size, or a return, since a dropped constraint must not be needed
   where the executor concretizes (13 false SAFE before, via `Verifier.assume`). Ignoring a
   `merged` flag is always sound. Config `loopSummaries` (on in `sv-comp.cfg`),
   `--no-loop-summaries`. Results, limits, next steps: swat-benchmarks/RESULTS.md, "Loop
   summarization". Pre-pass tests: `./gradlew :symbolic-executor:test --tests
   'de.uzl.its.swat.symbolic.summary.*'`.
+
+- **Small models**: a solution with an integral input beyond 65536 is re-solved with the inputs
+  bounded first (`SVCompDriver.prefer_small`, `--no-prefer-small-models`); a loop bound of 2^30
+  otherwise makes the next run never end (+4 valid-assert, +1 no-runtime-exception).
+- **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
+  application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
+  the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.
 
 Tests for the walk, runnable without a SWAT run:
 
@@ -115,6 +125,7 @@ cd symbolic-explorer && python3 -m unittest tests.test_sa_walk -v
 python3 tests/check_marking_on_graphs.py <graph.json>...   # checks marking against an explicit search
 ../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_divergence -v   # needs the venv
 ../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_relevance -v    # relevance and slicing
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_prefer_small -v # small models
 ```
 
 `dfs` only descends into real `data.BinaryExecutionTree.Node` instances. In tests, build them with

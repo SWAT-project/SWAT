@@ -731,23 +731,80 @@ anything computed from them reaches a call, a field or array store, an array ind
 return. Diamonds sharing a join label share its probe, and a pending merge whose join is never
 reached unflags its branch.
 
-### Limitations and next steps
+### Next steps, done (2026-10-26 evening)
 
-- **Bodies with other code**: a call, an array access or a field access in a side or loop body
-  rules a summary out, which is why sv-benchmarks is unaffected. Calls cannot change the caller's
-  locals, so the closed forms of the locals stay exact with any body. What the body does elsewhere
-  (heap, output, callee branches) is the problem, and relevance can decide that: let the executor
-  flag such loops as `merged if irrelevant`, and have the explorer honor the flag only if the
-  loop's region writes nothing relevant besides the summarized locals (Relevance's region
-  writes). That combines both analyses and is safe because ignoring a flag is always sound.
-- **Nested conditions**: a side containing another branch (`if (i < val) { if (i % 2 == 0) even++;
-  else odd++; }`, `diamond-then-check`) is not merged; nested diamonds could be merged inside out.
-- **Non-strict bounds and other steps**: `i <= b` never ends for `b = 2^31 - 1`, and steps other
-  than one can skip the bound and overflow; both need a case split (e.g. `b < MAX` as a flippable
-  side condition).
-- **Values passed on**: the taint check also rules out a merged value passed to an *instrumented*
+Runs: swat-benchmarks `run_20261026_202302`, sv-benchmarks valid-assert `run_20261026_202906`,
+no-runtime-exception (`--sa-no-runtime-exception`) `run_20261026_204318`; 300 s, 64 workers.
+
+- **Bodies with other code (relevance-gated summaries).** Calls cannot change the caller's locals,
+  so a counting loop's closed forms stay exact whatever else its body does. The executor now
+  summarizes counting loops with any straight-line body (`BodyAnalysis`: one pass through ASM
+  frames over `local + c` / `c` / unknown; every live local the body writes must step by a constant
+  or be set to one; temporaries undefined at the head are ignored) and flags their branches
+  `mergedConditional`. The explorer honors such a flag only if the loop's region changes nothing
+  relevant but its method's locals (`Relevance`: `summary_ok`, i.e. no target, no terminator, no
+  relevant global write, no relevant branch or thrower besides the head, no call into a method with
+  a relevant branch); the loop then opens a region like a sliced branch, which whatever the graph
+  cannot see inside poisons. A loop's branches are flagged only when it leaves through its head,
+  and a head reached other than by the loop's back edge (a `BackEdge` plan marks it) starts a new
+  activation, so a loop left by an exception or a return keeps its constraints.
+  New `loop-summary` families `count-up-print` (a `println` in the body) and `count-up-log` (a
+  helper writing a field and an array): 1-2 rounds at every n. `loop-summary-soundness/body-call`
+  is now solved; `body-field-relevant` and `body-call-relevant`, whose bodies change what the
+  assert reads, keep their constraints (UNKNOWN, as before; never false SAFE).
+- **Nested conditions.** An `if` inside a side whose own sides are blocks again becomes a nested op
+  that the simulation merges by its condition; javac lets such an if-else meet at the outer if's
+  end, so pending merges per join are a stack, applied innermost first. `IDIV`/`IREM` by a nonzero
+  constant are allowed in sides. New family `count-even` (`if (i < val) { if (i % 2 == 0) even++;
+  else odd++; }`): 1-2 rounds at every n; `diamond-then-check` 4 rounds instead of 12.
+- **Non-strict bounds.** Counting loops may run while `i <= b` (step +1) or `i >= b` (step -1):
+  the closed forms count from `b + step`. They are wrong only for `b` at the type's limit, where the
+  loop never ends and nothing after it runs, so they add no execution that exists (only models
+  that none matches). New family `count-upto`: 1-2 rounds; `non-strict-bound` 3 rounds instead of
+  103.
+- **Small models** (`SVCompDriver.prefer_small`, `--no-prefer-small-models`). A solution with an
+  integral input beyond 65536 is re-solved with every integral input bounded by 16, 256 and 65536
+  in turn; the first model is used (any model of the bounded query is one of the query), else the
+  original. Before, the solver's 2^30 for a loop bound made the next run never end. On sv-benchmarks
+  this alone gave **+4 valid-assert** (`algorithms/BinaryTreeSearch-MemUnsat01`,
+  `RedBlackTree-MemUnsat01` found, `argv-tasks/Base`, `jbmc-regression/calc` SAFE: all of them
+  used bounded models) **and +1 no-runtime-exception** (`jbmc-regression/calc`).
+- **Deadlocks** (see below): `rtems-lock-model/lock-00-01-10` no longer crashes.
+
+Totals: swat-benchmarks 462 of 487 correct (no false SAFE); `loop-summary` 42/42,
+`loop-summary-soundness` 14/22. sv-benchmarks valid-assert **1019 points** (was 1013),
+no-runtime-exception **1281** (was 1279), no new false SAFE.
+
+### Deadlocked targets (the rtems-lock-model crash)
+
+`rtems-lock-model/lock-00-01-10` (its no-deadlock label is false: it can deadlock) was reported as a
+crash under no-runtime-exception in some runs: a run deadlocked, its threads waited forever without
+using CPU, so neither the target nor the explorer's CPU budget ended it, and the harness killed
+everything at its wall-clock timeout (= the CPU limit) before the explorer reported anything.
+
+- The executor's `DeadlockWatchdog` (config `deadlockWatchdog`, on in `sv-comp.cfg`) ends a run
+  whose application threads (the main thread group, without DestroyJavaVM, itself and SWAT's log
+  appender workers) all wait forever: BLOCKED or WAITING (not TIMED_WAITING) with unchanged CPU
+  times for 3 s. It prints `[SWAT] Deadlock: ...` and exits normally, so the agent's shutdown hook
+  sends the trace; a deadlocked execution can do nothing more, so the trace is complete.
+- The explorer's `ResourceBudget` also has a wall-clock deadline (default: the CPU limit), which
+  ends any other hang like the CPU deadline: UNKNOWN instead of a kill.
+
+The task now ends after about 18 s with UNKNOWN (context loss from its threads). SWAT does not
+handle the no-deadlock property at all yet; the watchdog would be the basis for finding
+deadlocks there (a deadlock is the violation), but a wrong detection would then be a false
+VIOLATION, so it needs its own soundness review.
+
+### Remaining limitations
+
+- **Values passed on**: the taint check rules out a merged value passed to an instrumented
   application method, or returned, although the executor keeps those symbolic. Following them into
-  the callee (or allowing calls to application methods) would merge more.
-- **Unsummarized loops with an input bound** make the solver pick huge bounds and the executor
-  time out (the 6 UNKNOWN above). Preferring small values for loop-head flips (as the divergence
-  retries already do) would help independently of summaries.
+  the callee would merge more (an interprocedural taint analysis).
+- **Steps other than one**: `i += 2` can step over the bound and overflow; a closed form needs a case
+  split on overflow.
+- **Diamonds with other code in a side** are not merged (only loop bodies may contain other code):
+  the untaken side cannot be simulated if it calls or touches the heap.
+- **Loops that cannot be summarized** (a branch, a list or a relevant field in the body) still
+  need one round per iteration, and plain DFS starves the branches behind them: it keeps flipping
+  the loop's exit one iteration further (`body-branch`, `heap-in-loop`, `body-*-relevant`: 130+
+  rounds, UNKNOWN). `--search-order coverage` addresses that independently.
