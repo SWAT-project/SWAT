@@ -62,6 +62,9 @@ class StaticPreAnalysis:
         self._lock = threading.Lock()  # orders starting the extractor against cancel()
         self._cancelled = threading.Event()
         self._done = threading.Event()
+        # Whether to compute which branches are irrelevant to the targets (see Relevance)
+        self.slicing = not getattr(args, "no_sa_slicing", False)
+        self.relevance_stats: dict | None = None
 
     @property
     def requested(self) -> bool:
@@ -150,14 +153,14 @@ class StaticPreAnalysis:
         try:
             if self.args.sa_file:
                 logger.info(f'[EXPLORER] Loading static pre-analysis graph from provided file...')
-                graph.load_json_graph(self.args.sa_file, self.targets)
+                graph.load_json_graph(self.args.sa_file, self.targets, slicing=self.slicing)
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph from provided file.')
             else:
                 logger.info(f'[EXPLORER] Running static pre-analysis...')
                 if not self._run_extractor():
                     return
                 logger.info(f'[EXPLORER] Loading static pre-analysis graph...')
-                graph.load_json_graph(self.graph_file, self.targets)
+                graph.load_json_graph(self.graph_file, self.targets, slicing=self.slicing)
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
             async_sites = graph.async_entry_sites()
             if self._cancelled.is_set():
@@ -171,6 +174,9 @@ class StaticPreAnalysis:
             else:
                 self._graph = graph
                 self.status = SAStatus.LOADED
+                if graph.relevance_stats is not None:
+                    self.relevance_stats = graph.relevance_stats.as_dict()
+                    logger.info(f'[EXPLORER] Relevance: {self.relevance_stats}')
         except Exception as e:
             if self._cancelled.is_set():
                 self.status = SAStatus.CANCELLED
@@ -227,6 +233,8 @@ class StaticPreAnalysis:
             'property_supported': self.property_supported,
             'mode': 'parallel' if getattr(self.args, "parallel_sa", False) else 'sequential',
             'callback_targets': not getattr(self.args, "sa_no_callback_targets", False),
+            'slicing': self.slicing,
+            'relevance': self.relevance_stats,
             'status': self.status.value,
             'failed': self.status in (SAStatus.FAILED, SAStatus.TIMEOUT),
             'timed_out': self.status == SAStatus.TIMEOUT,

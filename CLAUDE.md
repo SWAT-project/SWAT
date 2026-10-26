@@ -88,6 +88,7 @@ Tests for the walk, runnable without a SWAT run:
 cd symbolic-explorer && python3 -m unittest tests.test_sa_walk -v
 python3 tests/check_marking_on_graphs.py <graph.json>...   # checks marking against an explicit search
 ../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_divergence -v   # needs the venv
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_relevance -v    # relevance and slicing
 ```
 
 `dfs` only descends into real `data.BinaryExecutionTree.Node` instances. In tests, build them with

@@ -18,6 +18,7 @@ from data.BinaryExecutionTree.Node import Node
 from data.BinaryExecutionTree.Tree import Tree
 
 from strategy.StrategyService import StrategyService
+from strategy import DFS
 from data.StaticAnalysisGraph.SAGraph import SAGraph
 from svcomp.StaticPreAnalysis import StaticPreAnalysis
 from svcomp.PropertyPreCheck import PropertyPreCheck
@@ -141,6 +142,11 @@ class SVCompDriver:
         # (True: branched), unless the solutions were only guesses (see check_divergence)
         self.given_up: list[tuple[Node, bool]] = []
         self.divergence_retry_count = 0 # branches scheduled to be re-solved
+        # A run whose solution left irrelevant constraints out (see check_divergence), to be
+        # checked against the next walk: (target, solution, guess, reason)
+        self.pending_projected = None
+        self.projected_reached = 0 # such runs that reached the target on another path
+        DFS.SLICING = not getattr(args, 'no_sa_slicing', False)
         self.budget = ResourceBudget(memory_limit_mb=getattr(args, 'memory_limit', None) or DEFAULT_MEMORY_LIMIT_MB,
                                      cpu_limit_s=getattr(args, 'cpu_limit', None) or DEFAULT_CPU_LIMIT_S,
                                      cpu_used_s=getattr(args, 'cpu_used', None) or 0.0)
@@ -277,6 +283,10 @@ class SVCompDriver:
                 if ("[SWAT] Uncaught top-level RuntimeException in symbolic execution" in l or "[SWAT] Uncaught top-level checked exception in symbolic execution" in l) and self.verification_category == VerificationCategory.VALID_ASSERT_PRP:
                     logger.info(f'[SVCOMP] Uncaught Exception: {l}')
                     Database.instance().record_uncaught_exception(ENDPOINT_ID)
+                    if received_trace:
+                        # The path ended here (dfs: an irrelevant branch whose region it ended in
+                        # is relevant after all)
+                        Database.instance().mark_last_leaf_abnormal(ENDPOINT_ID)
                 if "[SWAT Exception]:" in l:
                     logger.info(f'[SVCOMP] SWAT Exception: {l}')
                     Database.instance().record_execution_error(ENDPOINT_ID, 'swat_exception', l.strip())
@@ -497,17 +507,45 @@ class SVCompDriver:
             reason = 'Branch unexpectedly taken/skipped.'
         else:
             reason = 'Branch does not appear in trace.'
-        if self.state.solution_is_guess:
+        if getattr(target, 'sliced_query', False):
+            # The query left out the constraints of irrelevant branches, so the run may well have
+            # taken other irrelevant decisions and reached the branch on another path. Whether it
+            # did is known after the next walk, which identifies paths by their relevant decisions.
+            self.pending_projected = (target, self.state.solution, self.state.solution_is_guess, reason)
+            return
+        self.divergence_failed(target, self.state.solution, self.state.solution_is_guess, reason)
+
+    def check_projected_divergence(self) -> bool:
+        """After a walk: whether the run of a solution whose query left out irrelevant constraints
+        reached its branch's side on some path with the same relevant decisions. If not, it is a
+        divergence like any other (divergence_failed). Returns whether a divergence was handled,
+        which changes the candidates."""
+        if self.pending_projected is None:
+            return False
+        target, solution, guess, reason = self.pending_projected
+        self.pending_projected = None
+        ident = getattr(target, 'ident', None)
+        if ident is not None and Database.instance().projected_covered(ENDPOINT_ID, ident, target.branched is None):
+            self.projected_reached += 1
+            logger.info(f'[SVCOMP] Branch {target.id} reached on another path with the same relevant decisions')
+            return False
+        self.divergence_failed(target, solution, guess, reason + ' (sliced query, not reached with the same relevant decisions either)')
+        return True
+
+    def divergence_failed(self, target: Node, solution, guess: bool, reason: str) -> None:
+        """A run did not reach the side of `target` its solution was solved for: re-solve it without
+        the failed solutions, or give up on it after divergence_retries of them."""
+        if guess:
             Database.instance().record_expected_divergence(ENDPOINT_ID)
         failed = self.failed_solutions.setdefault(target.gid, [])
-        failed.append(self.state.solution or {})
+        failed.append(solution or {})
         if len(failed) <= self.divergence_retries:
-            logger.info(f'[SVCOMP] Diverged from branch {target.id}{" (approximate model)" if self.state.solution_is_guess else ""}: {reason} '
+            logger.info(f'[SVCOMP] Diverged from branch {target.id}{" (approximate model)" if guess else ""}: {reason} '
                         f'Re-solving it without the failed solutions ({len(failed)}/{self.divergence_retries}).')
             Database.instance().drop_solution(target.gid)
             self.divergence_retry_count += 1
             return
-        self.give_up_branch(target, self.state.solution_is_guess, reason)
+        self.give_up_branch(target, guess, reason)
 
     def give_up_branch(self, target: Node, guess: bool, reason: str) -> None:
         """Takes a branch whose solutions kept missing it out of the search.
@@ -531,8 +569,11 @@ class SVCompDriver:
 
     def unreached_given_up_branches(self) -> list[Node]:
         """The given-up branches whose unexplored side no run has reached by now. A side reached
-        later is in the tree, so the search covers what lies behind it like any other."""
-        return [n for n, branched in self.given_up if (n.branched if branched else n.skipped) is None]
+        later is in the tree, so the search covers what lies behind it like any other; so is one
+        reached on a path with the same relevant decisions (see dfs)."""
+        return [n for n, branched in self.given_up if (n.branched if branched else n.skipped) is None
+                and not (getattr(n, 'ident', None) is not None
+                         and Database.instance().projected_covered(ENDPOINT_ID, n.ident, branched))]
 
     def solve_retry(self, branch: Node, rlimit: int | None) -> tuple[SATResult, dict]:
         """Re-solves a branch whose solutions so far did not lead the run to it, excluding them.
@@ -641,6 +682,10 @@ class SVCompDriver:
         self.adopt_sa_graph()
         possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance,
                                                          search_order=getattr(self.args, 'search_order', 'dfs'))
+        if self.check_projected_divergence():
+            # The branch is a candidate again (or given up on): walk again.
+            possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance,
+                                                             search_order=getattr(self.args, 'search_order', 'dfs'))
         logger.info(f'[SYMBOLIC EXPLORATION] Found {len(possible_branches)} possible branches')
         logger.info(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
         candidates = [b for b in possible_branches if StrategyService.is_symbolic_branch(b)]
@@ -781,10 +826,21 @@ class SVCompDriver:
 
         self.kill_current_process()
 
+    def sa_stats(self) -> dict:
+        """The pre-analysis' statistics, with what the relevance analysis did in the walks."""
+        stats = self.sa.stats(self.sa_adopted_round)
+        if self.sa.slicing and stats.get('relevance') is not None:
+            tree = Database.instance().get_tree(ENDPOINT_ID)
+            stats['relevance'] = dict(stats['relevance'],
+                                      poisoned=getattr(tree, 'poisoned_total', 0),
+                                      last_walk=dict(StrategyService.walk_stats),
+                                      reached_on_other_path=self.projected_reached)
+        return stats
+
     def write_stats(self, verdict):
         stats_file = os.path.join(self.args.logdir if hasattr(self.args, 'logdir') else 'logs', 'stats.json')
         write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
-                             self.round_idx, self.nr_solver_calls, self.sa.stats(self.sa_adopted_round),
+                             self.round_idx, self.nr_solver_calls, self.sa_stats(),
                              self.solver_limit_hits, self.precheck.stats(), self.divergence_retry_count,
                              resources=self.budget.stats())
 

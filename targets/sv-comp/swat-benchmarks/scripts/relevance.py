@@ -582,7 +582,7 @@ public class Main {
 
 
 def all_relevance_tasks():
-    for n, base in ((100, 'example'), (100000, 'example-long')):
+    for n, base in ((100, 'example'), (10000, 'example-long')):
         src = EXAMPLE.replace('IMPORT\n', IMPORT).replace('@N@', str(n))
         yield Task('relevance', base, False, src, ints([3141592]), '')
     for name, (src, witness) in FAMILIES.items():

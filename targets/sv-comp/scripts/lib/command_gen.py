@@ -35,7 +35,7 @@ def is_port_available(port: int) -> bool:
         return False
 
 
-def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'dfs', sa_no_runtime_exception: bool = False) -> list[str]:
+def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, no_sa_slicing: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'dfs', sa_no_runtime_exception: bool = False) -> list[str]:
 
 
     test_case_dir = ver_task['file_path'].parent
@@ -64,6 +64,7 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     (["--parallel-sa"] if parallel_sa and not no_sa else []) + \
                     (["--sa-rank-distance"] if sa_rank_distance and not no_sa else []) + \
                     (["--sa-no-callback-targets"] if sa_no_callback_targets and not no_sa else []) + \
+                    (["--no-sa-slicing"] if no_sa_slicing and not no_sa else []) + \
                     (["--solver-rlimit", str(solver_rlimit)] if solver_rlimit else []) + \
                     (["--search-order", search_order] if search_order != 'dfs' else []) + \
                     (["--cpu-limit", str(cpu_limit_s)] if cpu_limit_s else [])
@@ -109,7 +110,7 @@ def write_run_info(run_dir: Path, **settings) -> Path:
     return path
 
 
-def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'dfs', sa_no_runtime_exception: bool = False) -> list[VerificationTask]:
+def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, no_sa_slicing: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'dfs', sa_no_runtime_exception: bool = False) -> list[VerificationTask]:
 
     port = 9000
     skipped_ports = []
@@ -154,7 +155,7 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
             'target_dir': target_dir,
             'target': target,
             'log_dir': logging_dir,
-            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, solver_rlimit=solver_rlimit, cpu_limit_s=cpu_limit_s, search_order=search_order, sa_no_runtime_exception=sa_no_runtime_exception)
+            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, no_sa_slicing=no_sa_slicing, solver_rlimit=solver_rlimit, cpu_limit_s=cpu_limit_s, search_order=search_order, sa_no_runtime_exception=sa_no_runtime_exception)
         }
         ver_task['command'] = command
         port += 1

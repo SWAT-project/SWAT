@@ -115,17 +115,30 @@ class StrategyService:
         # The walk is on the Database's tree itself, so dfs records where the SA walk fell out of
         # step there directly. The returned nodes are live: they gain children as traces arrive.
         def walk(tree, solved, unsat):
-            nonlocal covered, scores
+            nonlocal covered, scores, visited, distances
             tree.loop_state_pruned = 0  # counted per walk; the tree itself persists
+            tree.dedup_in_walk = 0
             found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
+            # A sliced branch that turned out relevant (dfs poisons it) changes which constraints
+            # and decisions count on every path below it: walk again. Poisoning is for good, so
+            # this ends.
+            while tree.poisoned_in_walk:
+                visited = set()
+                distances = {} if distances is not None else None
+                tree.loop_state_pruned = 0
+                tree.dedup_in_walk = 0
+                found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
             if order.startswith("coverage") or order == "generational":
                 first = first_coverers(tree.root)
                 covered = set(first)
                 scores = trace_scores(first)
-            return found, tree.loop_state_pruned
-        possible_branches, pruned = db.visit_tree(endpoint_id, walk)
+            return found, tree.loop_state_pruned, tree.sliced_in_walk, tree.dedup_in_walk
+        possible_branches, pruned, sliced, dedup = db.visit_tree(endpoint_id, walk)
         if pruned:
             logger.info(f'[DFS] Left out {pruned} subtrees below a repeated loop-head state')
+        if sliced or dedup:
+            logger.info(f'[DFS] Relevance: {sliced} irrelevant branches on the walk, {dedup} candidates covered by a path with the same relevant decisions')
+        StrategyService.walk_stats = {'sliced': sliced, 'dedup': dedup}
         # All sorts are stable: ties keep their DFS order.
         if order == "shallow":
             possible_branches.sort(key=depth)
@@ -141,8 +154,14 @@ class StrategyService:
         return possible_branches
         
         
+    # Statistics of the last select_branch walk (see dfs): irrelevant branches on it, and candidates
+    # left out as covered by a path with the same relevant decisions.
+    walk_stats = {'sliced': 0, 'dedup': 0}
+
     @staticmethod
-    def collect_path_constrains(node: Node) -> list():
+    def collect_path_constrains(node: Node, dropped: list | None = None) -> list():
+        """The constraints of the branches above node on its path, except those of the branches
+        the last walk sliced (dfs: irrelevant to the targets), which are counted in `dropped`."""
         path_constraints = list()
         trace_id = node.trace_id
         
@@ -152,6 +171,10 @@ class StrategyService:
                 if trace_id in node.constraint:
                     c = node.constraint[trace_id]
                     if "declare-fun" in c:
+                        if getattr(node, 'sliced', False):
+                            if dropped is not None:
+                                dropped.append(node)
+                            continue
                         path_constraints.append(c)
                         
         return path_constraints
@@ -235,7 +258,11 @@ class StrategyService:
     def collect_query(node: Node) -> tuple[list, set[str]]:
         """The constraints of the query for the unexplored side of the branch, besides its own
         constraint, and the uninterpreted functions the query contains."""
-        path_constraints = StrategyService.collect_path_constrains(node)
+        dropped = []
+        path_constraints = StrategyService.collect_path_constrains(node, dropped)
+        # Whether the query left out a constraint: the run of its solution may then take other
+        # irrelevant decisions and reach the branch on another path (see SVCompDriver).
+        node.sliced_query = bool(dropped)
         path_constraints.extend(StrategyService.collect_input_constrains(node))
         node_constraint = node.constraint.get(node.trace_id, '')
         definitions, ufs = StrategyService.slice_uf_definitions(

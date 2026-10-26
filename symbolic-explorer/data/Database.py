@@ -226,6 +226,26 @@ class Database:
         with lock:
             self.tree[endpoint_id].uncaught_exceptions += 1
 
+    def mark_last_leaf_abnormal(self, endpoint_id: Union[str, int]):
+        """Records that the run of the last added trace ended with an uncaught exception."""
+        endpoint_id = str(endpoint_id)
+        with lock:
+            leaf = self.tree[endpoint_id].last_leaf
+            if leaf is not None:
+                leaf.abnormal = True
+                # So that dfs finds it also below a side it does not walk otherwise
+                node = leaf.parent
+                while node is not None and not getattr(node, 'abnormal_below', False):
+                    node.abnormal_below = True
+                    node = node.parent
+
+    def projected_covered(self, endpoint_id: Union[str, int], ident, branched: bool) -> bool:
+        """Whether the last walk found the side of the branch `ident` (a candidate's sig and key,
+        see dfs) explored by some path with the same relevant decisions."""
+        endpoint_id = str(endpoint_id)
+        with lock:
+            return (ident, branched) in self.tree[endpoint_id].covered
+
     def is_approximate_trace(self, endpoint_id: Union[str, int], trace_id: str) -> bool:
         """Whether the trace used an approximate model, so solutions built from it are guesses."""
         endpoint_id = str(endpoint_id)

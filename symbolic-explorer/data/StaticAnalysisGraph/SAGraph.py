@@ -77,6 +77,17 @@ class SANode:
     # counting this node if it is a branch. Computed by compute_assert_distances(). Context-
     # insensitive, so only a heuristic for ordering the search; pruning never depends on it.
     assertDistance: float = math.inf
+    # The extractor's data-flow facts (cfg-extraction DataflowFacts), for the relevance analysis:
+    # (written, read) location pairs, what the node's control decision reads, whether it may end
+    # the program, and for an expanded call site its arguments, receiver and result.
+    dataflow: tuple = ()
+    control: tuple = ()
+    terminates: bool = False
+    call: dict | None = field(default=None, repr=False)
+    # For a branch: whether it is irrelevant to the targets (see Relevance), and then its region,
+    # the nodes of its own frame up to its immediate post-dominator.
+    irrelevant: bool = False
+    region: frozenset | None = field(default=None, repr=False)
 
     def has_fallthrough_child(self):
         return self.next_fallthrough is not None
@@ -547,6 +558,8 @@ class SAGraph:
         self.json_graph = {}
         self.nodes: dict[str, SANode] = {}
         self.entry_node: SANode | None = None
+        # The relevance analysis' statistics, None if it did not run (see load_json_graph).
+        self.relevance_stats = None
 
     def async_entry_sites(self) -> list[str]:
         """
@@ -565,11 +578,14 @@ class SAGraph:
         return sites
 
 
-    def load_json_graph(self, path: str, targets: str = "assertionPointIds"):
+    def load_json_graph(self, path: str, targets: str = "assertionPointIds", slicing: bool = True):
         """
         Loads the extractor's graph. `targets` names the metadata field with the target points of
         the property being checked: assertionPointIds (valid-assert) or runtimeExceptionPointIds
         (no-runtime-exception). A graph without it cannot be used for that property (KeyError).
+
+        With `slicing`, and if the graph carries data-flow facts, also computes which branches are
+        irrelevant to those targets (see Relevance).
         """
         with open(path, "r") as f:
             self.json_graph = json.load(f)
@@ -586,6 +602,12 @@ class SAGraph:
             if isinstance(metadata, str) and metadata.startswith("method: "):
                 self.nodes[id].method = metadata[len("method: "):]
             self.nodes[id].key = json_node.get("key")
+            if "dataflow" in json_node:
+                self.nodes[id].dataflow = tuple((tuple(w), tuple(r)) for w, r in json_node["dataflow"])
+            if "control" in json_node:
+                self.nodes[id].control = tuple(json_node["control"])
+            self.nodes[id].terminates = json_node.get("terminates", False) is True
+            self.nodes[id].call = json_node.get("call")
         # Phantom guards whose implicit exception the property pre-check proves cannot happen
         # (the extractor's cannotRaise, see RaiseSites in cfg-extraction): their exception side
         # leads nowhere, below.
@@ -689,6 +711,9 @@ class SAGraph:
                     mark_assertion_path(node)
         else:
             compute_summaries(list(self.nodes.values()))
+            if slicing and self.json_graph["metadata"].get("dataflowFacts"):
+                from data.StaticAnalysisGraph.Relevance import Relevance
+                self.relevance_stats = Relevance(self.nodes.values()).compute()
         compute_assert_distances(list(self.nodes.values()))
 
 
