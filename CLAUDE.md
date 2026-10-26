@@ -74,6 +74,14 @@ and used in `strategy/DFS.py`.
   stage is 0 and its duration is `static_pre_analysis_wall`; `run_info.json` in the run dir records
   the SA mode.
 
+- **Relevance (slicing), in progress** (branch `niklas/relevance-slicing`, started 2026-10-26;
+  loop summarization is planned on top of it): a branch whose region cannot affect whether a target
+  is reached, nor any value a target or a relevant branch reads, is irrelevant. `dfs` does not flip
+  it, `collect_path_constrains` leaves its constraint out, and candidates are identified by the
+  sequence of relevant decisions before them, so paths that differ only in irrelevant decisions
+  count as one. Computed in `data/StaticAnalysisGraph/Relevance.py` from the extractor's per-node
+  data-flow facts; off with `--no-sa-slicing`.
+
 Tests for the walk, runnable without a SWAT run:
 
 ```bash
