@@ -159,9 +159,10 @@ class StrategyService:
     walk_stats = {'sliced': 0, 'dedup': 0}
 
     @staticmethod
-    def collect_path_constrains(node: Node, dropped: list | None = None) -> list():
-        """The constraints of the branches above node on its path, except those of the branches
-        the last walk sliced (dfs: irrelevant to the targets), which are counted in `dropped`."""
+    def collect_path_constrains(node: Node, dropped: list | None = None, full: bool = False) -> list():
+        """The constraints of the branches above node on its path, except (unless `full`) those of
+        the branches the last walk sliced (dfs: irrelevant to the targets), which are counted in
+        `dropped`."""
         path_constraints = list()
         trace_id = node.trace_id
         
@@ -171,7 +172,7 @@ class StrategyService:
                 if trace_id in node.constraint:
                     c = node.constraint[trace_id]
                     if "declare-fun" in c:
-                        if getattr(node, 'sliced', False):
+                        if not full and getattr(node, 'sliced', False):
                             if dropped is not None:
                                 dropped.append(node)
                             continue
@@ -255,14 +256,16 @@ class StrategyService:
         return sliced, needed
 
     @staticmethod
-    def collect_query(node: Node) -> tuple[list, set[str]]:
+    def collect_query(node: Node, full: bool = False) -> tuple[list, set[str]]:
         """The constraints of the query for the unexplored side of the branch, besides its own
-        constraint, and the uninterpreted functions the query contains."""
+        constraint, and the uninterpreted functions the query contains; with `full`, also those of
+        the sliced branches."""
         dropped = []
-        path_constraints = StrategyService.collect_path_constrains(node, dropped)
-        # Whether the query left out a constraint: the run of its solution may then take other
-        # irrelevant decisions and reach the branch on another path (see SVCompDriver).
-        node.sliced_query = bool(dropped)
+        path_constraints = StrategyService.collect_path_constrains(node, dropped, full)
+        if not full:
+            # Whether the query left out a constraint: the run of its solution may then take other
+            # irrelevant decisions and reach the branch on another path (see SVCompDriver).
+            node.sliced_query = bool(dropped)
         path_constraints.extend(StrategyService.collect_input_constrains(node))
         node_constraint = node.constraint.get(node.trace_id, '')
         definitions, ufs = StrategyService.slice_uf_definitions(
@@ -279,7 +282,7 @@ class StrategyService:
     @staticmethod
     def is_approximate_query(node: Node) -> bool:
         """Whether the query for the unexplored side of the branch depends on an approximate Math model."""
-        return StrategyService.is_approximate(StrategyService.collect_query(node)[1])
+        return StrategyService.is_approximate(StrategyService.collect_query(node, full=True)[1])
 
     @staticmethod
     def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000,
@@ -307,8 +310,24 @@ class StrategyService:
                 solver_rlimit = approximate_rlimit
                 capped = True
 
-        sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms, rlimit=solver_rlimit,
-                                   extra_exprs=extra_exprs)
+        sat = None
+        if possible_branch.sliced_query:
+            # The full query first: a model of it is one of the sliced query too, and its run stays
+            # on the path the tree knows. The sliced query decides only where the full one has no
+            # model (or the solver cannot tell), which is where leaving constraints out matters.
+            # (A solver is free to pick any model of the sliced query, also one far from the path,
+            # e.g. an array size of 2^30 the executor cannot allocate.)
+            full_constraints, full_ufs = StrategyService.collect_query(possible_branch, full=True)
+            if not (capped or (approximate_rlimit and StrategyService.is_approximate(full_ufs))):
+                sat, sol = Z3Handler.solve(possible_branch, full_constraints, timeout_ms=solver_timeout_ms,
+                                           rlimit=solver_rlimit, extra_exprs=extra_exprs)
+                if sat == SATResult.SAT:
+                    possible_branch.sliced_query = False
+                else:
+                    sat = None
+        if sat is None:
+            sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms, rlimit=solver_rlimit,
+                                       extra_exprs=extra_exprs)
 
         if sat == SATResult.LIMIT and capped:
             logger.info(f'[SOLVER] Query over an approximate model for branch {possible_branch.id} ran out of resource limit {solver_rlimit}, giving up on it')
