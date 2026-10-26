@@ -80,7 +80,18 @@ and used in `strategy/DFS.py`.
   it, `collect_path_constrains` leaves its constraint out, and candidates are identified by the
   sequence of relevant decisions before them, so paths that differ only in irrelevant decisions
   count as one. Computed in `data/StaticAnalysisGraph/Relevance.py` from the extractor's per-node
-  data-flow facts; off with `--no-sa-slicing`.
+  data-flow facts; off with `--no-sa-slicing` (explorer and harness). Results and where it helps:
+  `swat-benchmarks/RESULTS.md`, section "Relevance (slicing)".
+  - **Poisoning:** each path carries the regions of its sliced branches; a branch inside one that
+    the graph cannot account for (masked, unverified, or relevant) or a run that ends there with an
+    uncaught exception (`Leaf.abnormal`, ancestors `abnormal_below`) makes those branches relevant
+    for good (`Node.poisoned`), and `select_branch` walks again.
+  - **Statements that may throw** to a local handler or a harmful escape are implicit branches in
+    the analysis: what they read becomes relevant with them (else a null receiver's origin gets
+    sliced: four sa-soundness false SAFEs before this).
+  - **Queries:** a sliced query's full query is solved first; the sliced one only decides where the
+    full one is UNSAT. A run of a sliced solution may reach its branch on another path with the
+    same relevant decisions: `check_projected_divergence` checks that after the next walk.
 
 Tests for the walk, runnable without a SWAT run:
 

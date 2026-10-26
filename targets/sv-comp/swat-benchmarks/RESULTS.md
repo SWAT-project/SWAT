@@ -518,3 +518,118 @@ are excluded from instrumentation by `sv-comp.cfg`, and JSON parsers mostly read
    (SV-COMP).
 4. Before trying real parsers again, fix E4, and consider `--solver-rlimit` so that slow String
    queries do not stall the whole search.
+
+## Relevance (slicing), 2026-10-26
+
+Branch `niklas/relevance-slicing` in both repos. Reachability pruning (everything above) cannot help
+when both sides of a branch reach the assert. **Relevance** adds a static slice: a branch is
+irrelevant if its region (the code up to its immediate post-dominator) contains no target, cannot
+end the program, writes nothing a target or a relevant branch depends on, and contains no relevant
+branch. SWAT does not flip irrelevant branches, leaves their constraints out of flip queries, and
+identifies candidates by the sequence of relevant decisions before them, so paths that differ only
+in irrelevant decisions count as one. How: cfg-extraction `DataflowFacts` (per-node data-flow
+facts), SWAT `Relevance.py` (the analysis), `DFS.py` (slicing, dedup, poisoning),
+`StrategyService.solve_branch` (full query first), `SVCompDriver.check_projected_divergence`.
+
+All runs: `--testcase-timeout-s 300`, 64 workers on 128 cores; "no slicing" adds `--no-sa-slicing`
+(everything else the same code).
+
+| suite | slicing | no slicing | runs (slicing / no slicing) |
+|---|---|---|---|
+| `relevance` (26) | 26 correct | 16 correct, 10 timeouts | `run_20261026_152209` / `run_20261026_141423` |
+| `relevance-soundness` (42) | 38 correct, 4 UNKNOWN, 0 false SAFE | the same 38 / 4 | `run_20261026_152342` / `run_20261026_142025` |
+| `sa-soundness` (120) | 115 correct, 5 UNKNOWN | identical | `run_20261026_152414` / `run_20261026_144630` |
+| other swat-benchmarks families | +2 dispatcher/loop, +2 irrelevant-prefix, nothing lost | | `run_20261026_143147` / `run_20261026_143728` |
+| sv-benchmarks valid-assert (1013) | 1013 points (834 correct) | 1011 (833) | `run_20261026_152608` / `run_20261026_150332` |
+| sv-benchmarks no-runtime-exception (771, `--sa-no-runtime-exception`) | 1279 points | 1279 | `run_20261026_153910` / `run_20261026_154730` |
+
+The 4 UNKNOWN in `relevance-soundness` are the same without slicing: two SAFE tasks whose initial
+run ends with an uncaught exception (which rules out SAFE), and two whose comparator/`toString()`
+callbacks cause context loss. The one `safe -> violation` in sv-benchmarks (`objects/objects09`) is
+the same in both configurations.
+
+### Where it works well
+
+Rounds for the SAFE tasks (the whole search), slicing vs no slicing:
+
+| shape | n = 10 | n = 100 | n = 1000 |
+|---|---|---|---|
+| `loop-print`: `for i < n: if (i < val) print(i)`, then an assert on `val` (the design example) | 2 vs 11 | 2 vs 101 | 2 vs TO |
+| `loop-helper`: each iteration calls a helper with input-dependent branches that update a log counter | 2 vs 6 | 2 vs 51 | 2 vs TO |
+| `scratch-array`: the loop fills a scratch array (bounds-checked) the assert never reads | 2 vs 11 | 2 vs 101 | 2 vs TO |
+| `two-inputs`: the loop branches on input `a`, the assert on input `b` | 3 vs 36 | 3 vs TO | 3 vs TO |
+
+`relevance/example` (the example verbatim, 100 iterations): 2 rounds, 1 query instead of 102 rounds
+and 101 queries (8 s instead of 138 s). `example-long` (10000 iterations): 2 rounds, 92 s, all of it
+in the executor; without slicing it times out after 6 rounds. With 100000 iterations a single
+executor run takes over 280 s of CPU, so the executor, not the search, is the limit there.
+
+On the older families: `irrelevant-prefix/count` (n independent `if (x_i > 0) count++`, `count` never
+read) takes 3 rounds for every n instead of 12, 48, TO, TO (n = 2, 4, 6, 8; it was the control
+family that showed reachability pruning cannot help). `dispatcher/loop` SAFE (an event loop) now
+finishes at n = 2 and 4 (36 and 64 rounds; TO without slicing), since the handlers' own branches
+only touch state the next round does not read; from n = 8 on it still times out.
+
+So slicing works well when **input-dependent branches only feed state the target never reads**:
+logging and printing, diagnostics and statistics counters, scratch buffers, bookkeeping in helpers,
+and loops over one input while the target depends on another. The number of paths through such
+code is then irrelevant: the search is constant in the loop length and in the number of such
+branches, where it is linear (one decision per iteration) or exponential (independent decisions)
+without slicing.
+
+On sv-benchmarks it rarely matters: 19.5% of all branches are irrelevant under valid-assert (64
+of 64 MinePump products have some, 289 of 636 graphs), but the tasks are short or bound by the
+solver or the executor. Slicing saves 1-2 rounds on a few tasks and turns `argv-tasks/TimeChart`
+from UNKNOWN into SAFE (4 rounds; without slicing two of its runs hit the memory limit on
+solutions with extreme values for branches slicing never flips).
+
+### Where it does not help
+
+- **The loop's decisions feed the target** (`relevant-counter`: `if (i < val) count++`, then
+  `if (count == 7)`): the branch is relevant, and the search still enumerates one decision per
+  iteration. That needs **loop summarization** (`count = clamp(val, 0, 10)`), the next step.
+- **The loop reads inputs**: every `Verifier.nondet*` advances the input cursor, which is relevant
+  as soon as any input is (the inputs are numbered by order), so a region that reads an input is
+  always relevant.
+- **Library state, context-insensitivity, callbacks**: all library objects share one location
+  (`list.add` in a region is relevant if any list size is read); a helper with a relevant branch
+  makes every region that calls it relevant; a callback inside a region or a branch without a key
+  poisons the region at run time.
+- **Event loops with large n** (`dispatcher/loop`, n >= 8): the handlers' dispatch decisions are
+  relevant (they decide whether the target is reached), so only the handlers' inner branches go.
+
+### Bugs found and fixed along the way
+
+- **`Class.desiredAssertionStatus()` counted as reflection** (cfg-extraction `1bef88d`): every class
+  with an assert calls it in its static initializer, and reflection reads and writes everything, so
+  every branch of MinePump and securibench was relevant. Only `Class.forName`/`newInstance` and
+  class loading run unknown code.
+- **Statements that may throw were no decisions** (`c0cd81c`): 4 false SAFE in `sa-soundness`
+  (`npe-catch-local`, `npe-in-callee-branch`, `cce-catch`, `library-throw-catch`): a dereference
+  whose NullPointerException a local handler catches decides whether the handler (with the assert)
+  runs, but what it reads never became relevant, so the branch that set the receiver to null was
+  sliced. Statements with a normal and an exceptional successor are now implicit branches.
+- **Crash below a pruned side** (`crash-in-callee`): a path that ends with an uncaught exception
+  inside an irrelevant region must make the region relevant again, but the crashing side cannot
+  reach the assert and was never walked. Leaves of such runs are marked, their ancestors carry
+  `abnormal_below`, and dfs walks such sides for the regions only.
+- **Bad models of sliced queries** (`24cfcf2`): Z3 picked an array size of 2^30 for a sliced query
+  in `algorithms/InsertionSort-FunUnsat01` (and MergeSortIterative), which the executor cannot
+  allocate: two violations lost. The full query is now solved first; the sliced one only decides
+  where the full one is UNSAT.
+
+### Cost
+
+Extraction is about 9% slower (median 8.9 -> 9.75 s per task at 48 parallel extractions); the
+analysis in SWAT takes milliseconds (1.2 s for all 636 sv-benchmarks graphs together). Graph
+structure (nodes, edges, keys) is unchanged.
+
+### Open
+
+- Loop summarization for relevant loops (planned).
+- The slice is flow- and context-insensitive with field-based heap locations; library state is one
+  location. Finer locations (per-object library state, a points-to analysis) would keep more
+  regions irrelevant.
+- Poisoning for masked branches (callbacks, choice branches, static initializers) is conservative:
+  it poisons every open region, also one that closed before the masked code ran but had no
+  verified branch after it.
