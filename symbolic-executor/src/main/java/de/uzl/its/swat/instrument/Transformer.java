@@ -148,6 +148,9 @@ public abstract class Transformer implements ClassFileTransformer {
             Profile.mark("premain.handlers");
             ThreadHandler.addThreadContext(-1, "SymbolicThread", -1); // Main thread used during initialization and instrumentation
             Profile.mark("premain.context");
+            if (config.isDeadlockWatchdog()) {
+                de.uzl.its.swat.thread.DeadlockWatchdog.start();
+            }
 
             if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
                 Verifier.retrieveInputs(); // ToDo only conditionally and at a petter place

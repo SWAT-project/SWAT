@@ -288,6 +288,10 @@ class SVCompDriver:
                         # The path ended here (dfs: an irrelevant branch whose region it ended in
                         # is relevant after all)
                         Database.instance().mark_last_leaf_abnormal(ENDPOINT_ID)
+                if "[SWAT] Deadlock:" in l:
+                    # The executor ended a run whose threads were deadlocked (DeadlockWatchdog): the
+                    # execution can do nothing more, so its trace is complete.
+                    logger.info(f'[SVCOMP] {l.strip()}')
                 if "[SWAT Exception]:" in l:
                     logger.info(f'[SVCOMP] SWAT Exception: {l}')
                     Database.instance().record_execution_error(ENDPOINT_ID, 'swat_exception', l.strip())
