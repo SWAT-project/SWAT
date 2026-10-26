@@ -92,6 +92,10 @@ and used in `strategy/DFS.py`.
   - **Queries:** a sliced query's full query is solved first; the sliced one only decides where the
     full one is UNSAT. A run of a sliced solution may reach its branch on another path with the
     same relevant decisions: `check_projected_divergence` checks that after the next walk.
+  - **Known limitations** (fixes sketched in RESULTS.md, relevance "Open"): all library state is
+    one location `g:lib` (fix: type families, then allocation sites with an escape check), and the
+    slice is context-insensitive (fix: a "return value relevant / not" variant per method, chosen
+    per call site and looked up by the walk's stack).
 
 Tests for the walk, runnable without a SWAT run:
 

@@ -627,9 +627,30 @@ structure (nodes, edges, keys) is unchanged.
 ### Open
 
 - Loop summarization for relevant loops (planned).
-- The slice is flow- and context-insensitive with field-based heap locations; library state is one
-  location. Finer locations (per-object library state, a points-to analysis) would keep more
-  regions irrelevant.
+- **Library state is one location (`g:lib`).** Changing any library object (a list, a
+  StringBuilder) is relevant as soon as any library object's state is read. Fixes, cheapest first:
+  - *Type families* (about a day): `g:lib:collections`, `g:lib:strings`, `g:lib:io`, ... by a table
+    in `DataflowFacts`. Families must be coarse because library objects alias across types through
+    views (`map.keySet().remove(k)` changes the map, `list.subList(..).clear()` the list, an
+    iterator its collection); unknown types stay in `g:lib`. Separates a logging StringBuilder from
+    a checked list, not two lists.
+  - *Allocation sites* (2-3 days, mostly soundness work): `g:lib@<site>` for a library object
+    allocated in the method (`ReceiverTypeResolver` traces locals to their `new`) whose reference
+    never escapes (no field/array store, no argument, no return); others fall back to the family.
+    Every call result must count as an alias of its receiver (`sb.append` returns `sb`,
+    `list.iterator()` is a view) except for a whitelist of fresh results (`size()`, `toString()`);
+    a wrong entry is a false SAFE. Objects passed between methods need a real points-to analysis
+    (weeks: SootUp has none ready).
+- **The slice is context-insensitive.** A helper with a relevant branch makes every region that
+  calls it relevant (`relevance-soundness/shared-helper`: `clamp` is relevant because one caller
+  compares its result). Fix (1-2 days): analyse each method in two variants, "return value
+  relevant" and "not"; a call site induces the variant by whether its result local is relevant in
+  the caller's variant, so the fixpoint runs over (method, variant). Heap effects are the same in
+  every context. Rule (g) then uses the variant a call site induces, and the walk looks up a
+  branch's flag by (branch, variant of its frame), which follows from the call site on its stack;
+  dedup and poisoning are unchanged. The general version (per-callee summaries mapping relevant
+  outputs to relevant inputs and branches) is about a week.
+- The slice is also flow-insensitive, and javac's local slot reuse merges unrelated locals.
 - Poisoning for masked branches (callbacks, choice branches, static initializers) is conservative:
   it poisons every open region, also one that closed before the masked code ran but had no
   verified branch after it.
