@@ -88,6 +88,9 @@ class SANode:
     # the nodes of its own frame up to its immediate post-dominator.
     irrelevant: bool = False
     region: frozenset | None = field(default=None, repr=False)
+    # For a branch (a loop head): whether its region changes nothing relevant except locals of its
+    # own method, so that the executor's conditional loop summary may be used (see dfs).
+    summary_ok: bool = False
 
     def has_fallthrough_child(self):
         return self.next_fallthrough is not None

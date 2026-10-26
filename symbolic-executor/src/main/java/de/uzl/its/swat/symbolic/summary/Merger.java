@@ -65,10 +65,25 @@ public final class Merger {
             return;
         }
         LoopSummaries.Plan plan = LoopSummaries.planAt(instIid);
+        Frame current = stack.getActiveFrame();
+        Object backEdge = current == null ? null : current.summaryBackEdge;
+        if (current != null) {
+            current.summaryBackEdge = null;
+        }
         if (plan instanceof Diamond d) {
             diamond(d, jumped, jumpCondition, branch, context);
         } else if (plan instanceof CountingLoop l) {
-            loopHead(instIid, l, jumped, branch, context);
+            loopHead(instIid, l, jumped, branch, context, backEdge == l);
+        }
+    }
+
+    /** At a GOTO: remembers the back edge of a counting loop, so that its head knows it is looping. */
+    public void atGoto(long instIid) {
+        if (LoopSummaries.planAt(instIid) instanceof LoopSummaries.BackEdge b) {
+            Frame frame = stack.getActiveFrame();
+            if (frame != null) {
+                frame.summaryBackEdge = b.loop();
+            }
         }
     }
 
@@ -248,10 +263,16 @@ public final class Merger {
 
     // --- counting loops --------------------------------------------------------------------------
 
-    private void loopHead(long instIid, CountingLoop l, boolean jumped, BranchElement branch, SolverContext context) {
+    private void loopHead(long instIid, CountingLoop l, boolean jumped, BranchElement branch, SolverContext context,
+                          boolean looping) {
         Frame frame = stack.getActiveFrame();
         Map<Long, Object> loops = frame.summaryLoops();
         ActiveLoop a = (ActiveLoop) loops.get(instIid);
+        if (a != null && !looping) {
+            // Not reached through the back edge: an earlier activation was left another way (an
+            // exception, a return), and its branches were never flagged.
+            a = null;
+        }
         if (a == null) {
             // Entering the loop: its head is reached for the first time since the loop was left.
             IntValue i0 = asInt(frame, l.i());
@@ -281,8 +302,7 @@ public final class Merger {
             loops.put(instIid, a);
         }
         if (a.summarize) {
-            a.branches.add(branch);
-            branch.setMerged(true);
+            a.branches.add(branch); // flagged only once the loop leaves through its head
         }
         if (jumped != l.exitOnJump()) {
             return; // another iteration
@@ -323,10 +343,13 @@ public final class Merger {
         for (Map.Entry<Integer, IntValue> e : merged.entrySet()) {
             IntValue current = asInt(frame, e.getKey());
             if (current == null || current.concrete.intValue() != e.getValue().concrete.intValue()) {
-                a.branches.forEach(x -> x.setMerged(false));
-                return;
+                return; // the summary does not match the execution: its branches stay unflagged
             }
         }
         merged.forEach(frame::setLocal);
+        for (BranchElement element : a.branches) {
+            element.setMerged(true);
+            element.setMergedConditional(!l.pure());
+        }
     }
 }

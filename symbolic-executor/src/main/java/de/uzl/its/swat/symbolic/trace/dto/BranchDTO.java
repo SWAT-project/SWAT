@@ -55,6 +55,16 @@ public class BranchDTO {
         return this;
     }
 
+    // See BranchElement: merged only if the explorer finds the loop's other effects irrelevant.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private boolean mergedConditional;
+
+    public BranchDTO mergedConditional(boolean mergedConditional) {
+        this.mergedConditional = mergedConditional;
+        return this;
+    }
+
     // See BranchElement: the loop-head states reached since the previous branch.
     @SuppressWarnings("unused")
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)

@@ -152,15 +152,24 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         # state, so it is not flipped and its constraint is left out like a sliced one's. It needs
         # no region: its code has no effects beyond the merged locals.
         merged = getattr(node, 'merged', False)
+        # A loop the executor summarized although its body does other things too (a call, a field
+        # or array access) is merged only if the graph shows that those cannot matter: its region
+        # changes nothing relevant but its method's locals (Relevance: summary_ok). Like a sliced
+        # branch it then opens a region, which whatever the graph cannot see inside poisons.
+        # Unhonored, the closed forms with the kept constraints describe the same path: sound.
+        conditional = merged and getattr(node, 'merged_conditional', False)
+        if conditional:
+            merged = (SLICING and verified and getattr(sa_node, 'summary_ok', False)
+                      and not getattr(node, 'poisoned', False))
         node.sliced = sliced or merged
         if not sliced and not merged and open_regions is not None:
             _poison(tree, open_regions, f"branch {node.key or node.id} in its region"
                     + ("" if verified else " (not paired with the graph)"))
         ident = (sig, node.key if node.key is not None else ('id', node.id))
         node.ident = ident
-        if merged and not sliced:
+        if merged and not sliced and not conditional:
             sig_skipped = sig_branched = sig
-        elif sliced:
+        elif sliced or merged:
             tree.sliced_in_walk += 1
             open_regions = ((node, sa_node, sa_stack), open_regions)
             sig_skipped = sig_branched = sig

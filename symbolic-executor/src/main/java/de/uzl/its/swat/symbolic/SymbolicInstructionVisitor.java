@@ -1696,6 +1696,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst Either the GOTO or GOTO_w instruction
      */
     public void visitGOTO(GOTO inst) throws SymbolicInstructionException {
+        try {
+            merger.atGoto(inst.iid);
+        } catch (Throwable t) {
+            throw new SymbolicInstructionException(inst, t);
+        }
     }
 
     /**

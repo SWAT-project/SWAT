@@ -60,7 +60,7 @@ public final class LoopSummaries {
     /** An instruction of a side or loop body: opcode, operand (slot or constant), increment. */
     public record Op(int opcode, int operand, int increment) {}
 
-    public sealed interface Plan permits Diamond, CountingLoop {}
+    public sealed interface Plan permits Diamond, CountingLoop, BackEdge {}
 
     /**
      * A diamond: the ops of the fall-through side and of the jump side, the id of the probe at the
@@ -75,7 +75,14 @@ public final class LoopSummaries {
      * variable among them), {@code constants}: those it sets to a constant.
      */
     public record CountingLoop(int i, int step, int bound, int boundConstant, boolean exitOnJump,
-                               Map<Integer, Integer> steps, Map<Integer, Integer> constants) implements Plan {}
+                               Map<Integer, Integer> steps, Map<Integer, Integer> constants,
+                               boolean pure) implements Plan {}
+
+    /**
+     * The back edge of a counting loop: tells the executor that the loop's head is reached again
+     * in the same activation (rather than entered anew, e.g. after an exception left the loop).
+     */
+    public record BackEdge(CountingLoop loop) implements Plan {}
 
     /** What the instrumentation needs for a method: plans by jump ordinal, probes by join label. */
     public record MethodPlans(Map<Integer, Plan> byJump, Map<Label, Integer> joins) {
@@ -119,6 +126,7 @@ public final class LoopSummaries {
             return MethodPlans.NONE;
         }
         TaintCheck taint = null;
+        org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue>[] frames = null;
         // Labels something jumps to (or a handler starts at): code between two of them is entered
         // only at its start.
         Map<LabelNode, Boolean> targets = new IdentityHashMap<>();
@@ -166,7 +174,10 @@ public final class LoopSummaries {
                 }
             }
             if (j.getOpcode() == Opcodes.GOTO && insns.indexOf(j.label) < insns.indexOf(j)) {
-                Map.Entry<JumpInsnNode, CountingLoop> loop = countingLoop(insns, j, targets);
+                if (frames == null) {
+                    frames = basicFrames(owner, mn);
+                }
+                Map.Entry<JumpInsnNode, CountingLoop> loop = frames == null ? null : countingLoop(insns, j, targets, frames);
                 if (loop != null) {
                     if (taint == null && (taint = TaintCheck.of(owner, mn)) == null) {
                         return MethodPlans.NONE;
@@ -176,6 +187,7 @@ public final class LoopSummaries {
                     slots.addAll(l.constants().keySet());
                     if (!taint.leaks(loop.getKey().label, slots, false)) {
                         byJump.put(jumpOrdinal(insns, loop.getKey()), l);
+                        byJump.put(jumpOrdinal, new BackEdge(l));
                     }
                 }
             }
@@ -225,7 +237,7 @@ public final class LoopSummaries {
     }
 
     /** The op for an allowed straight-line int instruction, or null. */
-    private static Op op(AbstractInsnNode n) {
+    static Op op(AbstractInsnNode n) {
         int opc = n.getOpcode();
         if (n instanceof VarInsnNode v && (opc == Opcodes.ILOAD || opc == Opcodes.ISTORE)) {
             return new Op(opc, v.var, 0);
@@ -372,30 +384,14 @@ public final class LoopSummaries {
 
     // --- counting loops ---------------------------------------------------------------------------
 
-    /** An abstract int during a loop body: {@code local + add}, or a constant, or unknown. */
-    private record Lin(int local, int add, boolean constant) {
-        static final Lin UNKNOWN = new Lin(-2, 0, false);
-
-        static Lin of(int local) {
-            return new Lin(local, 0, false);
-        }
-
-        static Lin constant(int c) {
-            return new Lin(-1, c, true);
-        }
-
-        Lin plus(int c) {
-            return this == UNKNOWN ? UNKNOWN : new Lin(local, add + c, constant);
-        }
-    }
-
     /**
      * The counting loop whose back edge is {@code back}, with the head's branch, or null. The head
      * is {@code ILOAD i; (ILOAD b | constant); IF_ICMPxx exit} or {@code ILOAD i; IFxx exit}; the
      * body runs from there to {@code back}, and the exit label follows {@code back}.
      */
     private static Map.Entry<JumpInsnNode, CountingLoop> countingLoop(InsnList insns, JumpInsnNode back,
-            Map<LabelNode, Boolean> targets) {
+            Map<LabelNode, Boolean> targets,
+            org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue>[] frames) {
         LabelNode head = back.label;
         List<AbstractInsnNode> h = new ArrayList<>();
         AbstractInsnNode n = head.getNext();
@@ -465,82 +461,16 @@ public final class LoopSummaries {
         } else {
             return null;
         }
-        // The body: straight-line arithmetic up to the back edge.
-        Map<Integer, Lin> locals = new HashMap<>();
-        List<Lin> stack = new ArrayList<>();
-        for (AbstractInsnNode m = cond.getNext(); m != back; m = m.getNext()) {
-            if (m == null) {
-                return null;
-            }
-            if (m instanceof LabelNode l) {
-                if (targets.containsKey(l)) {
-                    return null;
-                }
-                continue;
-            }
-            if (!isReal(m)) {
-                continue;
-            }
-            Op op = op(m);
-            if (op == null) {
-                return null;
-            }
-            switch (op.opcode()) {
-                case Opcodes.ILOAD -> stack.add(locals.getOrDefault(op.operand(), Lin.of(op.operand())));
-                case Opcodes.LDC -> stack.add(Lin.constant(op.operand()));
-                case Opcodes.ISTORE -> {
-                    if (stack.isEmpty()) {
-                        return null;
-                    }
-                    locals.put(op.operand(), stack.remove(stack.size() - 1));
-                }
-                case Opcodes.IINC -> locals.put(op.operand(),
-                        locals.getOrDefault(op.operand(), Lin.of(op.operand())).plus(op.increment()));
-                case Opcodes.IADD, Opcodes.ISUB -> {
-                    if (stack.size() < 2) {
-                        return null;
-                    }
-                    Lin y = stack.remove(stack.size() - 1);
-                    Lin x = stack.remove(stack.size() - 1);
-                    Lin r = Lin.UNKNOWN;
-                    if (y.constant() && x != Lin.UNKNOWN) {
-                        r = x.plus(op.opcode() == Opcodes.IADD ? y.add() : -y.add());
-                    } else if (x.constant() && y != Lin.UNKNOWN && !y.constant() && op.opcode() == Opcodes.IADD) {
-                        r = y.plus(x.add());
-                    }
-                    stack.add(r);
-                }
-                default -> {
-                    int[] e = stackEffect(op);
-                    if (stack.size() < e[0]) {
-                        return null;
-                    }
-                    for (int k = 0; k < e[0]; k++) {
-                        stack.remove(stack.size() - 1);
-                    }
-                    for (int k = 0; k < e[1]; k++) {
-                        stack.add(Lin.UNKNOWN);
-                    }
-                }
-            }
-        }
-        if (!stack.isEmpty()) {
+        // The body: straight-line code up to the back edge. Calls cannot change the method's locals,
+        // so whatever else the body does (calls, fields, arrays), the closed forms of its int locals
+        // stay exact; such a loop is impure, and the explorer only uses its summary if that other
+        // code cannot matter to the targets (see BranchElement.mergedConditional).
+        BodyAnalysis body = BodyAnalysis.run(insns, cond, back, targets, frames);
+        if (body == null) {
             return null;
         }
-        Map<Integer, Integer> steps = new HashMap<>();
-        Map<Integer, Integer> constants = new HashMap<>();
-        for (Map.Entry<Integer, Lin> e : locals.entrySet()) {
-            Lin v = e.getValue();
-            if (v.constant()) {
-                constants.put(e.getKey(), v.add());
-            } else if (v.local() == e.getKey()) {
-                if (v.add() != 0) {
-                    steps.put(e.getKey(), v.add());
-                }
-            } else {
-                return null; // set to another local, or to something we cannot follow
-            }
-        }
+        Map<Integer, Integer> steps = body.steps();
+        Map<Integer, Integer> constants = body.constants();
         if (steps.getOrDefault(i, 0) != step || constants.containsKey(i)) {
             return null;
         }
@@ -548,7 +478,18 @@ public final class LoopSummaries {
             return null;
         }
         return Map.entry(cond, new CountingLoop(i, step, bound, boundConstant, true,
-                Collections.unmodifiableMap(steps), Collections.unmodifiableMap(constants)));
+                Collections.unmodifiableMap(steps), Collections.unmodifiableMap(constants), body.pure()));
+    }
+
+    /** The method's frames (types of locals and stack values), or null if it cannot be analysed. */
+    private static org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue>[] basicFrames(
+            String owner, MethodNode mn) {
+        try {
+            return new org.objectweb.asm.tree.analysis.Analyzer<>(
+                    new org.objectweb.asm.tree.analysis.BasicInterpreter()).analyze(owner, mn);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** The comparison with its operands swapped: {@code a < b} is {@code b > a}. */

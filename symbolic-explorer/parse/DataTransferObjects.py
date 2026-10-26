@@ -25,6 +25,8 @@ class TraceItem(BaseModel):
     # Merged by a loop summary (the executor's symbolic/summary): both outcomes lead to the same,
     # merged state, so it is neither flipped nor is its constraint kept.
     merged: bool = False
+    # Merged only if the loop's other effects are irrelevant (decided with the SA graph, see dfs).
+    mergedConditional: bool = False
     # Hashes of the loop-head states the execution reached since the previous branch, in order.
     loopStates: list[str] = []
 class UFItem(BaseModel):

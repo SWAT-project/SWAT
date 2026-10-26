@@ -71,6 +71,9 @@ public class Frame {
         return summaryJoins;
     }
 
+    /** The counting loop whose back edge this frame took last, until its head is reached. */
+    public Object summaryBackEdge;
+
     public java.util.Map<Long, Object> summaryLoops() {
         if (summaryLoops == null) {
             summaryLoops = new java.util.HashMap<>();

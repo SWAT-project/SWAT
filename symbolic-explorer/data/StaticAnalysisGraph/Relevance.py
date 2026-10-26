@@ -404,16 +404,16 @@ class Relevance:
         for b in no_ipdom:
             add(reads_of(b))
         candidates = [b for b in branches + throwers if b in regions]
+        callers_of: dict[str, set] = {}
+        for m, cs in callees_of.items():
+            for c in cs:
+                callers_of.setdefault(c, set()).add(m)
         changed = True
         while changed and not everything:
             self.stats.iterations += 1
             changed = False
             # Methods that run a relevant branch, callees included.
             relevant_methods = {b.method for b in relevant if b.is_branch()}
-            callers_of: dict[str, set] = {}
-            for m, cs in callees_of.items():
-                for c in cs:
-                    callers_of.setdefault(c, set()).add(m)
             work = list(relevant_methods)
             while work:
                 c = work.pop()
@@ -436,10 +436,33 @@ class Relevance:
         self.stats.all_relevant = everything
         self.relevant_locations = relevant_locations
 
+        # Branches whose regions change nothing relevant but locals of their own method: a loop head
+        # whose loop the executor summarized (closed forms of its locals) while its body also does
+        # other things, which must not matter (see dfs and the executor's LoopSummaries).
+        relevant_methods = {b.method for b in relevant if b.is_branch()}
+        work = list(relevant_methods)
+        while work:
+            c = work.pop()
+            for m in callers_of.get(c, ()):
+                if m not in relevant_methods:
+                    relevant_methods.add(m)
+                    work.append(m)
+
         for b in branches:
             irrelevant = not everything and b not in relevant and b in regions
             b.irrelevant = irrelevant
             b.region = regions[b].nodes if irrelevant else None
+            b.summary_ok = False
+            if everything or b not in regions:
+                continue
+            r = regions[b]
+            if (r.reaches_target or r.terminates or ANY in r.writes
+                    or any('|' not in w and w in relevant_locations for w in r.writes)
+                    or any(x in relevant and x is not b for x in r.nodes)
+                    or not r.callee_methods.isdisjoint(relevant_methods)):
+                continue
+            b.summary_ok = True
+            b.region = r.nodes
         self.stats.irrelevant = sum(1 for b in branches if b.irrelevant)
         return self.stats
 

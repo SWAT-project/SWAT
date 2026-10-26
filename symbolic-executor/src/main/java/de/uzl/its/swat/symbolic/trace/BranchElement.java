@@ -43,6 +43,9 @@ public final class BranchElement extends Element {
     // Merged by a loop summary (see symbolic/summary): both outcomes lead to the same, merged state,
     // so the explorer neither flips the branch nor keeps its constraint.
     @lombok.Setter private boolean merged;
+    // The merge is only exact if what the loop does besides its locals cannot matter: the explorer
+    // decides that with its relevance analysis (see symbolic/summary/LoopSummaries).
+    @lombok.Setter private boolean mergedConditional;
 
     /**
      * Constructs a branch element.

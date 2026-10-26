@@ -210,6 +210,8 @@ class Tree:
                 # leaves the constraint in force)
                 if not getattr(element, 'merged', False):
                     node.merged = False
+                elif getattr(element, 'merged_conditional', False):
+                    node.merged_conditional = True
             if element.has_branched:
                 if node.branched is None and node.skipped is not None:
                     logger.info(f"New branch from node {node.id} (branched)")

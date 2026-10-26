@@ -99,9 +99,98 @@ public class Main {
 }
 ''', lambda n: 2 * n, lambda n: 2 * n + 1, lambda n: ints([n]),
         'c is even.'),
+    'count-up-print': ('''IMPORT
+// loop-summary/count-up-print: a counting loop up to an input bound that also prints.
+public class Main {
+    public static void main(String[] args) {
+        int val = Verifier.nondetInt();
+        int i = 0;
+        int s = 0;
+        while (i < val) {
+            i++;
+            s += 3;
+            System.out.println(i);
+        }
+        if (s == @K@) assert false;
+    }
+}
+''', lambda n: 3 * n, lambda n: 3 * n + 1, lambda n: ints([n]),
+        's = 3 * max(val, 0) with val <= 2^31 - 1, which is never 3n + 1 (mod 2^32).'),
+    'count-up-log': ('''IMPORT
+// loop-summary/count-up-log: a counting loop that also logs into a field and a scratch array.
+public class Main {
+    static int logged;
+    static int[] recent = new int[8];
+
+    static void log(int i) {
+        logged++;
+        recent[i & 7] = i;
+    }
+
+    public static void main(String[] args) {
+        int val = Verifier.nondetInt();
+        int i = 0;
+        int s = 0;
+        while (i < val) {
+            i++;
+            s += 2;
+            log(i);
+        }
+        if (s == @K@) assert false;
+    }
+}
+''', lambda n: 2 * n, lambda n: 2 * n + 1, lambda n: ints([n]),
+        's is even.'),
 }
 
 SOUNDNESS = {
+    'body-field-relevant': ('''IMPORT
+// A counting loop whose body also counts in a field the assert's guard reads: the field's count
+// depends on the trip count but has no closed form, so the summary must not be used.
+public class Main {
+    static int hits;
+
+    public static void main(String[] args) {
+        int val = Verifier.nondetInt();
+        int b = Verifier.nondetInt();
+        int i = 0;
+        int s = 0;
+        while (i < val) {
+            i++;
+            s++;
+            hits = hits + 1;
+        }
+        if (hits == 5) {
+            if (@HIT(b)@) assert false;
+        }
+    }
+}
+''', ints([5, 1001])),
+    'body-call-relevant': ('''IMPORT
+// A counting loop whose body calls a helper that sets a flag the assert's guard reads.
+public class Main {
+    static boolean reached;
+
+    static void visit(int i) {
+        if (i == 4) {
+            reached = true;
+        }
+    }
+
+    public static void main(String[] args) {
+        int val = Verifier.nondetInt();
+        int b = Verifier.nondetInt();
+        int i = 0;
+        while (i < val) {
+            i++;
+            visit(i);
+        }
+        if (reached) {
+            if (@HIT(b)@) assert false;
+        }
+    }
+}
+''', ints([4, 1001])),
     'body-call': ('''IMPORT
 // A counting loop with a call in its body: not a pure loop.
 public class Main {
