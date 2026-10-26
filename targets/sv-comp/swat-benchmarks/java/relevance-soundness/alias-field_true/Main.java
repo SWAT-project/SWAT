@@ -1,0 +1,24 @@
+// Expected verdict: SAFE. the assert needs x > 1000 && x < 1001 for an int x: unsatisfiable.
+// Paired VIOLATION inputs (must not fail here): int:3 int:1001
+import org.sosy_lab.sv_benchmarks.Verifier;
+// The region writes a field through an alias of the object the assert's guard reads.
+public class Main {
+    static class Box {
+        int v;
+    }
+
+    public static void main(String[] args) {
+        int val = Verifier.nondetInt();
+        int b = Verifier.nondetInt();
+        Box p = new Box();
+        Box q = p;
+        for (int i = 0; i < 10; i++) {
+            if (i == val) {
+                q.v = 1;
+            }
+        }
+        if (p.v == 1) {
+            if (b > 1000 && b < 1001) assert false;
+        }
+    }
+}

@@ -33,7 +33,9 @@ def check(task_dir: Path, stub: Path) -> str | None:
     m = re.search(r'(?:Violating inputs \(nondet call order\)|Paired VIOLATION inputs \(must not fail here\)): (.*)', src)
     inputs = '\n'.join(m.group(1).split())
     safe = task_dir.name.endswith('_true')
-    exits = 'System.exit' in src  # the gauntlet's exit variant ends the program on rejection
+    # The gauntlet's exit variant ends the program on rejection; some relevance tasks end the
+    # all-zero run early on purpose.
+    exits = 'System.exit' in src or 'the all-zero run ends early' in src
     got = run(task_dir, stub, inputs)
     if got != ('ok' if safe else 'assert'):
         return f'{task_dir.relative_to(JAVA_DIR)}: witness {inputs} gives {got}'

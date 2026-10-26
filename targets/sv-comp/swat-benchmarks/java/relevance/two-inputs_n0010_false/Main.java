@@ -1,0 +1,20 @@
+// Expected verdict: VIOLATION. Violating inputs (nondet call order): int:0 int:1001
+import org.sosy_lab.sv_benchmarks.Verifier;
+// relevance/two-inputs: the loop branches on one input, the assert on another.
+public class Main {
+    public static void main(String[] args) {
+        int a = Verifier.nondetInt();
+        int b = Verifier.nondetInt();
+        for (int i = 0; i < 10; i++) {
+            if (i < a) {
+                System.out.print('.');
+            } else if (i == a + 1) {
+                System.out.print('#');
+            }
+        }
+        System.out.println();
+        if (b > a) {
+            if (b > 1000 && b < 100000) assert false;
+        }
+    }
+}
