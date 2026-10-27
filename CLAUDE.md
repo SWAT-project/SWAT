@@ -74,8 +74,9 @@ and used in `strategy/DFS.py`.
   stage is 0 and its duration is `static_pre_analysis_wall`; `run_info.json` in the run dir records
   the SA mode.
 
-- **Relevance (slicing), in progress** (branch `niklas/relevance-slicing`, started 2026-10-26;
-  loop summarization is planned on top of it): a branch whose region cannot affect whether a target
+- **Relevance (slicing)** (branch `niklas/relevance-slicing`, 2026-10-26; loop summarization is
+  built on top of it, see "Loop summarization" in swat-benchmarks/RESULTS.md; needs cfg-extraction
+  `v0.2.0` or later for the data-flow facts): a branch whose region cannot affect whether a target
   is reached, nor any value a target or a relevant branch reads, is irrelevant. `dfs` does not flip
   it, `collect_path_constrains` leaves its constraint out, and candidates are identified by the
   sequence of relevant decisions before them, so paths that differ only in irrelevant decisions
@@ -174,7 +175,7 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   about 0.2 s). A proof of no-runtime-exception or valid-assert gives SAFE without exploring
   (round 0 still runs as a cross-check). The jar comes from `--precheck-jar`, else from next to
   `symbolic-explorer/` (the SV-COMP archive), else `../cfg-extraction/build/libs/`; without it the
-  check is skipped (`missing_jar`). CI builds it at the cfg-extraction tag in `cfg-extraction.ref`
+  check is skipped (`missing_jar`). CI builds it at the cfg-extraction tag in `cfg-extraction.ref` (cfg-extraction is public, MIT)
   and the archive ships it as `cfg-extraction/cfg-extractor-precheck.jar`. Its soundness gate is
   `cfg-extraction/scripts/precheck_gate.py` (0 contradictions over sv-benchmarks).
 - **Search order:** `--search-order` picks which open branch is flipped next (`StrategyService`):

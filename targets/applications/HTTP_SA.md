@@ -78,7 +78,7 @@ cfg-extraction:
 - Regression sweep over sv-benchmarks: all graphs load, node counts unchanged, incomplete markers
   82 -> 35 (the sweep compiles with a current javac; SWAT's precompiled SV-COMP classes contain no
   `invokedynamic` at all, so SV-COMP graphs are unaffected). `./gradlew test` passes.
-  `SWAT/cfg-extraction.ref` still pins `v0.1.0`; a new tag is needed for CI to use these fixes.
+  `SWAT/cfg-extraction.ref` pins `v0.2.0`, which has these fixes.
 
 ## Results
 
