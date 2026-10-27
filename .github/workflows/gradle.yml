@@ -39,8 +39,6 @@ jobs:
         repository: SWAT-project/cfg-extraction
         ref: ${{ steps.cfg.outputs.ref }}
         path: cfg-extraction
-        # cfg-extraction is private: a token with read access to it
-        token: ${{ secrets.CFG_EXTRACTION_TOKEN }}
     - name: Build the property pre-check
       working-directory: cfg-extraction
       run: ./gradlew --no-daemon precheckJar
