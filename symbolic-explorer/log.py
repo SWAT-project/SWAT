@@ -10,6 +10,20 @@ logger = logging.getLogger('explorer.log')
 verdict_logger = logging.getLogger('verdict.log')
 
 
+# Pass as `extra` for lines relayed from another program (e.g. the executor's output): they carry
+# their own timestamp and level, so they are logged as they are.
+RELAYED = {'relayed': True}
+
+
+class _Formatter(logging.Formatter):
+    """The explorer's format, except for relayed lines (see RELAYED), which are left as they are."""
+
+    def format(self, record):
+        if getattr(record, 'relayed', False):
+            return record.getMessage()
+        return super().format(record)
+
+
 class LoggerNotInitializedError(Exception):
     """Exception raised when loggers are not initialized."""
     pass
@@ -33,7 +47,7 @@ def setup_logger(_logger, log_file, level=logging.INFO, use_console_handler=True
     from console_level on (default: level)."""
     global _interal_logger 
 
-    formatter = logging.Formatter(
+    formatter = _Formatter(
         "%(asctime)s [%(threadName)-20.20s] [%(levelname)-5.5s]  %(message)s"
     )
     _interal_logger.debug(f"Setting up logger {_logger} with file {log_file}")

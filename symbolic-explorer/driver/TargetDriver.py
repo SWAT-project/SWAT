@@ -112,7 +112,7 @@ class TargetDriver:
             with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
                                   universal_newlines=True) as proc:
                 for line in proc.stdout or []:
-                    logger.info(f'[EXECUTOR] --> {line.strip()}')
+                    logger.info(f'[EXECUTOR] --> {line.strip()}', extra=log.RELAYED)
                     stdout.append(line)
             logger.info(f'[EXPLORER] Java Output End')
             for l in stdout:

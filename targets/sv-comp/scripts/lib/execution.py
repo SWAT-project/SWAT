@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-import logging, os, enum, subprocess, signal
+import logging, os, enum, subprocess, signal, threading
 import socket
 import time
 
@@ -191,9 +191,7 @@ def target_execution(ver_task: VerificationTask, create_witness: bool = True, te
     start_time = time.perf_counter()
 
     with pushd(log_dir):
-        execution_status, output = run_command_with_timeout(cmd, testcase_timeout_s)
-        if print_output:
-            log_output(output)
+        execution_status, output = run_command_with_timeout(cmd, testcase_timeout_s, print_output=print_output)
         error: bool = check_for_dse_error(output)
         points, case = determine_result(output, ver_task['category'], ver_task['verdict'])
 
@@ -253,16 +251,13 @@ def check_for_dse_error(output: List[str]) -> bool:
 
 
 
-def log_output(output: List[str]):
-    """Relays a subprocess' output as it is: its lines carry their own timestamp and level."""
-    for line in output:
-        output_logger.info(line.rstrip())
-
-def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[ExecutionStatus, list[str]]:
-    """Executes the given command and returns output from both STDOUT and STDERR."""
+def run_command_with_timeout(cmd: list[str], timeout: int = 900, print_output: bool = False) -> tuple[ExecutionStatus, list[str]]:
+    """Executes the given command and returns output from both STDOUT and STDERR. With
+    print_output, each line is relayed as it is (it carries its own timestamp and level) as
+    soon as the command writes it."""
 
     logger.info(f'[TARGET EXECUTION]: Running symbolic-explorer: {cmd}')
-    output = []
+    output: list[str] = []
     with subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -271,29 +266,34 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[Execut
             bufsize=1,
             start_new_session=True
     ) as proc:
+        def read():
+            for line in proc.stdout:
+                line = line.rstrip('\n')
+                output.append(line)
+                if print_output:
+                    output_logger.info(line.rstrip())
+
+        # Read in a thread, so the timeout also holds while the command writes nothing
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
         try:
-            # Read output and wait for process to finish, with a timeout
-            stdout, _ = proc.communicate(timeout=timeout)
-            output = stdout.splitlines()
-        
+            proc.wait(timeout=timeout)
+            reader.join()
             return ExecutionStatus.SUCCESS, output
-               
-            
+
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, signal.SIGKILL) # Kill the whole process group to prevent java subprocesses from sticking around
             proc.kill()
-            stdout, _ = proc.communicate()
-            output = stdout.splitlines()
-            return ExecutionStatus.TIMEOUT, output
-            
+            proc.wait()
+            reader.join(timeout=10)
+            return ExecutionStatus.TIMEOUT, list(output)
+
         except Exception as e:
             logger.critical(f'[SVCOMP] Exception: {e}')
             os.killpg(proc.pid, signal.SIGKILL)
             proc.kill()
-            output = [str(e)]
-            return ExecutionStatus.ERROR, output + [str(e)]
+            return ExecutionStatus.ERROR, [str(e)]
 
- 
 
 def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_witness: bool = True, run_dir: Optional[Path] = None, run_timestamp: Optional[str] = None, testcase_timeout_s: int = 900):
     # Resolve the run context so all outputs (per-testcase logs + aggregated results) share one dir.

@@ -371,7 +371,7 @@ class SVCompDriver:
     def log_output(self, output: List[str]):
         logger.info(f'[SVCOMP] Java Output Begin')
         for line in output:
-            logger.info(f'[SWAT] --> {line.strip()}')
+            logger.info(f'[SWAT] --> {line.strip()}', extra=log.RELAYED)
         logger.info(f'[SVCOMP] Java Output End')    
 
     def run_testcase(self, java_path, agentpath: str, configpath: str, z3path, port, cp) -> Verdict:
