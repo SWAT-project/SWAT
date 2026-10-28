@@ -24,7 +24,7 @@ from driver.HTTPDriver import HTTPDriver
 from driver.SimpleDriver import SimpleDriver
 
 sys.setrecursionlimit(10000000)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 class SymbolicExplorer:
 
@@ -147,6 +147,7 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
     parser.add_argument("--sa-retry-without", action="store_true", help="On a SAFE verdict reached with static pre-analysis, disable it and explore again (guards against false SAFE from incomplete SA)", default=False)
     parser.add_argument("--sa-no-callback-targets", action="store_true", help="Do not count library calls as possible asserts when application code that library code may call back (overrides of library methods, lambdas) can reach an assert. Unsound: an assert reached only through such a callback can then give a false SAFE", default=False)
+    parser.add_argument("--console-log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO", help="Lowest level of the explorer's log lines on the console (explorer.log and verdict.log always get DEBUG and up)")
     parser.add_argument("--prefer-short-strings", action="store_true", default=False, help="Shrink each string input of a solution to the shortest length the query allows")
     parser.add_argument("--search-order", choices=["dfs", "shallow", "coverage", "coverage-dfs", "generational"], default="dfs", help="Order in which the open branches are tried: dfs (pre-order of the execution tree), shallow (closest to the root first), coverage (sides no trace took yet first, then shallow), coverage-dfs (the same, then dfs), generational (coverage, then the branches of the traces that covered the most first)")
     parser.add_argument("--sa-rank-distance", action="store_true", help="Try branches closest to an assert (by static pre-analysis graph distance) first, instead of in plain DFS order", default=False)
@@ -200,7 +201,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     # Initialize loggers
-    log.initialize_loggers(args.logdir)
+    log.initialize_loggers(args.logdir, console_level=getattr(logging, args.console_log_level))
     if args.mode == 'sv-comp':
         # The module loggers' DEBUG/INFO lines on stdout (several per branch and query) were 500 MB
         # in 900 s on MinePump: CPU time, and memory in a BenchExec container. The explorer's own

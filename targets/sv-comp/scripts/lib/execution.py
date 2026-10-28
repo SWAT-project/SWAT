@@ -24,6 +24,13 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+# Subprocess output, relayed without a second timestamp and level
+output_logger = logging.getLogger(f'{__name__}.output')
+if not output_logger.handlers:
+    _output_handler = logging.StreamHandler()
+    _output_handler.setFormatter(logging.Formatter('%(message)s'))
+    output_logger.addHandler(_output_handler)
+    output_logger.propagate = False
 SCRIPT_DIR = Path(__file__).resolve().parent.parent  # Now in lib/, so go up one more level
 
 class ExecutionStatus(enum.Enum):
@@ -247,8 +254,9 @@ def check_for_dse_error(output: List[str]) -> bool:
 
 
 def log_output(output: List[str]):
+    """Relays a subprocess' output as it is: its lines carry their own timestamp and level."""
     for line in output:
-        logger.info(line.strip())
+        output_logger.info(line.rstrip())
 
 def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[ExecutionStatus, list[str]]:
     """Executes the given command and returns output from both STDOUT and STDERR."""

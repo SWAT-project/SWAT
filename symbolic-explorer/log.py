@@ -28,8 +28,9 @@ def get_verdict_logger():
     return logger
 
 
-def setup_logger(_logger, log_file, level=logging.INFO, use_console_handler=True):
-    """Sets up a logger with both file and optional console handlers."""
+def setup_logger(_logger, log_file, level=logging.INFO, use_console_handler=True, console_level=None):
+    """Sets up a logger with both file and optional console handlers. The console handler logs
+    from console_level on (default: level)."""
     global _interal_logger 
 
     formatter = logging.Formatter(
@@ -50,7 +51,7 @@ def setup_logger(_logger, log_file, level=logging.INFO, use_console_handler=True
     # Optional console handler
     if use_console_handler:
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(level)  # Ensure consistent levels
+        console_handler.setLevel(level if console_level is None else console_level)
         console_handler.setFormatter(formatter)
         _logger.addHandler(console_handler)
 
@@ -59,11 +60,13 @@ def setup_logger(_logger, log_file, level=logging.INFO, use_console_handler=True
     return _logger
 
 
-def initialize_loggers(log_dir, level=logging.DEBUG):
-    """Initializes global loggers based on the provided log directory."""
+def initialize_loggers(log_dir, level=logging.DEBUG, console_level=logging.INFO):
+    """Initializes global loggers based on the provided log directory: the log files get
+    everything from level on, the console from console_level on."""
     global logger, verdict_logger
     os.makedirs(log_dir, exist_ok=True)
-    
-    logger = setup_logger(logger, os.path.join(log_dir, 'explorer.log'), level=level)
-    verdict_logger = setup_logger(verdict_logger, os.path.join(log_dir, 'verdict.log'),level=level)
+
+    logger = setup_logger(logger, os.path.join(log_dir, 'explorer.log'), level=level, console_level=console_level)
+    verdict_logger = setup_logger(verdict_logger, os.path.join(log_dir, 'verdict.log'), level=level,
+                                  console_level=console_level)
 
