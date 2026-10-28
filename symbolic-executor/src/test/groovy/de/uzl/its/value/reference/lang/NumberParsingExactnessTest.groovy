@@ -45,7 +45,6 @@ class NumberParsingExactnessTest extends Specification {
             "abc", "fixed", "1f5", "00000000000000000000001.5"]
 
     def setup() {
-        ThreadHandler.init()
         if (ThreadHandler.hasThreadContext(currentThread().id)) {
             ThreadHandler.removeThreadContext(currentThread().id)
         }

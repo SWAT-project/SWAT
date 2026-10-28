@@ -21,7 +21,6 @@ class SymbolRegistrySpec extends Specification {
     FormulaManager fmgr
 
     def setup() {
-        ThreadHandler.init()
         if (ThreadHandler.hasThreadContext(currentThread().id)) {
             ThreadHandler.removeThreadContext(currentThread().id)
         }
