@@ -55,7 +55,6 @@ class StringCaseRegexModelExactnessTest extends Specification {
                                               "Ⴀ", "ⴀ", "<bad/>", "<BAD/>", "W1E!+O", "w1e!+o"]
 
     def setup() {
-        ThreadHandler.init()
         if (ThreadHandler.hasThreadContext(currentThread().id)) {
             ThreadHandler.removeThreadContext(currentThread().id)
         }

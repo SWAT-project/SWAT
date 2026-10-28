@@ -15,7 +15,6 @@ class ContainerContentsTest extends Specification {
     SolverContext context
 
     def setup() {
-        ThreadHandler.init()
         if (ThreadHandler.hasThreadContext(currentThread().id)) {
             ThreadHandler.removeThreadContext(currentThread().id)
         }

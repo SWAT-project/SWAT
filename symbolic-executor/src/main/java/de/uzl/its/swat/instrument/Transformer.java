@@ -144,7 +144,6 @@ public abstract class Transformer implements ClassFileTransformer {
             // failing static initialiser would break the class for the rest of the run
             StackOverflowGuard.init();
             new ErrorHandler();
-            ThreadHandler.init();
             Profile.mark("premain.handlers");
             ThreadHandler.addThreadContext(-1, "SymbolicThread", -1); // Main thread used during initialization and instrumentation
             Profile.mark("premain.context");
