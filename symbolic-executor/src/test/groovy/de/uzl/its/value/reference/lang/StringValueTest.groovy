@@ -27,7 +27,6 @@ class StringValueTest extends Specification {
     private static final Type[] STRING_DESC = [Type.getType("Ljava/lang/String")] as Type[]
 
     def setup() {
-        ThreadHandler.init()
         if (ThreadHandler.hasThreadContext(currentThread().id)) {
             ThreadHandler.removeThreadContext(currentThread().id)
         }
