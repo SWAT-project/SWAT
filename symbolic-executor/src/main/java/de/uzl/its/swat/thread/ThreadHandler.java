@@ -24,11 +24,7 @@ import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.LogRecord;
 import java.util.logging.SimpleFormatter;
-import org.sosy_lab.common.ShutdownManager;
-import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
-import org.sosy_lab.common.log.LogManager;
-import org.sosy_lab.java_smt.SolverContextFactory;
 import org.sosy_lab.java_smt.api.SolverContext;
 
 class LogFormatter extends SimpleFormatter {
@@ -48,20 +44,8 @@ public final class ThreadHandler {
 
     private static final HashMap<Long, ThreadContext> threadContextHashMap = new HashMap<>();
 
-    @SuppressWarnings("unused")
-    private static SolverContext solverContext;
-
     private static final LogFormatter logFormatter = new LogFormatter();
     private static final Config config = Config.instance();
-
-    public static void init() throws InvalidConfigurationException {
-        solverContext =
-                SolverContextFactory.createSolverContext(
-                        Configuration.defaultConfiguration(),
-                        LogManager.createNullLogManager(),
-                        ShutdownManager.create().getNotifier(),
-                        SolverContextFactory.Solvers.Z3);
-    }
 
     public static boolean hasThreadContext(long id) {
         return threadContextHashMap.containsKey(id);

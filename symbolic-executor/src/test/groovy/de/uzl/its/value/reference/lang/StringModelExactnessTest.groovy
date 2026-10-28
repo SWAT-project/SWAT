@@ -43,7 +43,6 @@ class StringModelExactnessTest extends Specification {
     static final List<String> SAMPLES = ["", "a", "abc", "aXa", "97", "xaxax", "a😀b", " \t pad \n", "aaaaaaaaaaaaaaa"]
 
     def setup() {
-        ThreadHandler.init()
         if (ThreadHandler.hasThreadContext(currentThread().id)) {
             ThreadHandler.removeThreadContext(currentThread().id)
         }
