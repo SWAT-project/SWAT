@@ -5,14 +5,23 @@ import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
+import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
+import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue;
 import de.uzl.its.swat.symbolic.value.reference.array.CharArrayValue;
+import de.uzl.its.swat.symbolic.value.reference.array.ObjectArrayValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.BoxedValue;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import org.objectweb.asm.Type;
+import org.sosy_lab.java_smt.api.SolverContext;
+import org.sosy_lab.java_smt.api.StringFormula;
+import org.sosy_lab.java_smt.api.StringFormulaManager;
 
 public class StringInvocation {
 
     public static Value<?, ?> invokeStaticMethod(String name, Value<?, ?>[] args, Type[] desc) throws NotImplementedException, ValueConversionException {
         return switch (name) {
             case "valueOf" -> invokeValueOf(args, desc);
+            case "join" -> invokeJoin(args, desc);
             default -> PlaceHolder.instance;
         };
     }
@@ -30,6 +39,7 @@ public class StringInvocation {
                         .asCharArrayValue()
                         .asStringValue();
                 case "Z" -> args[0].asBooleanValue().asStringValue();
+                case "Ljava/lang/Object;" -> invokeValueOfObject(args[0]);
                 default -> PlaceHolder.instance;
             };
         } else if (args.length == 3) {
@@ -40,6 +50,57 @@ public class StringInvocation {
         } else {
             return PlaceHolder.instance;
         }
+    }
+
+    /**
+     * String.valueOf(Object) is obj.toString() for a non-null obj, which is modelled for strings
+     * and boxed primitives (a boxed toString that is not modelled stays a PlaceHolder).
+     */
+    private static Value<?, ?> invokeValueOfObject(Value<?, ?> obj) throws NotImplementedException, ValueConversionException {
+        if (obj instanceof StringValue str) return str;
+        if (obj instanceof ObjectValue<?, ?> o && o.isNullValue()) return new StringValue(o.context, "null", -1);
+        if (obj instanceof StringBuilderValue sb) {
+            StringValue chars = sb.getContent();
+            return chars == null ? PlaceHolder.instance : new StringValue(chars.context, chars.concrete, chars.formula, -1);
+        }
+        if (obj instanceof BoxedValue<?> boxed) return boxed.invokeMethod("toString", new Type[0], new Value<?, ?>[0]);
+        return PlaceHolder.instance;
+    }
+
+    /**
+     * String.join(CharSequence delimiter, CharSequence... elements) for an array of a concrete
+     * size: the elements (a null one as "null") with the delimiter between them. join(delimiter,
+     * Iterable) is not modelled.
+     */
+    private static Value<?, ?> invokeJoin(Value<?, ?>[] args, Type[] desc) throws NotImplementedException {
+        if (args.length != 2 || !desc[1].getDescriptor().equals("[Ljava/lang/CharSequence;")
+                || !(args[1] instanceof ObjectArrayValue elements) || elements.getSize().isSymbolic()) {
+            return PlaceHolder.instance;
+        }
+        StringValue delimiter = StringValue.charsOf(args[0]);
+        if (delimiter == null) return PlaceHolder.instance;
+        SolverContext ctx = delimiter.context;
+        StringFormulaManager smgr = ctx.getFormulaManager().getStringFormulaManager();
+        StringBuilder concrete = new StringBuilder();
+        StringFormula formula = smgr.makeString("");
+        for (int i = 0; i < elements.getSize().concrete; i++) {
+            Value<?, ?> element;
+            try {
+                element = elements.getElement(new IntValue(ctx, i));
+            } catch (Exception e) {
+                return PlaceHolder.instance;
+            }
+            StringValue chars = element instanceof ObjectValue<?, ?> o && o.isNullValue()
+                    ? new StringValue(ctx, "null", -1) : StringValue.charsOf(element);
+            if (chars == null) return PlaceHolder.instance;
+            if (i > 0) {
+                concrete.append(delimiter.concrete);
+                formula = smgr.concat(formula, delimiter.formula);
+            }
+            concrete.append(chars.concrete);
+            formula = smgr.concat(formula, chars.formula);
+        }
+        return new StringValue(ctx, concrete.toString(), formula, -1);
     }
 
     private static Value<?, ?> invokeValueOf(CharArrayValue data, IntValue offset, IntValue count) {

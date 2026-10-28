@@ -4,7 +4,6 @@ import ch.qos.logback.classic.Logger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import de.uzl.its.swat.common.exceptions.*;
 import de.uzl.its.swat.common.logging.GlobalLogger;
-import de.uzl.its.swat.common.logging.records.ErrorRecord;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.coverage.CoverageRequest;
@@ -18,16 +17,14 @@ import de.uzl.its.swat.symbolic.processor.InstructionProcessor;
 import de.uzl.its.swat.symbolic.processor.SymbolicInstructionProcessor;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.Value;
-import java.io.PrintStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.LogRecord;
 import java.util.logging.SimpleFormatter;
-import org.sosy_lab.common.ShutdownManager;
-import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
-import org.sosy_lab.common.log.BasicLogManager;
-import org.sosy_lab.java_smt.SolverContextFactory;
 import org.sosy_lab.java_smt.api.SolverContext;
 
 class LogFormatter extends SimpleFormatter {
@@ -47,20 +44,8 @@ public final class ThreadHandler {
 
     private static final HashMap<Long, ThreadContext> threadContextHashMap = new HashMap<>();
 
-    @SuppressWarnings("unused")
-    private static SolverContext solverContext;
-
     private static final LogFormatter logFormatter = new LogFormatter();
     private static final Config config = Config.instance();
-
-    public static void init() throws InvalidConfigurationException {
-        solverContext =
-                SolverContextFactory.createSolverContext(
-                        Configuration.defaultConfiguration(),
-                        BasicLogManager.create(Configuration.defaultConfiguration()),
-                        ShutdownManager.create().getNotifier(),
-                        SolverContextFactory.Solvers.Z3);
-    }
 
     public static boolean hasThreadContext(long id) {
         return threadContextHashMap.containsKey(id);
@@ -77,6 +62,64 @@ public final class ThreadHandler {
         } else {
             throw new DuplicateThreadContextException(id);
         }
+    }
+
+    /**
+     * Marks the thread's execution as started before its endpoint was entered.
+     *
+     * @param id the thread id
+     */
+    public static void setStartedBeforeEndpoint(long id) throws NoThreadContextException {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            context.setStartedBeforeEndpoint(true);
+        } else {
+            throw new NoThreadContextException(id);
+        }
+    }
+
+    /**
+     * Enters the endpoint of an execution that was started before it.
+     *
+     * @param id the thread id
+     * @return true if the execution was waiting for its endpoint, false otherwise
+     */
+    public static boolean enterStartedEndpoint(long id) {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null && context.isStartedBeforeEndpoint()) {
+            context.setStartedBeforeEndpoint(false);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Records that an endpoint was entered on a thread whose symbolic execution is already running.
+     *
+     * @param id the thread id
+     */
+    public static void enterNestedEndpoint(long id) throws NoThreadContextException {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            context.setNestedEndpoints(context.getNestedEndpoints() + 1);
+        } else {
+            throw new NoThreadContextException(id);
+        }
+    }
+
+    /**
+     * Leaves a nested endpoint if one is open.
+     *
+     * @param id the thread id
+     * @return true if a nested endpoint was left, false if the outermost endpoint ends
+     */
+    public static boolean leaveNestedEndpoint(long id) {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null && context.getNestedEndpoints() > 0) {
+            context.setNestedEndpoints(context.getNestedEndpoints() - 1);
+            return true;
+        }
+        return false;
     }
 
     public static void removeThreadContext(long id) throws NoThreadContextException {
@@ -139,6 +182,15 @@ public final class ThreadHandler {
         }
     }
 
+    public static de.uzl.its.swat.common.logging.StatsStorage getStatsStorage(long id) throws NoThreadContextException {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            return context.getStatsStorage();
+        } else {
+            throw new NoThreadContextException(id);
+        }
+    }
+
     public static void sendData(long id) throws NoThreadContextException, JsonProcessingException, NotImplementedException {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
@@ -156,7 +208,7 @@ public final class ThreadHandler {
             }
             if(!config.isCoverageOnly()) {
                 ConstraintRequest.sendConstraints(
-                        symbolicStateHandler.getTraceDTO(), endpointID, traceID);
+                        symbolicStateHandler.getTraceDTO(context.getStatsStorage(), id), endpointID, traceID);
             }
 
         } else {
@@ -166,6 +218,20 @@ public final class ThreadHandler {
 
     public static int getThreadCount() {
         return threadContextHashMap.size();
+    }
+
+    /**
+     * The ids of the target threads whose symbolic execution has started and not been terminated
+     * (the context of the instrumentation itself, id -1, is left out).
+     */
+    public static List<Long> getActiveThreadContextIds() {
+        List<Long> ids = new ArrayList<>();
+        for (Map.Entry<Long, ThreadContext> e : threadContextHashMap.entrySet()) {
+            if (e.getKey() != -1 && !e.getValue().isDisabled()) {
+                ids.add(e.getKey());
+            }
+        }
+        return ids;
     }
 
     public static void removeSolverContext(long id) throws NoThreadContextException  {
@@ -273,25 +339,12 @@ public final class ThreadHandler {
         }
     }
 
-    public static void recordException(long id, ErrorRecord er) throws NoThreadContextException  {
-        ThreadContext context = threadContextHashMap.get(id);
-        if (context != null) {
-            context.recordException(er);
-        } else {
-            throw new NoThreadContextException(id);
-        }
-    }
-
-    public static void logStats(long id) throws NoThreadContextException  {
+    public static void recordContextLossInvocation(
+            long id, InvocationEntry entry) throws NoThreadContextException  {
         if (!config.isLoggingStats()) return;
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
-            PrintStream ps = context.getStatsStream();
-            try {
-                ps.println(context.getStatsStorage().convertToJson());
-            } catch (JsonProcessingException e) {
-                logger.warn("Error logging missing invocation context.");
-            }
+            context.recordContextLossInvocation(entry);
         } else {
             throw new NoThreadContextException(id);
         }
@@ -348,6 +401,16 @@ public final class ThreadHandler {
         ThreadContext context = threadContextHashMap.get(id);
         if (context != null) {
             context.setStaticField(classId, fieldId, value);
+        } else {
+            throw new NoThreadContextException(id);
+        }
+    }
+
+    /** The shadow values of the static fields, by class: those the thread has accessed so far. */
+    public static java.util.Map<String, Value<?, ?>[]> getStaticFields(long id) throws NoThreadContextException {
+        ThreadContext context = threadContextHashMap.get(id);
+        if (context != null) {
+            return context.getStaticFields();
         } else {
             throw new NoThreadContextException(id);
         }

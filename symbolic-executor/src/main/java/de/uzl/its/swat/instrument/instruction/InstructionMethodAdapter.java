@@ -1,6 +1,7 @@
 package de.uzl.its.swat.instrument.instruction;
 
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.StackOverflowGuard;
 import de.uzl.its.swat.common.exceptions.InstrumentationException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.config.Config;
@@ -9,6 +10,7 @@ import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
 import de.uzl.its.swat.instrument.TryCatchBlock;
 import de.uzl.its.swat.instrument.Utils;
 import de.uzl.its.swat.metadata.ClassDepot;
+import de.uzl.its.swat.symbolic.loopstate.LoopHeads;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -69,6 +71,34 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         this.desc = desc;
     }
 
+    /** The current source line, and how many instructions of each kind each line has had (see BranchKeys). */
+    private int line = -1;
+    private final java.util.Map<String, Integer> keyOrdinals = new java.util.HashMap<>();
+
+    /**
+     * Names the instruction being visited for the trace (see {@link de.uzl.its.swat.instrument.BranchKeys}):
+     * every instruction that reports a branch or pushes a frame. Called before its instrumentation
+     * allocates its iid.
+     */
+    private void nameInstruction(String kind) {
+        if (owner.startsWith("de/uzl/its/swat/")) {
+            return; // SWAT's helpers: the graph has their branches inline in the caller, without keys
+        }
+        String group = line + "|" + kind;
+        int ordinal = keyOrdinals.merge(group, 1, Integer::sum) - 1;
+        instrumentationState.setPendingKey(owner + "." + methodName + desc + "|" + group + "|" + ordinal);
+    }
+
+    private static String branchKindOf(int opcode) {
+        if ((opcode >= IALOAD && opcode <= SALOAD) || (opcode >= IASTORE && opcode <= SASTORE)) {
+            return "arr";
+        }
+        if (opcode == IDIV || opcode == IREM || opcode == LDIV || opcode == LREM) {
+            return "div";
+        }
+        return null;
+    }
+
     /** Starts the visit of the method's code, if any (i.e. non abstract method). */
     @Override
     public void visitCode() {
@@ -82,6 +112,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         instrumentationState.setMid(mIdx);
 
         if (methodName.equals("<clinit>")) {
+            if (config.isLoopStateMatching() && !owner.startsWith("de/uzl/its/swat/")) {
+                LoopHeads.emitClassInit(mv, owner);
+            }
             int cIdx = classDepot.getClassIndex(this.owner);
             String clinit_desc = "(JIJ)V"; // (long iid, int cIdx, long invokeId)
             addJpushInsn(mv, instrumentationState.incAndGetId());
@@ -102,6 +135,27 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     private static void addJpushInsn(MethodVisitor mv, long val) {
         Utils.addJpushInsn(mv, val);
+    }
+
+    /** The method's loop heads (see LoopHeads), by the label that starts each. */
+    private java.util.Map<Label, LoopHeads.Head> loopHeads = java.util.Map.of();
+
+    public void setLoopHeads(java.util.Map<Label, LoopHeads.Head> loopHeads) {
+        this.loopHeads = loopHeads;
+    }
+
+    /**
+     * At a loop head, probes the state. The probe goes through the processor like an instruction,
+     * so the symbolic execution, which lags one instruction behind, handles it once the jump that
+     * led here has been recorded.
+     */
+    @Override
+    public void visitLabel(Label label) {
+        super.visitLabel(label);
+        LoopHeads.Head head = loopHeads.get(label);
+        if (head != null) {
+            LoopHeads.emitProbe(mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), head);
+        }
     }
     /** Push a value onto the stack. */
     private static void addBipushInsn(MethodVisitor mv, int val) {
@@ -154,6 +208,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitLineNumber(int lineNumber, Label label) {
+        line = lineNumber;
         mv.visitLineNumber(lineNumber, label);
     }
 
@@ -174,6 +229,10 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitInsn(int opcode) {
+        String kind = branchKindOf(opcode);
+        if (kind != null) {
+            nameInstruction(kind);
+        }
         boolean ex;
         switch (opcode) {
             case NOP:
@@ -733,6 +792,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitIntInsn(int opcode, int operand) {
+        if (opcode == NEWARRAY) {
+            nameInstruction("newarr");
+        }
         String desc = "(JI)V";
         addJpushInsn(mv, instrumentationState.incAndGetId());
 
@@ -791,6 +853,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
                 calledNew = true;
                 break;
             case ANEWARRAY:
+                nameInstruction("newarr");
                 addTypeInsn(mv, type, opcode, "ANEWARRAY");
                 addSpecialInsn(mv, 0); // for non-exceptional path
                 break;
@@ -1484,6 +1547,23 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         return getFieldMethods.contains(method);
     }
 
+    /**
+     * Records a StackOverflowError that reaches the exception handler of a call site in
+     * StackOverflowGuard.targetOverflowed, before the exception is reported to SWAT. Expects the
+     * throwable on top of the operand stack and leaves it there. No call and no branch: on an
+     * exhausted stack a call could replace the exception in flight.
+     *
+     * <pre>targetOverflowed |= (throwable instanceof StackOverflowError)</pre>
+     */
+    private void addStackOverflowCheck(MethodVisitor mv) {
+        String guard = Type.getInternalName(StackOverflowGuard.class);
+        mv.visitInsn(DUP);
+        mv.visitTypeInsn(INSTANCEOF, "java/lang/StackOverflowError");
+        mv.visitFieldInsn(GETSTATIC, guard, "targetOverflowed", "Z");
+        mv.visitInsn(IOR);
+        mv.visitFieldInsn(PUTSTATIC, guard, "targetOverflowed", "Z");
+    }
+
     private void addMethodWithTryCatch(
             int opcode, String owner, String name, String desc, boolean itf) {
 
@@ -1543,6 +1623,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
         mv.visitJumpInsn(GOTO, jumpTarget);
         mv.visitLabel(handler);
+        addStackOverflowCheck(mv);
 
         addJpushInsn(mv, instrumentationState.incAndGetId());
         addJpushInsn(mv, invokeId);
@@ -1581,6 +1662,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
+        nameInstruction("call:" + name + desc);
         String d = "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
         // increment and pushes the instruction id to the stack using the mv
         addJpushInsn(mv, instrumentationState.incAndGetId());
@@ -1618,6 +1700,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         mv.visitJumpInsn(GOTO, jumpTarget); // still try catch
 
         mv.visitLabel(handler);
+        addStackOverflowCheck(mv);
         addJpushInsn(mv, instrumentationState.incAndGetId());
         addJpushInsn(mv, invokeId);
         mv.visitMethodInsn(
@@ -1654,6 +1737,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
+        nameInstruction("call:" + name + desc);
         if (opcode == INVOKESPECIAL && name.equals("<init>")) {
             if (isInit) {
                 // This code is already inside an init method.
@@ -1717,6 +1801,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitJumpInsn(int opcode, Label label) {
+        if (opcode != GOTO && opcode != JSR) {
+            nameInstruction("if");
+        }
         long iid3;
         String desc = "(JI)V";
         addJpushInsn(mv, iid3 = instrumentationState.incAndGetId());
@@ -1954,6 +2041,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
+        nameInstruction("switch");
         long iid3;
 
         String desc = "(JIII[I[I)V"; // Add an extra array for case values
@@ -1990,6 +2078,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
+        nameInstruction("switch");
         long iid3;
 
         String desc = "(JI[I[I)V";
@@ -2026,6 +2115,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
     @Override
     public void visitMultiANewArrayInsn(String desc, int dims) {
+        nameInstruction("newarr");
         String d = "(JLjava/lang/String;I)V";
         addJpushInsn(mv, instrumentationState.incAndGetId());
 

@@ -109,18 +109,16 @@ def show_config(ctx):
     click.echo(f"\nBenchmark directory: {benchmark_dir}")
     click.echo(f"  Exists: {benchmark_dir.exists()}")
 
-    # Show results directory
-    results_dir = script_dir.parent / 'results'
-    click.echo(f"\nResults directory: {results_dir}")
-    click.echo(f"  Exists: {results_dir.exists()}")
-    if results_dir.exists():
-        result_files = list(results_dir.glob('results_*.json'))
-        click.echo(f"  Result files: {len(result_files)}")
-
-    # Show logs directory
-    logs_dir = script_dir.parent / 'logs'
-    click.echo(f"\nLogs directory: {logs_dir}")
-    click.echo(f"  Exists: {logs_dir.exists()}")
+    # Show runs directory (each run has its own runs/run_<timestamp>/{logs,results})
+    runs_dir = script_dir.parent / 'runs'
+    click.echo(f"\nRuns directory: {runs_dir}")
+    click.echo(f"  Exists: {runs_dir.exists()}")
+    if runs_dir.exists():
+        run_dirs = sorted((p for p in runs_dir.glob('run_*') if p.is_dir()),
+                          key=lambda p: p.stat().st_mtime)
+        click.echo(f"  Runs: {len(run_dirs)}")
+        if run_dirs:
+            click.echo(f"  Latest run: {run_dirs[-1].name}")
 
 
 @util.command(name='check-deps')

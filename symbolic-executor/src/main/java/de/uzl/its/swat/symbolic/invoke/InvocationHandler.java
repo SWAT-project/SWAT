@@ -1,11 +1,13 @@
 package de.uzl.its.swat.symbolic.invoke;
 
+import de.uzl.its.swat.symbolic.value.reference.array.ObjectArrayValue;
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
+import de.uzl.its.swat.symbolic.invoke.java.util.CollectionInvocation;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
@@ -27,6 +29,7 @@ public class InvocationHandler {
                             "java/io/PrintStream/println",
                             "de/uzl/its/swat/instrument/Intrinsics",
                             "de/uzl/its/swat/common/UtilInstrumented",
+                            "de/uzl/its/swat/common/RefIdentity",
                             "de/uzl/its/swat/witness/Witness",
                             "de/uzl/its/swat/instrument/svcomp/Verifier",
                             "java/io/PrintStream",
@@ -34,6 +37,36 @@ public class InvocationHandler {
                             "java/io/BufferedReader",
                             "java/io/InputStream",
                             "java/util/Scanner"));
+
+    // The concatenation keeps the ShadowJar relocation from rewriting the owner
+    private static final String OBJECT_FACTORY = "org/".concat("sosy_lab/sv_benchmarks/ObjectFactory");
+
+    /**
+     * Whether this is the factory call that SV-COMP's {@code Verifier.nondetObject} is rewritten to.
+     * If it reaches the uninstrumented path, the factory implementation is not instrumented: its
+     * nondeterministic choices are concrete, so the objects it could have returned are not
+     * explored, which is a context loss even though no argument is symbolic.
+     */
+    public static boolean isUninstrumentedObjectFactory(String owner, String name) {
+        return owner.equals(OBJECT_FACTORY) && name.equals("createObject");
+    }
+
+    /**
+     * Whether {@code v} is an object array holding a symbolic value, e.g. the boxed arguments of
+     * {@code Method.invoke} or of any other varargs method. The array's own formula does not show
+     * that: its elements are stored as fields.
+     */
+    private static boolean hasSymbolicElement(Value<?, ?> v) throws NotImplementedException {
+        if (!(v instanceof ObjectArrayValue) || ((ObjectArrayValue) v).getFields() == null) {
+            return false;
+        }
+        for (Value<?, ?> element : ((ObjectArrayValue) v).getFields()) {
+            if (element != null && element.isSymbolic()) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public static Value<?, ?> invoke(
             SymbolicTraceHandler symbolicTraceHandler,
@@ -49,10 +82,21 @@ public class InvocationHandler {
         Type[] types = Type.getArgumentTypes(desc);
         logger.trace("Invoking method {} in class {} with arguments {}", name, owner, arguments);
 
-        // We do that first to include the pointer in instance invocation cases
-        boolean containsSymbolicArgument = arguments.stream().anyMatch(v -> {
+        // JDK containers: modelled calls only move references, see CollectionInvocation
+        Value<?, ?> containerResult = CollectionInvocation.invoke(
+                owner, name, desc, arguments.toArray(new Value[0]), isInstance, instance, invokeId);
+        if (containerResult != null) {
+            return containerResult;
+        }
+
+        boolean ignored = IGNORED_INVOCATIONS.contains(owner + "/" + name)
+                || IGNORED_INVOCATIONS.contains(owner);
+
+        // We do that first to include the pointer in instance invocation cases. Ignored
+        // invocations are never recorded, so their arguments need no (possibly deep) scan.
+        boolean containsSymbolicArgument = !ignored && arguments.stream().anyMatch(v -> {
             try {
-                return v.isSymbolic();
+                return v.isSymbolic() || hasSymbolicElement(v);
             } catch (NotImplementedException e) {
                 // either handle, or wrap in an unchecked exception:
                 throw new RuntimeException(e);
@@ -60,7 +104,7 @@ public class InvocationHandler {
         });
 
         if (isInstance) {
-            containsSymbolicArgument = containsSymbolicArgument || instance.isSymbolic();
+            containsSymbolicArgument = containsSymbolicArgument || (!ignored && instance.isSymbolic());
             retValue = instance.invokeMethod(name, types, arguments.toArray(new Value[0]));
         } else {
             retValue =
@@ -73,9 +117,7 @@ public class InvocationHandler {
         }
 
         // When the method is not implemented and its not on the ignore list, we record it
-        if (retValue instanceof PlaceHolder &&
-                !(IGNORED_INVOCATIONS.contains(owner + "/" + name)
-                || IGNORED_INVOCATIONS.contains(owner))) {
+        if (retValue instanceof PlaceHolder && !ignored) {
 
             if(isInstance) arguments.add(0, instance);
 
@@ -96,24 +138,30 @@ public class InvocationHandler {
             }
 
 
-            ThreadHandler.recordMissingInvocation(Thread.currentThread().getId(),  new InvocationEntry(
+            long threadId = Thread.currentThread().getId();
+            InvocationEntry entry = new InvocationEntry(
                     owner,
                     name,
                     desc,
                     isInstance,
                     invokeId,
-                    containsSymbolicArgument));
+                    containsSymbolicArgument);
+            ThreadHandler.recordMissingInvocation(threadId, entry);
 
             if(
-                    (retValue.equals(PlaceHolder.instance) // To detect a missing implementation
+                    ((retValue.equals(PlaceHolder.instance) // To detect a missing implementation
                     || retValue instanceof VoidValue vv && !vv.isSymbolic())  // To detect a missing implementation that returns nothing
-                            && containsSymbolicArgument) {
+                            && containsSymbolicArgument)
+                    || isUninstrumentedObjectFactory(owner, name)) {
                 // Too strict? What about void methods that always have return value PlaceHolder.instance?
                 logger.warn("Invocation of method {} in class {} with arguments {} cases context loss",
                         name,
                         owner,
                         desc);
                 symbolicTraceHandler.recordSymbolicContextLoss();
+                // Record the culprit so the explorer can compute the context-loss subset of the
+                // missing invocations without scraping logs.
+                ThreadHandler.recordContextLossInvocation(threadId, entry);
             }
 
         }

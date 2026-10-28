@@ -10,6 +10,7 @@ import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.InternalTransformerType;
 import de.uzl.its.swat.instrument.SafeClassWriter;
 import de.uzl.its.swat.instrument.Transformer;
+import de.uzl.its.swat.instrument.TransformerType;
 import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -99,7 +100,10 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
         getPrintBox().addMsg("Class: " + cname);
             ClassReader cr = new ClassReader(cbuf);
             ClassWriter cw = new SafeClassWriter(cr, loader, ClassWriter.COMPUTE_FRAMES);
-            ClassVisitor cv = new SymbolicWrapperClassAdapter(cw, cname);
+            boolean declaresEntryMethod =
+                    config.getInstrumentationTransformer() == TransformerType.SV_COMP
+                            && SymbolicWrapperClassAdapter.declaresEntryMethod(cr);
+            ClassVisitor cv = new SymbolicWrapperClassAdapter(cw, cname, declaresEntryMethod);
             cr.accept(cv, 0);
 
             if (Config.instance().isUseCheckClassAdapter() && Util.useCheckClassAdapterForClass(cname)) {

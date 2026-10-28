@@ -23,6 +23,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitLdcInsn(value);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/String", "<init>",
                     "(Ljava/lang/String;)V", false);
+            markDeInterned();
             //NoCacheTransformer.getPrintBox()
             //        .addMsg("Replacing LDC with new String");
         } else {
@@ -33,14 +34,16 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
     // Intercept method calls to disable interning and caching.
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-        // Skip String.intern() calls.
+        // Replace String.intern() with a de-interned copy that stands for the pooled instance.
         if (opcode == Opcodes.INVOKEVIRTUAL &&
                 owner.equals("java/lang/String") &&
                 name.equals("intern") &&
                 descriptor.equals("()Ljava/lang/String;") &&
                 Config.instance().isUseStringInterning()) {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "de/uzl/its/swat/common/UtilInstrumented", "intern",
+                    "(Ljava/lang/String;)Ljava/lang/String;", false);
             NoCacheTransformer.getPrintBox()
-                    .addMsg("Removing String.intern() call");
+                    .addMsg("Replacing String.intern() with UtilInstrumented.intern");
             return;
         }
         // Replace Integer.valueOf(int) with new Integer(int)
@@ -54,6 +57,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Integer", "<init>", "(I)V", false);
+            markDeInterned();
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Integer.valueOf with new Integer");
             return;
@@ -69,6 +73,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.LLOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Long", "<init>", "(J)V", false);
+            markDeInterned();
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Long.valueOf with new Long");
             return;
@@ -84,6 +89,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Short", "<init>", "(S)V", false);
+            markDeInterned();
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Short.valueOf with new Short");
             return;
@@ -99,6 +105,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Byte", "<init>", "(B)V", false);
+            markDeInterned();
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Byte.valueOf with new Byte");
             return;
@@ -114,6 +121,7 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Character", "<init>", "(C)V", false);
+            markDeInterned();
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Character.valueOf with new Character");
             return;
@@ -129,12 +137,23 @@ class NoCacheMethodAdapter extends LocalVariablesSorter {
             mv.visitInsn(Opcodes.DUP);
             mv.visitVarInsn(Opcodes.ILOAD, localVarIndex);
             mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Boolean", "<init>", "(Z)V", false);
+            markDeInterned();
             NoCacheTransformer.getPrintBox()
                     .addMsg("Replacing Boolean.valueOf with new Boolean");
             return;
         }
         // For all other method calls, proceed normally.
         mv.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+    }
+
+    /**
+     * Registers the copy on top of the stack as standing for a shared instance, so that
+     * {@code UtilInstrumented.refEquals} can reproduce the identity of the original program.
+     */
+    private void markDeInterned() {
+        mv.visitInsn(Opcodes.DUP);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "de/uzl/its/swat/common/RefIdentity", "markDeInterned",
+                "(Ljava/lang/Object;)V", false);
     }
 
     /*

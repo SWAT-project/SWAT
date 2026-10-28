@@ -1,10 +1,10 @@
-from typing import List
+from typing import List, Optional
 from data.Database import Database
 from parse.TraceParser import Parser
 from data.trace.Input import Input
 from data.trace.UF import UF
 
-from parse.DataTransferObjects import TraceItem, InputItem, UFItem
+from parse.DataTransferObjects import TraceItem, InputItem, UFItem, InvocationItem, NondetReturnItem, ViolationItem
 from data.trace.Special import Special
 from data.trace.Branch import Branch
 
@@ -23,7 +23,12 @@ class ConstraintService:
     @staticmethod
     def add_constraints(endpoint_id: str, trace_id: str, trace: List[TraceItem], inputs: List[InputItem], ufs: List[UFItem],
                         symbolic_context_loss: bool, symbolic_precision_loss: bool,
-                        reference_semantic_change: bool = False):
+                        reference_semantic_change: bool = False,
+                        missing_invocations: List[InvocationItem] = None,
+                        nondet_returns: List[NondetReturnItem] = None,
+                        violation: Optional[ViolationItem] = None,
+                        approximate_model: bool = False,
+                        stack_overflow: bool = False):
         """
         Adds constraints to the database.
 
@@ -40,16 +45,41 @@ class ConstraintService:
         symbolic_context_loss (bool): A flag indicating whether the symbolic context was lost.
         symbolic_precision_loss (bool): A flag indicating whether the symbolic precision was lost (UFs introduced).
         reference_semantic_change (bool): A flag indicating whether reference equality semantics changed.
+        missing_invocations (list): Methods that could not be modelled symbolically during this trace.
+        nondet_returns (list): The values returned by Verifier.nondet*() calls with their call locations.
+        violation (ViolationItem): The throwable that escaped the entry method, if any.
+        approximate_model (bool): Whether an approximate model (a sampled Math function) was used,
+            so that solutions built from this trace are only guesses.
+        stack_overflow (bool): Whether a StackOverflowError reached the target's code, so that a
+            violation of this execution depends on the JVM's stack size.
 
         Returns:
         None: The result is the side effect of adding data to the database.
         """
 
-        # logger.info(f'[CONSTRAINT SERVICE] Received trace: {[t.__str__() for t in trace]}')
-        trace_parsed: List[Branch | Special] = Parser.parse_trace(trace, trace_id=trace_id)
-        # logger.info(f'[CONSTRAINT SERVICE] Parsed trace: {[t.__str__() for t in trace_parsed]}')
-        inputs_parsed: List[Input] = Parser.parse_inputs(inputs)
-        ufs_parsed: List[UF] = Parser.parse_ufs(ufs)
-        # Adding the trace and inputs to the database for the specified endpoint.
-        Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change)
-        logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')
+        try:
+            # logger.info(f'[CONSTRAINT SERVICE] Received trace: {[t.__str__() for t in trace]}')
+            trace_parsed: List[Branch | Special] = Parser.parse_trace(trace, trace_id=trace_id)
+            logger.info(f'[CONSTRAINT SERVICE] Parsed trace: {[t.__str__() for t in trace_parsed]}')
+            logger.info(f'[CONSTRAINT SERVICE] Parsed trace branches: {[t.__str__() for t in trace_parsed if isinstance(t, Branch)]}')
+            inputs_parsed: List[Input] = Parser.parse_inputs(inputs)
+            # logger.info(f'[CONSTRAINT SERVICE] Parsed inputs: {[i.__str__() for i in inputs_parsed]}')
+            ufs_parsed: List[UF] = Parser.parse_ufs(ufs)
+            # Flatten the missing-invocation DTOs into plain dicts so the Database/Tree stay decoupled
+            # from the pydantic request models.
+            missing_invocations_data = [item.model_dump() for item in (missing_invocations or [])]
+            # The witness data of this execution (plain dicts as well); the Database keeps the latest.
+            witness_data = {
+                'trace_id': trace_id,
+                'nondet_returns': [item.model_dump() for item in (nondet_returns or [])],
+                'violation': violation.model_dump() if violation is not None else None,
+            }
+            # Adding the trace and inputs to the database for the specified endpoint.
+            Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data, approximate_model, stack_overflow)
+            logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')
+        except Exception as e:
+            # A trace that cannot be added must not end the run silently, nor let it go on as if the
+            # tree were complete: the driver reports UNKNOWN for it (SVCompDriver).
+            logger.exception(f'[CONSTRAINT SERVICE] Could not add trace {trace_id} to endpoint {endpoint_id}')
+            Database.instance().record_trace_ingest_failure(endpoint_id, f'trace {trace_id}: {type(e).__name__}: {e}',
+                                                            reference_semantic_change, trace_id, stack_overflow)

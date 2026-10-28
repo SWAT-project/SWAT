@@ -3556,6 +3556,12 @@ public final class InstructionLoggingDispatcher {
      * @param iid The unique instruction ID set during instrumentation.
      */
     @SuppressWarnings("unused")
+    public static void LOOP_HEAD(long iid, String head, Object[] locals) throws NoThreadContextException {
+    Logger logger = ThreadHandler.getShadowStateLogger(-1);
+    logger.info("LOOP_HEAD {} {}", iid, head);
+}
+
+    @SuppressWarnings("unused")
     public static void LOOP_BEGIN(long iid) throws NoThreadContextException {
     Logger logger = ThreadHandler.getShadowStateLogger(-1);
     logger.info("LOOP_BEGIN {}", iid);

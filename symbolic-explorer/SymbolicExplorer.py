@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import threading
 from urllib.request import Request
@@ -59,7 +60,17 @@ class SymbolicExplorer:
 
     def run_sv_comp(self):
         driver = SVCompDriver(args)
-        driver.run()
+        try:
+            driver.run()
+        except BaseException:
+            # The driver reports UNKNOWN for a failed exploration itself; this catches what fails
+            # around it. Without it the HTTP server would keep the process alive until the time limit.
+            log.get_logger().exception('[SVCOMP] The SV-COMP driver failed')
+            if not driver.verdict_reported:
+                log.get_verdict_logger().info(f'[VERDICT {driver.verification_category.value}] == DONT-KNOW')
+            for handler in log.get_logger().handlers:
+                handler.flush()
+            os._exit(1)
 
     def run_http(self):
         driver = HTTPDriver(self.args)
@@ -117,7 +128,7 @@ class SymbolicExplorer:
 def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-m", "--mode", choices=['passive', 'annotation', 'args', 'sv-comp', 'http', 'simple'], default='annotation',
                              help="Choose the desired mode")
-    parser.add_argument("-t", "--target", help="Full path to the target JAR file")
+    parser.add_argument("-t", "--target", help="Full path to the target JAR or class name")
     parser.add_argument("-prp", "--property", help="Which property to verify")
     parser.add_argument("-s", "--symbolicvars", nargs='+', help="The types and amount of the symbolic "
                                                                      "variables")
@@ -131,6 +142,37 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-i", "--ip_addr", help="IP address to Listen on", default="127.0.0.1")
     parser.add_argument("--optimize", action="store_true", help="Enable Z3 optimizer to minimize variable values (slower but may produce simpler solutions)", default=False)
     parser.add_argument("--log-smt-formulas", action="store_true", help="Log SMT formulas and models to disk for debugging", default=False)
+    parser.add_argument("--sa-file", help="Path to a file with static pre-analysis results for informing branch exploration (optional)")
+    parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
+    parser.add_argument("--sa-retry-without", action="store_true", help="On a SAFE verdict reached with static pre-analysis, disable it and explore again (guards against false SAFE from incomplete SA)", default=False)
+    parser.add_argument("--sa-no-callback-targets", action="store_true", help="Do not count library calls as possible asserts when application code that library code may call back (overrides of library methods, lambdas) can reach an assert. Unsound: an assert reached only through such a callback can then give a false SAFE", default=False)
+    parser.add_argument("--sa-rank-distance", action="store_true", help="Try branches closest to an assert (by static pre-analysis graph distance) first, instead of in plain DFS order", default=False)
+    parser.add_argument("--no-loop-state-matching", action="store_true", help="Flip branches below a loop-head state that was already reached at a smaller position too (the executor reports loop-head states if its config sets loopStateMatching)", default=False)
+    parser.add_argument("--solver-rlimit", type=int, default=0, help="Z3 resource limit (rlimit) for the first query of each branch in sv-comp mode; a branch that runs out is retried later with a growing limit. 0 (default): unlimited")
+    parser.add_argument("--no-property-precheck", action="store_true", help="Do not run the static property pre-check (sv-comp mode), which can prove no-runtime-exception (no uncaught RuntimeException is possible) or valid-assert (no AssertionError is ever created) for the whole program", default=False)
+    parser.add_argument("--divergence-retries", type=int, default=3, help="How often a branch is re-solved (with the failed solutions excluded) when the run of its solution does not reach it, before it is given up on, which rules out SAFE (sv-comp mode)")
+    parser.add_argument("--approximate-rlimit", type=int, default=250_000_000, help="Z3 resource limit for a query over an approximate Math model in sv-comp mode (about one to one and a half minutes); one that runs out is given up on, which rules out SAFE as the model does anyway. 0: no limit beyond --solver-rlimit")
+    parser.add_argument("--parallel-sa", action="store_true", help="Run the static pre-analysis in the background and use it once it is ready (sv-comp mode). By default exploration waits for it: running it in parallel makes runs nondeterministic", default=False)
+
+    # SV-COMP resource budget, shared by the explorer and all executor JVMs (sv-comp mode). The
+    # defaults are the competition's limits (bench-defs swat.xml); a lower cgroup memory limit wins.
+    parser.add_argument("--memory-limit", type=int, default=15000,
+                        help="Memory limit of the whole run in MB (10^6 bytes); the executor heap is derived from it")
+    parser.add_argument("--cpu-limit", type=float, default=900,
+                        help="CPU time limit of the whole run in seconds; exploration stops with UNKNOWN shortly before it")
+    parser.add_argument("--cpu-used", type=float, default=0.0,
+                        help="CPU seconds the run used before the explorer started (e.g. compiling the task)")
+
+    # SV-COMP witness arguments: the explorer writes the violation witness from the trace of the
+    # violating execution (needs the task's input files and property file as given to the verifier)
+    parser.add_argument("--witness-dir", default="witness",
+                        help="Directory for witness.yml/witness.graphml, relative to the working directory (sv-comp mode)")
+    parser.add_argument("--witness-input", nargs='+', default=[],
+                        help="The task's input files/directories exactly as given to the verifier")
+    parser.add_argument("--witness-property", help="Path to the property file of the task")
+    parser.add_argument("--witness-base-dir",
+                        help="Directory relative witness input paths are resolved against (default: the working directory)")
+    parser.add_argument("--producer-version", default="unknown", help="Producer version recorded in the witness")
 
     # HTTP-specific arguments
     parser.add_argument("--host", help="HTTP target host", default="localhost")  
@@ -148,6 +190,11 @@ if __name__ == '__main__':
     
     # Initialize loggers
     log.initialize_loggers(args.logdir)
+    if args.mode == 'sv-comp':
+        # The module loggers' DEBUG/INFO lines on stdout (several per branch and query) were 500 MB
+        # in 900 s on MinePump: CPU time, and memory in a BenchExec container. The explorer's own
+        # log (explorer.log) is not affected.
+        logging.getLogger().setLevel(logging.WARNING)
 
     # Set configuration flags in Database
     from data.Database import Database

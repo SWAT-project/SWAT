@@ -55,6 +55,35 @@ class SymbolicStorage:
             self.vars[int(v.idx)] = v
             logger.info(f'[EXPLORER] Registered symbolic variable {v.dType.name}_{v.idx}')
 
+    def register_inputs(self, inputs) -> None:
+        """Register symbolic variables from the inputs recorded in a trace.
+
+        Unlike register_vars(), this keeps the concrete value observed during the
+        execution as fallback and uses the variable's real DSE index (parsed from
+        its name). If the solver's model omits a variable (e.g. it is unconstrained
+        on the solved path), the fallback value is used instead of emitting a
+        literal 'None' assignment, which would crash the executor.
+        Mirrors svcomp/SymbolicStorage.register_vars().
+
+        Args:
+            inputs: List of data.trace.Input objects (e.g. a branch node's inputs).
+        """
+        for input in inputs:
+            dtype, _, idx = input.name.rpartition('_')
+            if not idx.isdigit():
+                # Auxiliary inputs such as array-length variables ("[I_0_length")
+                # are not assignable and carry no DSE index.
+                logger.debug(f'[EXPLORER] Skipping auxiliary input {input.name}')
+                continue
+            try:
+                v = SymbolicVar(dtype=DataTypes(dtype), idx=int(idx))
+            except ValueError:
+                logger.warning(f'[EXPLORER] Skipping input {input.name} with unknown type {dtype}')
+                continue
+            v.value = input.value
+            self.vars[v.idx] = v
+            logger.info(f'[EXPLORER] Registered symbolic variable {v.dType.name}_{v.idx} (trace value: {v.value})')
+
     def init_values(self):
         for var in self.vars.values():
             match var.dType:

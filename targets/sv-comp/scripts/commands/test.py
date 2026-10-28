@@ -3,8 +3,9 @@
 import click
 import logging
 from pathlib import Path
-import sys
+import sys, shlex
 from lib.execution import target_execution
+import subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +58,22 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--mode', type=click.Choice(['single', 'parallel']), default='parallel', help='Execution mode')
 @click.option('--workers', type=int, default=50, help='Number of parallel workers')
 @click.option('--benchmark-dir', type=click.Path(exists=True), help='Path to sv-benchmarks directory')
-@click.option('--config-file', default='sv-comp.cfg', help='Configuration file name')
+@click.option('--config-file', default=None, help='Configuration file name (default: sv-comp.cfg or swat-debug.cfg in "single" mode)')
 @click.option('--categories', multiple=True, help='Verification categories to run (e.g., valid-assert.prp)')
+@click.option('--suite', default=None, help='Run only tests from this benchmark subfolder (e.g., securibench, autostub)')
+@click.option('--limit-nr-tests', type=int, default=None, help='Run only the first n tests')
 @click.option('--target', help='Single target to run (only for single mode)')
 @click.option('--no-witness', 'no_witness', is_flag=True, default=False, help='Skip witness creation and validation')
+@click.option('--no-sa', 'no_sa', is_flag=True, default=False, help='Skip static pre-analysis')
+@click.option('--sa-retry-without', 'sa_retry_without', is_flag=True, default=False, help='On a SAFE verdict reached with static pre-analysis, retry the exploration without it')
+@click.option('--parallel-sa', 'parallel_sa', is_flag=True, default=False, help='Run the static pre-analysis in the background while exploring, instead of waiting for it (nondeterministic)')
+@click.option('--sa-no-callback-targets', 'sa_no_callback_targets', is_flag=True, default=False, help='Do not count library calls as possible asserts when a callback from library code may reach one (unsound)')
+@click.option('--sa-rank-distance', 'sa_rank_distance', is_flag=True, default=False, help='Try branches closest to an assert in the static pre-analysis graph first')
+@click.option('--solver-rlimit', 'solver_rlimit', type=int, default=0, help='Z3 resource limit for the first query of each branch, growing on retries (0: unlimited)')
+@click.option('--testcase-timeout-s', type=int, default=15 * 60, help='Timeout of the symbolic-explorer in seconds for each test case')
 @click.pass_context
-def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target: str, no_witness: bool):
+def run_tests(ctx, mode, workers, benchmark_dir, config_file: str | None, categories, suite, limit_nr_tests: int | None, target: str,
+              no_witness: bool, no_sa: bool, sa_retry_without: bool, parallel_sa: bool, sa_rank_distance: bool, sa_no_callback_targets: bool, solver_rlimit: int, testcase_timeout_s: int):
     """Run verification tests."""
     from lib import (
         extract_testcases,
@@ -72,6 +83,7 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
         check_port_availability,
         VerificationCategory,
     )
+    from lib.command_gen import new_run_timestamp, run_dir as make_run_dir, write_run_info
     script_dir = ctx.obj['script_dir']
 
     # Determine benchmark directory
@@ -106,14 +118,27 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
                 ver_tasks = [task for task in ver_tasks if task['category'] in selected_categories]
                 click.echo(f"Filtered to {len(ver_tasks)} test cases for categories: {[c.value for c in selected_categories]}")
 
-        # Generate commands
-        if mode == 'single' and target is None:
-            # Use default target from original script
-            config = 'swat-debug.cfg'
-        else:
-            config = config_file
+        # Filter by suite (benchmark subfolder) if specified
+        if suite:
+            ver_tasks = [task for task in ver_tasks if suite in task['file_path'].parts]
+            click.echo(f"Filtered to {len(ver_tasks)} test cases for suite: {suite}")
+            if not ver_tasks:
+                click.echo(f"Error: No test cases found for suite '{suite}'", err=True)
+                ctx.exit(1)
+        if limit_nr_tests:
+            ver_tasks = ver_tasks[:limit_nr_tests]
+            click.echo(f"Limiting number of tests to {limit_nr_tests} (now {len(ver_tasks)})")
 
-        ver_tasks_with_commands = generate_commands(ver_tasks, config)
+        # Generate commands
+        if config_file is None:
+            if mode == 'single':
+                config_file = 'swat-debug.cfg'
+            else:
+                config_file = 'sv-comp.cfg'
+
+        # One timestamp ties this run's per-testcase logs to its results dir.
+        run_timestamp = new_run_timestamp()
+        ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, solver_rlimit=solver_rlimit, cpu_limit_s=testcase_timeout_s)
         click.echo(f"Generated {len(ver_tasks_with_commands)} commands")
 
         # Check port availability
@@ -138,12 +163,27 @@ def run_tests(ctx, mode, workers, benchmark_dir, config_file, categories, target
                     ctx.exit(1)
 
                 click.echo(f"Running single target: {target}")
-                target_execution(ver_task, create_witness=not no_witness)
+                target_execution(ver_task, create_witness=not no_witness, testcase_timeout_s=testcase_timeout_s)
             else:
                 # Run default single target
                 run_single_target(ver_tasks_with_commands, create_witness=not no_witness)
         else:
-            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness)
+            run_dir = make_run_dir(run_timestamp)
+            run_dir.mkdir(parents=True)
+            click.echo(f"Run directory: {run_dir}")
+            # Log argv and current commit for debugging and reproducibility
+            subprocess.run(f'(echo {shlex.quote(shlex.join(sys.argv))} && echo && git log -1 --pretty=format:"%h %s" && echo && git status) > {run_dir / "gitlog.txt"}', shell=True)
+            # Structured run settings, e.g. for compare_runs.py; the SA mode changes what the timing means.
+            write_run_info(run_dir, argv=sys.argv, run_timestamp=run_timestamp, mode=mode, config_file=config_file,
+                           categories=list(categories), suite=suite, limit_nr_tests=limit_nr_tests,
+                           testcase_timeout_s=testcase_timeout_s, create_witness=not no_witness,
+                           sa_mode='none' if no_sa else 'parallel' if parallel_sa else 'sequential',
+                           sa_retry_without=sa_retry_without and not no_sa,
+                           sa_rank_distance=sa_rank_distance and not no_sa,
+                           sa_callback_targets=not sa_no_callback_targets and not no_sa,
+                           solver_rlimit=solver_rlimit)
+            
+            run_parallel(ver_tasks_with_commands, max_workers=workers, create_witness=not no_witness, run_dir=run_dir, testcase_timeout_s=testcase_timeout_s)
 
         click.secho("✓ Test execution complete", fg='green')
 

@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Name of the virtual environment directory
-VENV_DIR="venv"
+# Name of the virtual environment directory (the svcomp CLI spawns the explorer
+# via .venv/bin/python3, so this must be .venv).
+VENV_DIR=".venv"
 echo "::group::Prepare dependencies..."
 # Check if the virtual environment directory exists
 if [ ! -d "$VENV_DIR" ]; then
@@ -23,7 +24,7 @@ rm -rf ../sv-benchmarks/.github
 echo "::endgroup::"
 
 echo "Running Tests..."
-python3 target_execution.py
+python3 svcomp.py test run --mode parallel --categories valid-assert.prp
 
 # Deactivate the virtual environment (optional)
 deactivate

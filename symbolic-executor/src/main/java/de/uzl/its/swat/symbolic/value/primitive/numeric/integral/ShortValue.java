@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.value.primitive.numeric.integral;
 
+import de.uzl.its.swat.symbolic.invoke.java.lang.NumberStrings;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -69,8 +71,8 @@ public class ShortValue extends NumericalValue<BitvectorFormula, Short> {
         this.bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
         this.imgr = context.getFormulaManager().getIntegerFormulaManager();
         this.concrete = concrete;
-        // Convert IntegerFormula to BitvectorFormula
-        this.formula = bvmgr.makeBitvector(BIT_WIDTH, intFormula);
+        // Convert IntegerFormula to BitvectorFormula, over bit-vectors where it allows
+        this.formula = BitvectorEncoding.toBitvector(context.getFormulaManager(), intFormula, BIT_WIDTH);
     }
 
     /**
@@ -219,12 +221,11 @@ public class ShortValue extends NumericalValue<BitvectorFormula, Short> {
 
     @Override
     public StringValue asStringValue() {
-        // String theory requires IntegerFormula, so convert BV to Int
-        NumeralFormula.IntegerFormula intFormula = bvmgr.toIntegerFormula(formula, true);
+        // str.from_int of a negative number is "", so the sign is handled separately
         return new StringValue(
                 this.context,
                 String.valueOf(concrete),
-                context.getFormulaManager().getStringFormulaManager().toStringFormula(intFormula),
+                NumberStrings.decimal(context, formula, 16, true),
                 -1);
     }
 

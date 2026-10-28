@@ -18,7 +18,14 @@ class Parser:
                 _trace.append(Branch(id=branch.iid,
                                      trace_id=trace_id,
                                      has_branched=branch.branched,
-                                     constraint=sanitized_constraint))
+                                     constraint=sanitized_constraint,
+                                     concrete_only=branch.concreteOnly,
+                                     key=branch.key,
+                                     pops=branch.pops,
+                                     pushes=tuple(branch.pushes),
+                                     callback=branch.callback,
+                                     choice=branch.choice,
+                                     loop_states=tuple(branch.loopStates)))
             else:
                 _trace.append(Special(id=branch.iid,
                                       trace_id=trace_id,

@@ -13,8 +13,10 @@ import org.sosy_lab.java_smt.api.SolverContext;
 
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -32,14 +34,17 @@ public class FloatInvocation {
         return switch (name) {
             case "compare" -> invokeCompare(args);
             case "floatToIntBits" -> invokeFloatToIntBits(args);
-            case "floatToRawIntBits" -> invokeFloatToIntBits(args); // Same as floatToIntBits for symbolic execution
+            case "floatToRawIntBits" -> invokeFloatToRawIntBits(args, symbolicTraceHandler);
             case "isFinite" -> invokeIsFinite(args);
             case "isInfinite" -> invokeIsInfinite(args);
             case "isNaN" -> invokeIsNaN(args);
             case "max" -> invokeMax(args);
             case "min" -> invokeMin(args);
             case "sum" -> invokeSum(args);
-            case "valueOf" -> invokeValueOf(args);
+            case "parseFloat" -> args[0] instanceof StringValue sv ? NumberParsing.parseFloat(sv, symbolicTraceHandler) : PlaceHolder.instance;
+            case "valueOf" -> args[0] instanceof StringValue sv
+                    ? new FloatObjectValue(sv.context, NumberParsing.parseFloat(sv, symbolicTraceHandler), ObjectValue.ADDRESS_UNKNOWN)
+                    : invokeValueOf(args);
 
             default -> PlaceHolder.instance;
         };
@@ -75,32 +80,7 @@ public class FloatInvocation {
      */
     private static IntValue compare(FloatValue f1, FloatValue f2) {
         SolverContext ctx = f1.context;
-        FloatingPointFormulaManager fpmgr = ctx.getFormulaManager().getFloatingPointFormulaManager();
-        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
-        IntegerFormulaManager imgr = ctx.getFormulaManager().getIntegerFormulaManager();
-
-        // Check for NaN cases first
-        BooleanFormula f1IsNaN = fpmgr.isNaN(f1.formula);
-        BooleanFormula f2IsNaN = fpmgr.isNaN(f2.formula);
-
-        // Regular comparisons (when neither is NaN)
-        BooleanFormula isEqual = fpmgr.equalWithFPSemantics(f1.formula, f2.formula);
-        BooleanFormula isLess = fpmgr.lessThan(f1.formula, f2.formula);
-
-        // Build the result using IntegerFormula (will be converted to bitvector by IntValue constructor):
-        // - If both are NaN: return 0
-        // - If only f1 is NaN: return 1 (NaN > anything)
-        // - If only f2 is NaN: return -1 (anything < NaN)
-        // - If equal: return 0
-        // - If f1 < f2: return -1
-        // - Otherwise: return 1
-        NumeralFormula.IntegerFormula normalResult = bmgr.ifThenElse(isEqual, imgr.makeNumber(0),
-                bmgr.ifThenElse(isLess, imgr.makeNumber(-1), imgr.makeNumber(1)));
-
-        NumeralFormula.IntegerFormula result = bmgr.ifThenElse(bmgr.and(f1IsNaN, f2IsNaN), imgr.makeNumber(0),
-                bmgr.ifThenElse(f1IsNaN, imgr.makeNumber(1),
-                        bmgr.ifThenElse(f2IsNaN, imgr.makeNumber(-1), normalResult)));
-
+        BitvectorFormula result = BitvectorEncoding.javaCompare(ctx.getFormulaManager(), f1.formula, f2.formula);
         return new IntValue(ctx, Float.compare(f1.concrete, f2.concrete), result);
     }
     /**
@@ -314,10 +294,27 @@ public class FloatInvocation {
         FloatingPointFormulaManager fpmgr = ctx.getFormulaManager().getFloatingPointFormulaManager();
         BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
 
-        // Convert the floating-point formula to a 32-bit bitvector representation
-        // This gives us the IEEE 754 bit representation
-        BitvectorFormula bvFormula = fpmgr.toIeeeBitvector(f.formula);
+        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
+
+        // The IEEE 754 bit layout; every NaN is collapsed to the canonical 0x7fc00000, as in the JDK
+        // (the bit-vector of a NaN is unspecified in SMT-LIB)
+        BitvectorFormula bvFormula = bmgr.ifThenElse(fpmgr.isNaN(f.formula),
+                bvmgr.makeBitvector(32, 0x7fc00000), fpmgr.toIeeeBitvector(f.formula));
 
         return new IntValue(ctx, Float.floatToIntBits(f.concrete), bvFormula);
+    }
+
+    /**
+     * Invocation handler for Float.floatToRawIntBits(float). The model is that of floatToIntBits:
+     * SMT floating point has a single NaN, so the payload of a NaN is not represented and a symbolic
+     * argument records precision loss.
+     */
+    private static Value<?, ?> invokeFloatToRawIntBits(Value<?, ?>[] args, SymbolicTraceHandler symbolicTraceHandler)
+            throws ValueConversionException, NotImplementedException {
+        SWATAssert.enforce(args.length == 1, "Expected 1 argument for floatToRawIntBits(), got " + args.length);
+        FloatValue f = args[0].asFloatValue();
+        IntValue bits = floatToIntBits(f);
+        if (symbolicTraceHandler != null && f.isSymbolic()) symbolicTraceHandler.recordSymbolicPrecisionLoss();
+        return new IntValue(f.context, Float.floatToRawIntBits(f.concrete), bits.formula);
     }
 }

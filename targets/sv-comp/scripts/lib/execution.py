@@ -8,8 +8,9 @@ from typing import List, Optional
 from pprint import pformat
 from .dtypes import Verdict, ExpectedVerdict, VerificationCategory, VerificationTask, Command
 from .utils import ci_print
-from .command_gen import extract_testcases, generate_commands
-from .witness import generate_and_validate_witness
+from .command_gen import extract_testcases, generate_commands, new_run_timestamp, run_dir as make_run_dir
+from .witness import validate_witness
+from .analysis.timing import stage_label
 from collections import Counter
 from pathlib import Path
 
@@ -160,7 +161,7 @@ def determine_result(output: List[str], category: VerificationCategory, expected
     # Shouldn't reach here, but handle gracefully
     return 0, 'unknown'
 
-def target_execution(ver_task: VerificationTask, create_witness: bool = True) -> tuple[Path, str, int, ExecutionStatus, bool, Optional[bool], float, dict]:
+def target_execution(ver_task: VerificationTask, create_witness: bool = True, testcase_timeout_s: int = 900, print_output: bool = True) -> tuple[Path, str, int, ExecutionStatus, bool, Optional[bool], float, dict]:
     """
     Execute a verification task and return results including execution time.
 
@@ -183,8 +184,9 @@ def target_execution(ver_task: VerificationTask, create_witness: bool = True) ->
     start_time = time.perf_counter()
 
     with pushd(log_dir):
-        execution_status, output = run_command_with_timeout(cmd)
-        log_output(output)
+        execution_status, output = run_command_with_timeout(cmd, testcase_timeout_s)
+        if print_output:
+            log_output(output)
         error: bool = check_for_dse_error(output)
         points, case = determine_result(output, ver_task['category'], ver_task['verdict'])
 
@@ -194,9 +196,10 @@ def target_execution(ver_task: VerificationTask, create_witness: bool = True) ->
             'case': case
         }
 
-        # Generate and validate witness (with timing)
+        # Validate the witness the explorer wrote for the violation verdict (with timing); the
+        # generation time is taken from the explorer's timing data below.
         if 'violation' in case and create_witness:
-            validated, witness_generation_time, witness_validation_time = generate_and_validate_witness(ver_task, output)
+            validated, witness_validation_time = validate_witness(ver_task)
 
     elapsed_time = time.perf_counter() - start_time
 
@@ -208,7 +211,8 @@ def target_execution(ver_task: VerificationTask, create_witness: bool = True) ->
             with open(timing_file, 'r') as f:
                 timing_data = json.load(f)
                 timing_breakdown = timing_data.get('aggregates', {})
-                # Update witness timing from our measurements
+                # Add the witness validation time measured here (generation is timed by the explorer)
+                witness_generation_time = timing_breakdown.get('witness_generation', witness_generation_time)
                 timing_breakdown['witness_generation'] = witness_generation_time
                 timing_breakdown['witness_validation'] = witness_validation_time
 
@@ -283,7 +287,15 @@ def run_command_with_timeout(cmd: list[str], timeout: int = 900) -> tuple[Execut
 
  
 
-def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_witness: bool = True):
+def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_witness: bool = True, run_dir: Optional[Path] = None, run_timestamp: Optional[str] = None, testcase_timeout_s: int = 900):
+    # Resolve the run context so all outputs (per-testcase logs + aggregated results) share one dir.
+    if run_timestamp is None:
+        run_timestamp = run_dir.name.replace('run_', '') if run_dir is not None else new_run_timestamp()
+    if run_dir is None:
+        run_dir = make_run_dir(run_timestamp)
+    run_dir = Path(run_dir)
+    results_dir = run_dir / 'results'
+
     max_workers = min(max_workers, len(ver_tasks))
 
     logger.info(f"Running parallel target execution with {max_workers} workers...")
@@ -298,7 +310,7 @@ def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_
         # Create a mapping from futures to their corresponding tasks
         future_to_task = {}
         for ver_task in ver_tasks:
-            future = executor.submit(target_execution, ver_task, create_witness)
+            future = executor.submit(target_execution, ver_task, create_witness, testcase_timeout_s, print_output=False)
             future_to_task[future] = ver_task
 
         for future in concurrent.futures.as_completed(future_to_task): # type: ignore
@@ -315,13 +327,13 @@ def run_parallel(ver_tasks: list[VerificationTask], max_workers: int=50, create_
     total_elapsed_time = time.perf_counter() - total_start_time
     logger.info(f"Total parallel execution time: {total_elapsed_time:.2f}s")
 
-    evaluate_results(results)
+    evaluate_results(results, results_dir, run_timestamp)
 
     # Run aggregate analysis from timing files
     from .analysis.timing import TimingAnalysis
-    TimingAnalysis.print_timing_statistics()
+    TimingAnalysis.print_timing_statistics(run_dir / 'logs')
 
-def evaluate_results(results):
+def evaluate_results(results, results_dir: Path, run_timestamp: str):
     """Evaluate results with per-category statistics including timing."""
     total_points = 0
     category_stats = {}
@@ -344,6 +356,7 @@ def evaluate_results(results):
                 'total': 0
             },
             'stage_timing': {
+                'static_pre_analysis': 0.0,
                 'symbolic_executor': 0.0,
                 'smt_solver': 0.0,
                 'symbolic_explorer': 0.0,
@@ -432,6 +445,7 @@ def evaluate_results(results):
         stage_total = sum(stage_timing.values())
         if stage_total > 0:
             logger.info(f"[{category_name}] Stage Timing Breakdown:")
+            logger.info(f"  - Static Pre-Analysis: {stage_timing['static_pre_analysis']:>8.2f}s ({stage_timing['static_pre_analysis']/stage_total*100:>5.1f}%)")
             logger.info(f"  - Symbolic Executor:   {stage_timing['symbolic_executor']:>8.2f}s ({stage_timing['symbolic_executor']/stage_total*100:>5.1f}%)")
             logger.info(f"  - SMT Solver:          {stage_timing['smt_solver']:>8.2f}s ({stage_timing['smt_solver']/stage_total*100:>5.1f}%)")
             logger.info(f"  - Symbolic Explorer:   {stage_timing['symbolic_explorer']:>8.2f}s ({stage_timing['symbolic_explorer']/stage_total*100:>5.1f}%)")
@@ -445,6 +459,7 @@ def evaluate_results(results):
 
     # Print aggregate stage timing across all categories
     aggregate_stage_timing = {
+        'static_pre_analysis': 0.0,
         'symbolic_executor': 0.0,
         'smt_solver': 0.0,
         'symbolic_explorer': 0.0,
@@ -461,6 +476,7 @@ def evaluate_results(results):
         logger.info(f"AGGREGATE STAGE TIMING (ALL CATEGORIES)")
         logger.info(f"{'='*50}")
         logger.info(f"Total Stage Time:        {aggregate_total:>8.2f}s")
+        logger.info(f"  - Static Pre-Analysis: {aggregate_stage_timing['static_pre_analysis']:>8.2f}s ({aggregate_stage_timing['static_pre_analysis']/aggregate_total*100:>5.1f}%)")
         logger.info(f"  - Symbolic Executor:   {aggregate_stage_timing['symbolic_executor']:>8.2f}s ({aggregate_stage_timing['symbolic_executor']/aggregate_total*100:>5.1f}%)")
         logger.info(f"  - SMT Solver:          {aggregate_stage_timing['smt_solver']:>8.2f}s ({aggregate_stage_timing['smt_solver']/aggregate_total*100:>5.1f}%)")
         logger.info(f"  - Symbolic Explorer:   {aggregate_stage_timing['symbolic_explorer']:>8.2f}s ({aggregate_stage_timing['symbolic_explorer']/aggregate_total*100:>5.1f}%)")
@@ -473,13 +489,13 @@ def evaluate_results(results):
         all_elapsed = [t[2] for t in all_times]
         logger.info(f"Overall timing: min={min(all_elapsed):.2f}s, max={max(all_elapsed):.2f}s, mean={sum(all_elapsed)/len(all_elapsed):.2f}s")
 
-    save_results(category_stats, results)
+    save_results(category_stats, results, results_dir, run_timestamp)
 
     # Save aggregate stage timing to CSV
-    save_aggregate_stage_timing(category_stats)
+    save_aggregate_stage_timing(category_stats, results_dir, run_timestamp)
 
     # Generate timing histogram
-    generate_timing_histogram(category_stats, results)
+    generate_timing_histogram(category_stats, results, results_dir, run_timestamp)
 
     summary_path = os.getenv("GITHUB_STEP_SUMMARY")
     if summary_path is not None:
@@ -488,17 +504,17 @@ def evaluate_results(results):
     return total_points
 
 
-def generate_timing_histogram(category_stats, results, folder='results'):
+def generate_timing_histogram(category_stats, results, results_dir: Path, run_timestamp: str):
     """Generate histogram(s) of execution times using matplotlib."""
     if not MATPLOTLIB_AVAILABLE:
         logger.warning("matplotlib not available, skipping histogram generation. Install with: pip install matplotlib numpy")
         return
 
-    folder = os.path.join(SCRIPT_DIR, '..', folder)
+    folder = str(results_dir)
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = run_timestamp
 
     # Collect all times across categories
     all_times = []
@@ -592,7 +608,7 @@ def generate_timing_histogram(category_stats, results, folder='results'):
         box_data = [times for times in category_times_dict.values()]
         box_labels = list(category_times_dict.keys())
 
-        bp = ax2.boxplot(box_data, labels=box_labels, patch_artist=True)
+        bp = ax2.boxplot(box_data, tick_labels=box_labels, patch_artist=True)
         for patch, color in zip(bp['boxes'], colors):
             patch.set_facecolor(color)
 
@@ -610,14 +626,14 @@ def generate_timing_histogram(category_stats, results, folder='results'):
         logger.info(f"Timing boxplot saved to: {boxplot_path}")
 
 
-def save_results(category_stats, results, folder='results'):
+def save_results(category_stats, results, results_dir: Path, run_timestamp: str):
     """Save results with one JSON file per category, including timing data."""
-    folder = os.path.join(SCRIPT_DIR, '..', folder)
+    folder = str(results_dir)
 
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = run_timestamp
 
     # Save one file per category
     for category_name, stats in category_stats.items():
@@ -638,7 +654,7 @@ def save_results(category_stats, results, folder='results'):
         data = {
             'category': category_name,
             'points': stats['points'],
-            'case_occurrences': stats['case_occurrences'],
+            'case_occurrences': dict(sorted(stats['case_occurrences'].items())),
             'execution_statuses': stats['execution_statuses'],
             'dse_errors': stats['dse_errors'],
             'witness_stats': stats['witness_stats'],
@@ -656,19 +672,20 @@ def save_results(category_stats, results, folder='results'):
         logger.info(f"[{category_name}] Results saved to {filepath}")
 
 
-def save_aggregate_stage_timing(category_stats, folder='results'):
+def save_aggregate_stage_timing(category_stats, results_dir: Path, run_timestamp: str):
     """Save aggregate stage timing data to CSV file for easy analysis."""
-    folder = os.path.join(SCRIPT_DIR, '..', folder)
+    folder = str(results_dir)
 
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = run_timestamp
     filename = f"stage_timing_{timestamp}.csv"
     filepath = os.path.join(folder, filename)
 
     # Calculate aggregate across all categories
     aggregate_stage_timing = {
+        'static_pre_analysis': 0.0,
         'symbolic_executor': 0.0,
         'smt_solver': 0.0,
         'symbolic_explorer': 0.0,
@@ -690,8 +707,7 @@ def save_aggregate_stage_timing(category_stats, folder='results'):
         # Data rows
         for stage, time_val in aggregate_stage_timing.items():
             percentage = (time_val / aggregate_total * 100) if aggregate_total > 0 else 0.0
-            stage_name = stage.replace('_', ' ').title()
-            f.write(f"{stage_name},{time_val:.2f},{percentage:.2f}\n")
+            f.write(f"{stage_label(stage)},{time_val:.2f},{percentage:.2f}\n")
 
         # Total row
         f.write(f"Total,{aggregate_total:.2f},100.00\n")
@@ -798,11 +814,13 @@ def run_single_target(ver_tasks: list[VerificationTask], create_witness: bool = 
             logger.info("\n" + "="*60)
             logger.info("TIMING BREAKDOWN FOR SINGLE TARGET")
             logger.info("="*60)
-            total = sum(timing_breakdown.values())
-            for stage, time_val in timing_breakdown.items():
+            # 'total_time' is the measured wall time of the run, not a stage; summing it
+            # along with the stages would double-count and halve every percentage.
+            stages = {k: v for k, v in timing_breakdown.items() if k != 'total_time'}
+            total = sum(stages.values())
+            for stage, time_val in stages.items():
                 percent = (time_val / total * 100) if total > 0 else 0
-                stage_name = stage.replace('_', ' ').title()
-                logger.info(f"  {stage_name:<25} {time_val:>8.2f}s ({percent:>5.1f}%)")
+                logger.info(f"  {stage_label(stage):<25} {time_val:>8.2f}s ({percent:>5.1f}%)")
             logger.info(f"  {'Total':<25} {total:>8.2f}s")
             logger.info("="*60)
 
@@ -834,7 +852,8 @@ if __name__ == "__main__":
         config_file = "sv-comp.cfg"
     else:
         raise ValueError(f"Invalid mode: {mode}")
-    ver_tasks_with_commands = generate_commands(ver_tasks, config_file)#[:10]
+    run_timestamp = new_run_timestamp()
+    ver_tasks_with_commands = generate_commands(ver_tasks, config_file, run_timestamp=run_timestamp)#[:10]
     logger.info(f"Generated {len(ver_tasks_with_commands)} commands.")
 
     # Check port availability before starting tests (sanity check)
@@ -848,7 +867,7 @@ if __name__ == "__main__":
     if mode == Mode.SINGLE_TARGET: # type: ignore
         run_single_target(ver_tasks_with_commands)
     elif mode == Mode.PARALLEL:
-        run_parallel(ver_tasks_with_commands)
+        run_parallel(ver_tasks_with_commands, run_timestamp=run_timestamp)
     else:
         raise ValueError(f"Invalid mode: {mode}")
 
