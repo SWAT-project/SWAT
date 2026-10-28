@@ -50,6 +50,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
     // The stack of stack frames (method stacks)
     @Getter
     private final ShadowContext stack; //Todo rename?
+
+    /** Applies loop summaries (see symbolic/summary). */
+    private final de.uzl.its.swat.symbolic.summary.Merger merger;
     // Counter for the number of times an instruction ID (IID) was seen, used for creating trackable
     // unique ids in loops etc.
     private final HashMap<Long, Long> iidCounter = new HashMap<>();
@@ -63,6 +66,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
     public SymbolicInstructionVisitor() throws NoThreadContextException {
         stack = new ShadowContext();
+        merger = new de.uzl.its.swat.symbolic.summary.Merger(stack);
         symbolicTraceHandler = ThreadHandler.getSymbolicTraceHandler(currentThread().getId());
     }
 
@@ -1509,10 +1513,18 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     stack.pushOperand(ValueFactory.createNULLValue());
                 } else if (inst.val != null) {
                     if (inst.val instanceof String s) {
-                        SWATAssert.check(inst.val.equals(peek.concrete),
-                                "Concrete value of the object does not match the value in the stack: {} | {}",
-                                inst.val, peek.concrete);
-                        if (peek.formula == null) {
+                        if (!inst.val.equals(peek.concrete)) {
+                            // The shadow String diverged from the JVM (e.g. after a Reader call SWAT
+                            // does not model filled a buffer). As for primitives, continue with the
+                            // concrete value and record the context loss.
+                            logger.warn("[GETVALUE_Object]: String on stack does not match expected value, causes context loss! Expected: {}, Actual: {}",
+                                    inst.val, peek.concrete);
+                            symbolicTraceHandler.recordSymbolicContextLoss();
+                            stack.popOperand();
+                            StringValue val = ValueFactory.createStringValue(s, inst.address);
+                            stack.pushOperand(val);
+                            stack.putToHeap(inst.address, val);
+                        } else if (peek.formula == null) {
                             // TODO This needs to be cleaned up!
                             stack.popOperand();
                             StringValue val = ValueFactory.createStringValue(s, inst.address);
@@ -1684,6 +1696,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * @param inst Either the GOTO or GOTO_w instruction
      */
     public void visitGOTO(GOTO inst) throws SymbolicInstructionException {
+        try {
+            merger.atGoto(inst.iid);
+        } catch (Throwable t) {
+            throw new SymbolicInstructionException(inst, t);
+        }
     }
 
     /**
@@ -1989,7 +2006,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2009,7 +2028,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2029,7 +2050,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2049,7 +2072,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2069,7 +2094,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2089,7 +2116,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2208,7 +2237,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2236,7 +2267,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2257,7 +2290,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2278,7 +2313,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2299,7 +2336,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -2320,7 +2359,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             BranchCoverage.addVisitedBranch(inst.iid);
 
-            symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid);
+            merger.atBranch(inst.iid, isBranchTaken, constraint,
+                    symbolicTraceHandler.checkAndSetBranch(isBranchTaken, constraint, iid),
+                    ThreadHandler.getSolverContext(currentThread().getId()));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -3849,6 +3890,20 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     public void visitSPECIAL(SPECIAL inst) throws SymbolicInstructionException {
+    }
+
+    /**
+     * Where the sides of a merged diamond meet again: gives the locals their merged formulas (see
+     * symbolic/summary/Merger).
+     *
+     * @param inst The SUMMARY_JOIN probe
+     */
+    public void visitSUMMARY_JOIN(SUMMARY_JOIN inst) throws SymbolicInstructionException {
+        try {
+            merger.atJoin(inst.join);
+        } catch (Throwable t) {
+            throw new SymbolicInstructionException(inst, t);
+        }
     }
 
     /**

@@ -96,6 +96,8 @@ public class NestedIfs {
                 if (weekday) {
                     if (token.length() >= 12) {
                         if (id > 987654321L) {
+                            // Inserted bug (SA experiments): admin tokens were meant to be rejected above
+                            assert !token.startsWith("adm") : "BUG d5: admin token accepted";
                             return "Yes_5";
                         } else {
                             return "No_5";

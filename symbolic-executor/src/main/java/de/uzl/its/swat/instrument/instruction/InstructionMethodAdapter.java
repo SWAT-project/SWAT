@@ -144,6 +144,15 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         this.loopHeads = loopHeads;
     }
 
+    /** The method's loop summaries (see symbolic/summary/LoopSummaries), and the jumps seen so far. */
+    private de.uzl.its.swat.symbolic.summary.LoopSummaries.MethodPlans loopSummaries =
+            de.uzl.its.swat.symbolic.summary.LoopSummaries.MethodPlans.NONE;
+    private int jumpOrdinal = 0;
+
+    public void setLoopSummaries(de.uzl.its.swat.symbolic.summary.LoopSummaries.MethodPlans plans) {
+        this.loopSummaries = plans;
+    }
+
     /**
      * At a loop head, probes the state. The probe goes through the processor like an instruction,
      * so the symbolic execution, which lags one instruction behind, handles it once the jump that
@@ -155,6 +164,11 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         LoopHeads.Head head = loopHeads.get(label);
         if (head != null) {
             LoopHeads.emitProbe(mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), head);
+        }
+        Integer join = loopSummaries.joins().get(label);
+        if (join != null) {
+            de.uzl.its.swat.symbolic.summary.LoopSummaries.emitJoinProbe(
+                    mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), join);
         }
     }
     /** Push a value onto the stack. */
@@ -1807,6 +1821,10 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         long iid3;
         String desc = "(JI)V";
         addJpushInsn(mv, iid3 = instrumentationState.incAndGetId());
+        de.uzl.its.swat.symbolic.summary.LoopSummaries.Plan summary = loopSummaries.byJump().get(jumpOrdinal++);
+        if (summary != null) {
+            de.uzl.its.swat.symbolic.summary.LoopSummaries.register(iid3, summary);
+        }
 
         addBipushInsn(mv, System.identityHashCode(label)); // label.getOffset()
         switch (opcode) {

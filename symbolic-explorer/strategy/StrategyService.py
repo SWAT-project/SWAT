@@ -28,6 +28,74 @@ def declared_ufs(smt: str) -> frozenset[str]:
     return frozenset(name.strip("|") for name in _UF_DECLARATION.findall(smt))
 
 
+# Search orders for the branches to flip (--search-order): "dfs" is the walk's own pre-order,
+# "shallow" takes the branches closest to the root first, "coverage" first those whose open side no
+# trace has taken at any position (then the shallowest), "coverage-dfs" the same with DFS order.
+# "generational" is "coverage", but among the branches that reach nothing new, it first takes those
+# of the traces that covered the most sides first (as SAGE's generational search): a trace that
+# found something new is where combinations with it are found.
+SEARCH_ORDERS = ("dfs", "shallow", "coverage", "coverage-dfs", "generational")
+
+# The loop count in the top 6 bits of an iid; without it, an iid names the branch instruction
+# (and switch case) wherever a loop runs it.
+_STATIC_IID_MASK = (1 << 58) - 1
+
+
+def depth(node) -> int:
+    """The number of branches above node on its path (cached on the node)."""
+    d = getattr(node, '_depth', None)
+    if d is None:
+        chain = []
+        n = node
+        while n is not None and getattr(n, '_depth', None) is None:
+            chain.append(n)
+            n = n.parent
+        d = -1 if n is None else n._depth
+        for m in reversed(chain):
+            d += 1
+            m._depth = d
+        d = node._depth
+    return d
+
+
+def open_side(node) -> tuple:
+    """The branch instruction and side that flipping node would take."""
+    return node.id & _STATIC_IID_MASK, node.skipped is not None
+
+
+def covered_sides(root) -> set:
+    """The (instruction, side) pairs some trace in the tree took."""
+    return set(first_coverers(root))
+
+
+def first_coverers(root) -> dict:
+    """For each (instruction, side) pair some trace in the tree took, the node through which it
+    was taken first (nodes are numbered in the order they were added, by gid)."""
+    first = {}
+    stack = [root]
+    while stack:
+        n = stack.pop()
+        if not isinstance(n, Node):
+            continue
+        if n.kind == "Branch":
+            for side, child in ((True, n.branched), (False, n.skipped)):
+                if child is not None:
+                    pair = (n.id & _STATIC_IID_MASK, side)
+                    if pair not in first or n.gid < first[pair].gid:
+                        first[pair] = n
+        stack.append(n.branched)
+        stack.append(n.skipped)
+    return first
+
+
+def trace_scores(first: dict) -> dict:
+    """How many (instruction, side) pairs each trace took first, by trace id."""
+    scores = {}
+    for n in first.values():
+        scores[n.trace_id] = scores.get(n.trace_id, 0) + 1
+    return scores
+
+
 class StrategyService:
     # is_symbolic_branch per (node gid, trace id)
     _symbolic_branches: dict[tuple[int, str], bool] = {}
@@ -41,23 +109,60 @@ class StrategyService:
         # changes, so which branches exist, and hence the verdict, does not. The sort is stable:
         # ties, and branches without SA information (ranked last), keep their DFS order.
         distances = {} if kwargs.get("rank_by_distance", False) else None
+        order = kwargs.get("search_order", "dfs")
+        covered = None
+        scores = {}
         # The walk is on the Database's tree itself, so dfs records where the SA walk fell out of
         # step there directly. The returned nodes are live: they gain children as traces arrive.
         def walk(tree, solved, unsat):
+            nonlocal covered, scores, visited, distances
             tree.loop_state_pruned = 0  # counted per walk; the tree itself persists
+            tree.dedup_in_walk = 0
             found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
-            return found, tree.loop_state_pruned
-        possible_branches, pruned = db.visit_tree(endpoint_id, walk)
+            # A sliced branch that turned out relevant (dfs poisons it) changes which constraints
+            # and decisions count on every path below it: walk again. Poisoning is for good, so
+            # this ends.
+            while tree.poisoned_in_walk:
+                visited = set()
+                distances = {} if distances is not None else None
+                tree.loop_state_pruned = 0
+                tree.dedup_in_walk = 0
+                found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
+            if order.startswith("coverage") or order == "generational":
+                first = first_coverers(tree.root)
+                covered = set(first)
+                scores = trace_scores(first)
+            return found, tree.loop_state_pruned, tree.sliced_in_walk, tree.dedup_in_walk
+        possible_branches, pruned, sliced, dedup = db.visit_tree(endpoint_id, walk)
         if pruned:
             logger.info(f'[DFS] Left out {pruned} subtrees below a repeated loop-head state')
+        if sliced or dedup:
+            logger.info(f'[DFS] Relevance: {sliced} irrelevant branches on the walk, {dedup} candidates covered by a path with the same relevant decisions')
+        StrategyService.walk_stats = {'sliced': sliced, 'dedup': dedup}
+        # All sorts are stable: ties keep their DFS order.
+        if order == "shallow":
+            possible_branches.sort(key=depth)
+        elif order == "coverage":
+            possible_branches.sort(key=lambda n: (open_side(n) in covered, depth(n)))
+        elif order == "coverage-dfs":
+            possible_branches.sort(key=lambda n: open_side(n) in covered)
+        elif order == "generational":
+            possible_branches.sort(key=lambda n: (open_side(n) in covered, -scores.get(n.trace_id, 0), depth(n)))
         if distances:
             possible_branches.sort(key=lambda n: distances.get(n, math.inf))
         
         return possible_branches
         
         
+    # Statistics of the last select_branch walk (see dfs): irrelevant branches on it, and candidates
+    # left out as covered by a path with the same relevant decisions.
+    walk_stats = {'sliced': 0, 'dedup': 0}
+
     @staticmethod
-    def collect_path_constrains(node: Node) -> list():
+    def collect_path_constrains(node: Node, dropped: list | None = None, full: bool = False) -> list():
+        """The constraints of the branches above node on its path, except (unless `full`) those of
+        the branches the last walk sliced (dfs: irrelevant to the targets), which are counted in
+        `dropped`."""
         path_constraints = list()
         trace_id = node.trace_id
         
@@ -67,6 +172,10 @@ class StrategyService:
                 if trace_id in node.constraint:
                     c = node.constraint[trace_id]
                     if "declare-fun" in c:
+                        if not full and getattr(node, 'sliced', False):
+                            if dropped is not None:
+                                dropped.append(node)
+                            continue
                         path_constraints.append(c)
                         
         return path_constraints
@@ -147,10 +256,16 @@ class StrategyService:
         return sliced, needed
 
     @staticmethod
-    def collect_query(node: Node) -> tuple[list, set[str]]:
+    def collect_query(node: Node, full: bool = False) -> tuple[list, set[str]]:
         """The constraints of the query for the unexplored side of the branch, besides its own
-        constraint, and the uninterpreted functions the query contains."""
-        path_constraints = StrategyService.collect_path_constrains(node)
+        constraint, and the uninterpreted functions the query contains; with `full`, also those of
+        the sliced branches."""
+        dropped = []
+        path_constraints = StrategyService.collect_path_constrains(node, dropped, full)
+        if not full:
+            # Whether the query left out a constraint: the run of its solution may then take other
+            # irrelevant decisions and reach the branch on another path (see SVCompDriver).
+            node.sliced_query = bool(dropped)
         path_constraints.extend(StrategyService.collect_input_constrains(node))
         node_constraint = node.constraint.get(node.trace_id, '')
         definitions, ufs = StrategyService.slice_uf_definitions(
@@ -167,7 +282,7 @@ class StrategyService:
     @staticmethod
     def is_approximate_query(node: Node) -> bool:
         """Whether the query for the unexplored side of the branch depends on an approximate Math model."""
-        return StrategyService.is_approximate(StrategyService.collect_query(node)[1])
+        return StrategyService.is_approximate(StrategyService.collect_query(node, full=True)[1])
 
     @staticmethod
     def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000,
@@ -195,8 +310,24 @@ class StrategyService:
                 solver_rlimit = approximate_rlimit
                 capped = True
 
-        sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms, rlimit=solver_rlimit,
-                                   extra_exprs=extra_exprs)
+        sat = None
+        if possible_branch.sliced_query:
+            # The full query first: a model of it is one of the sliced query too, and its run stays
+            # on the path the tree knows. The sliced query decides only where the full one has no
+            # model (or the solver cannot tell), which is where leaving constraints out matters.
+            # (A solver is free to pick any model of the sliced query, also one far from the path,
+            # e.g. an array size of 2^30 the executor cannot allocate.)
+            full_constraints, full_ufs = StrategyService.collect_query(possible_branch, full=True)
+            if not (capped or (approximate_rlimit and StrategyService.is_approximate(full_ufs))):
+                sat, sol = Z3Handler.solve(possible_branch, full_constraints, timeout_ms=solver_timeout_ms,
+                                           rlimit=solver_rlimit, extra_exprs=extra_exprs)
+                if sat == SATResult.SAT:
+                    possible_branch.sliced_query = False
+                else:
+                    sat = None
+        if sat is None:
+            sat, sol = Z3Handler.solve(possible_branch, path_constraints, timeout_ms=solver_timeout_ms, rlimit=solver_rlimit,
+                                       extra_exprs=extra_exprs)
 
         if sat == SATResult.LIMIT and capped:
             logger.info(f'[SOLVER] Query over an approximate model for branch {possible_branch.id} ran out of resource limit {solver_rlimit}, giving up on it')

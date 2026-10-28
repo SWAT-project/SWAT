@@ -74,7 +74,7 @@ class DriverTest(unittest.TestCase):
                                            classpath=[], parallel_sa=False, logdir=self.logdir)
         self.driver.state = svcomp.State()
         self.driver.verification_category = svcomp.VerificationCategory.VALID_ASSERT_PRP
-        self.driver.sa = SimpleNamespace(cancel=lambda: None, duration=None, stats=lambda r: {})
+        self.driver.sa = SimpleNamespace(cancel=lambda: None, duration=None, stats=lambda r: {}, slicing=False)
         self.driver.sa_adopted_round = None
         self.driver.round_idx = 0
         self.driver.nr_solver_calls = 0

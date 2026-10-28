@@ -1,5 +1,7 @@
 package de.uzl.its.targets.finance_engine.util;
 
+import de.uzl.its.targets.finance_engine.Bugs;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,6 +18,10 @@ public class CsvParser {
             if (inQuotes) {
                 if (c == '"') {
                     if (i + 1 < n && content.charAt(i + 1) == '"') {
+                        if (Bugs.CSV_ESCAPED_QUOTE) {
+                            // Inserted bug: an escaped quote at the start of a field
+                            assert field.length() > 0 : "BUG csv: field starts with an escaped quote";
+                        }
                         field.append('"');
                         i += 2; continue;
                     } else {

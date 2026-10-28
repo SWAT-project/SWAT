@@ -48,6 +48,10 @@ class Database:
             self.log_smt_formulas = False  # Whether to log SMT formulas and models to disk for debugging
             # Whether queries with floating-point terms go to Z3's qffp tactic first (see Z3Handler.check_query)
             self.fp_tactic = True
+            self.prefer_short_strings = False  # Whether to shrink the string inputs of a model (Z3Handler.shorten_strings)
+            # A long-running target (http mode): static initializers are taken out of the traces,
+            # see data.trace.StaticInitializers
+            self.strip_static_initializers = False
 
     def reset(self):
 
@@ -115,6 +119,9 @@ class Database:
                   approximate_model: bool = False,
                   stack_overflow: bool = False):
         endpoint_id = str(endpoint_id)
+        if self.strip_static_initializers:
+            from data.trace.StaticInitializers import strip_static_initializers
+            trace = strip_static_initializers(trace)
 
         with lock:
             self._add_endpoint(endpoint_id)
@@ -218,6 +225,26 @@ class Database:
         endpoint_id = str(endpoint_id)
         with lock:
             self.tree[endpoint_id].uncaught_exceptions += 1
+
+    def mark_last_leaf_abnormal(self, endpoint_id: Union[str, int]):
+        """Records that the run of the last added trace ended with an uncaught exception."""
+        endpoint_id = str(endpoint_id)
+        with lock:
+            leaf = self.tree[endpoint_id].last_leaf
+            if leaf is not None:
+                leaf.abnormal = True
+                # So that dfs finds it also below a side it does not walk otherwise
+                node = leaf.parent
+                while node is not None and not getattr(node, 'abnormal_below', False):
+                    node.abnormal_below = True
+                    node = node.parent
+
+    def projected_covered(self, endpoint_id: Union[str, int], ident, branched: bool) -> bool:
+        """Whether the last walk found the side of the branch `ident` (a candidate's sig and key,
+        see dfs) explored by some path with the same relevant decisions."""
+        endpoint_id = str(endpoint_id)
+        with lock:
+            return (ident, branched) in self.tree[endpoint_id].covered
 
     def is_approximate_trace(self, endpoint_id: Union[str, int], trace_id: str) -> bool:
         """Whether the trace used an approximate model, so solutions built from it are guesses."""

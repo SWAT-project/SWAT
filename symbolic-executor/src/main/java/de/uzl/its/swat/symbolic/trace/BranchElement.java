@@ -10,7 +10,7 @@ import org.sosy_lab.java_smt.api.FormulaManager;
 
 /** Represents a branch element in the symbolic trace. */
 @Getter
-final class BranchElement extends Element {
+public final class BranchElement extends Element {
 
     // Indicates whether the branch was taken or not
     private final boolean branched;
@@ -33,11 +33,19 @@ final class BranchElement extends Element {
     @lombok.Setter private String key;
     @lombok.Setter private int pops;
     @lombok.Setter private java.util.List<String> pushes = java.util.List.of();
-    // Recorded in application code that library code called back (see ShadowContext.inCallback).
+    // Recorded where the static pre-analysis graph has no counterpart: in application code that
+    // library code called back (see ShadowContext.inCallback), or in a SWAT helper such as the
+    // reference comparison (see ShadowContext.inSwatHelper).
     @lombok.Setter private boolean callback;
     // The loop-head states the execution reached since the previous branch, in order (see
     // LoopStateMatcher).
     @lombok.Setter private java.util.List<String> loopStates = java.util.List.of();
+    // Merged by a loop summary (see symbolic/summary): both outcomes lead to the same, merged state,
+    // so the explorer neither flips the branch nor keeps its constraint.
+    @lombok.Setter private boolean merged;
+    // The merge is only exact if what the loop does besides its locals cannot matter: the explorer
+    // decides that with its relevance analysis (see symbolic/summary/LoopSummaries).
+    @lombok.Setter private boolean mergedConditional;
 
     /**
      * Constructs a branch element.

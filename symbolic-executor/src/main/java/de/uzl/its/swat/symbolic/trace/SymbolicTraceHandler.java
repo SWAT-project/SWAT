@@ -43,8 +43,8 @@ public class SymbolicTraceHandler {
      * @param constraint The constraint of the branch.
      * @param iid The iid of the branch instruction.
      */
-    public void checkAndSetBranch(boolean result, BooleanFormula constraint, long iid) throws NoThreadContextException {
-        checkAndSetBranch(result, constraint, iid, "");
+    public BranchElement checkAndSetBranch(boolean result, BooleanFormula constraint, long iid) throws NoThreadContextException {
+        return checkAndSetBranch(result, constraint, iid, "");
     }
 
     /**
@@ -52,7 +52,7 @@ public class SymbolicTraceHandler {
      * instruction reports: {@code suffix} tells them apart in the branch's key ({@code #<case
      * value>} for a switch case, {@code #<n>} for the n-th dimension MULTIANEWARRAY checks).
      */
-    public void checkAndSetBranch(boolean result, BooleanFormula constraint, long iid, String suffix) throws NoThreadContextException {
+    public BranchElement checkAndSetBranch(boolean result, BooleanFormula constraint, long iid, String suffix) throws NoThreadContextException {
 
         long threadId = Thread.currentThread().getId();
         BranchElement current;
@@ -66,6 +66,7 @@ public class SymbolicTraceHandler {
         place(current, iid, suffix);
         takeLoopStates(current);
         symbolicTrace.addTraceElement(current);
+        return current;
     }
 
     /**
@@ -124,7 +125,8 @@ public class SymbolicTraceHandler {
         String key = BranchKeys.keyOf(iid);
         branch.setKey(key == null ? null : key + suffix);
         ShadowContext stack = ThreadHandler.getSymbolicVisitor(Thread.currentThread().getId()).getStack();
-        branch.setCallback(stack.inCallback());
+        // Neither callbacks nor SWAT's helpers are in the static pre-analysis graph: the walk holds its place.
+        branch.setCallback(stack.inCallback() || stack.inSwatHelper());
         ShadowContext.StackDelta delta = stack.takeStackDelta();
         branch.setPops(delta.popped());
         List<String> pushes = new ArrayList<>(delta.pushed().size());

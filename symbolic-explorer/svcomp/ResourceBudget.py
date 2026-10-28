@@ -155,10 +155,12 @@ def _malloc_trim():
 class ResourceBudget:
 
     def __init__(self, memory_limit_mb: int = DEFAULT_MEMORY_LIMIT_MB, cpu_limit_s: float = DEFAULT_CPU_LIMIT_S,
-                 cpu_used_s: float = 0.0, cgroup_limit: int | None = None):
+                 cpu_used_s: float = 0.0, cgroup_limit: int | None = None, wall_limit_s: float | None = None):
         """cpu_used_s: CPU time the run used before the explorer started (e.g. compiling the task),
         which counts against the same limit. cgroup_limit: the cgroup's memory limit; read from the
-        system unless given."""
+        system unless given. wall_limit_s: the wall time the run may take (default: the CPU limit,
+        as under BenchExec and the harness); a target that hangs without using CPU (a deadlock)
+        would otherwise be killed before the explorer reports anything."""
         self.configured_memory_limit = memory_limit_mb * MB
         if cgroup_limit is None:
             cgroup_limit, self._cgroup_dir = limiting_cgroup()
@@ -172,6 +174,10 @@ class ResourceBudget:
         self.cpu_limit = cpu_limit_s
         self.cpu_used_before = cpu_used_s
         self.cpu_deadline = cpu_limit_s - CPU_MARGIN_S
+        self.wall_limit = wall_limit_s if wall_limit_s is not None else cpu_limit_s
+        self.wall_deadline = self.wall_limit - CPU_MARGIN_S
+        self._started_at = time.monotonic()
+        self.wall_deadline_reached = False
 
         self.cpu_exceeded = threading.Event()
         self.cpu_exceeded_at: float | None = None
@@ -281,6 +287,7 @@ class ResourceBudget:
     # ---- the monitor ----
 
     def start(self):
+        self._started_at = time.monotonic()
         logger.info(f'[BUDGET] {self.describe()}')
         self._thread = threading.Thread(target=self._monitor, name='resource-budget', daemon=True)
         self._thread.start()
@@ -300,7 +307,15 @@ class ResourceBudget:
         rss, cpu = self.usage()
         self.peak_rss = max(self.peak_rss, rss)
         self.cpu_used = cpu
-        if cpu >= self.cpu_deadline:
+        wall = time.monotonic() - self._started_at + self.cpu_used_before
+        if wall >= self.wall_deadline and not self.cpu_exceeded.is_set():
+            # Ends the run like the CPU deadline (cpu_exceeded): UNKNOWN unless a verdict is in
+            logger.warning(f'[BUDGET] Wall time {wall:.1f} s reached the deadline of {self.wall_deadline:.0f} s '
+                           f'(CPU {cpu:.1f} s: something waits without working, e.g. a deadlocked target), stopping')
+            self.wall_deadline_reached = True
+            self.cpu_exceeded_at = time.monotonic()
+            self.cpu_exceeded.set()
+        if cpu >= self.cpu_deadline or self.wall_deadline_reached:
             if not self.cpu_exceeded.is_set():
                 logger.warning(f'[BUDGET] CPU time {cpu:.1f} s reached the deadline of {self.cpu_deadline:.0f} s, stopping')
                 self.cpu_exceeded_at = time.monotonic()
@@ -341,4 +356,5 @@ class ResourceBudget:
             'cpu_deadline_s': self.cpu_deadline,
             'cpu_used_s': round(self.cpu_used, 1),
             'cpu_deadline_reached': self.cpu_exceeded.is_set(),
+            'wall_deadline_reached': self.wall_deadline_reached,
         }

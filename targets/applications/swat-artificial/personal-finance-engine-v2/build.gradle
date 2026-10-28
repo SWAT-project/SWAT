@@ -32,3 +32,22 @@ dependencies {
 }
 
 tasks.named('test') { useJUnitPlatform() }
+// Inserted bugs for the SA experiments (../../http_sa_campaign.py): -Pbug=<name> switches one on.
+// They are compile-time constants, so javac leaves the others out of the bytecode, and the static
+// pre-analysis only sees the assert of the bug that is on.
+def bugs = ['csv-escaped-quote', 'header-one-column', 'merge-duplicate', 'filter-query']
+def activeBug = project.findProperty('bug') ?: 'none'
+def bugsDir = layout.buildDirectory.dir('generated/sources/bugs/java/main')
+tasks.register('generateBugs') {
+    inputs.property('bug', activeBug)
+    outputs.dir(bugsDir)
+    doLast {
+        def f = bugsDir.get().file('de/uzl/its/targets/finance_engine/Bugs.java').asFile
+        f.parentFile.mkdirs()
+        f.text = "package de.uzl.its.targets.finance_engine;\n\n/** Generated: which inserted bug is on (-Pbug=...). */\npublic final class Bugs {\n" +
+                bugs.collect { "    public static final boolean ${it.toUpperCase().replace('-', '_')} = ${it == activeBug};\n" }.join() +
+                "    private Bugs() {}\n}\n"
+    }
+}
+sourceSets.main.java.srcDir(bugsDir)
+tasks.named('compileJava') { dependsOn 'generateBugs' }

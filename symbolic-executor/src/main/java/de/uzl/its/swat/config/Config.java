@@ -232,6 +232,12 @@ public class Config {
     /** Probe loop heads and report their concrete states with the trace (see symbolic/loopstate). */
     @Getter private boolean loopStateMatching;
     private static final boolean DEFAULT_LOOP_STATE_MATCHING = false;
+    /** End a run whose application threads are deadlocked (see thread/DeadlockWatchdog). */
+    @Getter private boolean deadlockWatchdog;
+    private static final boolean DEFAULT_DEADLOCK_WATCHDOG = false;
+    /** Merge diamonds and counting loops into formulas (see symbolic/summary). */
+    @Getter private boolean loopSummaries;
+    private static final boolean DEFAULT_LOOP_SUMMARIES = false;
     private static final boolean DEFAULT_STRING_INTERNING = true;
     @Getter private String stringProxy;
     private static final String DEFAULT_STRING_PROXY = "Ljava/lang/String;";
@@ -450,6 +456,8 @@ public class Config {
         // ------------------------------------
         useStringInterning = readBoolean("useStringInterning", DEFAULT_STRING_INTERNING);
         loopStateMatching = readBoolean("loopStateMatching", DEFAULT_LOOP_STATE_MATCHING);
+        loopSummaries = readBoolean("loopSummaries", DEFAULT_LOOP_SUMMARIES);
+        deadlockWatchdog = readBoolean("deadlockWatchdog", DEFAULT_DEADLOCK_WATCHDOG);
         stringProxy = readString("stringProxy", DEFAULT_STRING_PROXY);
     }
 

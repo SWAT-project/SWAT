@@ -9,10 +9,12 @@ The graph is built in a private ``SAGraph`` and only handed out once it is fully
 explorer never sees a half-loaded graph. ``cancel()`` kills the extractor and joins the thread, so
 no Java process outlives the explorer when exploration finishes first.
 
-The graph's only targets are asserts (``new AssertionError`` sites), so pruning by it is only sound
-for the valid-assert property; under any other property the pre-analysis is not run at all. A
-graph whose program may run application code outside main's call tree (another thread, a shutdown
-hook, an uncaught-exception handler) is not used either, see ``SAGraph.async_entry_sites``.
+The graph names the target points of two properties: asserts (``new AssertionError`` sites) for
+valid-assert, and the sites that may raise a RuntimeException for no-runtime-exception (found with
+the property pre-check's value analysis, see cfg-extraction's RaiseSites). Under any other property
+the pre-analysis is not run at all. A graph whose program may run application code outside main's
+call tree (another thread, a shutdown hook, an uncaught-exception handler) is not used either, see
+``SAGraph.async_entry_sites``.
 """
 
 import os
@@ -29,8 +31,11 @@ logger = log.get_logger()
 
 EXTRACTOR_TIMEOUT_S = 120
 
-# The only property whose violations are the graph's targets (assertion points).
-SA_PROPERTY = "valid-assert.prp"
+# The properties the graph has target points for, and the metadata field that lists them.
+SA_TARGETS = {
+    "valid-assert.prp": "assertionPointIds",
+    "no-runtime-exception.prp": "runtimeExceptionPointIds",
+}
 
 
 class SAStatus(Enum):
@@ -57,6 +62,9 @@ class StaticPreAnalysis:
         self._lock = threading.Lock()  # orders starting the extractor against cancel()
         self._cancelled = threading.Event()
         self._done = threading.Event()
+        # Whether to compute which branches are irrelevant to the targets (see Relevance)
+        self.slicing = not getattr(args, "no_sa_slicing", False)
+        self.relevance_stats: dict | None = None
 
     @property
     def requested(self) -> bool:
@@ -68,13 +76,37 @@ class StaticPreAnalysis:
 
     @property
     def property_supported(self) -> bool:
-        return os.path.basename(getattr(self.args, "property", None) or "") == SA_PROPERTY
+        return self.targets is not None
+
+    @property
+    def entry(self) -> tuple[str, str]:
+        """
+        The class and method the graph starts at: main of the target class, or the method that
+        --sa-entry names (`pkg.Class#method`, e.g. an HTTP endpoint, where the executor starts
+        tracing). The extractor finds the method by name, so it must not be overloaded.
+        """
+        sa_entry = getattr(self.args, "sa_entry", None)
+        if sa_entry:
+            entry_class, _, entry_method = sa_entry.partition("#")
+            return entry_class, entry_method
+        return self.args.target, "main"
+
+    @property
+    def graph_file(self) -> str:
+        """Where the extractor writes the graph: named after the entry's simple class name and method."""
+        entry_class, entry_method = self.entry
+        return os.path.join(self.args.logdir, f"{entry_class.rsplit('.', 1)[-1]}_{entry_method}_interprocedural.json")
+
+    @property
+    def targets(self) -> str | None:
+        """The graph's metadata field with the target points of the property, or None."""
+        return SA_TARGETS.get(os.path.basename(getattr(self.args, "property", None) or ""))
 
     def start(self):
         if not self.enabled:
             if self.requested:
-                logger.info(f'[EXPLORER] Static pre-analysis is disabled: its graph only targets asserts, '
-                            f'so it cannot prune for property {self.args.property} (only {SA_PROPERTY}).')
+                logger.info(f'[EXPLORER] Static pre-analysis is disabled: its graph has no target points '
+                            f'for property {self.args.property} (only {", ".join(SA_TARGETS)}).')
             else:
                 logger.info(f'[EXPLORER] Static pre-analysis is disabled.')
             self._done.set()
@@ -121,14 +153,14 @@ class StaticPreAnalysis:
         try:
             if self.args.sa_file:
                 logger.info(f'[EXPLORER] Loading static pre-analysis graph from provided file...')
-                graph.load_json_graph(self.args.sa_file)
+                graph.load_json_graph(self.args.sa_file, self.targets, slicing=self.slicing)
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph from provided file.')
             else:
                 logger.info(f'[EXPLORER] Running static pre-analysis...')
                 if not self._run_extractor():
                     return
                 logger.info(f'[EXPLORER] Loading static pre-analysis graph...')
-                graph.load_json_graph(os.path.join(self.args.logdir, f"{self.args.target}_main_interprocedural.json"))
+                graph.load_json_graph(self.graph_file, self.targets, slicing=self.slicing)
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
             async_sites = graph.async_entry_sites()
             if self._cancelled.is_set():
@@ -142,6 +174,9 @@ class StaticPreAnalysis:
             else:
                 self._graph = graph
                 self.status = SAStatus.LOADED
+                if graph.relevance_stats is not None:
+                    self.relevance_stats = graph.relevance_stats.as_dict()
+                    logger.info(f'[EXPLORER] Relevance: {self.relevance_stats}')
         except Exception as e:
             if self._cancelled.is_set():
                 self.status = SAStatus.CANCELLED
@@ -168,7 +203,7 @@ class StaticPreAnalysis:
         """Runs the extractor; False if it was cancelled or timed out."""
         cmd = ["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
                ':'.join(os.path.abspath(p) for p in self.args.classpath if not self._is_swat_library(p)),
-               self.args.logdir, self.args.target, "main", "inter"] \
+               self.args.logdir, *self.entry, "inter"] \
               + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else [])
         with self._lock:
             if self._cancelled.is_set():
@@ -196,8 +231,10 @@ class StaticPreAnalysis:
             'enabled': self.enabled,
             'requested': self.requested,
             'property_supported': self.property_supported,
-            'mode': 'parallel' if self.args.parallel_sa else 'sequential',
+            'mode': 'parallel' if getattr(self.args, "parallel_sa", False) else 'sequential',
             'callback_targets': not getattr(self.args, "sa_no_callback_targets", False),
+            'slicing': self.slicing,
+            'relevance': self.relevance_stats,
             'status': self.status.value,
             'failed': self.status in (SAStatus.FAILED, SAStatus.TIMEOUT),
             'timed_out': self.status == SAStatus.TIMEOUT,

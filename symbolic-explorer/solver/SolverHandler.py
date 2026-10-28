@@ -448,29 +448,77 @@ class Z3Handler:
         return filepath
 
     @staticmethod
-    def lift_int2bv(cache, assertions: list) -> list:
-        """The assertions with comparisons over int_to_bv of string lengths, indices and char codes
-        made over the Integers (see Int2BvLifting), which Z3 decides much faster. Equivalent for
-        Java strings (at most 2^31 - 1 chars of at most 0xFFFF each); on any error, the assertions
-        as they are."""
-        from solver.Int2BvLifting import Int2BvLifting, lift_query
+    def lift_int2bv(cache, assertions: list) -> Tuple[list, dict]:
+        """(assertions, inputs): the assertions with comparisons over int_to_bv of string lengths,
+        indices and char codes made over the Integers, and bit-vector inputs used only as numbers
+        replaced by Integers (see Int2BvLifting.lift_inputs), which Z3 decides much faster.
+        Equivalent for Java strings (at most 2^31 - 1 chars of at most 0xFFFF each); `inputs` maps
+        each Integer stand-in to its input (see map_lifted_inputs). On any error, the assertions as
+        they are."""
+        from solver.Int2BvLifting import Int2BvLifting, lift_inputs
         try:
             # One lifting per char code range, as each caches its results across queries.
-            java_chars = getattr(cache, 'int2bv_lifting', None)
-            if java_chars is None:
-                java_chars = cache.int2bv_lifting = Int2BvLifting(java_chars=True)
-            if not any(java_chars.mentions_int2bv(a) for a in assertions):
-                return assertions
-            if all(java_chars.java_chars_only(a) for a in assertions):
-                return lift_query(java_chars, assertions)
-            # The query itself puts a char above 0xFFFF (or one it cannot bound) into a string.
-            unicode = getattr(cache, 'int2bv_lifting_unicode', None)
-            if unicode is None:
-                unicode = cache.int2bv_lifting_unicode = Int2BvLifting()
-            return lift_query(unicode, assertions)
+            lifting = getattr(cache, 'int2bv_lifting', None)
+            if lifting is None:
+                lifting = cache.int2bv_lifting = Int2BvLifting(java_chars=True)
+            if not all(lifting.java_chars_only(a) for a in assertions):
+                # The query itself puts a char above 0xFFFF (or one it cannot bound) into a string.
+                lifting = getattr(cache, 'int2bv_lifting_unicode', None)
+                if lifting is None:
+                    lifting = cache.int2bv_lifting_unicode = Int2BvLifting()
+            return lift_inputs(lifting, assertions)
         except Exception as e:
             logger.warning(f"[SOLVER] int_to_bv lifting failed, solving the query as it is: {e}")
-            return assertions
+            return assertions, {}
+
+    @staticmethod
+    def map_lifted_inputs(model, inputs: dict, encoded: Dict[str, Any]) -> None:
+        """Adds the values of the bit-vector inputs that the query had replaced by Integer
+        stand-ins (see lift_int2bv) to the encoded solution: v = x mod 2^w."""
+        for x, v in inputs.values():
+            value = model.eval(x, model_completion=True)
+            if not z3.is_int_value(value):
+                continue
+            bv = z3.BitVecVal(value.as_long() % 2 ** v.size(), v.size(), v.ctx)
+            name = str(v.decl().name())
+            prefix, _, idx = name.partition('_')
+            encoded[name] = {
+                'encoded_value': Z3Handler.encode_value(prefix, bv),
+                'plain_value': bv,
+                'index': idx,
+            }
+
+    @staticmethod
+    def shorten_strings(solver, model, t_check: float):
+        """A model of the solver's assertions in which each string input is as short as they allow
+        (shortest first for the first input, then the next, ...), or `model` where finding one
+        takes too long. Z3 fills the chars a query leaves open with whatever it likes, often more of
+        them than needed; in a parser, every extra char is one more step down an error path.
+        Each check gets a short timeout (twice the first check's time, at least 0.2 s)."""
+        solver.set("timeout", max(200, int(2000 * t_check)))
+        for d in model.decls():
+            if d.arity() > 0 or not z3.is_string(d()) or not re.match(r'[\w/]+_\d+$', d.name()):
+                continue
+            s = d()
+            lo, hi = 0, model.eval(z3.Length(s), model_completion=True).as_long()
+            while lo < hi:
+                mid = (lo + hi) // 2
+                solver.push()
+                solver.add(z3.Length(s) <= mid)
+                res = solver.check()
+                if res == z3.sat:
+                    model = solver.model()
+                    hi = model.eval(z3.Length(s), model_completion=True).as_long()
+                    solver.pop()
+                elif res == z3.unsat:
+                    solver.pop()
+                    lo = mid + 1
+                else:
+                    solver.pop()
+                    return model
+            # Keep this input at its length while shrinking the next ones.
+            solver.add(z3.Length(s) == hi)
+        return model
 
     @staticmethod
     def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000, rlimit: int | None = None,
@@ -519,12 +567,13 @@ class Z3Handler:
 
         # The FIRST set of expressions are from the node constraint - we need to NEGATE them
         # (We're looking for a solution that takes a different path)
-        original, query = [], []
+        original, query, lifted_inputs = [], [], {}
         if len(node_exprs) > 0:
             # Negate all node constraint expressions, then add all path constraint expressions
             # (already parsed and cached)
+            # (The extra constraints restrict inputs too, so they are lifted with the rest.)
             original = [Not(expr) for expr in node_exprs] + all_exprs[len(node_exprs):] + list(extra_exprs or [])
-            query = Z3Handler.lift_int2bv(cache, original[:len(original) - len(extra_exprs or [])]) + list(extra_exprs or [])
+            query, lifted_inputs = Z3Handler.lift_int2bv(cache, original)
 
         # Create solver with shared context from cache
         solver = Solver(ctx=cache.shared_context)
@@ -533,6 +582,11 @@ class Z3Handler:
         # any is known from the cached constraints it is built from (each checked once).
         fp_tactic = (bool(query) and getattr(Database.instance(), 'fp_tactic', True)
                      and (any(_entry_has_fp(e) for e in entries) or _has_fp(extra_exprs or [])))
+        if fp_tactic and lifted_inputs:
+            # The tactic's model is checked against the original assertions too; it gives the
+            # Integer stand-ins, not the inputs they replace.
+            subs = [(v, z3.Int2BV(x, v.size())) for x, v in lifted_inputs.values()]
+            original = [z3.substitute(a, *subs) for a in original]
 
         # Building the solver is Z3 work (SMT-LIB parsing on cache misses, assertion
         # construction), so it counts towards the SMT solver stage rather than the
@@ -567,6 +621,8 @@ class Z3Handler:
 
         if res == SATResult.SAT:
             t_start = time.perf_counter()
+            if Database.instance().prefer_short_strings:
+                sol = Z3Handler.shorten_strings(solver, sol, t_check)
 
             # Log model to disk for debugging (if enabled)
             if Database.instance().log_smt_formulas:
@@ -596,6 +652,7 @@ class Z3Handler:
                         logger.warning(f"[SOLVER] Model does not satisfy assertion: {constraint}")
 
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
+            Z3Handler.map_lifted_inputs(sol, lifted_inputs, encoded_sol)
             t_encode = time.perf_counter() - t_start
             TimingManager.instance().record_solver_time(t_encode, count=False)
             logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s model={t_encode:.3f}s rlimit={rlimit_used}")
@@ -716,6 +773,12 @@ class Z3Handler:
         """The scalar input values of a solution (from extract_and_encode_values) as Z3 values,
         by name. Arrays are left out: their plain value is only a description."""
         return {name: val['plain_value'] for name, val in sol.items() if z3.is_expr(val.get('plain_value'))}
+
+    @staticmethod
+    def bound_constraints(sol: dict, bound: int, ctx=None) -> list:
+        """Constraints restricting every integral input of the solution `sol` to [-bound, bound]
+        (chars: [0, bound]), without excluding `sol` itself (see retry_constraints)."""
+        return Z3Handler.retry_constraints([sol], bound, ctx)[1:]
 
     @staticmethod
     def retry_constraints(failed: list, bound: int | None = None, ctx=None) -> list:

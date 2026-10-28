@@ -1,5 +1,7 @@
 package de.uzl.its.targets.optaplanner_spring.controller;
 
+import de.uzl.its.targets.optaplanner_spring.Bugs;
+
 import de.uzl.its.targets.optaplanner_spring.facility_location_problem.bootstrap.FacilityLocationDemoDataGenerator;
 import de.uzl.its.targets.optaplanner_spring.facility_location_problem.domain.Consumer;
 import de.uzl.its.targets.optaplanner_spring.facility_location_problem.domain.Facility;
@@ -38,6 +40,10 @@ public class OptaplannerEndpoints {
     public ResponseEntity<String> maintenanceSchedulingProblem(@RequestParam int weekListSize, @RequestParam int crewListSize,
                                                                @RequestParam int nbOfJobAreas, @RequestParam int nbOfJobTargets) {
 
+        if (Bugs.VALIDITY_BOUND) {
+            // Inserted bug: the upper bounds were meant to be exclusive for large calendars
+            assert !(weekListSize == 13 && crewListSize == 36) : "BUG validity: maximal problem accepted";
+        }
         if (checkMaintenanceScheduleProblemValidity(weekListSize, crewListSize, nbOfJobAreas, nbOfJobTargets)) {
             try {
                 SolverFactory<MaintenanceScheduleProblem> solverFactory = SolverFactory.create(new SolverConfig()

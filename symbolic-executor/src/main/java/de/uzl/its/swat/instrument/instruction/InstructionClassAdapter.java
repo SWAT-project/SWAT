@@ -90,13 +90,20 @@ public class InstructionClassAdapter extends ClassVisitor {
                             name,
                             desc,
                             cname);
-            if (Config.instance().isLoopStateMatching() && !cname.startsWith("de/uzl/its/swat/")) {
-                // Collect the method to find its loop heads, then hand it on
+            boolean loopHeads = Config.instance().isLoopStateMatching();
+            boolean summaries = Config.instance().isLoopSummaries();
+            if ((loopHeads || summaries) && !cname.startsWith("de/uzl/its/swat/")) {
+                // Collect the method to find its loop heads and loop summaries, then hand it on
                 return new MethodNode(Opcodes.ASM9, access, name, desc, signature, exceptions) {
                     @Override
                     public void visitEnd() {
                         super.visitEnd();
-                        ima.setLoopHeads(LoopHeads.analyze(cname, this));
+                        if (loopHeads) {
+                            ima.setLoopHeads(LoopHeads.analyze(cname, this));
+                        }
+                        if (summaries) {
+                            ima.setLoopSummaries(de.uzl.its.swat.symbolic.summary.LoopSummaries.analyze(cname, this));
+                        }
                         accept(ima);
                     }
                 };

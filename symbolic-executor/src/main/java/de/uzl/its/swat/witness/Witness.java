@@ -213,7 +213,10 @@ public final class Witness {
         return violation;
     }
 
-    /** Clears the recorded data (for tests; a target execution never needs this). */
+    /**
+     * Clears the recorded data: for tests, and after each trace of a target that runs many
+     * executions in one JVM (see Intrinsics.terminate).
+     */
     public static void reset() {
         nondetReturns.clear();
         violation = null;

@@ -105,8 +105,23 @@ class PropertyGuardTest(unittest.TestCase):
         self.assertEqual(sa.status, SAStatus.LOADED)
         self.assertIsNotNone(graph)
 
+    def test_no_runtime_exception_uses_its_own_target_points(self):
+        g = hook_graph(statement_ok())
+        assertion = g.asserts[0]
+        site = next(n['id'] for n in g.nodes if n['id'] != assertion)
+        g.metadata['runtimeExceptionPointIds'] = [site]
+        sa, graph = self.run_sa('no-runtime-exception.prp', g)
+        self.assertEqual(sa.status, SAStatus.LOADED)
+        self.assertTrue(graph.nodes[site].isAssert)
+        self.assertFalse(graph.nodes[assertion].isAssert)
+
+    def test_no_runtime_exception_needs_a_graph_with_its_target_points(self):
+        sa, graph = self.run_sa('no-runtime-exception.prp')  # an older extractor's graph
+        self.assertEqual(sa.status, SAStatus.FAILED)
+        self.assertIsNone(graph)
+
     def test_other_properties_load_nothing(self):
-        for prop in ['no-runtime-exception.prp', 'no-deadlock.prp', None]:
+        for prop in ['no-deadlock.prp', None]:
             sa, graph = self.run_sa(prop)
             self.assertEqual(sa.status, SAStatus.DISABLED, prop)
             self.assertIsNone(graph)
