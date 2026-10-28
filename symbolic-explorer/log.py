@@ -36,10 +36,10 @@ def get_logger():
     return logger
 
 def get_verdict_logger():
-    global logger
-    if logger is None:
+    global verdict_logger
+    if verdict_logger is None:
         raise LoggerNotInitializedError("Logger has not been initialized.")
-    return logger
+    return verdict_logger
 
 
 def setup_logger(_logger, log_file, level=logging.INFO, use_console_handler=True, console_level=None):
@@ -83,4 +83,8 @@ def initialize_loggers(log_dir, level=logging.DEBUG, console_level=logging.INFO)
     logger = setup_logger(logger, os.path.join(log_dir, 'explorer.log'), level=level, console_level=console_level)
     verdict_logger = setup_logger(verdict_logger, os.path.join(log_dir, 'verdict.log'), level=level,
                                   console_level=console_level)
+    # The verdict also goes to explorer.log, so that it reads as the whole run
+    for handler in logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            verdict_logger.addHandler(handler)
 
