@@ -565,9 +565,16 @@ class SAGraph:
         return sites
 
 
-    def load_json_graph(self, path: str):
+    def load_json_graph(self, path: str, targets: str = "assertionPointIds"):
+        """
+        Loads the extractor's graph. `targets` names the metadata field with the target points of
+        the property being checked: assertionPointIds (valid-assert) or runtimeExceptionPointIds
+        (no-runtime-exception). A graph without it cannot be used for that property (KeyError).
+        """
         with open(path, "r") as f:
             self.json_graph = json.load(f)
+        if targets not in self.json_graph["metadata"]:
+            raise KeyError(f"the graph has no {targets}: it was made by an extractor that does not know this property")
 
         for json_node in self.json_graph["nodes"]:
             id = json_node["id"]
@@ -579,6 +586,10 @@ class SAGraph:
             if isinstance(metadata, str) and metadata.startswith("method: "):
                 self.nodes[id].method = metadata[len("method: "):]
             self.nodes[id].key = json_node.get("key")
+        # Phantom guards whose implicit exception the property pre-check proves cannot happen
+        # (the extractor's cannotRaise, see RaiseSites in cfg-extraction): their exception side
+        # leads nowhere, below.
+        cannot_raise = {n["id"] for n in self.json_graph["nodes"] if n.get("cannotRaise") is True}
         keys: dict[str, SANode] = {}
         duplicates = set()
         for n in self.nodes.values():
@@ -628,6 +639,16 @@ class SAGraph:
             elif etype == "EXCEPTIONAL_RETURN":
                 source.add_exceptional_return_child(target)
 
+            elif etype == "PHANTOM_FALSE_BRANCH" and source.id in cannot_raise:
+                # The exception side of a guard that cannot raise: a dead end, from which nothing is
+                # reachable. Should an execution take it after all, the walk ends there with no
+                # information, which prunes nothing.
+                dead = SANode(f"dead[{source.id}]")
+                self.nodes[dead.id] = dead
+                source.add_fallthrough_child(dead)
+                dead.prev.append(source)
+                continue
+
             elif etype in FALLTHROUGH_EDGES:
                 source.add_fallthrough_child(target)
 
@@ -643,13 +664,17 @@ class SAGraph:
                 n.add_fallthrough_child(n.callees[0])
 
         self.entry_node = self.nodes[self.json_graph["entryNodeId"]]
+        # Callbacks are only an extra concern for asserts: for runtime exceptions, every library call
+        # that may call back into the application is a target point itself (see the extractor).
         graph_index = GraphIndex(keys, self.entry_node.method,
-                                 callbacks_reach_assert=bool(self.json_graph["metadata"].get("callbacksReachingAssert")))
+                                 callbacks_reach_assert=targets == "assertionPointIds"
+                                 and bool(self.json_graph["metadata"].get("callbacksReachingAssert")))
         for n in self.nodes.values():
             n.graph_index = graph_index
 
-        for assertion_point_id in self.json_graph["metadata"]["assertionPointIds"]:
-            self.nodes[assertion_point_id].isAssert = True
+        # isAssert marks a target point of the property, whichever it is (the name is historical).
+        for target_id in self.json_graph["metadata"][targets]:
+            self.nodes[target_id].isAssert = True
         # An incomplete node may hide an assert in the part that was not expanded, so the paths
         # leading to it have to stay interesting. The extractor already reports these as assertion
         # points; treating them as such here too means a graph that ever forgets one half still

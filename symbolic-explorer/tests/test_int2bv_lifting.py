@@ -15,7 +15,7 @@ import z3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from solver.Int2BvLifting import Int2BvLifting, lift_query, JAVA_MAX_STRING_LENGTH
+from solver.Int2BvLifting import Int2BvLifting, lift_query, lift_inputs, bound_fact, JAVA_MAX_STRING_LENGTH
 
 
 def mixes_sorts(e):
@@ -111,15 +111,22 @@ class LiftingTest(unittest.TestCase):
         rnd = random.Random(7)
         terms = Terms(rnd)
         lifted = 0
+        compared = 0
         for _ in range(150):
             e = terms.bool_term(3)
             lifting = Int2BvLifting()
             r = lifting.rewrite(e)
             lifted += not r.eq(e)
+            bounds = [bound_fact(t) for t in lifting.needs(e)]
             for _ in range(12):
                 a = terms.assignment()
+                # Equivalent only for Java strings: no char above 0xFFFF where the rewrite relied on that.
+                if not all(evaluate(b, a) for b in bounds):
+                    continue
+                compared += 1
                 self.assertEqual(evaluate(e, a), evaluate(r, a), f'\n{e}\nrewritten to\n{r}\nunder {a}')
         self.assertGreater(lifted, 50)
+        self.assertGreater(compared, 1000)
 
     def test_string_length_comparisons_become_integer_comparisons(self):
         s = z3.String('s')
@@ -134,6 +141,19 @@ class LiftingTest(unittest.TestCase):
         solver.add(*out)
         self.assertEqual(solver.check(), z3.sat)
         self.assertTrue(z3.is_true(solver.model().eval(e, model_completion=True)))
+
+    def test_chars_lift_without_modulo(self):
+        # s.charAt(i) == '\\' over the Integers, with the char bound in the query
+        s = z3.String('s')
+        code = z3.StrToCode(z3.SubString(s, z3.IntVal(3), z3.IntVal(1)))
+        e = z3.Int2BV(code, 16) == z3.BitVecVal(92, 16)
+        out = lift_query(Int2BvLifting(), [e])
+        self.assertFalse(any(mixes_sorts(x) for x in out))
+        self.assertNotIn('mod', ' '.join(x.sexpr() for x in out))
+        self.assertTrue(any(x.eq(code <= 0xFFFF) for x in out))
+        # The char of a missing index (-1) is 0xFFFF as a Java char, as with int_to_bv.
+        r = Int2BvLifting().rewrite(z3.Int2BV(code, 16) == z3.BitVecVal(0xFFFF, 16))
+        self.assertTrue(z3.is_true(z3.simplify(z3.substitute(r, (code, z3.IntVal(-1))))))
 
     def test_overflowing_length_arithmetic_wraps(self):
         # s.length() + 3 overflows for long strings: the lift must keep the wrap.
@@ -154,6 +174,83 @@ class LiftingTest(unittest.TestCase):
         e = z3.SubString(s, signed, z3.IntVal(1)) == z3.StringVal('a')
         out = lift_query(Int2BvLifting(), [e])
         self.assertFalse(any(mixes_sorts(x) for x in out))
+
+    def test_char_widened_to_int_is_the_char_code(self):
+        # (int) s.charAt(0) as the executor builds it: the signed bv2int of the zero-extended char,
+        # with ubv_to_int(concat ...) expanded as Z3 does it.
+        s = z3.String('s')
+        code = z3.StrToCode(z3.SubString(s, z3.IntVal(0), z3.IntVal(1)))
+        char = z3.Int2BV(code, 16)
+        x = z3.Concat(z3.BitVecVal(0, 16), char)
+        unsigned = 65536 * z3.BV2Int(z3.BitVecVal(0, 16)) + z3.BV2Int(char)
+        widened = z3.If(z3.BitVecVal(0, 32) <= x, unsigned, z3.IntVal(-2 ** 32) + unsigned)
+        e = z3.StrFromCode(widened) == z3.StringVal('a')
+        out = lift_query(Int2BvLifting(), [e])
+        self.assertFalse(any(mixes_sorts(x) for x in out))
+        solver = z3.Solver()
+        solver.add(*out)
+        self.assertEqual(solver.check(), z3.sat)
+        self.assertEqual(solver.model().eval(z3.SubString(s, 0, 1)).as_string(), 'a')
+
+    def test_lifted_inputs_keep_the_truth_value(self):
+        # x and y replaced by Integer stand-ins where they are only used as numbers: under every
+        # assignment, with the stand-ins at the inputs' unsigned values, the query is unchanged.
+        rnd = random.Random(11)
+        terms = Terms(rnd)
+        lifted = compared = 0
+        for _ in range(150):
+            e = terms.bool_term(3)
+            out, inputs = lift_inputs(Int2BvLifting(), [e])
+            lifted += bool(inputs)
+            for _ in range(12):
+                a = terms.assignment()
+                values = dict((str(v), val) for v, val in a)
+                stand_ins = [(x, z3.IntVal(values[str(v)].as_long())) for x, v in inputs.values()]
+                # Bounds the rewrite relied on (chars up to 0xFFFF) are part of out.
+                if not all(evaluate(o, a + stand_ins) for o in out[1:]):
+                    continue
+                compared += 1
+                self.assertEqual(evaluate(e, a), evaluate(out[0], a + stand_ins), f'\n{e}\nlifted to\n{out[0]}\nunder {a}')
+        self.assertGreater(lifted, 30)
+        self.assertGreater(compared, 1000)
+
+    def test_char_at_a_symbolic_int_index_is_solved_over_the_integers(self):
+        # s.charAt(i) == 'b' with i a Java int: (str.at s (signed bv2int i))
+        s = z3.String('java/lang/String_0')
+        i = z3.BitVec('I_1', 32)
+        signed = z3.If(z3.BitVecVal(0, 32) <= i, z3.BV2Int(i), z3.IntVal(-2 ** 32) + z3.BV2Int(i))
+        e = z3.And(z3.SubString(s, signed, z3.IntVal(1)) == z3.StringVal('b'), z3.Length(s) == 3,
+                   z3.Not(z3.PrefixOf(z3.StringVal('b'), s)), i != z3.BitVecVal(2, 32))
+        out, inputs = lift_inputs(Int2BvLifting(), [e])
+        self.assertEqual([str(v) for x, v in inputs.values()], ['I_1'])
+        self.assertFalse(any(mixes_sorts(x) for x in out))
+        solver = z3.Solver()
+        solver.add(*out)
+        self.assertEqual(solver.check(), z3.sat)
+        from solver.SolverHandler import Z3Handler
+        encoded = {}
+        Z3Handler.map_lifted_inputs(solver.model(), inputs, encoded)
+        self.assertEqual(encoded['I_1']['encoded_value'], '1')
+        self.assertEqual(encoded['I_1']['index'], '1')
+
+    def test_negative_inputs_map_back_to_negative_ints(self):
+        i = z3.BitVec('I_4', 32)
+        e = z3.BV2Int(i) == z3.IntVal(2 ** 32 - 5)
+        out, inputs = lift_inputs(Int2BvLifting(), [e])
+        solver = z3.Solver()
+        solver.add(*out)
+        self.assertEqual(solver.check(), z3.sat)
+        from solver.SolverHandler import Z3Handler
+        encoded = {}
+        Z3Handler.map_lifted_inputs(solver.model(), inputs, encoded)
+        self.assertEqual(encoded['I_4']['encoded_value'], '-5')
+
+    def test_inputs_used_in_bit_operations_stay_bit_vectors(self):
+        i = z3.BitVec('I_1', 32)
+        e = z3.And(z3.BV2Int(i) < 10, z3.Extract(3, 0, i) == z3.BitVecVal(5, 4))
+        out, inputs = lift_inputs(Int2BvLifting(), [e])
+        self.assertEqual(inputs, {})
+        self.assertTrue(out[0].eq(e))
 
     def test_terms_without_int2bv_are_left_alone(self):
         y = z3.BitVec('y', 32)

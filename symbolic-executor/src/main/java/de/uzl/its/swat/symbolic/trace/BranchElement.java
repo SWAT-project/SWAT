@@ -33,7 +33,9 @@ final class BranchElement extends Element {
     @lombok.Setter private String key;
     @lombok.Setter private int pops;
     @lombok.Setter private java.util.List<String> pushes = java.util.List.of();
-    // Recorded in application code that library code called back (see ShadowContext.inCallback).
+    // Recorded where the static pre-analysis graph has no counterpart: in application code that
+    // library code called back (see ShadowContext.inCallback), or in a SWAT helper such as the
+    // reference comparison (see ShadowContext.inSwatHelper).
     @lombok.Setter private boolean callback;
     // The loop-head states the execution reached since the previous branch, in order (see
     // LoopStateMatcher).

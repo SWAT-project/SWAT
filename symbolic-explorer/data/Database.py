@@ -46,6 +46,7 @@ class Database:
             self.witness_data = {}
             self.optimize_solutions = False  # Whether to use Z3 Optimize() to minimize values
             self.log_smt_formulas = False  # Whether to log SMT formulas and models to disk for debugging
+            self.prefer_short_strings = False  # Whether to shrink the string inputs of a model (Z3Handler.shorten_strings)
 
     def reset(self):
 

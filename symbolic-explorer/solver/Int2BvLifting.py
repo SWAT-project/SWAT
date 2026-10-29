@@ -15,24 +15,29 @@ the Integers instead, where Z3 is fast.
   ubv_to_int, + - * and ite of those),
 - bvadd/bvsub/bvneg/bvmul/ite of liftable terms, as long as the range still fits,
 - zero/sign extension of liftable terms.
-A char code (str.to_code, in [-1, max char]) does not fit 16 bits; it is lifted as
-ite(t < 0, t + 2^16, ite(t < 2^16, t, t mod 2^16)), which is exact.
+A char code (str.to_code) is in [-1, 0xFFFF]: the chars of a Java string are UTF-16 code units, and
+the solver's strings model them char for char (supplementary code points as surrogate pairs). So a
+char from charAt, ((_ int_to_bv 16) (str.to_code c)), lifts without a modulo, e.g. to
+ite(t <= 2^15 - 1, t, t - 2^16) as a signed value. With [-1, 0x10FFFF] it needed one, and Z3 gave up
+on queries that pin a dozen chars. (A string constant holding a supplementary code point as one
+char breaks that bound, but charAt on it does not match Java either.)
 
 `rewrite(e)` replaces every comparison (=, distinct, bvs*, bvu*) between two liftable bit-vectors that
 involves int_to_bv by the Integer comparison of their lifts, and ubv_to_int of a liftable term by its
 lift. Everything else is left as it is.
 
-The ranges of str.len and str.indexof assume that every string has at most 2^31 - 1 chars, as Java
-strings do. `rewrite` records the strings whose length it relied on; `lift_query` adds the bound for
-each of them to the query, so that the rewritten query is equivalent to the original one under that
-bound in every model (and its models are models of the original query).
+The ranges of str.len and str.indexof assume that every string has at most 2^31 - 1 chars, and the
+range of str.to_code that every char is at most 0xFFFF, as in Java strings. `rewrite` records the
+bounds it relied on (`needs`); `lift_query` adds them to the query, so that the rewritten query is
+equivalent to the original one under these bounds in every model (and its models are models of the
+original query).
 """
 
 import z3
 
 JAVA_MAX_STRING_LENGTH = 2 ** 31 - 1
-# Upper bound of str.to_code; Z3's char sort is never larger than Unicode.
-MAX_CHAR_CODE = 0x10FFFF
+# Upper bound of str.to_code for Java strings, whose chars are UTF-16 code units
+MAX_CHAR_CODE = 0xFFFF
 
 _SIGNED_CMP = {z3.Z3_OP_SLEQ, z3.Z3_OP_SLT, z3.Z3_OP_SGEQ, z3.Z3_OP_SGT}
 _UNSIGNED_CMP = {z3.Z3_OP_ULEQ, z3.Z3_OP_ULT, z3.Z3_OP_UGEQ, z3.Z3_OP_UGT}
@@ -65,15 +70,19 @@ class Int2BvLifting:
         self._lifted = {}
         self._ranges = {}
         self._mentions_int2bv = {}
-        # Strings whose length bound a rewrite relied on, by expression id
+        # Bounds (see bound_fact) a rewrite relied on, by expression id
         self._bounded = {}
         self._needs = {}
+        # Integer stand-ins for bit-vector inputs (see lift_inputs): their range, by expression id
+        self._input_ranges = {}
+        # The inputs under ubv_to_int in an assertion, by expression id
+        self._bv2int_inputs = {}
 
     # Integer ranges
 
     def int_range(self, t):
-        """(lo, hi) such that lo <= t <= hi in every model (under the string length bound), or None.
-        Records the strings whose length bound the range relies on in self._needs[t]."""
+        """(lo, hi) such that lo <= t <= hi in every model (under the bounds of Java strings), or
+        None. Records the terms whose bound the range relies on in self._needs[t]."""
         key = t.get_id()
         if key in self._ranges:
             return self._ranges[key]
@@ -93,15 +102,19 @@ class Int2BvLifting:
         v = _int_const(t)
         if v is not None:
             return (v, v), ()
+        if t.get_id() in self._input_ranges:
+            return self._input_ranges[t.get_id()], ()
         k = _kind(t)
         args = t.children() if z3.is_app(t) else []
         if k == z3.Z3_OP_SEQ_LENGTH:
-            return (0, JAVA_MAX_STRING_LENGTH), (args[0],)
+            return (0, JAVA_MAX_STRING_LENGTH), (z3.Length(args[0]),)
         if k == z3.Z3_OP_SEQ_INDEX:
-            return (-1, JAVA_MAX_STRING_LENGTH), (args[0],)
+            return (-1, JAVA_MAX_STRING_LENGTH), (z3.Length(args[0]),)
         if k == z3.Z3_OP_STR_TO_CODE:
-            return (-1, MAX_CHAR_CODE), ()
+            return (-1, MAX_CHAR_CODE), (t,)
         if k == z3.Z3_OP_BV2INT:
+            if z3.is_bv_value(args[0]):
+                return (args[0].as_long(), args[0].as_long()), ()
             return (0, 2 ** args[0].size() - 1), ()
         if k == z3.Z3_OP_SBV2INT:
             return _view_range(args[0].size(), True), ()
@@ -133,7 +146,7 @@ class Int2BvLifting:
 
     def lift(self, e, signed):
         """(t, needs): an Integer term with e == int_to_bv(t) and t in the signed/unsigned range of
-        e's width, and the strings whose length bound that relies on; or None."""
+        e's width, and the terms whose bound that relies on; or None."""
         key = (e.get_id(), signed)
         if key not in self._lifted:
             self._alive.append(e)
@@ -192,6 +205,9 @@ class Int2BvLifting:
             if not signed and k == z3.Z3_OP_SIGN_EXT:
                 return None
             return inner
+        if k == z3.Z3_OP_CONCAT and len(args) == 2 and z3.is_bv_value(args[0]) and args[0].as_long() == 0:
+            # A zero extension, as the executor widens a char to an int
+            return self.lift(args[1], False)
         return None
 
     def _lift_ranged(self, e, signed):
@@ -232,7 +248,7 @@ class Int2BvLifting:
         return result
 
     def needs(self, e):
-        """The strings whose length bound rewrite(e) relies on."""
+        """The terms whose bound (see bound_fact) rewrite(e) relies on."""
         self.rewrite(e)
         return self._bounded[e.get_id()]
 
@@ -297,16 +313,31 @@ def _int_const(e):
     return None
 
 
+def _normal(e):
+    """e simplified to a fixpoint (one simplify of ubv_to_int(concat ...) leaves 2^k * ubv_to_int(0))."""
+    for _ in range(4):
+        n = z3.simplify(e)
+        if n.eq(e):
+            break
+        e = n
+    return e
+
+
 def _signed_bv2int_operand(e):
     """x if e is the signed bv2int ite(bvsle(0, x), ubv_to_int(x), ubv_to_int(x) - 2^w) (in the
-    forms JavaSMT builds it), else None."""
+    forms JavaSMT builds it, or with ubv_to_int(x) expanded, as Z3 does for a concat), else None."""
     cond, then, other = e.children()
-    if _kind(cond) != z3.Z3_OP_SLEQ or _kind(then) != z3.Z3_OP_BV2INT:
+    if _kind(cond) != z3.Z3_OP_SLEQ:
         return None
     zero, x = cond.children()
-    if not (z3.is_bv_value(zero) and zero.as_long() == 0 and then.arg(0).eq(x)):
+    if not (z3.is_bv_value(zero) and zero.as_long() == 0):
         return None
     m = 2 ** x.size()
+    if _kind(then) != z3.Z3_OP_BV2INT or not then.arg(0).eq(x):
+        unsigned = z3.BV2Int(x)
+        if _normal(then).eq(_normal(unsigned)) and _normal(other).eq(_normal(unsigned - m)):
+            return x
+        return None
     if _kind(other) == z3.Z3_OP_ADD and other.num_args() == 2:
         a, b = other.children()
         for u, c in ((a, b), (b, a)):
@@ -319,12 +350,106 @@ def _signed_bv2int_operand(e):
     return None
 
 
+def bound_fact(t):
+    """The bound of Java strings that a needed term t obeys: str.len (also for str.indexof) at most
+    2^31 - 1, str.to_code at most 0xFFFF."""
+    if _kind(t) == z3.Z3_OP_STR_TO_CODE:
+        return t <= MAX_CHAR_CODE
+    return t <= JAVA_MAX_STRING_LENGTH
+
+
 def lift_query(lifting, exprs):
-    """The rewritten expressions, plus the length bounds of the strings they rely on."""
+    """The rewritten expressions, plus the bounds of Java strings they rely on."""
     out = [lifting.rewrite(x) for x in exprs]
-    strings = {}
+    terms = {}
     for x in exprs:
-        for s in lifting.needs(x):
-            strings[s.get_id()] = s
-    out.extend(z3.Length(s) <= JAVA_MAX_STRING_LENGTH for s in strings.values())
+        for t in lifting.needs(x):
+            terms[t.get_id()] = t
+    # (A char code's index may itself be lifted.)
+    out.extend(bound_fact(lifting.rewrite(t)) for t in terms.values())
     return out
+
+
+def _bv2int_inputs(lifting, exprs):
+    """The bit-vector variables that occur as ubv_to_int(v) in exprs (cached per expression: the
+    path constraints recur in every query below them)."""
+    found = {}
+    for e in exprs:
+        key = e.get_id()
+        if key not in lifting._bv2int_inputs:
+            lifting._alive.append(e)
+            lifting._bv2int_inputs[key] = _bv2int_inputs_of(e)
+        for v in lifting._bv2int_inputs[key]:
+            found[v.get_id()] = v
+    return list(found.values())
+
+
+def _bv2int_inputs_of(expr):
+    found, seen = {}, set()
+    stack = [expr]
+    while stack:
+        e = stack.pop()
+        if e.get_id() in seen:
+            continue
+        seen.add(e.get_id())
+        if _kind(e) == z3.Z3_OP_BV2INT:
+            v = e.arg(0)
+            if z3.is_const(v) and v.decl().kind() == z3.Z3_OP_UNINTERPRETED:
+                found[v.get_id()] = v
+        if z3.is_app(e):
+            stack.extend(e.children())
+    return list(found.values())
+
+
+def _remaining_int2bv_args(exprs):
+    """The ids of the terms t that still occur as int_to_bv(t) in exprs."""
+    found, seen = set(), set()
+    stack = list(exprs)
+    while stack:
+        e = stack.pop()
+        if e.get_id() in seen:
+            continue
+        seen.add(e.get_id())
+        if _kind(e) == z3.Z3_OP_INT2BV:
+            found.add(e.arg(0).get_id())
+        if z3.is_app(e):
+            stack.extend(e.children())
+    return found
+
+
+def input_stand_in(v):
+    """The Integer variable that stands in for the bit-vector input v (named so that it is not
+    taken for an input itself)."""
+    return z3.Int(f'int!{v.decl().name()}', v.ctx)
+
+
+def lift_inputs(lifting, exprs):
+    """(out, inputs): lift_query of exprs, with bit-vector inputs that are only used as numbers
+    solved over the Integers.
+
+    The executor's ints are bit-vectors, but a string index is an Integer: s.charAt(i) reads
+    (str.at s (ubv_to_int i)), with the signed conversion around it. Z3 decides such mixed queries
+    badly. Every input v that occurs under ubv_to_int is replaced by int_to_bv(x), for a new
+    Integer x in [0, 2^w) (exact: that is a bijection), and lifted as above. Where an occurrence
+    cannot be lifted (bit operations, extracts, ...), int_to_bv(x) would remain; such inputs are
+    put back as they were. `inputs` maps each lifted x to its v: a model gives v = x."""
+    candidates = _bv2int_inputs(lifting, exprs)
+    if not candidates and not any(lifting.mentions_int2bv(e) for e in exprs):
+        return list(exprs), {}
+    while candidates:
+        stand_ins = {}
+        for v in candidates:
+            x = input_stand_in(v)
+            lifting._alive.append(x)
+            lifting._input_ranges[x.get_id()] = (0, 2 ** v.size() - 1)
+            stand_ins[x.get_id()] = (x, v)
+        subs = [(v, z3.Int2BV(x, v.size())) for x, v in stand_ins.values()]
+        out = lift_query(lifting, [z3.substitute(e, *subs) for e in exprs])
+        remaining = _remaining_int2bv_args(out)
+        failed = [v for xid, (x, v) in stand_ins.items() if xid in remaining]
+        if not failed:
+            out.extend(z3.And(x >= 0, x <= 2 ** v.size() - 1) for x, v in stand_ins.values())
+            return out, {x.get_id(): (x, v) for x, v in stand_ins.values()}
+        failed_ids = {v.get_id() for v in failed}
+        candidates = [v for v in candidates if v.get_id() not in failed_ids]
+    return lift_query(lifting, exprs), {}

@@ -28,6 +28,74 @@ def declared_ufs(smt: str) -> frozenset[str]:
     return frozenset(name.strip("|") for name in _UF_DECLARATION.findall(smt))
 
 
+# Search orders for the branches to flip (--search-order): "dfs" is the walk's own pre-order,
+# "shallow" takes the branches closest to the root first, "coverage" first those whose open side no
+# trace has taken at any position (then the shallowest), "coverage-dfs" the same with DFS order.
+# "generational" is "coverage", but among the branches that reach nothing new, it first takes those
+# of the traces that covered the most sides first (as SAGE's generational search): a trace that
+# found something new is where combinations with it are found.
+SEARCH_ORDERS = ("dfs", "shallow", "coverage", "coverage-dfs", "generational")
+
+# The loop count in the top 6 bits of an iid; without it, an iid names the branch instruction
+# (and switch case) wherever a loop runs it.
+_STATIC_IID_MASK = (1 << 58) - 1
+
+
+def depth(node) -> int:
+    """The number of branches above node on its path (cached on the node)."""
+    d = getattr(node, '_depth', None)
+    if d is None:
+        chain = []
+        n = node
+        while n is not None and getattr(n, '_depth', None) is None:
+            chain.append(n)
+            n = n.parent
+        d = -1 if n is None else n._depth
+        for m in reversed(chain):
+            d += 1
+            m._depth = d
+        d = node._depth
+    return d
+
+
+def open_side(node) -> tuple:
+    """The branch instruction and side that flipping node would take."""
+    return node.id & _STATIC_IID_MASK, node.skipped is not None
+
+
+def covered_sides(root) -> set:
+    """The (instruction, side) pairs some trace in the tree took."""
+    return set(first_coverers(root))
+
+
+def first_coverers(root) -> dict:
+    """For each (instruction, side) pair some trace in the tree took, the node through which it
+    was taken first (nodes are numbered in the order they were added, by gid)."""
+    first = {}
+    stack = [root]
+    while stack:
+        n = stack.pop()
+        if not isinstance(n, Node):
+            continue
+        if n.kind == "Branch":
+            for side, child in ((True, n.branched), (False, n.skipped)):
+                if child is not None:
+                    pair = (n.id & _STATIC_IID_MASK, side)
+                    if pair not in first or n.gid < first[pair].gid:
+                        first[pair] = n
+        stack.append(n.branched)
+        stack.append(n.skipped)
+    return first
+
+
+def trace_scores(first: dict) -> dict:
+    """How many (instruction, side) pairs each trace took first, by trace id."""
+    scores = {}
+    for n in first.values():
+        scores[n.trace_id] = scores.get(n.trace_id, 0) + 1
+    return scores
+
+
 class StrategyService:
     # is_symbolic_branch per (node gid, trace id)
     _symbolic_branches: dict[tuple[int, str], bool] = {}
@@ -41,15 +109,32 @@ class StrategyService:
         # changes, so which branches exist, and hence the verdict, does not. The sort is stable:
         # ties, and branches without SA information (ranked last), keep their DFS order.
         distances = {} if kwargs.get("rank_by_distance", False) else None
+        order = kwargs.get("search_order", "dfs")
+        covered = None
+        scores = {}
         # The walk is on the Database's tree itself, so dfs records where the SA walk fell out of
         # step there directly. The returned nodes are live: they gain children as traces arrive.
         def walk(tree, solved, unsat):
+            nonlocal covered, scores
             tree.loop_state_pruned = 0  # counted per walk; the tree itself persists
             found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
+            if order.startswith("coverage") or order == "generational":
+                first = first_coverers(tree.root)
+                covered = set(first)
+                scores = trace_scores(first)
             return found, tree.loop_state_pruned
         possible_branches, pruned = db.visit_tree(endpoint_id, walk)
         if pruned:
             logger.info(f'[DFS] Left out {pruned} subtrees below a repeated loop-head state')
+        # All sorts are stable: ties keep their DFS order.
+        if order == "shallow":
+            possible_branches.sort(key=depth)
+        elif order == "coverage":
+            possible_branches.sort(key=lambda n: (open_side(n) in covered, depth(n)))
+        elif order == "coverage-dfs":
+            possible_branches.sort(key=lambda n: open_side(n) in covered)
+        elif order == "generational":
+            possible_branches.sort(key=lambda n: (open_side(n) in covered, -scores.get(n.trace_id, 0), depth(n)))
         if distances:
             possible_branches.sort(key=lambda n: distances.get(n, math.inf))
         

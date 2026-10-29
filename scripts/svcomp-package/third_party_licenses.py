@@ -5,7 +5,8 @@ Usage: third_party_licenses.py <package_dir>
 
 Inputs, all read from the package itself:
 - META-INF/swat-third-party.json inside symbolic-executor/lib/symbolic-executor.jar
-  (written by the thirdPartyList Gradle task: the Java components shaded into the jar);
+  (written by the thirdPartyList Gradle task: the Java components shaded into the jar), and the
+  same file inside cfg-extraction/cfg-extractor-precheck.jar (cfg-extraction's precheckJar task);
 - libs/java-library-path/z3-LICENSE.txt (LICENSE.txt of the bundled Z3 release);
 - every libs/python/*.dist-info (bundled Python packages and the license files they ship).
 
@@ -23,6 +24,7 @@ from pathlib import Path
 
 LICENSE_DIR = Path(__file__).resolve().parent / "licenses"
 JAR = "symbolic-executor/lib/symbolic-executor.jar"
+PRECHECK_JAR = "cfg-extraction/cfg-extractor-precheck.jar"
 JAR_LIST = "META-INF/swat-third-party.json"
 Z3_LICENSE = "libs/java-library-path/z3-LICENSE.txt"
 PYTHON_DIR = "libs/python"
@@ -65,15 +67,15 @@ def spdx_of(name):
     return JAVA_LICENSES.get(key.lower())
 
 
-def java_components(pkg):
-    jar = pkg / JAR
+def java_components(pkg, jar_path=JAR):
+    jar = pkg / jar_path
     if not jar.is_file():
-        fail(f"missing {JAR}")
+        fail(f"missing {jar_path}")
     with zipfile.ZipFile(jar) as zf:
         try:
             entries = json.loads(zf.read(JAR_LIST))
         except KeyError:
-            fail(f"{JAR} has no {JAR_LIST}; build it with the thirdPartyList Gradle task")
+            fail(f"{jar_path} has no {JAR_LIST}; build it with the thirdPartyList (or precheckJar) Gradle task")
     comps = []
     for e in entries:
         coord = f"{e['group']}:{e['name']}"
@@ -167,6 +169,7 @@ def main():
         sys.exit(__doc__)
     pkg = Path(sys.argv[1])
     java = java_components(pkg)
+    precheck = java_components(pkg, PRECHECK_JAR)
     z3_license = pkg / Z3_LICENSE
     if not z3_license.is_file():
         fail(f"native Z3: missing license text {Z3_LICENSE}")
@@ -191,6 +194,10 @@ def main():
         "",
         table(java),
         "",
+        f"## Java (bundled in `{PRECHECK_JAR}`, the property pre-check from cfg-extraction)",
+        "",
+        table(precheck),
+        "",
         "## Native (`libs/java-library-path/`)",
         "",
         table(native),
@@ -204,8 +211,8 @@ def main():
         "### Java",
         "",
     ]
-    for spdx in sorted({i for c in java for i in c["ids"]}):
-        users = ", ".join(c["name"] for c in java if spdx in c["ids"])
+    for spdx in sorted({i for c in java + precheck for i in c["ids"]}):
+        users = ", ".join(dict.fromkeys(c["name"] for c in java + precheck if spdx in c["ids"]))
         out += [f"#### {spdx}", "", f"Used by: {users}", "",
                 block((LICENSE_DIR / f"{spdx}.txt").read_text(encoding="utf-8")), ""]
     out += ["### Native", "", "#### Z3", "", block(z3_license.read_text(encoding="utf-8")), "",
@@ -215,7 +222,7 @@ def main():
             out += [f"#### {c['name']} {c['version']}: {fname}", "", block(text), ""]
     target = pkg / "THIRD-PARTY-LICENSES.md"
     target.write_text("\n".join(out), encoding="utf-8")
-    print(f"Wrote {target}: {len(java)} Java, {len(native)} native, {len(python)} Python components")
+    print(f"Wrote {target}: {len(java) + len(precheck)} Java, {len(native)} native, {len(python)} Python components")
 
 
 if __name__ == "__main__":

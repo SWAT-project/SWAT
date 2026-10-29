@@ -101,7 +101,8 @@ public class StringArrayValue
         StringFormulaManager smgr = context.getFormulaManager().getStringFormulaManager();
         // ToDo (Nils): Is this needed or correct?
         for (int i = 0; i < array.length; i++) {
-            formula = amgr.store(formula, getIndex(i), smgr.makeString(concrete[i]));
+            formula = amgr.store(formula, getIndex(i),
+                    StringValue.literal(smgr, context.getFormulaManager().getIntegerFormulaManager(), concrete[i]));
         }
     }
 
