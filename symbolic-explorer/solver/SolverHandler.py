@@ -395,15 +395,23 @@ class Z3Handler:
     def lift_int2bv(cache, assertions: list) -> list:
         """The assertions with comparisons over int_to_bv of string lengths, indices and char codes
         made over the Integers (see Int2BvLifting), which Z3 decides much faster. Equivalent for
-        Java strings (at most 2^31 - 1 chars); on any error, the assertions as they are."""
+        Java strings (at most 2^31 - 1 chars of at most 0xFFFF each); on any error, the assertions
+        as they are."""
         from solver.Int2BvLifting import Int2BvLifting, lift_query
         try:
-            lifting = getattr(cache, 'int2bv_lifting', None)
-            if lifting is None:
-                lifting = cache.int2bv_lifting = Int2BvLifting()
-            if not any(lifting.mentions_int2bv(a) for a in assertions):
+            # One lifting per char code range, as each caches its results across queries.
+            java_chars = getattr(cache, 'int2bv_lifting', None)
+            if java_chars is None:
+                java_chars = cache.int2bv_lifting = Int2BvLifting(java_chars=True)
+            if not any(java_chars.mentions_int2bv(a) for a in assertions):
                 return assertions
-            return lift_query(lifting, assertions)
+            if all(java_chars.java_chars_only(a) for a in assertions):
+                return lift_query(java_chars, assertions)
+            # The query itself puts a char above 0xFFFF (or one it cannot bound) into a string.
+            unicode = getattr(cache, 'int2bv_lifting_unicode', None)
+            if unicode is None:
+                unicode = cache.int2bv_lifting_unicode = Int2BvLifting()
+            return lift_query(unicode, assertions)
         except Exception as e:
             logger.warning(f"[SOLVER] int_to_bv lifting failed, solving the query as it is: {e}")
             return assertions

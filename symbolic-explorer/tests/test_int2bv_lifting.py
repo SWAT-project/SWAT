@@ -15,7 +15,7 @@ import z3
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from solver.Int2BvLifting import Int2BvLifting, lift_query, JAVA_MAX_STRING_LENGTH
+from solver.Int2BvLifting import Int2BvLifting, lift_query, JAVA_MAX_STRING_LENGTH, MAX_JAVA_CHAR
 
 
 def mixes_sorts(e):
@@ -89,9 +89,9 @@ class Terms:
             lambda: z3.BV2Int(a) == z3.IntVal(r.randint(0, 300)),
         ])()
 
-    def assignment(self):
+    def assignment(self, java_chars=False):
         r = self.rnd
-        chars = ['a', 'b', 'ÿ', '￿', '\U0001F600']
+        chars = ['a', 'b', 'ÿ', '￿'] + ([] if java_chars else ['\U0001F600'])
         s = ''.join(r.choice(chars) for _ in range(r.randint(0, 3)))
         x = r.choice([0, 1, 127, 128, 255, r.randint(0, 255)])
         y = r.choice([0, 1, 2 ** 31 - 1, 2 ** 31, 2 ** 32 - 1, r.randint(0, 2 ** 32 - 1)])
@@ -159,6 +159,149 @@ class LiftingTest(unittest.TestCase):
         y = z3.BitVec('y', 32)
         e = z3.And(y + 1 > z3.BitVecVal(3, 32), z3.BV2Int(y) < 7)
         self.assertTrue(Int2BvLifting().rewrite(e).eq(e))
+
+
+def char_code(s, i):
+    return z3.StrToCode(z3.SubString(s, z3.IntVal(i), z3.IntVal(1)))
+
+
+def char_at(s, i):
+    """s.charAt(i) as the executor builds it (CharValue.java)"""
+    return z3.Int2BV(char_code(s, i), 16)
+
+
+class JavaCharsLiftingTest(unittest.TestCase):
+    """Int2BvLifting(java_chars=True): char codes in [-1, 0xFFFF], each relied-on one bounded."""
+
+    def test_random_comparisons_keep_their_truth_value_under_the_bounds(self):
+        rnd = random.Random(11)
+        terms = Terms(rnd)
+        lifted = 0
+        for _ in range(80):
+            e = terms.bool_term(3)
+            out = lift_query(Int2BvLifting(java_chars=True), [e])
+            r, bounds = out[0], out[1:]
+            lifted += not r.eq(e)
+            for _ in range(8):
+                # Also with a char above 0xFFFF: then the bounds may exclude the assignment, but
+                # wherever they hold, the rewrite has the truth value of e.
+                a = terms.assignment(java_chars=rnd.random() < 0.7)
+                self.assertEqual(evaluate(z3.And(*out), a), evaluate(z3.And(e, *bounds), a),
+                                 f'\n{e}\nrewritten to\n{out}\nunder {a}')
+            for _ in range(4):
+                a = terms.assignment(java_chars=True)
+                self.assertTrue(all(evaluate(b, a) for b in bounds),
+                                f'a bound excludes a Java string: {bounds} under {a}')
+        self.assertGreater(lifted, 25)
+
+    def test_char_comparisons_differ_only_where_the_bound_excludes_the_string(self):
+        # A char above 0xFFFF is truncated by int_to_bv but not by the lift: the two disagree only
+        # where the char code bound is false, which no Java string makes it.
+        s = z3.String('s')
+        ops = [lambda a, b: a == b, lambda a, b: a != b, lambda a, b: a < b, lambda a, b: a <= b,
+               lambda a, b: a > b, lambda a, b: a >= b, z3.ULT, z3.ULE, z3.UGT, z3.UGE]
+        differ = 0
+        for op in ops:
+            for c in [0, 0x41, 0x7FFF, 0x8000, 0xF600, 0xF601, 0xFFFF]:
+                for i, d in [(0, 0), (1, 0), (0, 1)]:
+                    e = op(char_at(s, i) + z3.BitVecVal(d, 16), z3.BitVecVal(c, 16))
+                    out = lift_query(Int2BvLifting(java_chars=True), [e])
+                    self.assertFalse(any(mixes_sorts(x) for x in out))
+                    for v in ['', 'A', '\uf600', '\uffff', 'A\uffff', '\U0001F600', 'A\U0001F600']:
+                        a = [(s, z3.StringVal(v))]
+                        java = all(ord(ch) <= MAX_JAVA_CHAR for ch in v)
+                        self.assertEqual(evaluate(z3.And(*out), a), evaluate(z3.And(e, *out[1:]), a), f'{e} under {v!r}')
+                        if java:
+                            self.assertEqual(evaluate(z3.And(*out), a), evaluate(e, a), f'{e} under {v!r}')
+                        elif evaluate(out[0], a) != evaluate(e, a):
+                            differ += 1
+                            self.assertFalse(evaluate(z3.And(*out[1:]), a))
+        self.assertGreater(differ, 0)
+
+    def test_char_code_lift_has_no_mod_and_its_bound_is_in_the_query(self):
+        # java-ranger LoopCharAt: s.length() > 5 && s.charAt(2) == 'B'
+        s = z3.String('s')
+        e = z3.And(z3.Int2BV(z3.Length(s), 32) > z3.BitVecVal(5, 32), char_at(s, 2) == z3.BitVecVal(66, 16))
+        out = lift_query(Int2BvLifting(java_chars=True), [e])
+        self.assertFalse(any(mixes_sorts(x) for x in out))
+        self.assertNotIn('mod', ' '.join(x.sexpr() for x in out))
+        self.assertTrue(any(x.eq(char_code(s, 2) <= MAX_JAVA_CHAR) for x in out))
+        unicode = lift_query(Int2BvLifting(), [e])
+        self.assertIn('mod', ' '.join(x.sexpr() for x in unicode))
+        solver = z3.Solver()
+        solver.add(*out)
+        self.assertEqual(solver.check(), z3.sat)
+        self.assertEqual(solver.model().eval(z3.SubString(s, 2, 1)).as_string(), 'B')
+
+    def test_a_char_above_0xffff_cannot_satisfy_a_char_comparison(self):
+        # Truncated to 16 bits, U+1F600 reads as the Java char 0xF600. The full range keeps that
+        # (exact for SMT strings); with Java chars, only the char 0xF600 itself is a solution.
+        s = z3.String('s')
+        e = z3.And(char_at(s, 0) == z3.BitVecVal(0xF600, 16), char_code(s, 0) > 0xFFFF)
+        self.assertEqual(self.check(lift_query(Int2BvLifting(), [e])), z3.sat)
+        self.assertEqual(self.check(lift_query(Int2BvLifting(java_chars=True), [e])), z3.unsat)
+        e = char_at(s, 0) == z3.BitVecVal(0xF600, 16)
+        solver = z3.Solver()
+        solver.add(*lift_query(Int2BvLifting(java_chars=True), [e]))
+        self.assertEqual(solver.check(), z3.sat)
+        self.assertEqual(solver.model().eval(char_code(s, 0)).as_long(), 0xF600)
+
+    @staticmethod
+    def check(exprs):
+        solver = z3.Solver()
+        solver.add(*exprs)
+        return solver.check()
+
+    def test_java_chars_only(self):
+        lifting = Int2BvLifting(java_chars=True)
+        s = z3.String('s')
+        c16, c32 = z3.BitVec('c16', 16), z3.BitVec('c32', 32)
+        ok = lambda x: lifting.java_chars_only(x == s)
+        self.assertTrue(ok(z3.Concat(s, z3.StringVal('a\u00ff\ud83d\uffff'))))
+        # Character.toString(char), new String(char[]): str.from_code of a 16-bit char
+        self.assertTrue(ok(z3.StrFromCode(z3.BV2Int(c16))))
+        # StringBuilder.reverse: str.from_code of a char code of a string of Java chars
+        self.assertTrue(ok(z3.StrFromCode(char_code(s, 0))))
+        # Integer.toHexString: digits
+        d = z3.BV2Int(z3.Extract(3, 0, c32))
+        self.assertTrue(ok(z3.StrFromCode(d + z3.If(d > 9, z3.IntVal(87), z3.IntVal(48)))))
+        self.assertTrue(ok(z3.IntToStr(z3.BV2Int(c32))))
+        # a literal with a surrogate pair is one SMT char above 0xFFFF (JavaSMT's makeString)
+        self.assertFalse(ok(z3.Concat(s, z3.StringVal('\U0001F600'))))
+        self.assertFalse(lifting.java_chars_only(z3.InRe(s, z3.Range('a', '\U0001F600'))))
+        # an int code point (appendCodePoint, indexOf(int)), or a char code above 0xFFFF
+        self.assertFalse(ok(z3.StrFromCode(z3.BV2Int(c32))))
+        self.assertFalse(ok(z3.StrFromCode(char_code(s, 0) + 1)))
+        self.assertFalse(ok(z3.StrFromCode(z3.Int('i'))))
+        self.assertFalse(ok(z3.StrFromCode(z3.IntVal(0x10000))))
+        self.assertTrue(ok(z3.StrFromCode(z3.IntVal(0xFFFF))))
+        # Char-sorted terms: the executor builds none
+        self.assertFalse(lifting.java_chars_only(z3.SubSeq(s, 0, 1) == z3.Unit(z3.CharVal(65))))
+        # deep terms do not hit the recursion limit
+        deep = s
+        for i in range(5000):
+            deep = z3.Concat(deep, z3.StrFromCode(z3.BV2Int(c16) + i % 2))
+        self.assertFalse(ok(deep))
+
+
+class LiftInt2BvTest(unittest.TestCase):
+    """Z3Handler.lift_int2bv picks the lifting by the query."""
+
+    def lift(self, assertions):
+        from types import SimpleNamespace
+        from solver.SolverHandler import Z3Handler
+        return Z3Handler.lift_int2bv(SimpleNamespace(), assertions)
+
+    def test_java_chars_unless_the_query_has_a_char_above_0xffff(self):
+        s = z3.String('s')
+        e = char_at(s, 0) == z3.BitVecVal(66, 16)
+        out = self.lift([e, z3.PrefixOf(z3.StringVal('B\u00e9'), s)])
+        self.assertNotIn('mod', ' '.join(x.sexpr() for x in out))
+        self.assertTrue(any(x.eq(char_code(s, 0) <= MAX_JAVA_CHAR) for x in out))
+        out = self.lift([e, z3.PrefixOf(z3.StringVal('B\U0001F600'), s)])
+        self.assertIn('mod', ' '.join(x.sexpr() for x in out))
+        self.assertFalse(any(x.eq(char_code(s, 0) <= MAX_JAVA_CHAR) for x in out))
+        self.assertFalse(any(mixes_sorts(x) for x in out))
 
 
 if __name__ == '__main__':
