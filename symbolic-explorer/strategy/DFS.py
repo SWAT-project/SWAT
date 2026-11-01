@@ -3,7 +3,6 @@ from data.BinaryExecutionTree.Leaf import Leaf
 from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, is_interesting, \
     apply_stack_delta, check_branch, resync
 from data.StaticAnalysisGraph.Relevance import in_region
-from data.trace.Special import UNMODELLED_EXCEPTION
 
 import logging
 
@@ -67,8 +66,11 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         visited.add(node)
 
         if node.unmodelled_exception:
-            # Some trace threw an exception the graph does not model right before this node (see
-            # below): the graph cannot say where execution went from there.
+            # Some trace threw an exception the graph does not model (a null dereference, a cast, a
+            # library call that threw, an Error) right before this node: the graph cannot say
+            # where execution went, so the walk has no information -- until it finds the graph
+            # again by key (resync, below). The UNMODELLED_EXCEPTION marker itself is no tree
+            # node (Tree.structural), so that runs which do and do not throw share the tree.
             sa_node, sa_stack = None, None
 
         # Static initializers delimit themselves with CLINIT / INVOKECLINIT_END markers, so we
@@ -81,12 +83,6 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             clinit_depth -= 1
 
         if node.kind == "Special": # skip over Special nodes (includes CLINIT / INVOKECLINIT_END)
-            if node.inst == UNMODELLED_EXCEPTION:
-                # The executor saw an exception the graph does not model (a null dereference, a
-                # cast, a library call that threw, an Error): the graph cannot say where execution
-                # went, so the walk has no information -- until it finds the graph again at a
-                # later branch by key (resync, below).
-                sa_node, sa_stack = None, None
             work.append((node.branched, sa_node, clinit_depth, sa_stack, trace_stack, sig, open_regions, walk_only))
             continue
         else:

@@ -127,14 +127,6 @@ def branch_node(name, skipped=None, branched=None, key=None, pops=0, pushes=(), 
     return n
 
 
-def special_node(name, branched=None, inst=None):
-    """A tree node for a special (non-branch) event; dfs passes through to `branched`."""
-    n = branch_node(name, branched=branched)
-    n.kind = 'Special'
-    n.inst = inst
-    return n
-
-
 def leaf():
     lf = Leaf.__new__(Leaf)
     lf.parent = None
@@ -397,7 +389,7 @@ class DfsTest(unittest.TestCase):
         n2 = branch_node('n2', skipped=leaf(), branched=None, key='b2')
         n1 = branch_node('n1', skipped=n2, branched=leaf(), key='b1')
         self.assertEqual(candidates(n1, g), set())
-        n1.skipped = special_node('x', branched=n2, inst='UNMODELLED_EXCEPTION')
+        n2.unmodelled_exception = True  # the marker, kept on the node after it (Tree.add)
         n2.key = None # without a key the walk cannot find the graph again (see KeyCheckTest)
         self.assertEqual(candidates(n1, g), {'n2'})
 
@@ -429,12 +421,12 @@ class DfsTest(unittest.TestCase):
             n['metadata'] = 'method: ' + ('f' if n['id'].startswith('f') or n['id'] == 'bf' else 'main')
         return g.load()
 
-    def tree_through_exception(self, events, after_branch_in_f=True):
-        """b1 (skipped), [bf in f], then `events` (special nodes), then b2 with its TRUE side unexplored."""
+    def tree_through_exception(self, after_branch_in_f=True):
+        """b1 (skipped), [bf in f], then an exception the graph does not model, then b2 with its
+        TRUE side unexplored."""
         n2 = branch_node('n2', skipped=leaf(), branched=None)
+        n2.unmodelled_exception = True
         nxt = n2
-        for name, inst in reversed(events):
-            nxt = special_node(name, branched=nxt, inst=inst)
         if after_branch_in_f:
             nxt = branch_node('nf', skipped=nxt, branched=leaf())
         return branch_node('n1', skipped=nxt, branched=leaf())
@@ -442,7 +434,7 @@ class DfsTest(unittest.TestCase):
     def test_after_an_unmodelled_exception_the_walk_gives_up(self):
         g = self.exception_graph()
         # Without keys the walk cannot find the graph again (see KeyCheckTest for resync).
-        tree = self.tree_through_exception([('u', 'UNMODELLED_EXCEPTION')])
+        tree = self.tree_through_exception()
         self.assertEqual(candidates(tree, g), {'n2'})
 
     def test_guard_failure_is_followed_into_callers_handler(self):
@@ -548,19 +540,15 @@ class KeyCheckTest(unittest.TestCase):
         index.keys.update({n.key: n for n in g.nodes.values() if n.key is not None})
         return g
 
-    THROWS = (('u', 'UNMODELLED_EXCEPTION'),)
-
-    def tree(self, b2_key=None, b2_pops=1, bf_key=None, bf_pushes=None, events=THROWS):
+    def tree(self, b2_key=None, b2_pops=1, bf_key=None, bf_pushes=None, throws=True):
         """
-        n1 (b1, skipped), nf (bf in f, skipped), `events`, n2 (b2, TRUE side unexplored). b2 is
+        n1 (b1, skipped), nf (bf in f, skipped), n2 (b2, TRUE side unexplored). b2 is
         only reached through main's handler: by default f throws an exception the graph does not
         model, so the walk is lost after nf and can only find b2 by resync.
         """
         n2 = branch_node('n2', skipped=leaf(), branched=None, key=b2_key or self.B2, pops=b2_pops)
-        nxt = n2
-        for name, inst in reversed(events):
-            nxt = special_node(name, branched=nxt, inst=inst)
-        nf = branch_node('nf', skipped=nxt, branched=leaf(), key=bf_key or self.BF,
+        n2.unmodelled_exception = throws
+        nf = branch_node('nf', skipped=n2, branched=leaf(), key=bf_key or self.BF,
                          pushes=bf_pushes if bf_pushes is not None else (self.CALL,))
         return branch_node('n1', skipped=nf, branched=leaf(), key=self.B1)
 
