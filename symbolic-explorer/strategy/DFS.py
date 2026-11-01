@@ -165,13 +165,11 @@ def dfs(tree: Tree | None, root, solved_branches: set[int], unsat_branch_ids: se
                 open_regions = open_regions[1]
         role = _classify(node, sa_node, verified)
         node.sliced = role != DECISION
-        if role != DECISION:
-            counts[role] += 1
-        if role == DECISION and open_regions is not None:
-            _poison(tree, open_regions, f"branch {node.key or node.id} in its region"
-                    + ("" if verified else " (not paired with the graph)"))
         node.ident = (sig, node.key if node.key is not None else ('id', node.id))
         if role == DECISION:
+            if open_regions is not None:
+                _poison(tree, open_regions, f"branch {node.key or node.id} in its region"
+                        + ("" if verified else " (not paired with the graph)"))
             sig_skipped = _sig(tree.sig_ids, node.ident, False)
             sig_branched = _sig(tree.sig_ids, node.ident, True)
             if node.skipped is not None:
@@ -181,6 +179,7 @@ def dfs(tree: Tree | None, root, solved_branches: set[int], unsat_branch_ids: se
             if node.gid in solved_branches or node.gid in unsat_branch_ids:
                 covered.add((node.ident, node.branched is None))  # its open side
         else:
+            counts[role] += 1
             sig_skipped = sig_branched = sig
             if role == SLICED:
                 open_regions = ((node, sa_node, sa_stack), open_regions)

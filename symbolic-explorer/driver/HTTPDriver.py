@@ -837,6 +837,7 @@ class HTTPDriver:
         if self.endpoint_id is not None:
             tree = Database.instance().get_tree(self.endpoint_id)
             self.stats['sa_desyncs'] = sum(1 for e in tree.execution_errors if e.get('kind') == 'sa_desync')
+            self.stats['last_walk'] = dict(StrategyService.walk_stats)  # see DFS.describe_walk
             self.stats['symbolic_context_loss'] = tree.symbolic_context_loss
             self.stats['symbolic_precision_loss'] = tree.symbolic_precision_loss
         with open(os.path.join(self.args.logdir, 'http_stats.json'), 'w') as f:

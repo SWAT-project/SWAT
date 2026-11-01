@@ -22,7 +22,7 @@ from data.BinaryExecutionTree.Leaf import Leaf
 from data.BinaryExecutionTree.Tree import Tree
 from data.StaticAnalysisGraph import SAGraph as sagraph
 from data.StaticAnalysisGraph.SAGraph import SAGraph, SANode
-from strategy.DFS import dfs
+from strategy.DFS import dfs, describe_walk
 
 AIOOBE_CHAIN = ['java.lang.ArrayIndexOutOfBoundsException', 'java.lang.IndexOutOfBoundsException',
                 'java.lang.RuntimeException', 'java.lang.Exception', 'java.lang.Throwable']
@@ -572,6 +572,17 @@ class KeyCheckTest(unittest.TestCase):
         found, desyncs = self.run_dfs(self.tree(), g)
         self.assertEqual(found, set())
         self.assertEqual(desyncs, [])
+
+    def test_the_walk_counts_how_it_paired_each_branch(self):
+        g = self.graph()
+        fake = FakeTree()
+        dfs(fake, self.tree(), set(), set(), g.entry_node)
+        self.assertEqual((fake.walk['branches'], fake.walk['verified'], fake.walk['resynced'],
+                          fake.walk['lost'], fake.walk['desyncs']), (3, 2, 1, 0, 0))
+        self.assertIn('3 paired with the graph (1 by resync)', describe_walk(fake.walk))
+        del g.entry_node.graph_index.keys[self.B2]  # without its key, b2 cannot be found again
+        dfs(fake, self.tree(), set(), set(), g.entry_node)
+        self.assertEqual((fake.walk['verified'], fake.walk['resynced'], fake.walk['lost']), (2, 0, 1))
 
     def test_no_resync_without_a_key(self):
         g = self.graph()
