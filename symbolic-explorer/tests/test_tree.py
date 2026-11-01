@@ -160,6 +160,16 @@ class UnmodelledExceptionTest(unittest.TestCase):
         self.assertFalse(tree.add([b(1, True), s(5), s(5, UNMODELLED_EXCEPTION), b(30, True)], [], []))
         self.assertEqual([e['kind'] for e in tree.execution_errors], ['tree_mismatch'])
 
+    def test_traces_that_disagree_on_the_stack_delta_make_the_node_ambiguous(self):
+        tree = Tree(0)
+        tree.add([b(1, True), Branch(id=9, trace_id='t', has_branched=True, constraint='(c9)', pops=1)], [], [])
+        tree.add([b(1, True), Branch(id=9, trace_id='u', has_branched=False, constraint='(c9)', pops=1)], [], [])
+        nine = path(tree)[0][1]
+        self.assertFalse(nine.stack_ambiguous)
+        tree.add([b(1, True), s(1, UNMODELLED_EXCEPTION),
+                  Branch(id=9, trace_id='v', has_branched=True, constraint='(c9)', pops=2)], [], [])
+        self.assertTrue(nine.stack_ambiguous)
+
     def test_structural_drops_markers_for_the_divergence_check(self):
         trace = [b(1, True), s(5), s(5, UNMODELLED_EXCEPTION), b(9, True)]
         self.assertEqual([(e.id, m) for e, m in Tree.structural(trace)], [(1, False), (5, False), (9, True)])

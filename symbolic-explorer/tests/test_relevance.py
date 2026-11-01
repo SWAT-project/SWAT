@@ -311,6 +311,27 @@ class SlicingTest(unittest.TestCase):
         self.assertTrue(getattr(b, 'poisoned', False))
         self.assertTrue(getattr(root, 'poisoned', False))
 
+    def test_an_unmodelled_exception_in_the_region_poisons_it_unless_the_walk_is_confirmed(self):
+        # The exception came after b, before the loop head: possibly inside b's region (the print).
+        # Where the loop head confirms the walk's position, the region closes as usual.
+        tail, a = self.assert_tail('', leaf())
+        tail.unmodelled_exception = True
+        b = branch_node('b0', skipped=tail, key='b')
+        root = branch_node('h0', skipped=b, key='h')
+        link(root, b)
+        dfs(set(), Tree(), root, set(), set(), self.g.entry_node)
+        self.assertFalse(getattr(b, 'poisoned', False))
+        # Without a key to confirm it by (nor to resync with), the walk has no information there.
+        tail, a = self.assert_tail('', leaf())
+        tail.unmodelled_exception = True
+        tail.key = None
+        b = branch_node('b0', skipped=tail, key='b')
+        root = branch_node('h0', skipped=b, key='h')
+        link(root, b)
+        tree = Tree()
+        dfs(set(), tree, root, set(), set(), self.g.entry_node)
+        self.assertTrue(getattr(b, 'poisoned', False))
+
     def test_a_closed_region_is_not_poisoned(self):
         # The callback comes after the loop, outside every region.
         cb = branch_node('cb', skipped=leaf(), key=None, callback=True)

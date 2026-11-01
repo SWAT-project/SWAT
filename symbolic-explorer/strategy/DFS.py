@@ -65,12 +65,18 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
 
         visited.add(node)
 
-        if node.unmodelled_exception:
-            # Some trace threw an exception the graph does not model (a null dereference, a cast, a
-            # library call that threw, an Error) right before this node: the graph cannot say
-            # where execution went, so the walk has no information -- until it finds the graph
-            # again by key (resync, below). The UNMODELLED_EXCEPTION marker itself is no tree
-            # node (Tree.structural), so that runs which do and do not throw share the tree.
+        # Some trace threw an exception the graph does not model (a null dereference, a cast, a
+        # library call that threw, an Error) right before this node. The UNMODELLED_EXCEPTION
+        # marker itself is no tree node (Tree.structural), so runs that do and do not throw share
+        # the node, and the graph cannot say where the throwing one went. The walk's position is
+        # where a run that did not throw is; it is kept only if the branch's key and call stack
+        # confirm it (below), which then holds for every run through the node. Otherwise the walk
+        # drops the graph until it finds it again by key (resync, below). Where the traces through
+        # the node disagree on its call stack (Node.stack_ambiguous), its stack cannot confirm
+        # anything, and the graph is dropped right away. Open regions are then handled as after a
+        # resync: closed by a confirmed position, poisoned by an unconfirmed one (below).
+        unconfirmed = node.unmodelled_exception
+        if unconfirmed and getattr(node, 'stack_ambiguous', False):
             sa_node, sa_stack = None, None
 
         # Static initializers delimit themselves with CLINIT / INVOKECLINIT_END markers, so we
@@ -104,6 +110,8 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         # A choice branch (the executor's search for the element a symbolic index selects) has no
         # graph node either: both of its sides continue from the walk's current place.
         mask_sa_node = clinit_depth > 0 or node.callback or node.choice
+        if unconfirmed and mask_sa_node:
+            sa_node, sa_stack = None, None  # nothing to confirm the position with here
         # Whether the walk's pairing of this branch with a graph node was checked (check_branch).
         # A pairing that could not be checked is still followed, so that a later branch can be
         # checked against the walk, but this branch is not pruned by it.
@@ -115,7 +123,12 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             sa_node, sa_stack = walked if walked is not None else (None, None)
             if sa_node is not None:
                 in_step = check_branch(sa_node, sa_stack, node.key, trace_stack)
-                if in_step is False:
+                if unconfirmed and in_step is not True:
+                    # Not confirmed after an unmodelled exception: no desync, the run that threw
+                    # went elsewhere. Resync (below) may still find the graph by key.
+                    tree.unmodelled_dropped = getattr(tree, 'unmodelled_dropped', 0) + 1
+                    sa_node, sa_stack = None, None
+                elif in_step is False:
                     # The walk paired this branch with the wrong graph node: its pruning so far on
                     # this path may be wrong too where a branch could not be checked, so the
                     # verdict cannot be SAFE (SVCompDriver).
@@ -125,6 +138,8 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
                 elif in_step is not None:
                     verified = True
                     trace_stack = sa_stack # the same frames; sharing the cells keeps later checks cheap
+                    if unconfirmed:
+                        tree.unmodelled_confirmed = getattr(tree, 'unmodelled_confirmed', 0) + 1
         if sa_node is None and not mask_sa_node and sa_index is not None:
             resumed = resync(node.key, trace_stack, sa_index)
             if resumed is not None:

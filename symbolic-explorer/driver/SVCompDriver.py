@@ -880,6 +880,14 @@ class SVCompDriver:
     def sa_stats(self) -> dict:
         """The pre-analysis' statistics, with what the relevance analysis did in the walks."""
         stats = self.sa.stats(self.sa_adopted_round)
+        try:
+            tree = Database.instance().get_tree(ENDPOINT_ID)
+        except (KeyError, AttributeError):
+            tree = None
+        if tree is not None:
+            # After an unmodelled exception: positions the walks confirmed by key, or dropped
+            stats['unmodelled_exception'] = {'confirmed': getattr(tree, 'unmodelled_confirmed', 0),
+                                             'dropped': getattr(tree, 'unmodelled_dropped', 0)}
         if self.sa.slicing and stats.get('relevance') is not None:
             tree = Database.instance().get_tree(ENDPOINT_ID)
             stats['relevance'] = dict(stats['relevance'],

@@ -404,6 +404,48 @@ class DfsTest(unittest.TestCase):
         n2.unmodelled_exception = True
         self.assertEqual(candidates(n1, g), {'n2'})
 
+    def flagged_tree(self, b2_key='b2'):
+        """n1 (b1, skipped), then n2 (b2, TRUE side unexplored) right after an exception the graph
+        does not model."""
+        g = keyed(GraphBuilder()
+             .nodes_('e0', 'b1', 'b2').node('a', assertion=True).node('x', exit=True)
+             .edge('e0', 'b1').branch('b1', 'b2', 'x').branch('b2', 'a', 'x').edge('a', 'x')
+             .load())
+        del g.entry_node.graph_index.keys['b2']  # so that resync cannot find b2: only confirming can
+        n2 = branch_node('n2', skipped=leaf(), branched=None, key=b2_key)
+        n2.unmodelled_exception = True
+        n1 = branch_node('n1', skipped=n2, branched=leaf(), key='b1')
+        return n1, n2, g
+
+    def test_after_an_unmodelled_exception_a_confirmed_position_keeps_the_pruning(self):
+        # The walk's position (b2) has the trace's key and call stack: every run through n2 is at
+        # b2, whether or not it threw, so b2's TRUE side stays pruned.
+        n1, _, g = self.flagged_tree()
+        fake = FakeTree()
+        self.assertEqual({n.id for n in dfs(set(), fake, n1, set(), set(), g.entry_node)}, set())
+        self.assertEqual(fake.unmodelled_confirmed, 1)
+
+    def test_after_an_unmodelled_exception_another_key_drops_the_graph_without_a_desync(self):
+        n1, _, g = self.flagged_tree(b2_key='elsewhere')
+        fake = FakeTree()
+        self.assertEqual({n.id for n in dfs(set(), fake, n1, set(), set(), g.entry_node)}, {'n2'})
+        self.assertEqual(fake.execution_errors, [])  # the run that threw went elsewhere: no desync
+        self.assertEqual(fake.unmodelled_dropped, 1)
+
+    def test_after_an_unmodelled_exception_a_keyless_branch_drops_the_graph(self):
+        n1, _, g = self.flagged_tree(b2_key=None)
+        self.assertEqual(candidates(n1, g), {'n2'})
+
+    def test_after_an_unmodelled_exception_an_ambiguous_stack_drops_the_graph(self):
+        n1, n2, g = self.flagged_tree()
+        n2.stack_ambiguous = True
+        self.assertEqual(candidates(n1, g), {'n2'})
+
+    def test_after_an_unmodelled_exception_in_a_callback_the_graph_is_dropped(self):
+        n1, n2, g = self.flagged_tree()
+        n2.callback = True
+        self.assertEqual(candidates(n1, g), {'n2'})
+
     def exception_graph(self):
         """
         main: if (b1) exit; c = f(); [handler h: if (b2) exit; assert];  f: if (bf) ...; return

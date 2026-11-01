@@ -69,6 +69,9 @@ class Node:
         # Whether some trace threw an exception the SA graph does not model right before this node
         # (an UNMODELLED_EXCEPTION marker, which is not a node of its own, see Tree.structural).
         self.unmodelled_exception = False
+        # Whether traces through this node disagree on the frames entered and left since the
+        # previous branch (pops, pushes): its stack then is right for some of them only (see dfs).
+        self.stack_ambiguous = False
         # Only for 'Branch' nodes: the loop-head states reached before this branch, since the
         # previous one, each with its position (see Tree.register_loop_states).
         self.loop_states = ()

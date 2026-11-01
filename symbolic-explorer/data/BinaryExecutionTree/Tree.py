@@ -204,6 +204,11 @@ class Tree:
                 return False
             if marked:
                 node.unmodelled_exception = True
+            if isinstance(element, Branch) and (getattr(element, 'pops', 0), tuple(getattr(element, 'pushes', ()) or ())) \
+                    != (node.pops, tuple(node.pushes or ())):
+                # This trace reached the node with other frames entered and left than the trace
+                # that made it (e.g. one threw out of a callee): its stack delta holds for one only.
+                node.stack_ambiguous = True
             if isinstance(element, Branch):
                 node.constraint[element.trace_id] = element.constraint
                 # Merged only if every trace through it merged it (a summary the executor dropped
