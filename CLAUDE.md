@@ -63,10 +63,11 @@ and walked in `strategy/DFS.py`; the module comments of both define the terms be
 - **Guards that cannot raise:** a phantom guard the extractor marks `cannotRaise` (the property
   pre-check proves its implicit exception cannot happen, cfg-extraction `RaiseSites`) gets a dead
   node as its exception side in `SAGraph.load_json_graph`, so that side is never interesting.
-- **Observability:** each selection logs one line, `[DFS] Walk: N branches: ... paired with the
-  graph (... by resync), ... unverified, ... lost, ... masked; ... sides pruned; ...`
-  (`DFS.describe_walk`), and `stats.json` has the same counts in `static_analysis.last_walk`. The
-  per-branch trace of the walk is at level `DFS.TRACE`, below DEBUG.
+- **Observability:** each selection logs one line, e.g. `[DFS] Walk: 34 branches (33 verified,
+  0 resynced, 0 unverified, 0 lost, 1 masked), 12 sides pruned; 32 sliced, 0 merged, 0 covered,
+  0 poisoned` (`DFS.describe_walk`; "covered": candidates left out as covered by a path with the
+  same relevant decisions), and `stats.json` has the same counts in `static_analysis.last_walk`.
+  The per-branch trace of the walk is at level `DFS.TRACE`, below DEBUG.
 
 **The graph and its targets:**
 

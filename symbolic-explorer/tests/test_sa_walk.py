@@ -579,7 +579,7 @@ class KeyCheckTest(unittest.TestCase):
         dfs(fake, self.tree(), set(), set(), g.entry_node)
         self.assertEqual((fake.walk['branches'], fake.walk['verified'], fake.walk['resynced'],
                           fake.walk['lost'], fake.walk['desyncs']), (3, 2, 1, 0, 0))
-        self.assertIn('3 paired with the graph (1 by resync)', describe_walk(fake.walk))
+        self.assertIn('3 branches (2 verified, 1 resynced, 0 unverified, 0 lost, 0 masked)', describe_walk(fake.walk))
         del g.entry_node.graph_index.keys[self.B2]  # without its key, b2 cannot be found again
         dfs(fake, self.tree(), set(), set(), g.entry_node)
         self.assertEqual((fake.walk['verified'], fake.walk['resynced'], fake.walk['lost']), (2, 0, 1))

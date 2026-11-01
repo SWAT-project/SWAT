@@ -2,7 +2,6 @@ import functools
 from collections import Counter
 import json
 import math
-import logging
 import re
 import time
 
@@ -13,7 +12,9 @@ from strategy.DFS import dfs, describe_walk
 from solver.SolverHandler import SATResult, Z3Handler
 from timing.TimingManager import TimingManager
 
-logger = logging.getLogger(__name__)
+import log
+# The explorer's logger: a module logger would reach neither explorer.log nor the console.
+logger = log.get_logger()
 
 # A declaration of a function with at least one argument, i.e. an uninterpreted function rather
 # than a variable: "(declare-fun f (<sort> ...) <sort>)".
@@ -372,8 +373,6 @@ class StrategyService:
             # Extract variables from the parsed constraint
             constraint_vars = cached_data['variables']
 
-            logger.info(f"[is_symbolic_branch] Branch {node.id}: found {len(constraint_vars)} variables in constraint")
-            logger.debug(f"[is_symbolic_branch] Variables: {constraint_vars}")
 
             # Get input variable names (symbolic variables we're tracking)
             input_vars = set()
@@ -388,12 +387,12 @@ class StrategyService:
                     input_vars.add(f"{inp.name}_length")
                     input_vars.add(f"|{inp.name}_length|")
 
-            logger.debug(f"[is_symbolic_branch] Input variables: {input_vars}")
 
             # Check if any constraint variable matches an input variable
             is_symbolic = bool(constraint_vars & input_vars)
 
-            logger.info(f"[is_symbolic_branch] Branch {node.id} is_symbolic: {is_symbolic}")
+            logger.debug(f"[is_symbolic_branch] Branch {node.id} is_symbolic: {is_symbolic} "
+                         f"(constraint variables {sorted(constraint_vars)}, inputs {sorted(input_vars)})")
 
             StrategyService._symbolic_branches[key] = is_symbolic
             return is_symbolic

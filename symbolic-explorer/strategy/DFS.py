@@ -321,15 +321,16 @@ def _poison(tree, open_regions, why: str) -> None:
 
 
 def describe_walk(counts) -> str:
-    """One line on what a walk did, from its counts (Tree.walk)."""
+    """One line on what a walk did, from its counts (Tree.walk), in the terms of the module comment:
+    how its branches were paired, sides pruned, and (with slicing) branches sliced or merged,
+    candidates covered by a path with the same relevant decisions, and sliced branches poisoned."""
     c = counts
-    line = (f"{c['branches']} branches: {c[VERIFIED] + c[RESYNCED]} paired with the graph ({c[RESYNCED]} by resync), "
-            f"{c[UNVERIFIED]} unverified, {c[LOST]} lost, {c[MASKED]} masked; {c['pruned_sides']} sides pruned")
+    line = (f"{c['branches']} branches ({c[VERIFIED]} verified, {c[RESYNCED]} resynced, {c[UNVERIFIED]} unverified, "
+            f"{c[LOST]} lost, {c[MASKED]} masked), {c['pruned_sides']} sides pruned")
     if c[SLICED] or c[MERGED] or c['covered'] or c['poisoned']:
-        line += (f"; {c[SLICED]} sliced, {c[MERGED]} merged, {c['covered']} candidates covered by a path with "
-                 f"the same relevant decisions, {c['poisoned']} sliced branches found relevant")
+        line += f"; {c[SLICED]} sliced, {c[MERGED]} merged, {c['covered']} covered, {c['poisoned']} poisoned"
     if c['desyncs']:
         line += f"; {c['desyncs']} desyncs"
     if c['loop_state_pruned']:
-        line += f"; {c['loop_state_pruned']} subtrees left out below a repeated loop-head state"
+        line += f"; {c['loop_state_pruned']} subtrees below a repeated loop-head state"
     return line
