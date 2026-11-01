@@ -52,9 +52,10 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
     # walk_only: the entry is below a side that cannot reach a target, walked only because a path
     # there ended abnormally (Node.abnormal_below), which may make sliced branches relevant: it
     # yields no candidates.
-    work = [(node, sa_node, clinit_depth, sa_stack, trace_stack, 0, None, False)]
+    # unconfirmed: an unmodelled exception came before this node, after the last branch (see below).
+    work = [(node, sa_node, clinit_depth, sa_stack, trace_stack, 0, None, False, False)]
     while work:
-        node, sa_node, clinit_depth, sa_stack, trace_stack, sig, open_regions, walk_only = work.pop()
+        node, sa_node, clinit_depth, sa_stack, trace_stack, sig, open_regions, walk_only, unconfirmed = work.pop()
         assert clinit_depth >= 0
         if isinstance(node, Leaf) and open_regions is not None and getattr(node, 'abnormal', False):
             # The path ended with an uncaught exception inside the region of a sliced branch: the
@@ -74,8 +75,10 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         # drops the graph until it finds it again by key (resync, below). Where the traces through
         # the node disagree on its call stack (Node.stack_ambiguous), its stack cannot confirm
         # anything, and the graph is dropped right away. Open regions are then handled as after a
-        # resync: closed by a confirmed position, poisoned by an unconfirmed one (below).
-        unconfirmed = node.unmodelled_exception
+        # resync: closed by a confirmed position, poisoned by an unconfirmed one (below). The flag
+        # is often on a special node (the marker comes right before, e.g., a call): the check then
+        # happens at the next branch.
+        unconfirmed = unconfirmed or node.unmodelled_exception
         if unconfirmed and getattr(node, 'stack_ambiguous', False):
             sa_node, sa_stack = None, None
 
@@ -89,7 +92,7 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
             clinit_depth -= 1
 
         if node.kind == "Special": # skip over Special nodes (includes CLINIT / INVOKECLINIT_END)
-            work.append((node.branched, sa_node, clinit_depth, sa_stack, trace_stack, sig, open_regions, walk_only))
+            work.append((node.branched, sa_node, clinit_depth, sa_stack, trace_stack, sig, open_regions, walk_only, unconfirmed))
             continue
         else:
             assert node.kind == "Branch"
@@ -226,13 +229,13 @@ def dfs(visited: set[Node], tree, node: Node | Leaf | None, solved_branches: set
         # A side that cannot reach a target is still walked (for the regions only) if a path below
         # it ended abnormally inside an open region.
         if branch_is_interesting and not walk_only:
-            work.append((node.branched, sa_branched, clinit_depth, sa_stack, trace_stack, sig_branched, open_regions, False))
+            work.append((node.branched, sa_branched, clinit_depth, sa_stack, trace_stack, sig_branched, open_regions, False, False))
         elif open_regions is not None and _abnormal_below(node.branched):
-            work.append((node.branched, sa_branched, clinit_depth, sa_stack, trace_stack, sig_branched, open_regions, True))
+            work.append((node.branched, sa_branched, clinit_depth, sa_stack, trace_stack, sig_branched, open_regions, True, False))
         if skip_is_interesting and not walk_only:
-            work.append((node.skipped, sa_skipped, clinit_depth, sa_stack, trace_stack, sig_skipped, open_regions, False))
+            work.append((node.skipped, sa_skipped, clinit_depth, sa_stack, trace_stack, sig_skipped, open_regions, False, False))
         elif open_regions is not None and _abnormal_below(node.skipped):
-            work.append((node.skipped, sa_skipped, clinit_depth, sa_stack, trace_stack, sig_skipped, open_regions, True))
+            work.append((node.skipped, sa_skipped, clinit_depth, sa_stack, trace_stack, sig_skipped, open_regions, True, False))
 
     # Candidates whose side a path with the same relevant decisions has covered already, and
     # repeats of the same candidate, are left out.

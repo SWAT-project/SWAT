@@ -432,6 +432,26 @@ class DfsTest(unittest.TestCase):
         self.assertEqual(fake.execution_errors, [])  # the run that threw went elsewhere: no desync
         self.assertEqual(fake.unmodelled_dropped, 1)
 
+    def flagged_before_a_call(self, b2_key='b2'):
+        """As flagged_tree, but the flag is on a special node (a call) between n1 and n2."""
+        n1, n2, g = self.flagged_tree(b2_key)
+        n2.unmodelled_exception = False
+        call = branch_node('call', branched=n2)
+        call.kind, call.inst = 'Special', 'INVOKESTATIC'
+        call.unmodelled_exception = True
+        n1.skipped = call
+        return n1, g
+
+    def test_a_flag_on_a_special_node_is_checked_at_the_next_branch(self):
+        n1, g = self.flagged_before_a_call()
+        fake = FakeTree()
+        self.assertEqual({n.id for n in dfs(set(), fake, n1, set(), set(), g.entry_node)}, set())
+        self.assertEqual(fake.unmodelled_confirmed, 1)
+        n1, g = self.flagged_before_a_call(b2_key='elsewhere')
+        fake = FakeTree()
+        self.assertEqual({n.id for n in dfs(set(), fake, n1, set(), set(), g.entry_node)}, {'n2'})
+        self.assertEqual(fake.execution_errors, [])  # not a desync
+
     def test_after_an_unmodelled_exception_a_keyless_branch_drops_the_graph(self):
         n1, _, g = self.flagged_tree(b2_key=None)
         self.assertEqual(candidates(n1, g), {'n2'})
