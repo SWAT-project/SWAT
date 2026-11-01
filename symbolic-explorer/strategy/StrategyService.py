@@ -1,4 +1,5 @@
 import functools
+from collections import Counter
 import json
 import math
 import logging
@@ -8,7 +9,7 @@ import time
 from data.BinaryExecutionTree.Node import Node
 
 from data.Database import Database
-from strategy.DFS import dfs
+from strategy.DFS import dfs, describe_walk
 from solver.SolverHandler import SATResult, Z3Handler
 from timing.TimingManager import TimingManager
 
@@ -104,7 +105,6 @@ class StrategyService:
     def select_branch(**kwargs):
         endpoint_id = kwargs.get('endpoint_id', None)
         db = Database.instance()
-        visited = set()
         # With rank_by_distance, the branches are tried closest-to-an-assert first. Only the order
         # changes, so which branches exist, and hence the verdict, does not. The sort is stable:
         # ties, and branches without SA information (ranked last), keep their DFS order.
@@ -115,30 +115,23 @@ class StrategyService:
         # The walk is on the Database's tree itself, so dfs records where the SA walk fell out of
         # step there directly. The returned nodes are live: they gain children as traces arrive.
         def walk(tree, solved, unsat):
-            nonlocal covered, scores, visited, distances
-            tree.loop_state_pruned = 0  # counted per walk; the tree itself persists
-            tree.dedup_in_walk = 0
-            found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
+            nonlocal covered, scores, distances
+            sa_entry = kwargs.get("sa_node", None)
+            found = dfs(tree, tree.root, solved, unsat, sa_entry, distances=distances)
             # A sliced branch that turned out relevant (dfs poisons it) changes which constraints
             # and decisions count on every path below it: walk again. Poisoning is for good, so
             # this ends.
-            while tree.poisoned_in_walk:
-                visited = set()
+            while tree.walk['poisoned']:
                 distances = {} if distances is not None else None
-                tree.loop_state_pruned = 0
-                tree.dedup_in_walk = 0
-                found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
+                found = dfs(tree, tree.root, solved, unsat, sa_entry, distances=distances)
             if order.startswith("coverage") or order == "generational":
                 first = first_coverers(tree.root)
                 covered = set(first)
                 scores = trace_scores(first)
-            return found, tree.loop_state_pruned, tree.sliced_in_walk, tree.dedup_in_walk
-        possible_branches, pruned, sliced, dedup = db.visit_tree(endpoint_id, walk)
-        if pruned:
-            logger.info(f'[DFS] Left out {pruned} subtrees below a repeated loop-head state')
-        if sliced or dedup:
-            logger.info(f'[DFS] Relevance: {sliced} irrelevant branches on the walk, {dedup} candidates covered by a path with the same relevant decisions')
-        StrategyService.walk_stats = {'sliced': sliced, 'dedup': dedup}
+            return found, dict(tree.walk)
+        possible_branches, counts = db.visit_tree(endpoint_id, walk)
+        logger.info(f'[DFS] Walk: {describe_walk(Counter(counts))}')
+        StrategyService.walk_stats = counts
         # All sorts are stable: ties keep their DFS order.
         if order == "shallow":
             possible_branches.sort(key=depth)
@@ -154,9 +147,8 @@ class StrategyService:
         return possible_branches
         
         
-    # Statistics of the last select_branch walk (see dfs): irrelevant branches on it, and candidates
-    # left out as covered by a path with the same relevant decisions.
-    walk_stats = {'sliced': 0, 'dedup': 0}
+    # The counts of the last select_branch walk (Tree.walk), for stats.json.
+    walk_stats: dict = {}
 
     @staticmethod
     def collect_path_constrains(node: Node, dropped: list | None = None, full: bool = False) -> list():
@@ -172,7 +164,7 @@ class StrategyService:
                 if trace_id in node.constraint:
                     c = node.constraint[trace_id]
                     if "declare-fun" in c:
-                        if not full and getattr(node, 'sliced', False):
+                        if not full and node.sliced:
                             if dropped is not None:
                                 dropped.append(node)
                             continue

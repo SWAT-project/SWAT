@@ -235,7 +235,7 @@ class Database:
                 leaf.abnormal = True
                 # So that dfs finds it also below a side it does not walk otherwise
                 node = leaf.parent
-                while node is not None and not getattr(node, 'abnormal_below', False):
+                while node is not None and not node.abnormal_below:
                     node.abnormal_below = True
                     node = node.parent
 

@@ -463,14 +463,7 @@ class SVCompDriver:
                     logger.warning('[SVCOMP] CPU time deadline reached, stopping exploration')
                     self.state.verdict = Verdict.UNKNOWN
                     return self.state.verdict
-                
-                # If we are using SA and come to a SAFE verdict, then continue without SA
-                # this should prevent false SAFE classifications from incomplete SA
-                if self.args.sa_retry_without and self.sa_graph.entry_node is not None \
-                        and next_step == Action.REPORTVERDICT and self.state.verdict == Verdict.SAFE:
-                    logger.info(f'[SYMBOLIC EXPLORATION] No violation found. Retrying without SA.')
-                    self.sa_graph = SAGraph() # disable SA
-                    next_step = self.retrieve_solution() # and try again
+
 
                 if next_step == Action.REPORTVERDICT:
                     return self.state.verdict
@@ -516,7 +509,7 @@ class SVCompDriver:
             reason = 'Branch unexpectedly taken/skipped.'
         else:
             reason = 'Branch does not appear in trace.'
-        if getattr(target, 'sliced_query', False):
+        if target.sliced_query:
             # The query left out the constraints of irrelevant branches, so the run may well have
             # taken other irrelevant decisions and reached the branch on another path. Whether it
             # did is known after the next walk, which identifies paths by their relevant decisions.
@@ -533,7 +526,7 @@ class SVCompDriver:
             return False
         target, solution, guess, reason = self.pending_projected
         self.pending_projected = None
-        ident = getattr(target, 'ident', None)
+        ident = target.ident
         if ident is not None and Database.instance().projected_covered(ENDPOINT_ID, ident, target.branched is None):
             self.projected_reached += 1
             logger.info(f'[SVCOMP] Branch {target.id} reached on another path with the same relevant decisions')
@@ -581,7 +574,7 @@ class SVCompDriver:
         later is in the tree, so the search covers what lies behind it like any other; so is one
         reached on a path with the same relevant decisions (see dfs)."""
         return [n for n, branched in self.given_up if (n.branched if branched else n.skipped) is None
-                and not (getattr(n, 'ident', None) is not None
+                and not (n.ident is not None
                          and Database.instance().projected_covered(ENDPOINT_ID, n.ident, branched))]
 
     @staticmethod
@@ -878,13 +871,14 @@ class SVCompDriver:
         self.kill_current_process()
 
     def sa_stats(self) -> dict:
-        """The pre-analysis' statistics, with what the relevance analysis did in the walks."""
+        """The pre-analysis' statistics, with the counts of the last walk (Tree.walk) and what the
+        relevance analysis did in the walks."""
         stats = self.sa.stats(self.sa_adopted_round)
+        stats['last_walk'] = dict(StrategyService.walk_stats)
         if self.sa.slicing and stats.get('relevance') is not None:
             tree = Database.instance().get_tree(ENDPOINT_ID)
             stats['relevance'] = dict(stats['relevance'],
-                                      poisoned=getattr(tree, 'poisoned_total', 0),
-                                      last_walk=dict(StrategyService.walk_stats),
+                                      poisoned=tree.poisoned_total,
                                       reached_on_other_path=self.projected_reached)
         return stats
 

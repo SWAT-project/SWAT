@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import List, Optional, Set, Union
 from data.trace.Branch import Branch
 from data.trace.Special import Special, UNMODELLED_EXCEPTION
@@ -24,7 +25,7 @@ class Tree:
         endpoint_id (any): An identifier for the endpoint associated with this tree.
     """
 
-    def __init__(self, endpoint_id: Union[str, int]):
+    def __init__(self, endpoint_id: Union[str, int, None] = None):
         """
         Initializes a new instance of the Tree class.
 
@@ -57,20 +58,24 @@ class Tree:
         # Loop-head state matching: for each state hash, the smallest position at which an
         # executed path reached it (see register_loop_states).
         self.loop_state_first: dict[str, tuple] = {}
-        # Branches the last dfs() left out because of a repeated loop-head state.
-        self.loop_state_pruned = 0
         # Relevance (see dfs): the interned sigs of sequences of relevant decisions, the sides the
-        # last walk found covered (explored, solved or infeasible) per (sig, branch key), whether
-        # and how often a walk made a sliced branch relevant again, and its other counts.
+        # last walk found covered (explored, solved or infeasible) per (sig, branch key), and how
+        # often a walk made a sliced branch relevant again (poisoned it).
         self.sig_ids: dict = {}
         self.covered: set = set()
-        self.poisoned_in_walk = False
         self.poisoned_total = 0
-        self.sliced_in_walk = 0
-        self.dedup_in_walk = 0
+        self.begin_walk()
         # The leaf the last added trace ended at, so that the run's end can be recorded on it
         self.last_leaf: Optional[Leaf] = None
 
+
+    def begin_walk(self):
+        """Resets the counts of the last dfs() walk (see dfs and DFS.describe_walk): its branches
+        by how they were paired with the SA graph, pruned sides, sliced and merged branches,
+        candidates covered by a path with the same relevant decisions, sliced branches it found
+        relevant (poisoned: then the caller walks again), desyncs, and subtrees left out below a
+        repeated loop-head state."""
+        self.walk: Counter = Counter()
 
     def record_inputs(self, inputs: List[Input]):
         """
@@ -208,9 +213,9 @@ class Tree:
                 node.constraint[element.trace_id] = element.constraint
                 # Merged only if every trace through it merged it (a summary the executor dropped
                 # leaves the constraint in force)
-                if not getattr(element, 'merged', False):
+                if not element.merged:
                     node.merged = False
-                elif getattr(element, 'merged_conditional', False):
+                elif element.merged_conditional:
                     node.merged_conditional = True
             if element.has_branched:
                 if node.branched is None and node.skipped is not None:
@@ -254,7 +259,7 @@ class Tree:
         for element in trace:
             if not isinstance(element, Branch):
                 continue
-            states = getattr(element, 'loop_states', ())
+            states = element.loop_states
             if states:
                 positioned = []
                 for state in states:

@@ -4,6 +4,10 @@ from data.trace.UF import UF
 GLOBAL_IID = -1
 
 class Leaf:
+    # Whether a run ended here with an uncaught exception (see dfs: it makes the sliced branches
+    # whose regions it ended in relevant). A class default, also for leaves built with __new__.
+    abnormal = False
+
     """
     Represents a leaf node in a tree structure. A leaf is a node that does not have any children.
     Each leaf node has a unique global ID, a reference to its parent, and a list of inputs associated with it.
@@ -32,7 +36,4 @@ class Leaf:
         self.gid = GLOBAL_IID
         self.id = -1
         GLOBAL_IID -= 1
-        # Whether a run ended here with an uncaught exception (see dfs: it makes the irrelevant
-        # branches whose regions it ended in relevant)
-        self.abnormal = False
 

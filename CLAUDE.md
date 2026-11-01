@@ -11,60 +11,79 @@ Dynamic symbolic execution for Java:
 
 The explorer can prune its search with a control-flow graph from the extractor in
 `../cfg-extraction`. That graph is loaded by `symbolic-explorer/data/StaticAnalysisGraph/SAGraph.py`
-and used in `strategy/DFS.py`.
+and walked in `strategy/DFS.py`; the module comments of both define the terms below.
 
-- **Lockstep walk:** `dfs` walks the execution tree and the SA graph together, pairing branch for
-  branch **by position**. If the two disagree on how many branches a path has, pruning uses the
-  wrong nodes and can produce false SAFE verdicts. Any change to what the executor reports as a
-  branch, including the transformers under `symbolic-executor/.../instrument/`, needs a matching
-  change in the extractor.
-- **Keys check the walk:** every trace branch carries a key (`owner.name(desc)|line|kind|ordinal`,
+**Terms** (used in the code, logs and stats):
+
+- **Target point** (`SANode.isTarget`): where the property may be violated, i.e. an assertion point
+  (valid-assert) or a site that may raise a RuntimeException (no-runtime-exception). Later targets
+  include shell calls and SQL statement building, so prefer changes that work for any kind.
+- **Interesting:** a target point is reachable, given the walk's call stack (`is_interesting`).
+  `dfs` prunes the sides of branches that are not.
+- **Pairing** (`DFS._pair`): how a tree branch was matched with a graph branch. **Verified** (key
+  and call stack checked), **resynced** (found again by key), **unverified** (followed, but a key
+  or a call site is missing to check it), **lost** (no graph node), **masked** (a branch the graph
+  has no node for: the walk holds its place). Only verified and resynced pairings prune or slice.
+- **Desync:** a key or call-stack mismatch: logged as `[DFS] SA desync`, recorded as `sa_desync`
+  (turns SAFE into UNKNOWN), and the walk is lost from there.
+- **Sliced / merged / decision** (`DFS._classify`): a sliced branch is irrelevant to the targets
+  (relevance, below), a merged one was merged by a loop summary; neither is flipped nor keeps its
+  constraint. **Poisoned:** a sliced branch that turned out relevant after all.
+
+**The walk:**
+
+- **Lockstep by position:** `dfs` walks the execution tree and the SA graph together, pairing
+  branch for branch. If the two disagree on how many branches a path has, pruning uses the wrong
+  nodes and can produce false SAFE verdicts. Any change to what the executor reports as a branch,
+  including the transformers under `symbolic-executor/.../instrument/`, needs a matching change in
+  the extractor. Concrete branches count too; filtering to symbolic branches happens after `dfs`.
+- **Keys check the pairing:** every trace branch carries a key (`owner.name(desc)|line|kind|ordinal`,
   `instrument/BranchKeys.java`, named in `InstructionMethodAdapter.nameInstruction`) and the frame
-  stack change since the previous branch (`ShadowContext.takeStackDelta`). `dfs` compares them with
-  the graph node's key and its own call stack (`SAGraph.check_branch`): a mismatch logs
-  `[DFS] SA desync`, stops the walk on that path and records `sa_desync`, which turns SAFE into
-  UNKNOWN. When the walk has no node, `SAGraph.resync` finds the next branch by key, with the call
-  stack rebuilt from the trace. The extractor computes the same keys; change both together.
+  stack change since the previous branch (`ShadowContext.takeStackDelta`). `SAGraph.check_branch`
+  compares them with the graph node's key and the walk's call stack; when the walk is lost,
+  `SAGraph.resync` finds the branch by key, with the call stack rebuilt from the trace. The
+  extractor computes the same keys; change both together.
+- **Losing the walk is safe:** a lost or unverified walk prunes and slices nothing. The walk is
+  lost at incomplete graph nodes, at call sites with several callees (exact dispatch to known
+  overrides: it resyncs inside whichever callee ran; the summaries take the union), and after an
+  exception the graph does not model (below).
+- **Masked branches:** branches in `<clinit>` (not in the graph), in application code that library
+  code calls back (flagged `callback` by the executor, `ShadowContext.inCallback`), in SWAT's own
+  helpers (the reference-comparison rewrite `UtilInstrumented.refEquals`, flagged like callbacks,
+  `ShadowContext.inSwatHelper`, since how many there are depends on runtime types), and choice
+  branches (the executor's search for the element a symbolic index selects).
+  `Verifier.nondetObject(type, factory)`, which the executor runs as `factory.createObject()`, is
+  expanded and keyed as that call by the extractor.
+- **Exceptions the graph does not model** (null dereferences, casts, library calls, Errors): the
+  extractor gives them pseudo types (`?Exception`, `?Error`) whose escapes SAGraph treats as
+  caught by any handler listed for them (`unknown_handlers`), so paths into such handlers stay
+  interesting. When one actually happens, the executor records an `UNMODELLED_EXCEPTION` marker,
+  which `Tree.structural` keeps as `Node.unmodelled_exception` on the next node; the walk is lost
+  there until it resyncs.
 - **Guards that cannot raise:** a phantom guard the extractor marks `cannotRaise` (the property
   pre-check proves its implicit exception cannot happen, cfg-extraction `RaiseSites`) gets a dead
   node as its exception side in `SAGraph.load_json_graph`, so that side is never interesting.
-- **Concrete branches count:** they are in the tree too. Filtering to symbolic branches happens
-  after `dfs`.
-- **Walker giving up is safe:** when `walk_till_branch` returns `None`, the walker has no
-  information, and `dfs` treats everything as interesting. That fallback is always safe.
-- **Call sites with several callees** (exact dispatch to known overrides): `walk_till_branch`
-  stops there, and the walk resyncs inside whichever callee ran; summaries take the union.
+- **Observability:** each selection logs one line, `[DFS] Walk: N branches: ... paired with the
+  graph (... by resync), ... unverified, ... lost, ... masked; ... sides pruned; ...`
+  (`DFS.describe_walk`), and `stats.json` has the same counts in `static_analysis.last_walk`. The
+  per-branch trace of the walk is at level `DFS.TRACE`, below DEBUG.
+
+**The graph and its targets:**
+
+- **Targets per property** (`StaticPreAnalysis.SA_TARGETS`): `assertionPointIds` under
+  valid-assert; under no-runtime-exception the sites that may raise a RuntimeException plus the
+  `uncaught[T]` nodes of RuntimeException types (`runtimeExceptionPointIds`, from the property
+  pre-check's value analysis, cfg-extraction `RaiseSites`). Incomplete nodes are target points too.
+  - **No-runtime-exception is opt-in in the harness** (`svcomp test run --sa-no-runtime-exception`;
+    the explorer prunes whenever it gets `--sa-path`). On the 736 tasks (300 s, 2026-10-24) it is
+    sound (no false SAFE) and cuts queries on the solved SAFE tasks by a third, but solves nothing
+    new: the pre-check already proves 426 tasks and the extractor costs 3 to 6 s per task.
 - **Library callbacks that may reach an assert** make the extractor count every library call as
   an assertion point; `--sa-no-callback-targets` (and `svcomp test run --sa-no-callback-targets`)
   turns that off, which is unsound. The extractor gets the target's classpath without Z3's jar
   (`StaticPreAnalysis._is_swat_library`): its classes would count as application code.
-- **`<clinit>` and callbacks are masked:** static initializers are not in the graph, and neither is
-  application code that library code calls back (the executor flags those branches `callback`,
-  see `ShadowContext.inCallback`), so the walk is frozen inside them.
-- **Targets per property:** pruning aims at the graph's target points for the property being
-  checked (`StaticPreAnalysis.SA_TARGETS`): assertion points (`assertionPointIds`) under
-  valid-assert, and under no-runtime-exception the sites that may raise a RuntimeException plus the
-  `uncaught[T]` nodes of RuntimeException types (`runtimeExceptionPointIds`, from the property
-  pre-check's value analysis, cfg-extraction `RaiseSites`). `SANode.isAssert` marks a target point
-  of either kind. Later targets include shell calls and SQL statement building, so prefer changes
-  that work for any kind of target point.
-  - **No-runtime-exception is opt-in in the harness** (`svcomp test run --sa-no-runtime-exception`;
-    the explorer prunes whenever it gets `--sa-path`). On the 736 tasks (300 s, 2026-10-24) it is
-    sound (no false SAFE) and cuts queries on the solved SAFE tasks by a third, but solves nothing
-    new: the pre-check already proves 426 tasks and the extractor costs 3 to 6 s per task. (Its
-    first run also lost 9 SAFE to desyncs, fixed since: see SWAT helpers below.)
-- **SWAT helpers and `nondetObject` in the walk:** branches taken inside SWAT's own helpers (the
-  reference-comparison rewrite `UtilInstrumented.refEquals`) are flagged like callbacks
-  (`ShadowContext.inSwatHelper`), since how many there are depends on runtime types; the graph has
-  none of them. `Verifier.nondetObject(type, factory)`, which the executor runs as
-  `factory.createObject()`, is expanded and keyed as that call by the extractor. Before these, 73 of
-  978 valid-assert tasks had an SA desync.
-- **Exceptions the graph does not model** (null dereferences, casts, library calls, Errors): the
-  extractor gives them pseudo types (`?Exception`, `?Error`) whose escapes SAGraph treats as
-  caught by any handler listed for them (`unknown_handlers`), so paths into such handlers stay
-  interesting. When one actually happens, the executor records an `UNMODELLED_EXCEPTION` special
-  event and `dfs` stops trusting the graph until it finds it again at a later branch by key
-  (resync, see below).
+- **Code outside main's call tree** (threads, shutdown hooks, executors: `SAGraph.async_entry_sites`)
+  makes the graph unusable: it is rejected and the run explores unpruned.
 - **SA runs before exploring by default:** in sv-comp mode exploration waits for
   `svcomp/StaticPreAnalysis.py`, so the graph is used from round 0 and runs are deterministic.
   `--parallel-sa` instead runs the extractor in a thread while exploration starts unpruned;
@@ -74,43 +93,45 @@ and used in `strategy/DFS.py`.
   stage is 0 and its duration is `static_pre_analysis_wall`; `run_info.json` in the run dir records
   the SA mode.
 
-- **Relevance (slicing)** (branch `niklas/relevance-slicing`, 2026-10-26; loop summarization is
-  built on top of it, see "Loop summarization" in swat-benchmarks/RESULTS.md; needs cfg-extraction
-  `v0.2.0` or later for the data-flow facts): a branch whose region cannot affect whether a target
-  is reached, nor any value a target or a relevant branch reads, is irrelevant. `dfs` does not flip
-  it, `collect_path_constrains` leaves its constraint out, and candidates are identified by the
-  sequence of relevant decisions before them, so paths that differ only in irrelevant decisions
-  count as one. Computed in `data/StaticAnalysisGraph/Relevance.py` from the extractor's per-node
-  data-flow facts; off with `--no-sa-slicing` (explorer and harness). Results and where it helps:
-  `swat-benchmarks/RESULTS.md`, section "Relevance (slicing)".
-  - **Poisoning:** each path carries the regions of its sliced branches; a branch inside one that
-    the graph cannot account for (masked, unverified, or relevant) or a run that ends there with an
-    uncaught exception (`Leaf.abnormal`, ancestors `abnormal_below`) makes those branches relevant
-    for good (`Node.poisoned`), and `select_branch` walks again.
-  - **Statements that may throw** to a local handler or a harmful escape are implicit branches in
-    the analysis: what they read becomes relevant with them (else a null receiver's origin gets
-    sliced: four sa-soundness false SAFEs before this).
-  - **Queries:** a sliced query's full query is solved first; the sliced one only decides where the
-    full one is UNSAT. A run of a sliced solution may reach its branch on another path with the
-    same relevant decisions: `check_projected_divergence` checks that after the next walk.
-  - **Known limitations** (fixes sketched in RESULTS.md, relevance "Open"): all library state is
-    one location `g:lib` (fix: type families, then allocation sites with an escape check), and the
-    slice is context-insensitive (fix: a "return value relevant / not" variant per method, chosen
-    per call site and looked up by the walk's stack).
+**Relevance (slicing)** (needs cfg-extraction `v0.2.0` or later for the data-flow facts): a branch
+whose region (up to its immediate post-dominator) cannot affect whether a target is reached, nor
+any value a target or a relevant branch reads, is irrelevant. `dfs` slices it: it is not flipped,
+`collect_path_constrains` leaves its constraint out, and candidates are identified by the sequence
+of relevant decisions before them (their sig), so paths that differ only in irrelevant decisions
+count as one. Computed in `data/StaticAnalysisGraph/Relevance.py` from the extractor's per-node
+data-flow facts; off with `--no-sa-slicing` (explorer and harness). Results and where it helps:
+`swat-benchmarks/RESULTS.md`, section "Relevance (slicing)".
 
-- **Loop summaries** (executor `symbolic/summary`, 2026-10-26): diamonds (an int `if` whose sides
-  are straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting
-  loops (`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged
-  `merged` and the explorer treats them like sliced ones. A counting loop whose body does other
-  things too (calls, heap) is flagged `mergedConditional`, honored only if `Relevance.summary_ok`
-  (the loop changes nothing relevant but its locals); its branches are flagged only when it leaves
-  through its head (`BackEdge` plans tell iterations from re-entries). `TaintCheck` drops a summary whose merged values could reach a call, a heap or
-  array store, an array index or size, or a return, since a dropped constraint must not be needed
-  where the executor concretizes (13 false SAFE before, via `Verifier.assume`). Ignoring a
-  `merged` flag is always sound. Config `loopSummaries` (on in `sv-comp.cfg`),
-  `--no-loop-summaries`. Results, limits, next steps: swat-benchmarks/RESULTS.md, "Loop
-  summarization". Pre-pass tests: `./gradlew :symbolic-executor:test --tests
-  'de.uzl.its.swat.symbolic.summary.*'`.
+- **Poisoning:** each path carries the regions of its sliced branches; a branch inside one that
+  the graph cannot account for (masked, unverified, lost, or relevant) or a run that ends there
+  with an uncaught exception (`Leaf.abnormal`, ancestors `abnormal_below`) poisons those branches
+  (`Node.poisoned`: relevant for good), and `select_branch` walks again.
+- **Statements that may throw** to a local handler or a harmful escape are implicit branches in
+  the analysis: what they read becomes relevant with them (else a null receiver's origin gets
+  sliced: four sa-soundness false SAFEs before this).
+- **Queries:** a sliced query's full query is solved first; the sliced one only decides where the
+  full one is UNSAT. A run of a sliced solution may reach its branch on another path with the
+  same relevant decisions: `check_projected_divergence` checks that after the next walk.
+- **Known limitations** (fixes sketched in RESULTS.md, relevance "Open"): all library state is
+  one location `g:lib` (fix: type families, then allocation sites with an escape check), and the
+  slice is context-insensitive (fix: a "return value relevant / not" variant per method, chosen
+  per call site and looked up by the walk's stack).
+
+**Loop summaries** (executor `symbolic/summary`): diamonds (an int `if` whose sides are
+straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting loops
+(`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged `merged` and
+`dfs` treats them as no decision, like sliced ones. A counting loop whose body does other things
+too (calls, heap) is flagged `mergedConditional`, honored only if `Relevance.summary_ok` (the loop
+changes nothing relevant but its locals), and then it opens a region like a sliced branch; its
+branches are flagged only when it leaves through its head (`BackEdge` plans tell iterations from
+re-entries). `TaintCheck` drops a summary whose merged values could reach a call, a heap or array
+store, an array index or size, or a return, since a dropped constraint must not be needed where the
+executor concretizes (13 false SAFE before, via `Verifier.assume`). Ignoring a `merged` flag is
+always sound. Config `loopSummaries` (on in `sv-comp.cfg`), `--no-loop-summaries`. Results, limits,
+next steps: swat-benchmarks/RESULTS.md, "Loop summarization". Pre-pass tests: `./gradlew
+:symbolic-executor:test --tests 'de.uzl.its.swat.symbolic.summary.*'`.
+
+**Other exploration features:**
 
 - **Small models**: a solution with an integral input beyond 65536 is re-solved with the inputs
   bounded first (`SVCompDriver.prefer_small`, `--no-prefer-small-models`); a loop bound of 2^30
@@ -130,7 +151,8 @@ python3 tests/check_marking_on_graphs.py <graph.json>...   # checks marking agai
 ```
 
 `dfs` only descends into real `data.BinaryExecutionTree.Node` instances. In tests, build them with
-`Node.__new__(Node)` and set the fields directly. `pytest` is not installed; use `unittest`.
+`Node.__new__(Node)` and set the fields directly (the per-node flags have class defaults). `pytest`
+is not installed; use `unittest`.
 
 ## Decoding executor iids
 

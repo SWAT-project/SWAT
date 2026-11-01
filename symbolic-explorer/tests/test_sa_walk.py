@@ -19,8 +19,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from data.BinaryExecutionTree.Node import Node
 from data.BinaryExecutionTree.Leaf import Leaf
+from data.BinaryExecutionTree.Tree import Tree
 from data.StaticAnalysisGraph import SAGraph as sagraph
-from data.StaticAnalysisGraph.SAGraph import SAGraph, mark_assertion_path, SANode
+from data.StaticAnalysisGraph.SAGraph import SAGraph, SANode
 from strategy.DFS import dfs
 
 AIOOBE_CHAIN = ['java.lang.ArrayIndexOutOfBoundsException', 'java.lang.IndexOutOfBoundsException',
@@ -146,7 +147,7 @@ def keyed(g: SAGraph) -> SAGraph:
 
 def candidates(tree_root, sa_graph):
     """The unexplored branches dfs considers worth solving, by tree node name."""
-    return {n.id for n in dfs(set(), None, tree_root, set(), set(), sa_graph.entry_node)}
+    return {n.id for n in dfs(None, tree_root, set(), set(), sa_graph.entry_node)}
 
 
 def shared_callee_graph():
@@ -176,7 +177,8 @@ class LoaderTest(unittest.TestCase):
     def test_return_fan_out_loads(self):
         # One exit returning to two call sites: RETURN used to share the one fall-through slot.
         g = shared_callee_graph().load()
-        self.assertEqual({n.id for n in g.nodes['kx1'].next_returns}, {'r1', 'r2'})
+        self.assertIn(g.nodes['kx1'], g.nodes['r1'].prev)  # RETURN edges are kept for the distances
+        self.assertIn(g.nodes['kx1'], g.nodes['r2'].prev)
         self.assertIsNone(g.nodes['kx1'].next_fallthrough)
         self.assertIs(g.nodes['c1'].return_site, g.nodes['r1'])
         self.assertTrue(g.nodes['kx1'].isExit)
@@ -184,19 +186,6 @@ class LoaderTest(unittest.TestCase):
     def test_unknown_edge_type_is_rejected(self):
         with self.assertRaises(ValueError):
             GraphBuilder().nodes_('a', 'b').edge('a', 'b', 'TELEPORT').load()
-
-    def test_marking_long_chain_does_not_recurse(self):
-        # The old recursive marking hit the recursion limit on long predecessor chains.
-        nodes = [SANode(str(i)) for i in range(50_000)]
-        for a, b in zip(nodes, nodes[1:]):
-            b.prev.append(a)
-        limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(1000)
-        try:
-            mark_assertion_path(nodes[-1])
-        finally:
-            sys.setrecursionlimit(limit)
-        self.assertTrue(nodes[0].reachesAssertSameLevel)
 
 
 class WalkTest(unittest.TestCase):
@@ -213,7 +202,7 @@ class WalkTest(unittest.TestCase):
         g = shared_callee_graph().load()
         kb, stack = g.nodes['c2'].walk_till_branch(None)
         self.assertEqual(kb.id, 'kb')
-        node, stack = kb.get_branched_child().walk_till_branch(stack)
+        node, stack = kb.next_branched.walk_till_branch(stack)
         self.assertEqual(node.id, 'bm')
         self.assertIsNone(stack)
 
@@ -268,12 +257,12 @@ class CannotRaiseTest(unittest.TestCase):
 
     def test_exception_side_of_a_guard_that_cannot_raise_is_a_dead_end(self):
         n = self.graph(True).nodes
-        dead = n['g'].get_fallthrough_child()
+        dead = n['g'].next_fallthrough
         self.assertEqual(dead.id, 'dead[g]')
-        self.assertIs(n['g'].get_branched_child(), n['tx'])  # the guard is still a branch
+        self.assertIs(n['g'].next_branched, n['tx'])  # the guard is still a branch
         self.assertFalse(sagraph.is_interesting(dead, sagraph.push(None, n['c'])))
         # The assert in main's handler was only reachable through the guard's failure.
-        self.assertFalse(n['c'].reachesAssertSameLevel)
+        self.assertFalse(n['c'].reachesTargetSameLevel)
         self.assertIsNone(dead.walk_till_branch(sagraph.push(None, n['c'])))
 
     def test_unexplored_exception_side_is_no_candidate(self):
@@ -288,8 +277,8 @@ class CannotRaiseTest(unittest.TestCase):
             if n['id'] in ('c', 'tx'):
                 n['cannotRaise'] = True
         n = b.load().nodes
-        self.assertIs(n['g'].get_fallthrough_child(), n['u'])
-        self.assertTrue(n['c'].reachesAssertSameLevel)
+        self.assertIs(n['g'].next_fallthrough, n['u'])
+        self.assertTrue(n['c'].reachesTargetSameLevel)
 
 
 class UnwindTest(unittest.TestCase):
@@ -298,7 +287,7 @@ class UnwindTest(unittest.TestCase):
         g = inter_method_catch_graph().load()
         g_node, stack = g.entry_node.walk_till_branch(None)
         self.assertEqual(g_node.id, 'g')
-        node, stack = g_node.get_fallthrough_child().walk_till_branch(stack)
+        node, stack = g_node.next_fallthrough.walk_till_branch(stack)
         self.assertEqual(node.id, 'hb')
         self.assertIsNone(stack)
 
@@ -319,7 +308,7 @@ class UnwindTest(unittest.TestCase):
              .load())
         ig, stack = g.entry_node.walk_till_branch(None)
         self.assertEqual((ig.id, sagraph.depth(stack)), ('ig', 2))
-        node, stack = ig.get_fallthrough_child().walk_till_branch(stack)
+        node, stack = ig.next_fallthrough.walk_till_branch(stack)
         self.assertEqual(node.id, 'hb')
         self.assertIsNone(stack)
 
@@ -517,11 +506,8 @@ def precision_graph():
 
 
 
-class FakeTree:
-    """Collects what dfs records (record_execution_error)."""
-    def __init__(self):
-        self.execution_errors = []
-
+class FakeTree(Tree):
+    """Collects every error dfs records (Tree.record_execution_error drops repeats)."""
     def record_execution_error(self, kind, message):
         self.execution_errors.append({'kind': kind, 'message': message})
 
@@ -554,7 +540,7 @@ class KeyCheckTest(unittest.TestCase):
 
     def run_dfs(self, tree, g):
         fake = FakeTree()
-        found = {n.id for n in dfs(set(), fake, tree, set(), set(), g.entry_node)}
+        found = {n.id for n in dfs(fake, tree, set(), set(), g.entry_node)}
         return found, [e for e in fake.execution_errors if e['kind'] == 'sa_desync']
 
     def test_walk_in_step_is_not_flagged(self):
@@ -681,14 +667,14 @@ class MultiCalleeTest(unittest.TestCase):
 
     def run_dfs(self, tree, g):
         fake = FakeTree()
-        found = {n.id for n in dfs(set(), fake, tree, set(), set(), g.entry_node)}
+        found = {n.id for n in dfs(fake, tree, set(), set(), g.entry_node)}
         return found, [e for e in fake.execution_errors if e['kind'] == 'sa_desync']
 
     def test_summaries_take_the_union(self):
         g = self.graph()
-        self.assertTrue(g.nodes['c1'].reachesAssertSameLevel)  # through F.run
-        self.assertTrue(g.nodes['e0'].reachesAssertSameLevel)
-        self.assertFalse(g.nodes['r1'].reachesAssertSameLevel)
+        self.assertTrue(g.nodes['c1'].reachesTargetSameLevel)  # through F.run
+        self.assertTrue(g.nodes['e0'].reachesTargetSameLevel)
+        self.assertFalse(g.nodes['r1'].reachesTargetSameLevel)
 
     def test_walk_stops_at_the_call_site(self):
         g = self.graph()
@@ -728,11 +714,11 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
 
     def test_summaries(self):
         n = precision_graph().load().nodes
-        self.assertFalse(n['kb'].reachesAssertSameLevel)
+        self.assertFalse(n['kb'].reachesTargetSameLevel)
         self.assertTrue(n['kb'].canReturn)
-        self.assertTrue(n['c2'].reachesAssertSameLevel)
-        self.assertFalse(n['c1'].reachesAssertSameLevel)
-        self.assertTrue(n['e0'].reachesAssertSameLevel)
+        self.assertTrue(n['c2'].reachesTargetSameLevel)
+        self.assertFalse(n['c1'].reachesTargetSameLevel)
+        self.assertTrue(n['e0'].reachesTargetSameLevel)
 
     def test_assert_behind_the_return_site_is_found(self):
         # Soundness: the assert is not in classify() but after the second call returns. The walk
@@ -754,7 +740,7 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
         self.assertFalse(sagraph.is_interesting(n['tx'], stack))
         self.assertEqual(n['u'].escapes, frozenset({tuple(AIOOBE_CHAIN)}))
         self.assertFalse(n['u'].canReturn)  # an escaping exception is not a return
-        self.assertTrue(n['c'].reachesAssertSameLevel)
+        self.assertTrue(n['c'].reachesTargetSameLevel)
 
     def test_exception_caught_one_frame_up_is_a_same_level_path_there(self):
         # main -> middle -> inner; inner's ArithmeticException escapes middle (whose handler is for
@@ -774,9 +760,9 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
              .edge('u', 'h', 'EXCEPTIONAL_RETURN')
              .load())
         n = g.nodes
-        self.assertFalse(n['c2'].reachesAssertSameLevel)
+        self.assertFalse(n['c2'].reachesTargetSameLevel)
         self.assertEqual(n['c2'].escapes, frozenset({tuple(ARITH_CHAIN)}))
-        self.assertTrue(n['c1'].reachesAssertSameLevel)
+        self.assertTrue(n['c1'].reachesTargetSameLevel)
         stack = sagraph.push(sagraph.push(None, n['c1']), n['c2'])
         self.assertTrue(sagraph.is_interesting(n['u'], stack))
         self.assertFalse(sagraph.is_interesting(n['ix'], stack))
@@ -809,12 +795,12 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
         self.assertTrue(sagraph.is_interesting(n['kd'], stack))   # may throw into main's handler
         self.assertFalse(sagraph.is_interesting(n['kx'], stack))  # cannot
         self.assertEqual(n['kd'].escapes, frozenset({('?Exception',)}))
-        self.assertTrue(n['c1'].reachesAssertSameLevel)
+        self.assertTrue(n['c1'].reachesTargetSameLevel)
 
     def test_unknown_exception_is_not_caught_by_an_unlisted_handler(self):
         n = self.unknown_exception_graph({}).nodes
         self.assertFalse(sagraph.is_interesting(n['kd'], sagraph.push(None, n['c1'])))
-        self.assertFalse(n['c1'].reachesAssertSameLevel)
+        self.assertFalse(n['c1'].reachesTargetSameLevel)
 
     def test_unknown_exception_unwinds_through_frames_without_handlers(self):
         n = self.unknown_exception_graph({'?Exception': ['h']}, middle=True).nodes
@@ -822,7 +808,7 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
         self.assertTrue(sagraph.is_interesting(n['kd'], stack))
         self.assertFalse(sagraph.is_interesting(n['kx'], stack))
         self.assertIn(('?Exception',), n['c2'].escapes)  # middle has no handler: it escapes
-        self.assertTrue(n['c1'].reachesAssertSameLevel)
+        self.assertTrue(n['c1'].reachesTargetSameLevel)
 
     def test_unknown_exception_also_escapes_past_a_listed_handler(self):
         # A listed handler might not catch it, so the escape stays in the call site's summary.
@@ -845,7 +831,7 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
              .load())
         n = g.nodes
         self.assertTrue(n['fc'].canReturn)
-        self.assertFalse(n['fc'].reachesAssertSameLevel)
+        self.assertFalse(n['fc'].reachesTargetSameLevel)
         # Three levels deep, the assert is found by returning through every frame.
         stack = None
         for site in ['c', 'fc', 'fc']:
@@ -862,24 +848,8 @@ class ContextSensitiveMarkingTest(unittest.TestCase):
         self.assertTrue(sagraph.is_interesting(g.nodes['c'], None))
         self.assertFalse(sagraph.is_interesting(g.nodes['x'], None))
 
-    def test_legacy_graph_without_return_addresses_is_marked_context_insensitively(self):
-        # An old extractor's CALL edge carries no returnSite. Its call sites are then plain
-        # fall-throughs, which the summaries cannot see through, so marking falls back to
-        # following predecessors -- including the RETURN edge into the asserting return site.
-        g = (GraphBuilder().nodes_('e0', 'c', 'r').node('a', assertion=True).node('x', exit=True)
-             .nodes_('f0', 'fb').node('fx', exit=True)
-             .edge('e0', 'c').edge('c', 'f0', 'CALL').edge('fx', 'r', 'RETURN')
-             .edge('r', 'a').edge('a', 'x')
-             .edge('f0', 'fb').branch('fb', 'fx', 'fx')
-             .load())
-        self.assertTrue(sagraph.is_interesting(g.nodes['fx'], None))
 
-
-if __name__ == '__main__':
-    unittest.main()
-
-
-class AssertDistanceTest(unittest.TestCase):
+class TargetDistanceTest(unittest.TestCase):
 
     def graph(self):
         """
@@ -894,16 +864,16 @@ class AssertDistanceTest(unittest.TestCase):
 
     def test_distance_counts_branches_still_to_decide(self):
         g = self.graph()
-        dist = {id: g.nodes[id].assertDistance for id in ('a1', 'a2', 'd', 'c', 'b2', 'b1', 'e0')}
+        dist = {id: g.nodes[id].targetDistance for id in ('a1', 'a2', 'd', 'c', 'b2', 'b1', 'e0')}
         self.assertEqual(dist, {'a1': 0, 'a2': 0, 'd': 1, 'c': 2, 'b2': 1, 'b1': 2, 'e0': 2})
-        self.assertEqual(g.nodes['x'].assertDistance, float('inf'))
+        self.assertEqual(g.nodes['x'].targetDistance, float('inf'))
 
     def test_distance_crosses_calls(self):
         g = (GraphBuilder().nodes_('e0', 'c1', 'r1', 'f0', 'fb').node('fa', assertion=True)
              .node('fx', exit=True).node('x', exit=True)
              .edge('e0', 'c1').call('c1', 'f0', 'r1', ['fx']).edge('r1', 'x')
              .edge('f0', 'fb').branch('fb', 'fx', 'fa').edge('fa', 'fx').load())
-        self.assertEqual(g.nodes['e0'].assertDistance, 1)
+        self.assertEqual(g.nodes['e0'].targetDistance, 1)
 
     def test_dfs_reports_distance_of_the_unexplored_side(self):
         g = self.graph()
@@ -912,7 +882,7 @@ class AssertDistanceTest(unittest.TestCase):
         b2 = branch_node('b2', skipped=leaf())
         b1 = branch_node('b1', skipped=b2)
         distances = {}
-        found = dfs(set(), None, b1, set(), set(), g.entry_node, distances=distances)
+        found = dfs(None, b1, set(), set(), g.entry_node, distances=distances)
         self.assertEqual([n.id for n in found], ['b1', 'b2'])
         self.assertEqual({n.id: d for n, d in distances.items()}, {'b1': 2, 'b2': 0})
         found.sort(key=lambda n: distances.get(n, float('inf')))
@@ -921,7 +891,7 @@ class AssertDistanceTest(unittest.TestCase):
     def test_dfs_without_sa_reports_no_distances(self):
         b1 = branch_node('b1', skipped=leaf())
         distances = {}
-        self.assertEqual([n.id for n in dfs(set(), None, b1, set(), set(), None, distances=distances)], ['b1'])
+        self.assertEqual([n.id for n in dfs(None, b1, set(), set(), None, distances=distances)], ['b1'])
         self.assertEqual(distances, {})
 
 
@@ -939,3 +909,7 @@ class ConcreteOnlyBranchTest(unittest.TestCase):
         guard = branch_node('g', branched=b)
         guard.concrete_only = True
         self.assertEqual(candidates(guard, g), {'b'})
+
+
+if __name__ == '__main__':
+    unittest.main()

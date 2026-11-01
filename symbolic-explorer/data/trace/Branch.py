@@ -46,6 +46,8 @@ class Branch:
         self.merged_conditional = merged_conditional
         # The loop-head states reached since the previous branch (see Tree.register_loop_states).
         self.loop_states = loop_states
+        # The same with their positions, set by Tree.register_loop_states.
+        self.positioned_loop_states = ()
         
     def __str__(self):
         return f'[(B) - {self.id} - ({"T" if self.has_branched else "F"})]'

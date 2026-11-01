@@ -31,8 +31,9 @@ region on some path, or when a path ends abnormally inside it.
 """
 from __future__ import annotations
 
-from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+from data.StaticAnalysisGraph.SAGraph import is_pseudo
 
 ANY = "*"
 
@@ -73,10 +74,10 @@ class RelevanceStats:
 
 
 class Relevance:
-    """Computes SANode.irrelevant (and SANode.region) for every branch of a loaded graph."""
+    """Computes SANode.irrelevant, summary_ok and region for every branch of a loaded graph."""
 
-    def __init__(self, nodes, harmful_handler_ok=None):
-        self.nodes = [n for n in nodes]
+    def __init__(self, nodes):
+        self.nodes = list(nodes)
         self.stats = RelevanceStats()
         self.by_method: dict[str, list] = {}
         for n in self.nodes:
@@ -107,14 +108,12 @@ class Relevance:
         for chain in chains:
             found = set()
             for cs in self.call_sites:
-                if chain[0].startswith("?"):
+                if is_pseudo(chain):
                     found.update(cs.unknown_handlers.get(chain[0], []))
                 else:
-                    for t in chain:
-                        h = cs.handlers.get(t)
-                        if h is not None:
-                            found.add(h)
-                            break
+                    h = cs.handler_for(chain)
+                    if h is not None:
+                        found.add(h)
             handlers[chain] = found
         harmful = set()
         changed = True
@@ -124,15 +123,12 @@ class Relevance:
                 if chain in harmful:
                     continue
                 for h in hs:
-                    if (h.reachesAssertSameLevel or h.canReturn or self._method_terminates.get(h.method, True)
+                    if (h.reachesTargetSameLevel or h.canReturn or self._method_terminates.get(h.method, True)
                             or any(c in harmful for c in h.escapes)):
                         harmful.add(chain)
                         changed = True
                         break
         self.harmful = harmful
-
-    def _is_harmful(self, chain) -> bool:
-        return chain in self.harmful
 
     # --- the per-method control-flow graph ----------------------------------------------------
 
@@ -144,15 +140,15 @@ class Relevance:
                 succ.append(n.return_site)
             for e in callees:
                 for chain in e.escapes:
-                    if chain[0].startswith("?"):
+                    if is_pseudo(chain):
                         succ.extend(n.unknown_handlers.get(chain[0], []))
-                        if self._is_harmful(chain):
+                        if chain in self.harmful:
                             succ.append(EXIT_EXC)
                         continue
-                    handler = next((n.handlers[t] for t in chain if t in n.handlers), None)
+                    handler = n.handler_for(chain)
                     if handler is not None:
                         succ.append(handler)
-                    elif self._is_harmful(chain):
+                    elif chain in self.harmful:
                         succ.append(EXIT_EXC)
             succ.extend(n.next_exceptional)
             return succ
@@ -163,7 +159,7 @@ class Relevance:
         succ.extend(n.next_exceptional)
         if n.isExit:
             succ.append(EXIT)
-        if n.exceptionChain is not None and self._is_harmful(n.exceptionChain):
+        if n.exceptionChain is not None and n.exceptionChain in self.harmful:
             succ.append(EXIT_EXC)
         return succ
 
@@ -300,7 +296,6 @@ class Relevance:
         # reads become relevant when it is. They are no tree branches: nothing flips them.
         throwers = []
         for m, method_nodes in self.by_method.items():
-            ipdom, succ = None, None
             mbranches = [n for n in method_nodes if n.is_branch()]
             if not mbranches and not any(n.next_exceptional or n.is_call_site() or n.exceptionChain
                                          for n in method_nodes):
@@ -335,7 +330,7 @@ class Relevance:
                 for x in region_nodes:
                     for written, _ in x.dataflow:
                         writes |= self.scoped(m, written)
-                    if x.isAssert or x.isIncomplete:
+                    if x.isTarget or x.isIncomplete:
                         reaches_target = True
                     if x.terminates:
                         term = True
@@ -345,7 +340,7 @@ class Relevance:
                         for e in x.callees:
                             cmethods.add(e.method)
                             writes |= global_writes.get(e.method, set())
-                            if e.reachesAssertSameLevel:
+                            if e.reachesTargetSameLevel:
                                 reaches_target = True
                             if terminates.get(e.method):
                                 term = True
@@ -375,7 +370,7 @@ class Relevance:
                 add(star_reads)  # a write to anything may write a relevant location
 
         for n in nodes:
-            if n.isAssert or n.isIncomplete:
+            if n.isTarget or n.isIncomplete:
                 for _, read in n.dataflow:
                     add(self.scoped(n.method, read))
                 add(self.scoped(n.method, n.control))
@@ -408,19 +403,24 @@ class Relevance:
         for m, cs in callees_of.items():
             for c in cs:
                 callers_of.setdefault(c, set()).add(m)
+
+        def methods_running(relevant) -> set:
+            """The methods that run a relevant branch, callees included."""
+            methods = {b.method for b in relevant if b.is_branch()}
+            work = list(methods)
+            while work:
+                c = work.pop()
+                for m in callers_of.get(c, ()):
+                    if m not in methods:
+                        methods.add(m)
+                        work.append(m)
+            return methods
+
         changed = True
         while changed and not everything:
             self.stats.iterations += 1
             changed = False
-            # Methods that run a relevant branch, callees included.
-            relevant_methods = {b.method for b in relevant if b.is_branch()}
-            work = list(relevant_methods)
-            while work:
-                c = work.pop()
-                for m in callers_of.get(c, ()):
-                    if m not in relevant_methods:
-                        relevant_methods.add(m)
-                        work.append(m)
+            relevant_methods = methods_running(relevant)
             for b in candidates:
                 if b in relevant:
                     continue
@@ -439,14 +439,7 @@ class Relevance:
         # Branches whose regions change nothing relevant but locals of their own method: a loop head
         # whose loop the executor summarized (closed forms of its locals) while its body also does
         # other things, which must not matter (see dfs and the executor's LoopSummaries).
-        relevant_methods = {b.method for b in relevant if b.is_branch()}
-        work = list(relevant_methods)
-        while work:
-            c = work.pop()
-            for m in callers_of.get(c, ()):
-                if m not in relevant_methods:
-                    relevant_methods.add(m)
-                    work.append(m)
+        relevant_methods = methods_running(relevant)
 
         for b in branches:
             irrelevant = not everything and b not in relevant and b in regions

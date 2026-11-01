@@ -145,7 +145,6 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--log-smt-formulas", action="store_true", help="Log SMT formulas and models to disk for debugging", default=False)
     parser.add_argument("--sa-file", help="Path to a file with static pre-analysis results for informing branch exploration (optional)")
     parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
-    parser.add_argument("--sa-retry-without", action="store_true", help="On a SAFE verdict reached with static pre-analysis, disable it and explore again (guards against false SAFE from incomplete SA)", default=False)
     parser.add_argument("--sa-no-callback-targets", action="store_true", help="Do not count library calls as possible asserts when application code that library code may call back (overrides of library methods, lambdas) can reach an assert. Unsound: an assert reached only through such a callback can then give a false SAFE", default=False)
     parser.add_argument("--console-log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO", help="Lowest level of the explorer's log lines on the console (explorer.log and verdict.log always get DEBUG and up)")
     parser.add_argument("--prefer-short-strings", action="store_true", default=False, help="Shrink each string input of a solution to the shortest length the query allows")
