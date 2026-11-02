@@ -39,6 +39,14 @@ every pair the assert is `if (x > 1000 && x < HI) assert false;` with HI = 10000
 1001 (SAFE), and it is only reached after flipping an input-dependent branch that the risky
 construct sits on. Each task's comment says what it tests.
 
+`relevance` and `relevance-soundness` (`scripts/relevance.py`): tasks for the relevance analysis
+(slicing). `relevance` has the design example verbatim (`example`, `example-long`) and families over
+the loop length n in {10, 100, 1000} whose input-dependent branches cannot affect the assert;
+`relevance-soundness` has SAFE/VIOLATION pairs where a wrong slice would hide a violation (writes
+through fields, arrays, aliases, callees, library objects, callbacks, static initializers; input
+reads; `assume`/`exit` and crashes inside a region; exceptions caught elsewhere). Some of them end
+the all-zero run early on purpose (`check_labels.py` accepts that).
+
 `loop-state`: hand-written VIOLATION tasks against loop-head state matching, each a case where a
 match would hide a violation: an `Object[]` whose length is symbolic (also under
 `no-runtime-exception`, and with an unbounded loop), state held by the JDK (a System property, the

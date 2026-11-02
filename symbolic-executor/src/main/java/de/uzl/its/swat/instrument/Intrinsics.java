@@ -13,6 +13,7 @@ import de.uzl.its.swat.common.exceptions.ThreadAlreadyDisabledException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.solver.LocalSolver;
+import de.uzl.its.swat.common.Profile;
 import de.uzl.its.swat.symbolic.dispatcher.SymbolicInstructionDispatcher;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
@@ -24,6 +25,7 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.thread.ThreadHandler;
+import de.uzl.its.swat.witness.Witness;
 import lombok.Getter;
 import lombok.Setter;
 import org.objectweb.asm.Type;
@@ -113,6 +115,7 @@ public class Intrinsics {
     }
 
     private static void startExecution(String endpoint) throws Exception {
+        Profile.mark("exec.start");
         int endpointID;
         if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
             endpointID = 0;
@@ -120,6 +123,7 @@ public class Intrinsics {
             endpointID = endpoint.hashCode();
         }
         ThreadHandler.addThreadContext(currentThread().getId(), endpoint, endpointID);
+        Profile.mark("exec.context");
 
         logger.info(
                 new PrintBox(
@@ -149,7 +153,17 @@ public class Intrinsics {
      * Finishes symbolic tracking and initializes constrain transfer to coordinator. Method call
      * added during instrumentation.
      */
+    /**
+     * Marks the start of code SWAT inlined into a target method. Only the symbolic side acts on it
+     * (InternalInvocation, ShadowContext.enterInlinedSwatCode).
+     */
+    public static void enterInlinedSwatCode() {}
+
+    /** Marks the end of code SWAT inlined into a target method, see {@link #enterInlinedSwatCode}. */
+    public static void leaveInlinedSwatCode() {}
+
     public static void terminate() {
+        Profile.mark("terminate.start");
         try {
             if (ThreadHandler.leaveNestedEndpoint(currentThread().getId())) {
                 logger.info("Leaving nested endpoint (Thread: {})", currentThread().getId());
@@ -202,8 +216,12 @@ public class Intrinsics {
             // which takes minutes after a long trace.
             if (!config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
                 ThreadHandler.removeSolverContext(currentThread().getId());
+                // A long-running target (an HTTP endpoint) executes many times in one JVM: the
+                // witness data (the violation) belongs to the trace just sent, not to the next.
+                Witness.reset();
             }
             ThreadHandler.removeThreadContext(currentThread().getId());
+            Profile.mark("terminate.end");
         } catch (NoThreadContextException | ThreadAlreadyDisabledException e) {
             logger.warn(e.toString());
             logger.warn(

@@ -375,6 +375,8 @@ public interface InstructionProcessor {
 
     void LOOP_HEAD(long iid, String head, Object[] locals);
 
+    void SUMMARY_JOIN(long iid, int join);
+
     void LOOP_END(long iid);
 
     void SPECIAL(long iid, int i);

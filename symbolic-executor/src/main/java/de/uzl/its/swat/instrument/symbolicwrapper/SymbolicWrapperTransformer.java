@@ -71,13 +71,13 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             throws IllegalClassFormatException {
         try {
         if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) {
-            return cbuf;
+            return null;
         }
 
         switch (config.getInstrumentationTransformer()) {
             case SPRING_ENDPOINT -> {
                 if (!SpringEndpointTransformer.getInstrumentedClasses().contains(cname)) {
-                    return cbuf;
+                    return null;
                 }
             }
             case WEB_SERVLET -> new ErrorHandler()
@@ -89,11 +89,11 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             case ANNOTATION -> {
                 if (!cname.equals(config.getInstrumentationAnnotationSymbolicClassName()) &&
                         config.getInstrumentationAnnotationSymbolicClassName() != null)
-                    return cbuf;
+                    return null;
             }
             case PARAMETER -> {
                 if (!Util.isSymbolicClass(cname))
-                    return cbuf;
+                    return null;
             }
         }
 
@@ -121,6 +121,6 @@ public class SymbolicWrapperTransformer implements ClassFileTransformer {
             new ErrorHandler().handleException("Error while instrumenting class: " + cname, t);
         }
 
-        return cbuf;
+        return null;
     }
 }

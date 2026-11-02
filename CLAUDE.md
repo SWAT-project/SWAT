@@ -25,6 +25,9 @@ and used in `strategy/DFS.py`.
   `[DFS] SA desync`, stops the walk on that path and records `sa_desync`, which turns SAFE into
   UNKNOWN. When the walk has no node, `SAGraph.resync` finds the next branch by key, with the call
   stack rebuilt from the trace. The extractor computes the same keys; change both together.
+- **Guards that cannot raise:** a phantom guard the extractor marks `cannotRaise` (the property
+  pre-check proves its implicit exception cannot happen, cfg-extraction `RaiseSites`) gets a dead
+  node as its exception side in `SAGraph.load_json_graph`, so that side is never interesting.
 - **Concrete branches count:** they are in the tree too. Filtering to symbolic branches happens
   after `dfs`.
 - **Walker giving up is safe:** when `walk_till_branch` returns `None`, the walker has no
@@ -38,9 +41,24 @@ and used in `strategy/DFS.py`.
 - **`<clinit>` and callbacks are masked:** static initializers are not in the graph, and neither is
   application code that library code calls back (the executor flags those branches `callback`,
   see `ShadowContext.inCallback`), so the walk is frozen inside them.
-- **Asserts are only the first target:** pruning aims at assertion points for now because they
-  are easy to test (SV-COMP's valid-assert). Later targets include shell calls, SQL statement
-  building and uncaught exceptions, so prefer changes that work for any kind of target point.
+- **Targets per property:** pruning aims at the graph's target points for the property being
+  checked (`StaticPreAnalysis.SA_TARGETS`): assertion points (`assertionPointIds`) under
+  valid-assert, and under no-runtime-exception the sites that may raise a RuntimeException plus the
+  `uncaught[T]` nodes of RuntimeException types (`runtimeExceptionPointIds`, from the property
+  pre-check's value analysis, cfg-extraction `RaiseSites`). `SANode.isAssert` marks a target point
+  of either kind. Later targets include shell calls and SQL statement building, so prefer changes
+  that work for any kind of target point.
+  - **No-runtime-exception is opt-in in the harness** (`svcomp test run --sa-no-runtime-exception`;
+    the explorer prunes whenever it gets `--sa-path`). On the 736 tasks (300 s, 2026-10-24) it is
+    sound (no false SAFE) and cuts queries on the solved SAFE tasks by a third, but solves nothing
+    new: the pre-check already proves 426 tasks and the extractor costs 3 to 6 s per task. (Its
+    first run also lost 9 SAFE to desyncs, fixed since: see SWAT helpers below.)
+- **SWAT helpers and `nondetObject` in the walk:** branches taken inside SWAT's own helpers (the
+  reference-comparison rewrite `UtilInstrumented.refEquals`) are flagged like callbacks
+  (`ShadowContext.inSwatHelper`), since how many there are depends on runtime types; the graph has
+  none of them. `Verifier.nondetObject(type, factory)`, which the executor runs as
+  `factory.createObject()`, is expanded and keyed as that call by the extractor. Before these, 73 of
+  978 valid-assert tasks had an SA desync.
 - **Exceptions the graph does not model** (null dereferences, casts, library calls, Errors): the
   extractor gives them pseudo types (`?Exception`, `?Error`) whose escapes SAGraph treats as
   caught by any handler listed for them (`unknown_handlers`), so paths into such handlers stay
@@ -56,12 +74,59 @@ and used in `strategy/DFS.py`.
   stage is 0 and its duration is `static_pre_analysis_wall`; `run_info.json` in the run dir records
   the SA mode.
 
+- **Relevance (slicing)** (branch `niklas/relevance-slicing`, 2026-10-26; loop summarization is
+  built on top of it, see "Loop summarization" in swat-benchmarks/RESULTS.md; needs cfg-extraction
+  `v0.2.0` or later for the data-flow facts): a branch whose region cannot affect whether a target
+  is reached, nor any value a target or a relevant branch reads, is irrelevant. `dfs` does not flip
+  it, `collect_path_constrains` leaves its constraint out, and candidates are identified by the
+  sequence of relevant decisions before them, so paths that differ only in irrelevant decisions
+  count as one. Computed in `data/StaticAnalysisGraph/Relevance.py` from the extractor's per-node
+  data-flow facts; off with `--no-sa-slicing` (explorer and harness). Results and where it helps:
+  `swat-benchmarks/RESULTS.md`, section "Relevance (slicing)".
+  - **Poisoning:** each path carries the regions of its sliced branches; a branch inside one that
+    the graph cannot account for (masked, unverified, or relevant) or a run that ends there with an
+    uncaught exception (`Leaf.abnormal`, ancestors `abnormal_below`) makes those branches relevant
+    for good (`Node.poisoned`), and `select_branch` walks again.
+  - **Statements that may throw** to a local handler or a harmful escape are implicit branches in
+    the analysis: what they read becomes relevant with them (else a null receiver's origin gets
+    sliced: four sa-soundness false SAFEs before this).
+  - **Queries:** a sliced query's full query is solved first; the sliced one only decides where the
+    full one is UNSAT. A run of a sliced solution may reach its branch on another path with the
+    same relevant decisions: `check_projected_divergence` checks that after the next walk.
+  - **Known limitations** (fixes sketched in RESULTS.md, relevance "Open"): all library state is
+    one location `g:lib` (fix: type families, then allocation sites with an escape check), and the
+    slice is context-insensitive (fix: a "return value relevant / not" variant per method, chosen
+    per call site and looked up by the walk's stack).
+
+- **Loop summaries** (executor `symbolic/summary`, 2026-10-26): diamonds (an int `if` whose sides
+  are straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting
+  loops (`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged
+  `merged` and the explorer treats them like sliced ones. A counting loop whose body does other
+  things too (calls, heap) is flagged `mergedConditional`, honored only if `Relevance.summary_ok`
+  (the loop changes nothing relevant but its locals); its branches are flagged only when it leaves
+  through its head (`BackEdge` plans tell iterations from re-entries). `TaintCheck` drops a summary whose merged values could reach a call, a heap or
+  array store, an array index or size, or a return, since a dropped constraint must not be needed
+  where the executor concretizes (13 false SAFE before, via `Verifier.assume`). Ignoring a
+  `merged` flag is always sound. Config `loopSummaries` (on in `sv-comp.cfg`),
+  `--no-loop-summaries`. Results, limits, next steps: swat-benchmarks/RESULTS.md, "Loop
+  summarization". Pre-pass tests: `./gradlew :symbolic-executor:test --tests
+  'de.uzl.its.swat.symbolic.summary.*'`.
+
+- **Small models**: a solution with an integral input beyond 65536 is re-solved with the inputs
+  bounded first (`SVCompDriver.prefer_small`, `--no-prefer-small-models`); a loop bound of 2^30
+  otherwise makes the next run never end (+4 valid-assert, +1 no-runtime-exception).
+- **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
+  application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
+  the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.
+
 Tests for the walk, runnable without a SWAT run:
 
 ```bash
 cd symbolic-explorer && python3 -m unittest tests.test_sa_walk -v
 python3 tests/check_marking_on_graphs.py <graph.json>...   # checks marking against an explicit search
 ../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_divergence -v   # needs the venv
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_relevance -v    # relevance and slicing
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_prefer_small -v # small models
 ```
 
 `dfs` only descends into real `data.BinaryExecutionTree.Node` instances. In tests, build them with
@@ -82,7 +147,7 @@ spot a walk that has fallen out of step with the execution.
 
 ```bash
 cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --categories valid-assert.prp
-./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --parallel-sa, --sa-rank-distance, --solver-rlimit, --testcase-timeout-s ...
+./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --parallel-sa, --sa-rank-distance, --search-order, --solver-rlimit, --testcase-timeout-s ...
 ```
 
 - **Duration:** a full valid-assert run takes about 40 min with the default 900 s timeout, and
@@ -105,6 +170,24 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   10 s). A branch that runs out is retried later with 5x the limit, after the cheaper queries; a
   lone retry runs unlimited. Off by default. Each query's time and rlimit use are in the
   `[SOLVER]` debug lines of `explorer.log`.
+- **Property pre-check:** before round 0, `svcomp/PropertyPreCheck.py` runs cfg-extraction's
+  `cfg-extractor-precheck.jar` (`de.uzl.its.cfg.staticcheck.ExceptionFreedomCheck`, an ASM pass,
+  about 0.2 s). A proof of no-runtime-exception or valid-assert gives SAFE without exploring
+  (round 0 still runs as a cross-check). The jar comes from `--precheck-jar`, else from next to
+  `symbolic-explorer/` (the SV-COMP archive), else `../cfg-extraction/build/libs/`; without it the
+  check is skipped (`missing_jar`). CI builds it at the cfg-extraction tag in `cfg-extraction.ref` (cfg-extraction is public, MIT)
+  and the archive ships it as `cfg-extraction/cfg-extractor-precheck.jar`. Its soundness gate is
+  `cfg-extraction/scripts/precheck_gate.py` (0 contradictions over sv-benchmarks).
+- **Search order:** `--search-order` picks which open branch is flipped next (`StrategyService`):
+  `dfs` (default), `shallow`, `coverage` (sides no trace took yet, then the shallowest),
+  `coverage-dfs`, `generational`. Plain DFS keeps unrolling input-parsing loops one char per round
+  with ever larger queries; `coverage` found 6 more violations than `dfs` on 978 valid-assert tasks
+  (300 s, no SA) and lost none. The order changes only how fast violations are found, not SAFE.
+- **Int/string queries:** `solver/Int2BvLifting.py` rewrites the executor's bit-vector ints where
+  they meet string lengths, indices and char codes into Integer arithmetic before solving, and
+  solves bit-vector inputs used only as numbers over Integer stand-ins (`lift_inputs`, mapped back
+  to the inputs by `Z3Handler.map_lifted_inputs`). Mixed `int_to_bv`/`ubv_to_int` queries are
+  what makes Z3 slow on string code.
 - **Benchmarks:** `targets/sv-comp/sv-benchmarks/` is a sparse checkout of `java/` from
   SWAT-project/SV-Benchmarks, which mirrors upstream sv-benchmarks with precompiled `.class` files;
   `.last_sv_commit` names the upstream commit. Older suites are kept next to it as

@@ -1,5 +1,6 @@
 package de.uzl.its.swat.instrument.svcomp;
 
+import de.uzl.its.swat.common.Profile;
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
@@ -69,6 +70,7 @@ public class Verifier {
                         .toString());
         if (!condition) {
             Intrinsics.terminate();
+            Profile.dump("assume.halt");
             Runtime.getRuntime().halt(0);
         }
     }

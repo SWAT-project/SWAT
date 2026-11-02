@@ -64,6 +64,8 @@ class Node:
         self.pushes = ()
         self.callback = False  # in a callback from library code: no counterpart in the SA graph
         self.choice = False  # added by the executor to enumerate an operand's values: not in the SA graph
+        self.merged = False  # merged by a loop summary: not a decision, its constraint is not kept
+        self.merged_conditional = False  # ... only if the loop's other effects are irrelevant
         # Whether some trace threw an exception the SA graph does not model right before this node
         # (an UNMODELLED_EXCEPTION marker, which is not a node of its own, see Tree.structural).
         self.unmodelled_exception = False
@@ -90,6 +92,8 @@ class Node:
             self.pushes = branch.pushes
             self.callback = branch.callback
             self.choice = branch.choice
+            self.merged = getattr(branch, 'merged', False)
+            self.merged_conditional = getattr(branch, 'merged_conditional', False)
             self.loop_states = getattr(branch, 'positioned_loop_states', ())
             self.constraint[branch.trace_id] = branch.constraint
 

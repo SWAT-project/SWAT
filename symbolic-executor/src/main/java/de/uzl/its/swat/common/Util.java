@@ -19,7 +19,9 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 import de.uzl.its.swat.thread.ThreadHandler;
+import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.util.CheckClassAdapter;
 
 import javax.annotation.Nullable;
 
@@ -187,6 +189,22 @@ public class Util {
         int longestExclude = excludeList.length > 0 ? longestPrefix(excludeList, cname) : -1;
         boolean verdict = symbolicScope.length > 0 ? longestInclude > longestExclude : longestExclude == -1;
         return verdict;
+    }
+
+    /**
+     * The visitor a transformer writes the instrumented class through: {@code cv} wrapped in ASM's
+     * {@link CheckClassAdapter} (which checks every visit and runs a data-flow analysis of each
+     * method) if {@code instrumentation.checkClassAdapter} is set for the class, {@code cv} itself
+     * otherwise. The checks only find instrumentation bugs and cost about a tenth of an executor
+     * run's CPU time, so they are off unless configured.
+     */
+    public static ClassVisitor withCheckClassAdapter(ClassVisitor cv, String cname) {
+        return withCheckClassAdapter(cv, cname, config.isUseCheckClassAdapter(), config.getCheckClassAdapterClass());
+    }
+
+    static ClassVisitor withCheckClassAdapter(ClassVisitor cv, String cname, boolean enabled, String classFilter) {
+        boolean forClass = "*".equals(classFilter) || formatClassName(cname).equals(classFilter);
+        return enabled && forClass ? new CheckClassAdapter(cv, true) : cv;
     }
 
     public static boolean useCheckClassAdapterForClass(String cname) {

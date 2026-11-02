@@ -67,15 +67,19 @@ public class ShadowContext {
     public void pushFrame(Frame frame) {
         activeFrame = frame;
         frameStack.push(frame);
-        if (!isSwatHelper(frame)) {
+        if (isSwatHelper(frame)) {
+            helperFrames++;
+        } else {
             pushedSinceBranch.add(frame);
         }
     }
 
     /**
-     * A frame of SWAT's own instrumented helpers (e.g. {@code UtilInstrumented.refEquals}). The
-     * static pre-analysis graph has their branches inline in the caller, so the stack changes the
-     * trace reports leave their frames out.
+     * A frame of SWAT's own instrumented helpers (e.g. {@code UtilInstrumented.refEquals}). They
+     * are not in the static pre-analysis graph: how many branches {@code refEquals} takes depends on
+     * the runtime types of its arguments. So the stack changes the trace reports leave their frames
+     * out, and their branches are reported like callbacks ({@link #inSwatHelper}), which the walk
+     * holds its place for.
      */
     private static boolean isSwatHelper(Frame frame) {
         return frame.getClassName() != null && frame.getClassName().startsWith("de/uzl/its/swat/");
@@ -90,6 +94,31 @@ public class ShadowContext {
 
     /** How many frames on the stack are library frames that application code was called back in. */
     private int callbackFrames = 0;
+
+    /** How many frames on the stack are SWAT helper frames (see {@link #isSwatHelper}). */
+    private int helperFrames = 0;
+
+    /** How deep code SWAT inlined into the target runs (see {@link #enterInlinedSwatCode}). */
+    private int inlinedSwatCode = 0;
+
+    /** Whether a SWAT helper runs, e.g. a rewritten reference comparison: its branches are not in the graph. */
+    public boolean inSwatHelper() {
+        return helperFrames > 0 || inlinedSwatCode > 0;
+    }
+
+    /**
+     * Code SWAT inlines into the target's own method starts, e.g. the loop lifting the elements of
+     * a list parameter of an endpoint. It is not in the original bytecode, so not in the graph
+     * either: its branches are reported like a helper's (Intrinsics.enterInlinedSwatCode).
+     */
+    public void enterInlinedSwatCode() {
+        inlinedSwatCode++;
+    }
+
+    /** See {@link #enterInlinedSwatCode}. */
+    public void leaveInlinedSwatCode() {
+        if (inlinedSwatCode > 0) inlinedSwatCode--;
+    }
 
     /**
      * Marks the active frame, a library frame, as running application code that the library
@@ -131,7 +160,7 @@ public class ShadowContext {
             callbackFrames--;
         }
         if (isSwatHelper(oldFrame)) {
-            // not counted on push either
+            helperFrames--; // not counted in the stack changes on push either
         } else if (pushedSinceBranch.isEmpty()) {
             poppedSinceBranch++;
         } else {

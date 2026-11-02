@@ -287,8 +287,12 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
         // Create instrumentation for the list itself
         InsnList listInstrumentation = Utils.liftListVariable(paramIdx, addAssignment, false);
 
-        // Apply the instrumentation
+        // Apply the instrumentation. Its loop over the elements has branches the original method
+        // (and so the SA graph) does not have: they are reported like those of SWAT's helpers.
+        String intrinsics = Type.getInternalName(Intrinsics.class);
+        visitMethodInsn(Opcodes.INVOKESTATIC, intrinsics, "enterInlinedSwatCode", "()V", false);
         listInstrumentation.accept(this);
+        visitMethodInsn(Opcodes.INVOKESTATIC, intrinsics, "leaveInlinedSwatCode", "()V", false);
     }
 
     private void instrumentEntryPointParameters(int access, String descriptor) {
@@ -317,77 +321,12 @@ public abstract class AbstractMethodAdapter extends MethodVisitor {
 
 
     private void createFreshParameterCopy(Type type, int localIndex) {
-        String typeName = type.getInternalName();
-
-        if (type.getClassName().equals("java.lang.String")) {
-            // Create fresh copy: new String(original)
-            mv.visitTypeInsn(Opcodes.NEW, "java/lang/String");
-            mv.visitInsn(Opcodes.DUP);
-            // Load original parameter
-            mv.visitVarInsn(Opcodes.ALOAD, localIndex);
-            // Stack: new_string, new_string, original
-            mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/String", "<init>",
-                    "(Ljava/lang/String;)V", false);
-            // Store back to parameter slot
-            mv.visitVarInsn(Opcodes.ASTORE, localIndex);
-        } else {
-            // For wrapper types, create fresh instances
-            createFreshWrapperCopy(type, localIndex);
-        }
-    }
-
-    private void createFreshWrapperCopy(Type type, int localIndex) {
-        String className = type.getInternalName();
-        String primitiveType = getPrimitiveTypeDescriptor(type);
-
-        // Create new wrapper instance first
-        mv.visitTypeInsn(Opcodes.NEW, className);
-        mv.visitInsn(Opcodes.DUP);
-        // Stack: [new_wrapper, new_wrapper]
-
-        // Load original wrapper and extract primitive value
+        // param = FreshCopy.of<Type>(param), which keeps null (see FreshCopy for why the check is
+        // not inlined here)
+        String simpleName = type.getClassName().substring("java.lang.".length());
         mv.visitVarInsn(Opcodes.ALOAD, localIndex);
-        String valueMethod = getPrimitiveValueMethod(type);
-        String valueDescriptor = "()" + primitiveType;
-        mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, className, valueMethod, valueDescriptor, false);
-        // Stack: [new_wrapper, new_wrapper, primitive_value]
-
-        // Call constructor
-        String constructorDesc = "(" + primitiveType + ")V";
-        mv.visitMethodInsn(Opcodes.INVOKESPECIAL, className, "<init>", constructorDesc, false);
-        // Stack: [new_wrapper] (initialized)
-
-        // Store back to parameter
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "de/uzl/its/swat/common/FreshCopy", "of" + simpleName,
+                "(" + type.getDescriptor() + ")" + type.getDescriptor(), false);
         mv.visitVarInsn(Opcodes.ASTORE, localIndex);
-    }
-
-    private String getPrimitiveTypeDescriptor(Type type) {
-        String className = type.getClassName();
-        switch (className) {
-            case "java.lang.Integer": return "I";
-            case "java.lang.Long": return "J";
-            case "java.lang.Short": return "S";
-            case "java.lang.Byte": return "B";
-            case "java.lang.Character": return "C";
-            case "java.lang.Boolean": return "Z";
-            case "java.lang.Float": return "F";
-            case "java.lang.Double": return "D";
-            default: throw new IllegalArgumentException("Unsupported type: " + className);
-        }
-    }
-
-    private String getPrimitiveValueMethod(Type type) {
-        String className = type.getClassName();
-        switch (className) {
-            case "java.lang.Integer": return "intValue";
-            case "java.lang.Long": return "longValue";
-            case "java.lang.Short": return "shortValue";
-            case "java.lang.Byte": return "byteValue";
-            case "java.lang.Character": return "charValue";
-            case "java.lang.Boolean": return "booleanValue";
-            case "java.lang.Float": return "floatValue";
-            case "java.lang.Double": return "doubleValue";
-            default: throw new IllegalArgumentException("Unsupported type: " + className);
-        }
     }
 }
