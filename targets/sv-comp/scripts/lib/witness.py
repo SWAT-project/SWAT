@@ -23,6 +23,13 @@ from pathlib import Path
 from .dtypes import VerificationTask
 
 logger = logging.getLogger(__name__)
+# Subprocess output, relayed without a second timestamp and level
+output_logger = logging.getLogger(f'{__name__}.output')
+if not output_logger.handlers:
+    _output_handler = logging.StreamHandler()
+    _output_handler.setFormatter(logging.Formatter('%(message)s'))
+    output_logger.addHandler(_output_handler)
+    output_logger.propagate = False
 SCRIPT_DIR = Path(__file__).resolve().parent.parent  # Now in lib/, so go up one more level
 WITNESS_VALIDATION_PATH = (SCRIPT_DIR.parent / 'wit4java' / 'bin' / 'wit4java')
 WITNESSLINT_ENV = 'SWAT_WITNESSLINT'
@@ -86,8 +93,9 @@ def property_file(ver_task: VerificationTask) -> Path:
 
 
 def log_output(output: List[str]):
+    """Relays a subprocess' output as it is: its lines carry their own timestamp and level."""
     for line in output:
-        logger.info(line.strip())
+        output_logger.info(line.rstrip())
 
 
 def validate_graphml_witness(info: dict, witness_file: Path) -> bool:

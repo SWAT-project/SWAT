@@ -81,6 +81,15 @@ public final class LoopSummaries {
      * a local slot, or -1 with {@code boundConstant}. {@code exitOnJump}: the head's branch leaves
      * the loop when it jumps. {@code steps}: the locals the body adds a constant to (the induction
      * variable among them), {@code constants}: those it sets to a constant.
+     *
+     * <p>{@code pure}: the body is int arithmetic on locals only (every instruction is one that
+     * {@link #op} accepts). The closed forms of the locals are exact either way, since nothing else
+     * in the body can change a local; but an impure body also does other things (calls, field or
+     * array accesses) once per iteration, and a summary that drops the head's constraints cannot
+     * account for those. So the branches of an impure loop are flagged {@code mergedConditional}
+     * (see Merger), and the explorer only treats them as merged where its relevance analysis shows
+     * that the loop's other effects cannot matter to a target ({@code Relevance.summary_ok}, in
+     * {@code strategy/DFS.py}); elsewhere it keeps them as ordinary branches.
      */
     public record CountingLoop(int i, int step, int bound, int boundConstant, boolean exitOnJump,
                                Map<Integer, Integer> steps, Map<Integer, Integer> constants,
@@ -296,6 +305,9 @@ public final class LoopSummaries {
     /** How an op changes the stack depth: {pops, pushes}. */
     private static int[] stackEffect(Op op) {
         if (op.nested() != null) {
+            // The inner if pops its operands: IFEQ..IFLE compare one value with zero, IF_ICMPEQ..
+            // IF_ICMPLE two values (nested ops are only built for these, see isIntCondition); its
+            // sides then leave the inner diamond's stackDelta.
             return new int[] {op.opcode() <= Opcodes.IFLE ? 1 : 2, op.nested().stackDelta()};
         }
         return switch (op.opcode()) {
@@ -303,7 +315,10 @@ public final class LoopSummaries {
             case Opcodes.ISTORE -> new int[] {1, 0};
             case Opcodes.IINC -> new int[] {0, 0};
             case Opcodes.INEG -> new int[] {1, 1};
-            default -> new int[] {2, 1};
+            case Opcodes.IADD, Opcodes.ISUB, Opcodes.IMUL, Opcodes.IDIV, Opcodes.IREM, Opcodes.ISHL,
+                    Opcodes.ISHR, Opcodes.IUSHR, Opcodes.IAND, Opcodes.IOR, Opcodes.IXOR -> new int[] {2, 1};
+            // Every op that op() and block() admit is listed above
+            default -> throw new IllegalStateException("no stack effect for opcode " + op.opcode());
         };
     }
 

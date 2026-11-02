@@ -41,7 +41,7 @@ def oracle(node, stack):
         seen.add(key)
         if len(seen) > ORACLE_STATES:
             return None
-        if n.isAssert or n.isIncomplete:
+        if n.isTarget or n.isIncomplete:
             return True
         succ = list(n.next_exceptional)
         if n.next_branched is not None:
@@ -77,7 +77,7 @@ def stack_key(st):
 
 def context_insensitive(graph):
     marked = set()
-    work = [n for n in graph.nodes.values() if n.isAssert]
+    work = [n for n in graph.nodes.values() if n.isTarget]
     while work:
         n = work.pop()
         if id(n) in marked:
@@ -99,7 +99,7 @@ def check(path, walks=30, steps=400, rng=random.Random(0)):
             if state is None:
                 break
             branch, stack = state
-            for child in (branch.get_fallthrough_child(), branch.get_branched_child()):
+            for child in (branch.next_fallthrough, branch.next_branched):
                 key = (id(child), stack_key(stack))
                 if key in seen:
                     continue
@@ -120,7 +120,7 @@ def check(path, walks=30, steps=400, rng=random.Random(0)):
                     pass
                 elif cs and id(child) not in ci:
                     print(f'CS MORE PERMISSIVE THAN CI {path}: {child.id}')
-            nxt = rng.choice([branch.get_fallthrough_child(), branch.get_branched_child()])
+            nxt = rng.choice([branch.next_fallthrough, branch.next_branched])
             state = nxt.walk_till_branch(stack)
     return stats
 

@@ -67,7 +67,8 @@ class DivergenceTestBase(unittest.TestCase):
         self.driver.budget = ResourceBudget(cgroup_limit=0)
         self.ctx = z3.Context()
         # Solved to take the branched side, which the tree has not explored yet.
-        self.target = SimpleNamespace(id=7, gid=70, trace_id='t', branched=None, skipped=object(), parent=None, choice=False)
+        self.target = SimpleNamespace(id=7, gid=70, trace_id='t', branched=None, skipped=object(), parent=None, choice=False,
+                                      sliced_query=False, ident=None)
         self.aim(self.target, {'I_0': 1})
 
     def aim(self, target, values):
@@ -185,7 +186,8 @@ class CheckDivergenceTest(DivergenceTestBase):
         self.assertEqual(self.driver.unreached_given_up_branches(), [])
 
     def test_skipped_side(self):
-        target = SimpleNamespace(id=9, gid=90, trace_id='t', branched=object(), skipped=None, parent=None)
+        target = SimpleNamespace(id=9, gid=90, trace_id='t', branched=object(), skipped=None, parent=None,
+                                 sliced_query=False, ident=None)
         self.driver.divergence_retries = 0
         self.aim(target, {'I_0': 1})
         self.check([trace_branch(9, True)])

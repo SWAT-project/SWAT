@@ -1,18 +1,26 @@
+from __future__ import annotations
+
 import functools
+from collections import Counter
 import json
 import math
-import logging
 import re
 import time
+from typing import AbstractSet, Any, Iterable
 
+from data.BinaryExecutionTree.Leaf import Leaf
 from data.BinaryExecutionTree.Node import Node
+from data.BinaryExecutionTree.Tree import Tree
+from data.StaticAnalysisGraph.SAGraph import SANode
 
 from data.Database import Database
-from strategy.DFS import dfs
+from strategy.DFS import dfs, describe_walk
 from solver.SolverHandler import SATResult, Z3Handler
 from timing.TimingManager import TimingManager
 
-logger = logging.getLogger(__name__)
+import log
+# The explorer's logger: a module logger would reach neither explorer.log nor the console.
+logger = log.get_logger()
 
 # A declaration of a function with at least one argument, i.e. an uninterpreted function rather
 # than a variable: "(declare-fun f (<sort> ...) <sort>)".
@@ -41,38 +49,38 @@ SEARCH_ORDERS = ("dfs", "shallow", "coverage", "coverage-dfs", "generational")
 _STATIC_IID_MASK = (1 << 58) - 1
 
 
-def depth(node) -> int:
-    """The number of branches above node on its path (cached on the node)."""
-    d = getattr(node, '_depth', None)
+def depth(node: Node) -> int:
+    """The number of branches above node on its path (cached on the node, Node.depth_cache)."""
+    d = node.depth_cache
     if d is None:
         chain = []
-        n = node
-        while n is not None and getattr(n, '_depth', None) is None:
+        n: Node | None = node
+        while n is not None and n.depth_cache is None:
             chain.append(n)
             n = n.parent
-        d = -1 if n is None else n._depth
+        d = -1 if n is None else n.depth_cache
+        assert d is not None
         for m in reversed(chain):
             d += 1
-            m._depth = d
-        d = node._depth
+            m.depth_cache = d
     return d
 
 
-def open_side(node) -> tuple:
+def open_side(node: Node) -> tuple[int, bool]:
     """The branch instruction and side that flipping node would take."""
     return node.id & _STATIC_IID_MASK, node.skipped is not None
 
 
-def covered_sides(root) -> set:
+def covered_sides(root: Node | Leaf | None) -> set[tuple[int, bool]]:
     """The (instruction, side) pairs some trace in the tree took."""
     return set(first_coverers(root))
 
 
-def first_coverers(root) -> dict:
+def first_coverers(root: Node | Leaf | None) -> dict[tuple[int, bool], Node]:
     """For each (instruction, side) pair some trace in the tree took, the node through which it
     was taken first (nodes are numbered in the order they were added, by gid)."""
-    first = {}
-    stack = [root]
+    first: dict[tuple[int, bool], Node] = {}
+    stack: list[Node | Leaf | None] = [root]
     while stack:
         n = stack.pop()
         if not isinstance(n, Node):
@@ -88,9 +96,9 @@ def first_coverers(root) -> dict:
     return first
 
 
-def trace_scores(first: dict) -> dict:
+def trace_scores(first: dict[tuple[int, bool], Node]) -> dict[str, int]:
     """How many (instruction, side) pairs each trace took first, by trace id."""
-    scores = {}
+    scores: dict[str, int] = {}
     for n in first.values():
         scores[n.trace_id] = scores.get(n.trace_id, 0) + 1
     return scores
@@ -101,44 +109,39 @@ class StrategyService:
     _symbolic_branches: dict[tuple[int, str], bool] = {}
     
     @staticmethod
-    def select_branch(**kwargs):
-        endpoint_id = kwargs.get('endpoint_id', None)
+    def select_branch(endpoint_id: str | int | None, sa_node: SANode | None = None,
+                      rank_by_distance: bool = False, search_order: str = "dfs") -> list[Node]:
+        """The branches worth flipping on the endpoint's tree (see dfs), in the order to try them.
+        `sa_node` is the SA graph's entry node (None: no graph); `search_order` is one of
+        SEARCH_ORDERS."""
         db = Database.instance()
-        visited = set()
-        # With rank_by_distance, the branches are tried closest-to-an-assert first. Only the order
+        # With rank_by_distance, the branches are tried closest-to-a-target first. Only the order
         # changes, so which branches exist, and hence the verdict, does not. The sort is stable:
         # ties, and branches without SA information (ranked last), keep their DFS order.
-        distances = {} if kwargs.get("rank_by_distance", False) else None
-        order = kwargs.get("search_order", "dfs")
-        covered = None
-        scores = {}
+        distances: dict[Node, float] | None = {} if rank_by_distance else None
+        order = search_order
+        covered: set[tuple[int, bool]] = set()
+        scores: dict[str, int] = {}
         # The walk is on the Database's tree itself, so dfs records where the SA walk fell out of
         # step there directly. The returned nodes are live: they gain children as traces arrive.
-        def walk(tree, solved, unsat):
-            nonlocal covered, scores, visited, distances
-            tree.loop_state_pruned = 0  # counted per walk; the tree itself persists
-            tree.dedup_in_walk = 0
-            found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
+        def walk(tree: Tree, solved: AbstractSet[int], unsat: AbstractSet[int]) -> tuple[list[Node], dict[str, int]]:
+            nonlocal covered, scores, distances
+            sa_entry = sa_node
+            found = dfs(tree, tree.root, solved, unsat, sa_entry, distances=distances)
             # A sliced branch that turned out relevant (dfs poisons it) changes which constraints
             # and decisions count on every path below it: walk again. Poisoning is for good, so
             # this ends.
-            while tree.poisoned_in_walk:
-                visited = set()
+            while tree.walk['poisoned']:
                 distances = {} if distances is not None else None
-                tree.loop_state_pruned = 0
-                tree.dedup_in_walk = 0
-                found = dfs(visited, tree, tree.root, solved, unsat, kwargs.get("sa_node", None), distances=distances)
+                found = dfs(tree, tree.root, solved, unsat, sa_entry, distances=distances)
             if order.startswith("coverage") or order == "generational":
                 first = first_coverers(tree.root)
                 covered = set(first)
                 scores = trace_scores(first)
-            return found, tree.loop_state_pruned, tree.sliced_in_walk, tree.dedup_in_walk
-        possible_branches, pruned, sliced, dedup = db.visit_tree(endpoint_id, walk)
-        if pruned:
-            logger.info(f'[DFS] Left out {pruned} subtrees below a repeated loop-head state')
-        if sliced or dedup:
-            logger.info(f'[DFS] Relevance: {sliced} irrelevant branches on the walk, {dedup} candidates covered by a path with the same relevant decisions')
-        StrategyService.walk_stats = {'sliced': sliced, 'dedup': dedup}
+            return found, dict(tree.walk)
+        possible_branches, counts = db.visit_tree(endpoint_id, walk)
+        logger.info(f'[DFS] Walk: {describe_walk(Counter(counts))}')
+        StrategyService.walk_stats = counts
         # All sorts are stable: ties keep their DFS order.
         if order == "shallow":
             possible_branches.sort(key=depth)
@@ -154,16 +157,15 @@ class StrategyService:
         return possible_branches
         
         
-    # Statistics of the last select_branch walk (see dfs): irrelevant branches on it, and candidates
-    # left out as covered by a path with the same relevant decisions.
-    walk_stats = {'sliced': 0, 'dedup': 0}
+    # The counts of the last select_branch walk (Tree.walk), for stats.json.
+    walk_stats: dict[str, int] = {}
 
     @staticmethod
-    def collect_path_constrains(node: Node, dropped: list | None = None, full: bool = False) -> list():
+    def collect_path_constrains(node: Node, dropped: list[Node] | None = None, full: bool = False) -> list[str]:
         """The constraints of the branches above node on its path, except (unless `full`) those of
         the branches the last walk sliced (dfs: irrelevant to the targets), which are counted in
         `dropped`."""
-        path_constraints = list()
+        path_constraints: list[str] = []
         trace_id = node.trace_id
         
         while node.parent is not None:
@@ -172,7 +174,7 @@ class StrategyService:
                 if trace_id in node.constraint:
                     c = node.constraint[trace_id]
                     if "declare-fun" in c:
-                        if not full and getattr(node, 'sliced', False):
+                        if not full and node.sliced:
                             if dropped is not None:
                                 dropped.append(node)
                             continue
@@ -181,8 +183,9 @@ class StrategyService:
         return path_constraints
         
     @staticmethod
-    def collect_input_constrains(node: Node) -> list():
-        path_constraints = list()
+    def collect_input_constrains(node: Node) -> list[str]:
+        """The inputs' bounds (SMT-LIB assertions)."""
+        path_constraints: list[str] = []
 
         for input in node.inputs:
             path_constraints.append(input.lower_bound)
@@ -191,7 +194,7 @@ class StrategyService:
         return path_constraints
 
     @staticmethod
-    def collect_array_length_constraints(node: Node, max_length: int) -> list():
+    def collect_array_length_constraints(node: Node, max_length: int) -> list[str]:
         """
         Add constraints limiting array lengths to a maximum value.
         This prevents Z3 from generating solutions with unreasonably large arrays.
@@ -217,14 +220,14 @@ class StrategyService:
         return constraints
 
     @staticmethod
-    def collect_uf_definitions(node: Node) -> list():
-        uf_definitions = list()
+    def collect_uf_definitions(node: Node) -> list[str]:
+        uf_definitions: list[str] = []
         for uf in node.ufs:
             uf_definitions.append(uf.definition)
         return uf_definitions
 
     @staticmethod
-    def slice_uf_definitions(definitions: list, query: list) -> tuple[list, set[str]]:
+    def slice_uf_definitions(definitions: list[str], query: list[str]) -> tuple[list[str], set[str]]:
         """The definitions the query needs, and the uninterpreted functions it then contains.
 
         A definition is needed if it mentions a function the query or another needed definition
@@ -233,7 +236,7 @@ class StrategyService:
         can be satisfied by its function's value whatever the inputs, and leaving it out changes
         neither satisfiability nor the inputs of any model.
         """
-        needed = set()
+        needed: set[str] = set()
         for smt in query:
             needed |= declared_ufs(smt)
         pending = [(d, declared_ufs(d)) for d in definitions]
@@ -256,11 +259,11 @@ class StrategyService:
         return sliced, needed
 
     @staticmethod
-    def collect_query(node: Node, full: bool = False) -> tuple[list, set[str]]:
+    def collect_query(node: Node, full: bool = False) -> tuple[list[str], set[str]]:
         """The constraints of the query for the unexplored side of the branch, besides its own
         constraint, and the uninterpreted functions the query contains; with `full`, also those of
         the sliced branches."""
-        dropped = []
+        dropped: list[Node] = []
         path_constraints = StrategyService.collect_path_constrains(node, dropped, full)
         if not full:
             # Whether the query left out a constraint: the run of its solution may then take other
@@ -274,7 +277,7 @@ class StrategyService:
         return path_constraints, ufs
 
     @staticmethod
-    def is_approximate(ufs) -> bool:
+    def is_approximate(ufs: Iterable[str]) -> bool:
         """Whether a query with these functions depends on an approximate Math model. Only a branch
         constraint brings one in, and the executor reports such a trace as precision loss."""
         return any(uf.startswith(APPROXIMATE_UF_PREFIX) for uf in ufs)
@@ -285,9 +288,9 @@ class StrategyService:
         return StrategyService.is_approximate(StrategyService.collect_query(node, full=True)[1])
 
     @staticmethod
-    def solve_branch(possible_branch: Node, endpoint_id=None, solver_timeout_ms: int | None = 60 * 1000,
-                     solver_rlimit: int | None = None, extra_exprs: list | None = None,
-                     approximate_rlimit: int | None = None):
+    def solve_branch(possible_branch: Node, endpoint_id: str | int | None = None, solver_timeout_ms: int | None = 60 * 1000,
+                     solver_rlimit: int | None = None, extra_exprs: list[Any] | None = None,
+                     approximate_rlimit: int | None = None) -> tuple[SATResult, dict[str, Any]]:
         """Solves for the unexplored side of the branch. LIMIT (the rlimit ran out) records nothing,
         so the branch stays a candidate and can be retried with a larger limit.
 
@@ -380,8 +383,6 @@ class StrategyService:
             # Extract variables from the parsed constraint
             constraint_vars = cached_data['variables']
 
-            logger.info(f"[is_symbolic_branch] Branch {node.id}: found {len(constraint_vars)} variables in constraint")
-            logger.debug(f"[is_symbolic_branch] Variables: {constraint_vars}")
 
             # Get input variable names (symbolic variables we're tracking)
             input_vars = set()
@@ -396,12 +397,12 @@ class StrategyService:
                     input_vars.add(f"{inp.name}_length")
                     input_vars.add(f"|{inp.name}_length|")
 
-            logger.debug(f"[is_symbolic_branch] Input variables: {input_vars}")
 
             # Check if any constraint variable matches an input variable
             is_symbolic = bool(constraint_vars & input_vars)
 
-            logger.info(f"[is_symbolic_branch] Branch {node.id} is_symbolic: {is_symbolic}")
+            logger.debug(f"[is_symbolic_branch] Branch {node.id} is_symbolic: {is_symbolic} "
+                         f"(constraint variables {sorted(constraint_vars)}, inputs {sorted(input_vars)})")
 
             StrategyService._symbolic_branches[key] = is_symbolic
             return is_symbolic

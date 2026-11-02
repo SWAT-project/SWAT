@@ -15,6 +15,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from data.BinaryExecutionTree.Leaf import Leaf
+from data.BinaryExecutionTree.Tree import Tree
 from strategy.DFS import dfs
 from strategy.StrategyService import StrategyService
 from tests.test_sa_walk import GraphBuilder, branch_node, keyed, leaf
@@ -211,18 +212,6 @@ def _rel(g):
     return r.relevant_locations
 
 
-class Tree:
-    """What dfs keeps on the tree."""
-    def __init__(self):
-        self.sig_ids = {}
-
-    def record_execution_error(self, kind, message):
-        self.error = (kind, message)
-
-    def dominated_by_loop_state(self, node):
-        return False
-
-
 def link(*nodes):
     """Sets the parents of a hand-built path or tree."""
     for n in nodes:
@@ -258,7 +247,7 @@ class SlicingTest(unittest.TestCase):
         tail, a = self.assert_tail('', leaf())
         root = self.iteration(False, self.iteration(True, tail, '1'), '0')
         tree = Tree()
-        found = dfs(set(), tree, root, set(), set(), self.g.entry_node)
+        found = dfs(tree, root, set(), set(), self.g.entry_node)
         self.assertEqual([n.id for n in found], ['a'])
         # One trace took the whole path: only the b nodes have symbolic constraints.
         n = a
@@ -277,11 +266,11 @@ class SlicingTest(unittest.TestCase):
         b = branch_node('b0', skipped=tail1, branched=tail2, key='b')
         root = branch_node('h0', skipped=b, key='h')
         link(root, b)
-        found = dfs(set(), Tree(), root, set(), set(), self.g.entry_node)
+        found = dfs(Tree(), root, set(), set(), self.g.entry_node)
         self.assertEqual([n.id for n in found], ['a1'])
         # Once one of them was flipped, the other is covered.
         a1.skipped = leaf()
-        found = dfs(set(), Tree(), root, set(), set(), self.g.entry_node)
+        found = dfs(Tree(), root, set(), set(), self.g.entry_node)
         self.assertEqual(found, [])
 
     def test_a_branch_the_graph_has_no_node_for_poisons_the_region(self):
@@ -292,10 +281,10 @@ class SlicingTest(unittest.TestCase):
         root = branch_node('h0', skipped=b, key='h')
         link(root, b, cb)
         tree = Tree()
-        found = dfs(set(), tree, root, set(), set(), self.g.entry_node)
-        self.assertTrue(getattr(b, 'poisoned', False))
-        self.assertTrue(tree.poisoned_in_walk)
-        found = dfs(set(), tree, root, set(), set(), self.g.entry_node)  # as select_branch does
+        found = dfs(tree, root, set(), set(), self.g.entry_node)
+        self.assertTrue(b.poisoned)
+        self.assertTrue(tree.walk['poisoned'])
+        found = dfs(tree, root, set(), set(), self.g.entry_node)  # as select_branch does
         self.assertEqual({n.id for n in found}, {'h0', 'b0', 'a', 'cb'})
         self.assertFalse(b.sliced)
 
@@ -307,9 +296,9 @@ class SlicingTest(unittest.TestCase):
         link(root, b)
         b.abnormal_below = root.abnormal_below = True
         tree = Tree()
-        dfs(set(), tree, root, set(), set(), self.g.entry_node)
-        self.assertTrue(getattr(b, 'poisoned', False))
-        self.assertTrue(getattr(root, 'poisoned', False))
+        dfs(tree, root, set(), set(), self.g.entry_node)
+        self.assertTrue(b.poisoned)
+        self.assertTrue(root.poisoned)
 
     def test_a_closed_region_is_not_poisoned(self):
         # The callback comes after the loop, outside every region.
@@ -320,9 +309,9 @@ class SlicingTest(unittest.TestCase):
         root = branch_node('h0', skipped=b, key='h')
         link(root, b, hx, a, cb)
         tree = Tree()
-        dfs(set(), tree, root, set(), set(), self.g.entry_node)
-        self.assertFalse(getattr(b, 'poisoned', False))
-        self.assertFalse(getattr(root, 'poisoned', False))
+        dfs(tree, root, set(), set(), self.g.entry_node)
+        self.assertFalse(b.poisoned)
+        self.assertFalse(root.poisoned)
 
 
 if __name__ == '__main__':

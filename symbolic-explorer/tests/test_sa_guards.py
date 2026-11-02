@@ -47,13 +47,13 @@ class AfterMainTest(unittest.TestCase):
     def test_leaving_main_is_interesting_when_a_callback_reaches_an_assert(self):
         # Both sides of b only lead to main's exit; the hook runs after it.
         n = hook_graph().load().nodes
-        self.assertTrue(is_interesting(n['b'].get_fallthrough_child(), None))
-        self.assertTrue(is_interesting(n['b'].get_branched_child(), None))
+        self.assertTrue(is_interesting(n['b'].next_fallthrough, None))
+        self.assertTrue(is_interesting(n['b'].next_branched, None))
 
     def test_leaving_main_is_not_interesting_without_such_a_callback(self):
         n = hook_graph(callbacks=False).load().nodes
-        self.assertFalse(is_interesting(n['b'].get_fallthrough_child(), None))
-        self.assertFalse(is_interesting(n['b'].get_branched_child(), None))
+        self.assertFalse(is_interesting(n['b'].next_fallthrough, None))
+        self.assertFalse(is_interesting(n['b'].next_branched, None))
 
 
 class AsyncEntryTest(unittest.TestCase):
@@ -112,8 +112,8 @@ class PropertyGuardTest(unittest.TestCase):
         g.metadata['runtimeExceptionPointIds'] = [site]
         sa, graph = self.run_sa('no-runtime-exception.prp', g)
         self.assertEqual(sa.status, SAStatus.LOADED)
-        self.assertTrue(graph.nodes[site].isAssert)
-        self.assertFalse(graph.nodes[assertion].isAssert)
+        self.assertTrue(graph.nodes[site].isTarget)
+        self.assertFalse(graph.nodes[assertion].isTarget)
 
     def test_no_runtime_exception_needs_a_graph_with_its_target_points(self):
         sa, graph = self.run_sa('no-runtime-exception.prp')  # an older extractor's graph

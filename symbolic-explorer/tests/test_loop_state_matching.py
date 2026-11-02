@@ -32,8 +32,7 @@ def trace(trace_id, *steps):
 
 
 def open_branches(tree):
-    tree.loop_state_pruned = 0
-    return sorted(n.id for n in dfs(set(), tree, tree.root, set(), set()))
+    return sorted(n.id for n in dfs(tree, tree.root, set(), set()))
 
 
 class LoopStateMatchingTest(unittest.TestCase):
@@ -57,7 +56,7 @@ class LoopStateMatchingTest(unittest.TestCase):
         # A loop whose state repeats: the second visit of A comes before branch 3
         tree.add(trace('t1', (1, True, ['A']), (2, True), (3, True, ['A']), (4, True)), [], [])
         self.assertEqual(open_branches(tree), [1, 2])
-        self.assertEqual(tree.loop_state_pruned, 1)
+        self.assertEqual(tree.walk['loop_state_pruned'], 1)
 
     def test_state_reached_earlier_on_another_path(self):
         tree = Tree(0)
@@ -91,7 +90,7 @@ class LoopStateMatchingTest(unittest.TestCase):
         tree.add(trace('t1', (1, False, ['A']), (2, True), (3, True, ['A']), (4, True)), [], [])
         tree.add(trace('t2', (1, True, ['A']), (5, True)), [], [])
         self.assertEqual(open_branches(tree), [2, 5])
-        self.assertEqual(tree.loop_state_pruned, 1)
+        self.assertEqual(tree.walk['loop_state_pruned'], 1)
 
     def test_disabled(self):
         Tree.LOOP_STATE_MATCHING = False

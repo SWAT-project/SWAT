@@ -181,7 +181,7 @@ class DeepTreeTest(unittest.TestCase):
             flipped[k] = b(flipped[k].id, not flipped[k].has_branched, 'u')
             assert tree.add(flipped, [], [])
             copied = copy.deepcopy(tree)
-            candidates = dfs(set(), copied, copied.root, set(), set())
+            candidates = dfs(copied, copied.root, set(), set())
             return tree, copied, candidates
         tree, copied, candidates = in_thread(work)
         nodes, leaves, work = [], [], [copied.root]
@@ -217,12 +217,12 @@ class DfsOrderTest(unittest.TestCase):
         tree.add([b(1, False), b(2, False), b(3, True)], [], [])
         tree.add([b(1, True), b(4, True)], [], [])
         tree.add([b(1, False), b(2, True), b(5, True)], [], [])
-        self.assertEqual([n.id for n in dfs(set(), tree, tree.root, set(), set())], [3, 5, 4])
+        self.assertEqual([n.id for n in dfs(tree, tree.root, set(), set())], [3, 5, 4])
 
     def test_specials_are_passed_through(self):
         tree = Tree(0)
         tree.add([s(10), b(1, True), s(11), b(2, False)], [], [])
-        self.assertEqual([n.id for n in dfs(set(), tree, tree.root, set(), set())], [1, 2])
+        self.assertEqual([n.id for n in dfs(tree, tree.root, set(), set())], [1, 2])
 
 
 if __name__ == '__main__':
