@@ -1,8 +1,11 @@
-from typing import List, Optional, Set, Union
-from data.trace.Branch import Branch
+from __future__ import annotations
+
+from collections import Counter
+from typing import Any, Optional, Union
+from data.trace.Branch import Branch, Position, PositionedState
 from data.trace.Special import Special, UNMODELLED_EXCEPTION
 from data.BinaryExecutionTree.Leaf import Leaf
-from data.BinaryExecutionTree.Node import Node
+from data.BinaryExecutionTree.Node import Ident, Node
 from data.trace.Input import Input
 from data.trace.UF import UF
 
@@ -24,55 +27,60 @@ class Tree:
         endpoint_id (any): An identifier for the endpoint associated with this tree.
     """
 
-    def __init__(self, endpoint_id: Union[str, int]):
+    def __init__(self, endpoint_id: Union[str, int, None] = None) -> None:
         """
         Initializes a new instance of the Tree class.
 
         Args:
             endpoint_id (any): An identifier for the endpoint this tree is associated with.
         """
-        self.root = None
+        self.root: Node | Leaf | None = None
         self.endpoint_id = endpoint_id
         self.symbolic_context_loss = False
         self.symbolic_precision_loss = False
         self.reference_semantic_change = False
         # Traces that used an approximate model (TraceDTO.approximateModel). A solution built from one
         # is a guess, so the next run may take another path than predicted without anything being wrong.
-        self.approximate_traces: Set[str] = set()
+        self.approximate_traces: set[str] = set()
         # Traces whose execution had a StackOverflowError reach the target's code: their outcome
         # depends on the JVM's stack size, so a violation they show is not a verdict.
-        self.stack_overflow_traces: Set[str] = set()
+        self.stack_overflow_traces: set[str] = set()
         # How often the next run did take another path than such a guessed solution predicted.
         self.expected_divergences: int = 0
         self.uncaught_exceptions: int = 0
-        self.symbolic_vars: Set = set()
-        self.ufs: Set = set()
+        self.symbolic_vars: set[str] = set()  # the names of the inputs
+        self.ufs: set[str] = set()  # the definitions of the uninterpreted functions
         # Missing invocations accumulated across all traces of this testcase, keyed by
         # (owner, name, desc, isInstance, isSymbolic). Each value aggregates count and context_loss.
-        self.missing_invocations: dict = {}
+        self.missing_invocations: dict[tuple[str, str, str, bool, bool], dict[str, Any]] = {}
         # Execution errors detected in the executor's stdout (internal SWAT assertions or
         # [SWAT Exception]s) that make the verdict untrustworthy. These cannot ride the trace
         # because they halt the executor JVM before it sends one, so they are surfaced here.
-        self.execution_errors: list = []
+        # Each is {'kind': ..., 'message': ...} (see record_execution_error).
+        self.execution_errors: list[dict[str, str]] = []
         # Loop-head state matching: for each state hash, the smallest position at which an
         # executed path reached it (see register_loop_states).
-        self.loop_state_first: dict[str, tuple] = {}
-        # Branches the last dfs() left out because of a repeated loop-head state.
-        self.loop_state_pruned = 0
+        self.loop_state_first: dict[str, Position] = {}
         # Relevance (see dfs): the interned sigs of sequences of relevant decisions, the sides the
-        # last walk found covered (explored, solved or infeasible) per (sig, branch key), whether
-        # and how often a walk made a sliced branch relevant again, and its other counts.
-        self.sig_ids: dict = {}
-        self.covered: set = set()
-        self.poisoned_in_walk = False
+        # last walk found covered (explored, solved or infeasible) per (sig, branch key), and how
+        # often a walk made a sliced branch relevant again (poisoned it).
+        self.sig_ids: dict[tuple[Ident, bool], int] = {}
+        self.covered: set[tuple[Ident, bool]] = set()
         self.poisoned_total = 0
-        self.sliced_in_walk = 0
-        self.dedup_in_walk = 0
+        self.begin_walk()
         # The leaf the last added trace ended at, so that the run's end can be recorded on it
         self.last_leaf: Optional[Leaf] = None
 
 
-    def record_inputs(self, inputs: List[Input]):
+    def begin_walk(self) -> None:
+        """Resets the counts of the last dfs() walk (see dfs and DFS.describe_walk): its branches
+        by how they were paired with the SA graph, pruned sides, sliced and merged branches,
+        candidates covered by a path with the same relevant decisions, sliced branches it found
+        relevant (poisoned: then the caller walks again), desyncs, and subtrees left out below a
+        repeated loop-head state."""
+        self.walk: Counter[str] = Counter()
+
+    def record_inputs(self, inputs: list[Input]) -> None:
         """
         Records the inputs associated with the tree.
 
@@ -82,7 +90,7 @@ class Tree:
         for input in inputs:
             self.symbolic_vars.add(input.name)
                                    
-    def record_ufs(self, ufs: List[UF]):
+    def record_ufs(self, ufs: list[UF]) -> None:
         """
         Records the UFs associated with the tree.
 
@@ -93,7 +101,7 @@ class Tree:
             self.ufs.add(uf.definition)
                                    
 
-    def record_missing_invocations(self, invocations: Optional[List[dict]]):
+    def record_missing_invocations(self, invocations: Optional[list[dict[str, Any]]]) -> None:
         """
         Accumulates missing invocations across all traces of this testcase.
 
@@ -125,7 +133,7 @@ class Tree:
                 existing['count'] += count
                 existing['context_loss'] = existing['context_loss'] or context_loss
 
-    def record_execution_error(self, kind: str, message: str):
+    def record_execution_error(self, kind: str, message: str) -> None:
         """
         Records an execution error surfaced from the executor's stdout.
 
@@ -139,20 +147,20 @@ class Tree:
         if entry not in self.execution_errors:
             self.execution_errors.append(entry)
 
-    def record_context_loss(self):
+    def record_context_loss(self) -> None:
         logger.warning("Context loss recorded!")
         self.symbolic_context_loss = True
         
-    def record_precision_loss(self):
+    def record_precision_loss(self) -> None:
         logger.warning("Precision loss recorded!")
         self.symbolic_precision_loss = True
 
-    def record_reference_semantic_change(self):
+    def record_reference_semantic_change(self) -> None:
         logger.warning("Reference semantic change recorded: user-de-interned strings compared via Objects.equals")
         self.reference_semantic_change = True
         
     @staticmethod
-    def structural(trace: list) -> list[tuple]:
+    def structural(trace: list[Branch | Special]) -> list[tuple[Branch | Special, bool]]:
         """
         The elements of a trace that are levels of the tree, each with whether an
         UNMODELLED_EXCEPTION marker came right before it.
@@ -171,7 +179,7 @@ class Tree:
             marked = False
         return elements
 
-    def add(self, trace: list[Branch | Special], inputs: List[Input], ufs: List[UF]) -> bool:
+    def add(self, trace: list[Branch | Special], inputs: list[Input], ufs: list[UF]) -> bool:
         """
         Adds a trace to the tree: follows its path as far as the tree has it already, and appends
         the rest as a new path.
@@ -208,9 +216,9 @@ class Tree:
                 node.constraint[element.trace_id] = element.constraint
                 # Merged only if every trace through it merged it (a summary the executor dropped
                 # leaves the constraint in force)
-                if not getattr(element, 'merged', False):
+                if not element.merged:
                     node.merged = False
-                elif getattr(element, 'merged_conditional', False):
+                elif element.merged_conditional:
                     node.merged_conditional = True
             if element.has_branched:
                 if node.branched is None and node.skipped is not None:
@@ -238,7 +246,7 @@ class Tree:
         self.last_leaf = leaf
         return True
 
-    def register_loop_states(self, trace: list[Branch | Special]):
+    def register_loop_states(self, trace: list[Branch | Special]) -> None:
         """
         Positions the loop-head states of a trace and records the smallest position of each.
 
@@ -254,9 +262,9 @@ class Tree:
         for element in trace:
             if not isinstance(element, Branch):
                 continue
-            states = getattr(element, 'loop_states', ())
+            states = element.loop_states
             if states:
-                positioned = []
+                positioned: list[PositionedState] = []
                 for state in states:
                     position = (d, k, m)
                     m += 1
@@ -277,7 +285,7 @@ class Tree:
                 return True
         return False
 
-    def _attach(self, parent: Optional[Node], branched: bool, child: Union[Node, Leaf]):
+    def _attach(self, parent: Optional[Node], branched: bool, child: Union[Node, Leaf]) -> None:
         """Makes child the root, or the given side of parent."""
         if parent is None:
             self.root = child
@@ -286,7 +294,7 @@ class Tree:
         else:
             parent.skipped = child
 
-    def __deepcopy__(self, memo):
+    def __deepcopy__(self, memo: dict[int, Any]) -> Tree:
         """
         Copies the tree without recursing along its paths, which can be longer than the
         interpreter's recursion limit allows.
@@ -297,8 +305,8 @@ class Tree:
         memo[id(self)] = result
         # Copy the nodes shallowly first, so that copying their other attributes below does not
         # descend into the tree.
-        nodes = []
-        work = [self.root]
+        nodes: list[Node | Leaf] = []
+        work: list[Node | Leaf | None] = [self.root]
         while work:
             node = work.pop()
             if node is None or id(node) in memo:
@@ -317,7 +325,7 @@ class Tree:
         return result
 
 # VISUALIZATIONS
-    def get_constraint_label(self, parent: Node, node: Union[Node, Leaf]):
+    def get_constraint_label(self, parent: Node, node: Union[Node, Leaf]) -> str:
         """Get the constraint label for an edge."""
         if isinstance(node, Leaf):
             return ""
@@ -325,9 +333,9 @@ class Tree:
             return str(parent.constraint[node.trace_id])
         return ""
 
-    def add_to_dot(self, node: Optional[Union[Node, Leaf]], graph, parent: Optional[Node] = None):
-        """Add the nodes and edges below node to the DOT graph."""
-        work = [(node, parent)]
+    def add_to_dot(self, node: Optional[Union[Node, Leaf]], graph: Any, parent: Optional[Node] = None) -> None:
+        """Add the nodes and edges below node to the DOT graph (a pygraphviz AGraph)."""
+        work: list[tuple[Node | Leaf | None, Node | None]] = [(node, parent)]
         while work:
             node, parent = work.pop()
             if node is None:
@@ -342,7 +350,7 @@ class Tree:
                 work.append((node.skipped, node))
                 work.append((node.branched, node))
 
-    def plot_tree(self, idx):
+    def plot_tree(self, idx: int) -> None:
        """Plot the tree using Graphviz and save to a file."""
        #log.info(self.to_string())
        import pygraphviz as pgv

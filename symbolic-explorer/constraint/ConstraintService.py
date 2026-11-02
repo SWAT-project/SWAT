@@ -8,7 +8,7 @@ from parse.DataTransferObjects import TraceItem, InputItem, UFItem, InvocationIt
 from data.trace.Special import Special
 from data.trace.Branch import Branch
 
-import log
+import log, logging
 logger = log.get_logger()
 
 class ConstraintService:
@@ -58,12 +58,13 @@ class ConstraintService:
         """
 
         try:
-            # logger.info(f'[CONSTRAINT SERVICE] Received trace: {[t.__str__() for t in trace]}')
+            # logger.debug(f'[CONSTRAINT SERVICE] Received trace: {[t.__str__() for t in trace]}')
             trace_parsed: List[Branch | Special] = Parser.parse_trace(trace, trace_id=trace_id)
-            logger.info(f'[CONSTRAINT SERVICE] Parsed trace: {[t.__str__() for t in trace_parsed]}')
-            logger.info(f'[CONSTRAINT SERVICE] Parsed trace branches: {[t.__str__() for t in trace_parsed if isinstance(t, Branch)]}')
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f'[CONSTRAINT SERVICE] Parsed trace: {[t.__str__() for t in trace_parsed]}')
+                logger.debug(f'[CONSTRAINT SERVICE] Parsed trace branches: {[t.__str__() for t in trace_parsed if isinstance(t, Branch)]}')
             inputs_parsed: List[Input] = Parser.parse_inputs(inputs)
-            # logger.info(f'[CONSTRAINT SERVICE] Parsed inputs: {[i.__str__() for i in inputs_parsed]}')
+            # logger.debug(f'[CONSTRAINT SERVICE] Parsed inputs: {[i.__str__() for i in inputs_parsed]}')
             ufs_parsed: List[UF] = Parser.parse_ufs(ufs)
             # Flatten the missing-invocation DTOs into plain dicts so the Database/Tree stay decoupled
             # from the pydantic request models.
