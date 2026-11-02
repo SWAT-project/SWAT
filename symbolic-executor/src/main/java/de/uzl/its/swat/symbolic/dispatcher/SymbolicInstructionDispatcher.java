@@ -3555,6 +3555,13 @@ public final class SymbolicInstructionDispatcher {
      * @param iid The unique instruction ID set during instrumentation.
      */
     @SuppressWarnings("unused")
+    public static void SUMMARY_JOIN(long iid, int join) {
+        InstructionProcessor instructionProcessor =
+                ThreadHandler.getProcessor(Thread.currentThread().getId());
+        instructionProcessor.SUMMARY_JOIN(iid, join);
+    }
+
+    @SuppressWarnings("unused")
     public static void LOOP_HEAD(long iid, String head, Object[] locals) {
         InstructionProcessor instructionProcessor =
                 ThreadHandler.getProcessor(Thread.currentThread().getId());

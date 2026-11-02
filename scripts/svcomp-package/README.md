@@ -9,6 +9,8 @@ Important entry points:
 - `compile-target.sh`: helper used by `run_swat.py` to compile Java benchmark sources.
 - `smoketest.sh`: runs SWAT on the bundled smoke-test target.
 - `sv-comp.cfg`: SWAT configuration for SV-COMP mode.
+- `cfg-extraction/cfg-extractor-precheck.jar`: the static property pre-check (from
+  cfg-extraction), which can prove no-runtime-exception or valid-assert before exploring.
 - `THIRD-PARTY-LICENSES.md`: bundled third-party components and their licenses.
 
 Requirements (SV-COMP 2027 environment, Ubuntu 26.04): `python3` (3.14) and

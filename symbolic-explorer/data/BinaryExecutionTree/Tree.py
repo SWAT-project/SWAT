@@ -59,6 +59,17 @@ class Tree:
         self.loop_state_first: dict[str, tuple] = {}
         # Branches the last dfs() left out because of a repeated loop-head state.
         self.loop_state_pruned = 0
+        # Relevance (see dfs): the interned sigs of sequences of relevant decisions, the sides the
+        # last walk found covered (explored, solved or infeasible) per (sig, branch key), whether
+        # and how often a walk made a sliced branch relevant again, and its other counts.
+        self.sig_ids: dict = {}
+        self.covered: set = set()
+        self.poisoned_in_walk = False
+        self.poisoned_total = 0
+        self.sliced_in_walk = 0
+        self.dedup_in_walk = 0
+        # The leaf the last added trace ended at, so that the run's end can be recorded on it
+        self.last_leaf: Optional[Leaf] = None
 
 
     def record_inputs(self, inputs: List[Input]):
@@ -195,6 +206,12 @@ class Tree:
                 node.unmodelled_exception = True
             if isinstance(element, Branch):
                 node.constraint[element.trace_id] = element.constraint
+                # Merged only if every trace through it merged it (a summary the executor dropped
+                # leaves the constraint in force)
+                if not getattr(element, 'merged', False):
+                    node.merged = False
+                elif getattr(element, 'merged_conditional', False):
+                    node.merged_conditional = True
             if element.has_branched:
                 if node.branched is None and node.skipped is not None:
                     logger.info(f"New branch from node {node.id} (branched)")
@@ -206,6 +223,8 @@ class Tree:
             i += 1
 
         if i == len(elements) and node is not None:
+            if isinstance(node, Leaf):
+                self.last_leaf = node
             return True  # the path is in the tree already
 
         # node is None or a Leaf: the rest of the trace is a new path, ending in a Leaf
@@ -214,7 +233,9 @@ class Tree:
             new.unmodelled_exception = marked
             self._attach(parent, branched, new)
             parent, branched = new, element.has_branched
-        self._attach(parent, branched, Leaf(parent, inputs, ufs))
+        leaf = Leaf(parent, inputs, ufs)
+        self._attach(parent, branched, leaf)
+        self.last_leaf = leaf
         return True
 
     def register_loop_states(self, trace: list[Branch | Special]):

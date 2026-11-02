@@ -3,7 +3,9 @@ import re
 import json
 import copy
 import signal
+import time
 import requests
+import z3
 from enum import Enum
 from typing import Dict, List, Tuple, Optional, Any
 
@@ -11,6 +13,8 @@ from data.Database import Database
 from driver.SymbolicStorage import SymbolicStorage, DataTypes
 from solver.SolverHandler import SATResult
 from strategy.StrategyService import StrategyService
+from data.StaticAnalysisGraph.SAGraph import SAGraph
+from svcomp.StaticPreAnalysis import StaticPreAnalysis
 
 import log
 logger = log.get_logger()
@@ -50,6 +54,19 @@ class HTTPDriver:
         self.endpoint_id = None
         self.args = args
         self.base_url = f"http://{args.host}:{args.http_port}"
+        self.last_trace_id = None  # of the latest trace whose violation was checked
+        self.start_time = time.perf_counter()
+
+        # Static pre-analysis of the endpoint method (--sa-entry with --sa-path or --sa-file); the
+        # graph stays empty, which prunes nothing, unless it is loaded.
+        if not getattr(args, 'property', None):
+            args.property = 'valid-assert.prp'
+        self.sa = StaticPreAnalysis(args)
+        # The target serves every request in one JVM, so a static initializer is in one trace only
+        Database.instance().strip_static_initializers = True
+        self.sa_graph = SAGraph()
+        self.stats = {'requests': 0, 'solver_calls': 0, 'violations': 0, 'first_violation_s': None,
+                      'first_violation_request': None, 'server_errors': 0, 'exhausted': False, 'timed_out': False}
 
         # Parse the target specification (METHOD|URL|BODY)
         self._parse_target_specification(args.url_template)
@@ -563,6 +580,13 @@ class HTTPDriver:
         try:
             # Prepare headers
             headers = {}
+            if isinstance(json_body, str):
+                # A body template that is a JSON string ("<string_0>") is the raw request body,
+                # e.g. for a @RequestBody String parameter.
+                headers['Content-Type'] = 'text/plain; charset=utf-8'
+                response = requests.request(self.http_method, url, data=json_body.encode('utf-8'),
+                                            timeout=timeout, headers=headers)
+                return self._response_status(response)
             if json_body:
                 headers['Content-Type'] = 'application/json'
 
@@ -593,29 +617,8 @@ class HTTPDriver:
                 logger.error(f'[HTTP DRIVER] Unsupported HTTP method: {self.http_method}')
                 return ExecutionStatus.ERROR, {'error': f'Unsupported method: {self.http_method}'}
 
-            logger.info(f'[HTTP DRIVER] Response status: {response.status_code}')
+            return self._response_status(response)
 
-            response_data = {
-                'status_code': response.status_code,
-                'headers': dict(response.headers),
-                'url': response.url,
-                'text': response.text[:1000]  # Limit response text for logging
-            }
-            
-            # Only treat 5xx server errors as ERROR status
-            # 4xx client errors are valid responses from the target and should be treated as SUCCESS
-            if response.status_code >= 500:
-                logger.warning(f'[HTTP DRIVER] Server error: {response.status_code}')
-                return ExecutionStatus.ERROR, response_data
-            
-            # All other responses (1xx, 2xx, 3xx, 4xx) are considered successful communication with target
-            if response.status_code >= 400:
-                logger.info(f'[HTTP DRIVER] Client error response: {response.status_code} (valid target response)')
-            else:
-                logger.info(f'[HTTP DRIVER] Successful response: {response.status_code}')
-            
-            return ExecutionStatus.SUCCESS, response_data
-            
         except requests.exceptions.Timeout:
             logger.warning(f'[HTTP DRIVER] Request timeout after {timeout}s')
             return ExecutionStatus.TIMEOUT, {'error': 'timeout'}
@@ -626,72 +629,135 @@ class HTTPDriver:
             logger.critical(f'[HTTP DRIVER] Exception during request: {e}')
             return ExecutionStatus.CRASH, {'error': str(e)}
 
+    def _response_status(self, response) -> Tuple[ExecutionStatus, Dict]:
+        """The execution status of a request from its response."""
+        logger.info(f'[HTTP DRIVER] Response status: {response.status_code}')
+
+        response_data = {
+            'status_code': response.status_code,
+            'headers': dict(response.headers),
+            'url': response.url,
+            'text': response.text[:1000]  # Limit response text for logging
+        }
+        
+        # Only treat 5xx server errors as ERROR status
+        # 4xx client errors are valid responses from the target and should be treated as SUCCESS
+        if response.status_code >= 500:
+            logger.warning(f'[HTTP DRIVER] Server error: {response.status_code}')
+            return ExecutionStatus.ERROR, response_data
+        
+        # All other responses (1xx, 2xx, 3xx, 4xx) are considered successful communication with target
+        if response.status_code >= 400:
+            logger.info(f'[HTTP DRIVER] Client error response: {response.status_code} (valid target response)')
+        else:
+            logger.info(f'[HTTP DRIVER] Successful response: {response.status_code}')
+        
+        return ExecutionStatus.SUCCESS, response_data
+
     def record_violation(self):
         """Records the violation in the database."""
         db = Database.instance()
         db.add_violation(endpoint_id=self.endpoint_id, sym_vars=list(self.sym_storage.vars.values()))
+        self.stats['violations'] += 1
+        if self.stats['first_violation_s'] is None:
+            self.stats['first_violation_s'] = round(time.perf_counter() - self.start_time, 2)
+            self.stats['first_violation_request'] = self.stats['requests']
+
+    def new_trace_violation(self) -> tuple[bool, dict | None]:
+        """
+        Whether a trace of this endpoint arrived since the previous request, and the violation it
+        reports (the throwable that escaped the endpoint, see the executor's Witness), if any. The
+        executor sends the trace before the endpoint returns or throws, so it is in by now.
+        """
+        if self.endpoint_id is None:
+            return False, None
+        witness = Database.instance().get_witness_data(self.endpoint_id)
+        if witness is None or witness.get('trace_id') == self.last_trace_id:
+            return False, None
+        self.last_trace_id = witness.get('trace_id')
+        return True, witness.get('violation')
+
+    def is_target_violation(self, violation: dict | None) -> bool:
+        """Whether the escaped throwable violates the checked property (only valid-assert so far)."""
+        return violation is not None and violation.get('throwable') == 'java.lang.AssertionError'
 
     def determine_next_step(self, status: ExecutionStatus, response: Dict) -> Action:
-        """Determines the next step based on the HTTP response."""
-        match status:
-            case ExecutionStatus.SUCCESS:
-                # Check response for assertion violations or error indicators
-                response_text = response.get('text', '')
-                if 'java.lang.AssertionError' in response_text:
-                    logger.info(f'[HTTP DRIVER] Assertion error detected in response')
-                    self.record_violation()
-                    return Action.SYMBOLICNEXT
-                elif 'VIOLATION' in response_text or 'ERROR' in response_text:
-                    logger.info(f'[HTTP DRIVER] Violation detected in response')
-                    self.record_violation()
-                    return Action.SYMBOLICNEXT
-                return Action.SYMBOLICNEXT
-            case ExecutionStatus.VIOLATION:
+        """Determines the next step based on the HTTP response and the trace it produced."""
+        new_trace, violation = self.new_trace_violation()
+        if status in (ExecutionStatus.SUCCESS, ExecutionStatus.ERROR):
+            response_text = response.get('text', '')
+            if self.is_target_violation(violation) or 'java.lang.AssertionError' in response_text:
+                frames = (violation or {}).get('frames') or [{}]
+                logger.info(f'[HTTP DRIVER] Assertion violation detected (at {frames[0].get("className")}:{frames[0].get("line")})')
                 self.record_violation()
-                logger.info(f'[HTTP DRIVER] Violation recorded!')
+                self.state.verdict = Verdict.VIOLATION
+                if self.args.stop_on_violation:
+                    return Action.REPORTVERDICT
                 return Action.SYMBOLICNEXT
+            if status == ExecutionStatus.ERROR:
+                # A server error is a valid outcome of a request (an exception other than the
+                # violation escaped the endpoint) as long as its trace arrived.
+                self.stats['server_errors'] += 1
+                if not new_trace:
+                    logger.info(f'[HTTP DRIVER] Server error without a trace')
+                    if self.state.verdict != Verdict.VIOLATION:
+                        self.state.verdict = Verdict.UNKNOWN
+                    return Action.REPORTVERDICT
+                logger.info(f'[HTTP DRIVER] Server error (exception {violation and violation.get("throwable")}), continuing')
+            return Action.SYMBOLICNEXT
+        match status:
             case ExecutionStatus.TIMEOUT:
                 logger.info(f'[HTTP DRIVER] Timeout!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
             case ExecutionStatus.CRASH:
                 logger.info(f'[HTTP DRIVER] Crash!')
-                self.state.verdict = Verdict.UNKNOWN
-                return Action.REPORTVERDICT
-            case ExecutionStatus.ERROR:
-                logger.info(f'[HTTP DRIVER] Error!')
-                self.state.verdict = Verdict.UNKNOWN
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
                 return Action.REPORTVERDICT
 
         raise Exception(f'Unknown execution status: {status}')
 
     def retrieve_solution(self):
         """Retrieve next solution using symbolic exploration."""
-        possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id)
+        possible_branches = StrategyService.select_branch(endpoint_id=self.endpoint_id, sa_node=self.sa_graph.entry_node,
+                                                         rank_by_distance=self.args.sa_rank_distance,
+                                                         search_order=self.args.search_order)
         logger.info(f'[HTTP DRIVER] Found {len(possible_branches)} possible branches')
-        
-        symbolic_vars = None
-        sat = None
-        branch_found = False
-        
+
+        sol = None
+        gave_up = False
         for branch in possible_branches:
             if not StrategyService.is_symbolic_branch(branch):
                 continue
-            branch_found = True
-            sat, sol = StrategyService.solve_branch(branch)
-
-            if sat == SATResult.SAT:
-                symbolic_vars = branch.inputs
+            if self.out_of_time():
+                gave_up = True
+                sol = None
                 break
+            sat, sol = StrategyService.solve_branch(branch)
+            self.stats['solver_calls'] += 1
+            if sat == SATResult.SAT and self.has_surrogate(sol):
+                # Rarely needed, and UNSAT under the restriction says nothing about the branch, so
+                # it is not recorded: the branch would be re-solved in every round.
+                sat, sol = StrategyService.solve_branch(branch, extra_exprs=self.sendable_strings(branch))
+                self.stats['solver_calls'] += 1
+            if sat == SATResult.SAT:
+                break
+            if sat != SATResult.UNSAT:
+                gave_up = True
+            sol = None
 
-        if not branch_found or sat == SATResult.UNSAT:
-            self.state.verdict = Verdict.SAFE
-            logger.info(f'[HTTP DRIVER] No symbolic branch found or UNSAT')
-            return Action.REPORTVERDICT
-
-        if sat == SATResult.UNKNOWN:
-            logger.info(f'[HTTP DRIVER] SAT result is UNKNOWN')
-            self.state.verdict = Verdict.UNKNOWN
+        if sol is None:
+            if gave_up:
+                logger.info(f'[HTTP DRIVER] No solution found, but the solver gave up on some branch')
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
+            else:
+                logger.info(f'[HTTP DRIVER] No symbolic branch found or UNSAT')
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.SAFE
+            self.stats['exhausted'] = not gave_up
             return Action.REPORTVERDICT
 
         sol_viz = [f'{key}: {val["plain_value"]}' for key, val in sol.items()]
@@ -702,25 +768,103 @@ class HTTPDriver:
 
     def run(self):
         """Main execution method."""
-        verdict = self.exec()
+        try:
+            verdict = self.exec()
+        except BaseException:
+            # Without this, the HTTP server would keep the explorer alive with no driver.
+            logger.exception('[HTTP DRIVER] The exploration failed')
+            verdict = Verdict.VIOLATION if self.state.verdict == Verdict.VIOLATION else Verdict.UNKNOWN
+            self.stats['crashed'] = True
+            self.write_stats(verdict)
         logger.info(f'[HTTP DRIVER] Verdict: {verdict}')
         self.kill_current_process()
+
+    @staticmethod
+    def sendable_strings(branch) -> list:
+        """
+        Restricts the string inputs to chars that can be sent: a request is UTF-8, so a lone UTF-16
+        surrogate (which Java strings, and so the solver's, may hold) cannot be part of it.
+        UNSAT under this restriction is not recorded as the branch being infeasible.
+        """
+        from solver.ConstraintCache import get_constraint_cache
+        ctx = get_constraint_cache().shared_context
+        no_surrogates = z3.Star(z3.Union(z3.Range('\u0000', '\ud7ff', ctx=ctx), z3.Range('\ue000', '\uffff', ctx=ctx)))
+        names = {i.name for i in branch.inputs if i.name.startswith(DataTypes.STRING.value + '_')
+                 or i.name.startswith('List_') and DataTypes.STRING.value in i.name}
+        return [z3.InRe(z3.String(name, ctx=ctx), no_surrogates) for name in sorted(names)]
+
+    @staticmethod
+    def has_surrogate(sol: dict) -> bool:
+        """Whether a string of the solution holds a UTF-16 surrogate, see sendable_strings."""
+        for val in sol.values():
+            v = val.get('plain_value')
+            if z3.is_expr(v) and z3.is_string_value(v):
+                text = v.as_string()
+                if re.search(r'\\u\{d[89a-f][0-9a-f]{2}\}', text, re.IGNORECASE) \
+                        or any('\ud800' <= c <= '\udfff' for c in text):
+                    return True
+        return False
+
+    def out_of_time(self) -> bool:
+        return bool(self.args.time_limit) and time.perf_counter() - self.start_time > self.args.time_limit
+
+    def load_sa_graph(self):
+        """Runs the static pre-analysis for the endpoint (--sa-entry) and adopts its graph."""
+        self.sa.start()
+        self.sa.wait()
+        graph = self.sa.take_graph()
+        if graph is not None:
+            self.sa_graph = graph
+        self.stats['sa'] = self.sa.stats(0 if graph is not None else None)
+
+    def final_verdict(self) -> Verdict:
+        """The verdict, with SAFE downgraded wherever the exploration could not back it."""
+        verdict = self.state.verdict
+        if verdict != Verdict.SAFE or self.endpoint_id is None:
+            return verdict
+        tree = Database.instance().get_tree(self.endpoint_id)
+        if any(e.get('kind') == 'sa_desync' for e in tree.execution_errors):
+            logger.warning(f'[HTTP DRIVER] The SA walk fell out of step with the execution (see [DFS] SA desync)')
+            return Verdict.UNKNOWN
+        if tree.symbolic_context_loss or tree.symbolic_precision_loss:
+            logger.warning(f'[HTTP DRIVER] Found symbolic context or precision loss')
+            return Verdict.UNKNOWN
+        return verdict
+
+    def write_stats(self, verdict: Verdict):
+        self.stats['verdict'] = verdict.name
+        self.stats['wall_s'] = round(time.perf_counter() - self.start_time, 2)
+        if self.endpoint_id is not None:
+            tree = Database.instance().get_tree(self.endpoint_id)
+            self.stats['sa_desyncs'] = sum(1 for e in tree.execution_errors if e.get('kind') == 'sa_desync')
+            self.stats['symbolic_context_loss'] = tree.symbolic_context_loss
+            self.stats['symbolic_precision_loss'] = tree.symbolic_precision_loss
+        with open(os.path.join(self.args.logdir, 'http_stats.json'), 'w') as f:
+            json.dump(self.stats, f, indent=2)
 
     def exec(self):
         """Runs the symbolic execution using HTTP requests."""
         logger.info(f'[HTTP DRIVER] Beginning HTTP symbolic execution')
-        
+        self.start_time = time.perf_counter()
+
         # Register symbolic variables from URL template
         self._register_symbolic_vars()
-        
+
+        self.load_sa_graph()
+
         # Main execution loop
         while True:
+            if self.out_of_time():
+                logger.info(f'[HTTP DRIVER] Time limit of {self.args.time_limit}s reached')
+                if self.state.verdict != Verdict.VIOLATION:
+                    self.state.verdict = Verdict.UNKNOWN
+                self.stats['timed_out'] = True
+                break
+
             # Send HTTP request
             status, response = self.send_http_request()
-            
-            # Determine the next step
-            next_step = self.determine_next_step(status, response)
-            
+            self.stats['requests'] += 1
+
             # Select the endpoint (assuming single endpoint for HTTP targets)
             endpoints = Database.instance().get_endpoints()
             if len(endpoints) == 0:
@@ -730,15 +874,21 @@ class HTTPDriver:
             else:
                 assert len(endpoints) == 1
                 self.endpoint_id = endpoints[0]
-            
+
+            # Determine the next step
+            next_step = self.determine_next_step(status, response)
+
             if next_step == Action.REPORTVERDICT:
                 break
 
             if next_step == Action.SYMBOLICNEXT:
                 logger.info(f'[HTTP DRIVER] Next step: SYMBOLIC EXPLORATION')
-                
+
                 next_step = self.retrieve_solution()
                 if next_step == Action.REPORTVERDICT:
+                    if self.out_of_time():
+                        logger.info(f'[HTTP DRIVER] Time limit of {self.args.time_limit}s reached')
+                        self.stats['timed_out'] = True
                     break
 
         logger.info(f'[HTTP DRIVER] Symbolic execution terminated')
@@ -748,7 +898,9 @@ class HTTPDriver:
             for v in violations:
                 logger.info(f'[HTTP DRIVER] Violation: {[vv.__str__() for vv in v]}')
 
-        return self.state.verdict
+        verdict = self.final_verdict()
+        self.write_stats(verdict)
+        return verdict
 
     def kill_current_process(self):
         """Terminate the current process."""

@@ -3015,6 +3015,9 @@ public final class NopDispatcher {
     @SuppressWarnings("unused")
     public static void LOOP_HEAD(long iid, String head, Object[] locals) {}
 
+    @SuppressWarnings("unused")
+    public static void SUMMARY_JOIN(long iid, int join) {}
+
 
     /**
      * Method used to interact between the concrete and symbolic execution. The call to this method

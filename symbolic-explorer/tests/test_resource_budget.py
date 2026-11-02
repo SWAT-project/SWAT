@@ -224,6 +224,7 @@ class DriverTest(unittest.TestCase):
 
     def test_heap_and_jvm_options_in_the_command(self):
         self.driver.symbolicStorage = SimpleNamespace(input_type=None)
+        self.driver.args = SimpleNamespace()
         cmd = self.driver.build_command('agent.jar', 'sv-comp.cfg', 'z3', 8000, ['cp'], java_path='java')
         self.assertIn(f'-Xmx{self.driver.budget.heap_mib}m', cmd)
         self.assertIn('-XX:TieredStopAtLevel=1', cmd)

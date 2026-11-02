@@ -147,10 +147,16 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional)")
     parser.add_argument("--sa-retry-without", action="store_true", help="On a SAFE verdict reached with static pre-analysis, disable it and explore again (guards against false SAFE from incomplete SA)", default=False)
     parser.add_argument("--sa-no-callback-targets", action="store_true", help="Do not count library calls as possible asserts when application code that library code may call back (overrides of library methods, lambdas) can reach an assert. Unsound: an assert reached only through such a callback can then give a false SAFE", default=False)
+    parser.add_argument("--prefer-short-strings", action="store_true", default=False, help="Shrink each string input of a solution to the shortest length the query allows")
+    parser.add_argument("--search-order", choices=["dfs", "shallow", "coverage", "coverage-dfs", "generational"], default="dfs", help="Order in which the open branches are tried: dfs (pre-order of the execution tree), shallow (closest to the root first), coverage (sides no trace took yet first, then shallow), coverage-dfs (the same, then dfs), generational (coverage, then the branches of the traces that covered the most first)")
     parser.add_argument("--sa-rank-distance", action="store_true", help="Try branches closest to an assert (by static pre-analysis graph distance) first, instead of in plain DFS order", default=False)
     parser.add_argument("--no-executor-cds", action="store_true", help="Do not share the classes the executor JVMs load through a class data sharing (AppCDS) archive dumped during the run (sv-comp mode)", default=False)
+    parser.add_argument("--no-prefer-small-models", action="store_true", help="Use a solver's solution as it is, also if it has extreme integral inputs (by default such a solution is re-solved with the inputs bounded first)", default=False)
+    parser.add_argument("--no-loop-summaries", action="store_true", help="Do not let the executor merge diamonds and counting loops into formulas (loop summaries; sets -DloopSummaries=false)", default=False)
+    parser.add_argument("--no-sa-slicing", action="store_true", help="Do not use the static pre-analysis' relevance analysis: flip branches that cannot affect a target too, and keep their constraints in every query", default=False)
     parser.add_argument("--no-loop-state-matching", action="store_true", help="Flip branches below a loop-head state that was already reached at a smaller position too (the executor reports loop-head states if its config sets loopStateMatching)", default=False)
     parser.add_argument("--solver-rlimit", type=int, default=0, help="Z3 resource limit (rlimit) for the first query of each branch in sv-comp mode; a branch that runs out is retried later with a growing limit. 0 (default): unlimited")
+    parser.add_argument("--precheck-jar", default=None, help="cfg-extraction's cfg-extractor-precheck.jar for the property pre-check (default: next to symbolic-explorer in the SV-COMP archive, else ../cfg-extraction/build/libs/)")
     parser.add_argument("--no-property-precheck", action="store_true", help="Do not run the static property pre-check (sv-comp mode), which can prove no-runtime-exception (no uncaught RuntimeException is possible) or valid-assert (no AssertionError is ever created) for the whole program", default=False)
     parser.add_argument("--divergence-retries", type=int, default=3, help="How often a branch is re-solved (with the failed solutions excluded) when the run of its solution does not reach it, before it is given up on, which rules out SAFE (sv-comp mode)")
     parser.add_argument("--approximate-rlimit", type=int, default=250_000_000, help="Z3 resource limit for a query over an approximate Math model in sv-comp mode (about one to one and a half minutes); one that runs out is given up on, which rules out SAFE as the model does anyway. 0: no limit beyond --solver-rlimit")
@@ -181,6 +187,9 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("--http-port", help="HTTP target port", type=int, default=8080)
     parser.add_argument("-u", "--url-template", help="URL template with symbolic variables (e.g., /api/path/<int_0>?x=<float_1>)")
     parser.add_argument("--http-method", choices=['GET', 'POST', 'PUT', 'DELETE'], default='GET', help="HTTP method")
+    parser.add_argument("--sa-entry", help="The method the static pre-analysis graph starts at, as pkg.Class#method (http mode: the endpoint method; default: main of --target)")
+    parser.add_argument("--time-limit", type=float, default=0, help="Wall-clock limit in seconds for the exploration (http mode); 0: none")
+    parser.add_argument("--stop-on-violation", action="store_true", default=False, help="End the exploration at the first violation (http mode)")
 
 
 if __name__ == '__main__':
@@ -203,6 +212,7 @@ if __name__ == '__main__':
     Database.instance().optimize_solutions = args.optimize
     Database.instance().log_smt_formulas = args.log_smt_formulas
     Database.instance().fp_tactic = not args.no_fp_tactic
+    Database.instance().prefer_short_strings = args.prefer_short_strings
     Database.instance().args = args  # Store args for access to logdir
 
     s = SymbolicExplorer(args)

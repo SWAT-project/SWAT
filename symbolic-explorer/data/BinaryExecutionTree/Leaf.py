@@ -32,4 +32,7 @@ class Leaf:
         self.gid = GLOBAL_IID
         self.id = -1
         GLOBAL_IID -= 1
+        # Whether a run ended here with an uncaught exception (see dfs: it makes the irrelevant
+        # branches whose regions it ended in relevant)
+        self.abnormal = False
 

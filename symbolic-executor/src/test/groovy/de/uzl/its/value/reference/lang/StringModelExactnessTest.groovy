@@ -151,6 +151,27 @@ class StringModelExactnessTest extends Specification {
                                [-3, 0, 2]].combinations()
     }
 
+    @Unroll
+    def "indexOf of a char (as its own code point) is exact: #sample, #ch, #from"() {
+        given:
+        def s = symbolicString("s", "fixed")
+        def c = new CharValue(context, (char) 'a', bvmgr.makeVariable(16, "ch"))
+        def f = symbolicInt("from", 0)
+        def fixed = [fixString(s, sample), bvmgr.equal(c.formula, bvmgr.makeBitvector(16, ch)), fixInt(f, from)]
+
+        when:
+        def one = (IntValue) call(s, "indexOf", [INT], [c])
+        def two = (IntValue) call(s, "indexOf", [INT, INT], [c, f])
+
+        then:
+        exactInt(fixed, one, sample.indexOf(ch))
+        exactInt(fixed, two, sample.indexOf(ch, from))
+
+        where:
+        [sample, ch, from] << [["", "a", "aXa", "97", "a😀b"], [(int) 'a', (int) '9', 0xD83D, 0xDE00, 0xFFFF],
+                               [-3, 0, 2]].combinations()
+    }
+
     def "indexOf('a') on a concrete char has the Java result concretely"() {
         expect:
         ((IntValue) call(new StringValue(context, "xab", -1), "indexOf", [INT], [new IntValue(context, (int) 'a')])).concrete == 1

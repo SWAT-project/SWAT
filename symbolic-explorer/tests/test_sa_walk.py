@@ -264,6 +264,42 @@ def inter_method_catch_graph():
             .edge('u', 'h', 'EXCEPTIONAL_RETURN'))
 
 
+class CannotRaiseTest(unittest.TestCase):
+    """Guards the property pre-check proves cannot raise (cannotRaise) lead nowhere on their exception side."""
+
+    def graph(self, cannot_raise: bool) -> SAGraph:
+        b = inter_method_catch_graph()
+        for n in b.nodes:
+            if n['id'] == 'g' and cannot_raise:
+                n['cannotRaise'] = True
+        return b.load()
+
+    def test_exception_side_of_a_guard_that_cannot_raise_is_a_dead_end(self):
+        n = self.graph(True).nodes
+        dead = n['g'].get_fallthrough_child()
+        self.assertEqual(dead.id, 'dead[g]')
+        self.assertIs(n['g'].get_branched_child(), n['tx'])  # the guard is still a branch
+        self.assertFalse(sagraph.is_interesting(dead, sagraph.push(None, n['c'])))
+        # The assert in main's handler was only reachable through the guard's failure.
+        self.assertFalse(n['c'].reachesAssertSameLevel)
+        self.assertIsNone(dead.walk_till_branch(sagraph.push(None, n['c'])))
+
+    def test_unexplored_exception_side_is_no_candidate(self):
+        for cannot_raise, expected in ((False, {'n1'}), (True, set())):
+            g = keyed(self.graph(cannot_raise))
+            n1 = branch_node('n1', skipped=None, branched=leaf(), key='g', pushes=('c',))
+            self.assertEqual(candidates(n1, g), expected, f'cannotRaise={cannot_raise}')
+
+    def test_statement_marks_change_nothing(self):
+        b = inter_method_catch_graph()
+        for n in b.nodes:
+            if n['id'] in ('c', 'tx'):
+                n['cannotRaise'] = True
+        n = b.load().nodes
+        self.assertIs(n['g'].get_fallthrough_child(), n['u'])
+        self.assertTrue(n['c'].reachesAssertSameLevel)
+
+
 class UnwindTest(unittest.TestCase):
 
     def test_escaping_exception_resumes_at_callers_handler(self):

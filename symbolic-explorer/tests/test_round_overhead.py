@@ -77,6 +77,7 @@ class BranchToExploreTest(unittest.TestCase):
         driver = svcomp.SVCompDriver.__new__(svcomp.SVCompDriver)
         driver.state = svcomp.State()
         driver.symbolicStorage = svcomp.SymbolicStorage()
+        driver.pending_projected = None
         with mock.patch.object(StrategyService, 'select_branch', return_value=[node]), \
              mock.patch.object(svcomp.SVCompDriver, 'solve_candidates', return_value=(node, {}, False)):
             driver.sa_graph = SimpleNamespace(entry_node=None)

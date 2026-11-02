@@ -35,7 +35,7 @@ def is_port_available(port: int) -> bool:
         return False
 
 
-def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None) -> list[str]:
+def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, no_sa_slicing: bool = False, no_loop_summaries: bool = False, no_prefer_small_models: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'dfs', sa_no_runtime_exception: bool = False) -> list[str]:
 
 
     test_case_dir = ver_task['file_path'].parent
@@ -43,9 +43,12 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
     config_path = SCRIPT_DIR / '..' / config_file
     library_path = BASE_PATH / 'libs' / 'java-library-path'
     sa_path = BASE_PATH.parent / 'cfg-extraction'
-    # The pre-analysis only targets asserts, so it can only prune for valid-assert (the explorer
-    # enforces this too).
-    no_sa = no_sa or ver_task['category'] != VerificationCategory.VALID_ASSERT_PRP
+    # The graph has target points for valid-assert and no-runtime-exception only (the explorer
+    # enforces this too, see StaticPreAnalysis.SA_TARGETS). Under no-runtime-exception it is opt-in:
+    # sound, but it costs more than it saves on sv-benchmarks so far (see CLAUDE.md, Targets per property).
+    sa_properties = (VerificationCategory.VALID_ASSERT_PRP,) + \
+        ((VerificationCategory.NO_RUNTIME_EXCEPTION_PRP,) if sa_no_runtime_exception else ())
+    no_sa = no_sa or ver_task['category'] not in sa_properties
 
     base_command: list[str] = [str(PYENV_PATH), "-u", str(BASE_PATH / 'symbolic-explorer' / 'SymbolicExplorer.py'),
                     "-prp", ver_task['category'].value,
@@ -61,7 +64,11 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     (["--parallel-sa"] if parallel_sa and not no_sa else []) + \
                     (["--sa-rank-distance"] if sa_rank_distance and not no_sa else []) + \
                     (["--sa-no-callback-targets"] if sa_no_callback_targets and not no_sa else []) + \
+                    (["--no-sa-slicing"] if no_sa_slicing and not no_sa else []) + \
+                    (["--no-loop-summaries"] if no_loop_summaries else []) + \
+                    (["--no-prefer-small-models"] if no_prefer_small_models else []) + \
                     (["--solver-rlimit", str(solver_rlimit)] if solver_rlimit else []) + \
+                    (["--search-order", search_order] if search_order != 'dfs' else []) + \
                     (["--cpu-limit", str(cpu_limit_s)] if cpu_limit_s else [])
 
     cp: list[str] = []
@@ -105,7 +112,7 @@ def write_run_info(run_dir: Path, **settings) -> Path:
     return path
 
 
-def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None) -> list[VerificationTask]:
+def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, sa_retry_without: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, no_sa_slicing: bool = False, no_loop_summaries: bool = False, no_prefer_small_models: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'dfs', sa_no_runtime_exception: bool = False) -> list[VerificationTask]:
 
     port = 9000
     skipped_ports = []
@@ -150,7 +157,7 @@ def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swa
             'target_dir': target_dir,
             'target': target,
             'log_dir': logging_dir,
-            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, solver_rlimit=solver_rlimit, cpu_limit_s=cpu_limit_s)
+            'command': generate_command(ver_task, logging_dir, port=port, config_file=config_file, no_sa=no_sa, sa_retry_without=sa_retry_without, parallel_sa=parallel_sa, sa_rank_distance=sa_rank_distance, sa_no_callback_targets=sa_no_callback_targets, no_sa_slicing=no_sa_slicing, no_loop_summaries=no_loop_summaries, no_prefer_small_models=no_prefer_small_models, solver_rlimit=solver_rlimit, cpu_limit_s=cpu_limit_s, search_order=search_order, sa_no_runtime_exception=sa_no_runtime_exception)
         }
         ver_task['command'] = command
         port += 1

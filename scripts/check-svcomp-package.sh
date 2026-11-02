@@ -27,7 +27,7 @@ top_dirs="$(unzip -Z1 "$ZIP_PATH" | cut -d/ -f1 | sort -u)"
 check_dir="$(mktemp -d "${TMPDIR:-/tmp}/swat-svcomp-check.XXXXXX")"
 unzip -q "$ZIP_PATH" -d "$check_dir"
 tool_dir="${check_dir}/${top_dirs}"
-for f in LICENSE README.md smoketest.sh run-swat.sh libs/python/PYTHON_VERSION; do
+for f in LICENSE README.md smoketest.sh run-swat.sh libs/python/PYTHON_VERSION cfg-extraction/cfg-extractor-precheck.jar; do
   [[ -f "${tool_dir}/${f}" ]] || fail "missing ${f} in archive root ${top_dirs}/"
 done
 [[ -s "${tool_dir}/THIRD-PARTY-LICENSES.md" ]] || fail "missing or empty THIRD-PARTY-LICENSES.md in archive root ${top_dirs}/"
@@ -44,6 +44,9 @@ docker run --rm -v "${tool_dir}:/tool" -w /tool -e UBUNTU_PACKAGES="$UBUNTU_PACK
   echo "version: ${version}"
   [ -n "$version" ] && [ "$(printf "%s\n" "$version" | wc -l)" -eq 1 ] || { echo "error: --version must print one non-empty line" >&2; exit 1; }
   [ "$(./run-swat.sh -v)" = "$version" ] || { echo "error: -v and --version differ" >&2; exit 1; }
+  precheck="$(java -cp cfg-extraction/cfg-extractor-precheck.jar de.uzl.its.cfg.staticcheck.ExceptionFreedomCheck smoketest/common smoketest | tail -n 1)"
+  echo "property pre-check: ${precheck}"
+  case "$precheck" in *"\"tool\": \"cfg-extraction\""*) ;; *) echo "error: the property pre-check did not run" >&2; exit 1;; esac
   ./smoketest.sh > smoketest.out 2>&1 || { cat smoketest.out; exit 1; }
   echo "smoketest stdout: $(wc -c < smoketest.out) bytes"
   [ -f witness/witness.yml ] && [ -f witness/witness.graphml ] || { echo "error: smoketest left no witness/witness.yml + witness.graphml" >&2; exit 1; }

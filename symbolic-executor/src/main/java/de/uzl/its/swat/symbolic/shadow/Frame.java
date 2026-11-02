@@ -56,6 +56,31 @@ public class Frame {
      *
      * @param nReturnWords Number of words that are returned on invoke method end
      */
+    /** Loop summaries in progress in this frame (see symbolic/summary/Merger), created on demand. */
+    private java.util.Map<Integer, Object> summaryJoins;
+    private java.util.Map<Long, Object> summaryLoops;
+
+    public java.util.Map<Integer, Object> summaryJoins() {
+        if (summaryJoins == null) {
+            summaryJoins = new java.util.HashMap<>();
+        }
+        return summaryJoins;
+    }
+
+    public java.util.Map<Integer, Object> summaryJoinsIfAny() {
+        return summaryJoins;
+    }
+
+    /** The counting loop whose back edge this frame took last, until its head is reached. */
+    public Object summaryBackEdge;
+
+    public java.util.Map<Long, Object> summaryLoops() {
+        if (summaryLoops == null) {
+            summaryLoops = new java.util.HashMap<>();
+        }
+        return summaryLoops;
+    }
+
     public Frame(String className, String methodName, int nReturnWords) {
         this.nReturnWords = nReturnWords;
         ret = PlaceHolder.instance;
