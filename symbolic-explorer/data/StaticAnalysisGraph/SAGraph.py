@@ -19,11 +19,38 @@ Terms used here, in dfs and in Relevance:
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Any, Final, Literal, Optional, Tuple, TypedDict, Union, cast
 from collections import deque
+from enum import Enum
 import json
 import math
 import re
+
+if TYPE_CHECKING:
+    from data.StaticAnalysisGraph.Relevance import RelevanceStats
+
+# An exception type followed by its superclasses up to java.lang.Throwable, e.g.
+# ("java.lang.ArithmeticException", "java.lang.RuntimeException", ..., "java.lang.Throwable"); or
+# a pseudo type alone, e.g. ("?Exception",) (see is_pseudo).
+ExceptionChain = Tuple[str, ...]
+
+# An abstract location of the data-flow facts (cfg-extraction DataflowFacts): a local `l:<name>`, a
+# parameter `p:<n>` or `p:this`, the return value `ret` (these three are per method: Relevance
+# scopes them as `<method>|<location>`), a field `f:<name>:<type>`, the elements of arrays
+# `a:<element kind>`, global state `g:<name>` (the input cursor, library state, output, the
+# exception in flight), or `*`, which stands for every location.
+Location = str
+# What a statement does to locations: those it may write, and those it reads to compute them.
+Effect = Tuple[Tuple[Location, ...], Tuple[Location, ...]]
+
+
+class CallFacts(TypedDict, total=False):
+    """The data-flow facts of an expanded call site (the extractor's `call` field)."""
+    args: list[list[Location]]   # per argument, the locations its value comes from
+    base: list[Location]         # the receiver's locations (empty for a static call)
+    result: Location             # where the result goes, if it is used
+    resultAddress: list[Location]  # what the result's destination is addressed by (an array index, ...)
+
 
 # The walk's call stack: a persistent linked-list stack of call-site nodes, innermost call on top, each
 # cell also carrying the stack's depth. `None` is the empty stack, i.e. the walk is in main's
@@ -48,7 +75,7 @@ class SANode:
     #   escapes:                the exceptions (as superclass chains) that can leave this frame
     reachesTargetSameLevel: bool = False
     canReturn: bool = False
-    escapes: frozenset[tuple[str, ...]] = frozenset()
+    escapes: frozenset[ExceptionChain] = frozenset()
     # A target point of the property being checked (see the module comment). Incomplete nodes are
     # target points too.
     isTarget: bool = False
@@ -63,7 +90,7 @@ class SANode:
     # Only for an uncaught[T] node, where exception T leaves its method: T followed by its
     # superclasses up to java.lang.Throwable. The walk unwinds its call stack to the first frame
     # with a handler for one of these, most specific first.
-    exceptionChain: tuple[str, ...] | None = None
+    exceptionChain: ExceptionChain | None = None
     # Predecessors along every edge kind (calls, RETURN and EXCEPTIONAL_RETURN edges included), for
     # the target distances.
     prev: list[SANode] = field(default_factory=list, repr=False)
@@ -97,25 +124,35 @@ class SANode:
     # The extractor's data-flow facts (cfg-extraction DataflowFacts), for the relevance analysis:
     # (written, read) location pairs, what the node's control decision reads, whether it may end
     # the program, and for an expanded call site its arguments, receiver and result.
-    dataflow: tuple = ()
-    control: tuple = ()
+    dataflow: tuple[Effect, ...] = ()
+    control: tuple[Location, ...] = ()
     terminates: bool = False
-    call: dict | None = field(default=None, repr=False)
+    call: CallFacts | None = field(default=None, repr=False)
     # Set by Relevance, for a branch. irrelevant: it cannot affect the targets, so dfs slices it.
     # summary_ok: its region changes nothing relevant except locals of its own method, so dfs may
     # honor a conditional loop summary of it. region: for either, the nodes of its own frame up to
     # its immediate post-dominator.
     irrelevant: bool = False
     summary_ok: bool = False
-    region: frozenset | None = field(default=None, repr=False)
+    region: frozenset[SANode] | None = field(default=None, repr=False)
 
     def is_branch(self) -> bool:
         return self.next_branched is not None
 
+    def sides(self) -> tuple[SANode, SANode]:
+        """A branch's successors: (fall-through, branched)."""
+        assert self.next_fallthrough is not None and self.next_branched is not None, f"{self.id} is no branch"
+        return self.next_fallthrough, self.next_branched
+
+    def resume_site(self) -> SANode:
+        """A call site's return site, where its frame resumes when the callee returns."""
+        assert self.return_site is not None, f"{self.id} is no call site"
+        return self.return_site
+
     def is_call_site(self) -> bool:
         return self.return_site is not None
 
-    def handler_for(self, chain: tuple[str, ...]) -> SANode | None:
+    def handler_for(self, chain: ExceptionChain) -> SANode | None:
         """At a call site: the handler that catches an exception with this superclass chain, the
         most specific one first (the rule the extractor wires its EXCEPTIONAL_RETURN edges with)."""
         for exception_type in chain:
@@ -156,7 +193,7 @@ class SANode:
                 if stack is None: # returning from main, or from a frame we never saw entered
                     return None
                 frame, stack = pop(stack)
-                node = frame.return_site
+                node = frame.resume_site()
                 continue
             if node.exceptionChain is not None:
                 if is_pseudo(node.exceptionChain):
@@ -181,11 +218,11 @@ def pop(stack: CallStack) -> tuple[SANode, CallStack]:
     return stack[0], stack[1]
 
 
-def depth(stack: CallStack) -> int:
+def depth(stack: CallStack | TraceFrames) -> int:
     return 0 if stack is None else stack[2]
 
 
-def unwind(exception_chain: tuple[str, ...], stack: CallStack) -> tuple[SANode, CallStack] | None:
+def unwind(exception_chain: ExceptionChain, stack: CallStack) -> tuple[SANode, CallStack] | None:
     """
     Pops frames off `stack` until one catches an exception with the given superclass chain.
 
@@ -200,7 +237,7 @@ def unwind(exception_chain: tuple[str, ...], stack: CallStack) -> tuple[SANode, 
     return None
 
 
-def is_pseudo(exception_chain: tuple[str, ...]) -> bool:
+def is_pseudo(exception_chain: ExceptionChain) -> bool:
     """
     Whether an escape is of a pseudo exception type: an exception the graph knows may occur but not
     its type -- "?Exception" (unguarded: a null dereference, a cast, anything a library call
@@ -212,7 +249,7 @@ def is_pseudo(exception_chain: tuple[str, ...]) -> bool:
 
 def unwind_pseudo(pseudo_type: str, stack: CallStack) -> list[tuple[SANode, CallStack]]:
     """Every handler an exception of a pseudo type may resume at, with the stack below its frame."""
-    resumed = []
+    resumed: list[tuple[SANode, CallStack]] = []
     while stack is not None:
         frame, stack = pop(stack)
         resumed.extend((handler, stack) for handler in frame.unknown_handlers.get(pseudo_type, []))
@@ -233,15 +270,25 @@ class GraphIndex:
 
 
 # The trace stack: the executor's view of the call stack at a branch, as the walk tracks it from the
-# trace (each branch carries the frames popped and pushed since the previous one). A CallStack
-# whose cells hold the graph's call site for each frame, or None for a frame the graph has no call
-# site for (a library call, a call the extractor gave no key). LOST once the trace popped more
-# frames than are known, e.g. returning from a frame entered before tracing began.
-LOST = "LOST"
+# trace (each branch carries the frames popped and pushed since the previous one). Its frames are
+# cells like a CallStack's, but hold the graph's call site for each frame, or None for a frame the
+# graph has no call site for (a library call, a call the extractor gave no key); a CallStack is a
+# TraceFrames whose frames are all known (see dfs, which shares the cells of the two). The trace
+# stack is LOST once the trace popped more frames than are known, e.g. returning from a frame
+# entered before tracing began.
+class _Lost(Enum):
+    LOST = "LOST"
 
 
-def apply_stack_delta(stack, pops: int, pushes: tuple, index: GraphIndex | None):
-    """The trace stack `stack` after `pops` frames were popped and `pushes` pushed."""
+LOST: Final = _Lost.LOST
+TraceFrames = Optional[Tuple[Optional["SANode"], "TraceFrames", int]]
+TraceStack = Union[TraceFrames, Literal[_Lost.LOST]]
+
+
+def apply_stack_delta(stack: TraceStack, pops: int, pushes: tuple[str | None, ...],
+                      index: GraphIndex | None) -> TraceStack:
+    """The trace stack `stack` after `pops` frames were popped and `pushes` pushed (the keys of
+    the call sites that pushed them, None where the executor could not name one)."""
     if stack is LOST:
         return LOST
     for _ in range(pops):
@@ -252,11 +299,11 @@ def apply_stack_delta(stack, pops: int, pushes: tuple, index: GraphIndex | None)
         call_site = index.keys.get(key) if index is not None and key is not None else None
         if call_site is not None and not call_site.is_call_site():
             call_site = None
-        stack = push(stack, call_site)
+        stack = (call_site, stack, depth(stack) + 1)
     return stack
 
 
-def same_stacks(walk: CallStack, trace) -> bool | None:
+def same_stacks(walk: CallStack, trace: TraceStack) -> bool | None:
     """
     Whether the walk's call stack is the one the trace reports: True, False, or None where the
     trace stack has frames without a call site (and agrees everywhere else). Compares from the top
@@ -293,7 +340,7 @@ def keys_match(graph_key: str, trace_key: str) -> bool:
     return digits > 0 and tail[digits:] == rest
 
 
-def check_branch(node: SANode, stack: CallStack, key: str | None, trace_stack) -> bool | None:
+def check_branch(node: SANode, stack: CallStack, key: str | None, trace_stack: TraceStack) -> bool | None:
     """
     Whether the walk is still in step with the execution at a branch: the graph's branch `node`,
     reached with call stack `stack`, against the branch the trace reports there (its `key`) and the
@@ -316,7 +363,7 @@ def check_branch(node: SANode, stack: CallStack, key: str | None, trace_stack) -
     return True
 
 
-def resync(key: str | None, trace_stack, index: GraphIndex | None) -> tuple[SANode, CallStack] | None:
+def resync(key: str | None, trace_stack: TraceStack, index: GraphIndex | None) -> tuple[SANode, CallStack] | None:
     """
     Where a lost walk resumes, at a branch: the graph's branch with the trace's `key`, under the
     trace stack -- or None unless every frame of that stack maps to a call site and each one, from
@@ -327,13 +374,13 @@ def resync(key: str | None, trace_stack, index: GraphIndex | None) -> tuple[SANo
     node = index.keys.get(key)
     if node is None or not node.is_branch():
         return None
-    frames = []
-    s = trace_stack
-    while s is not None:
-        if s[0] is None:
+    frames: list[SANode] = []
+    cell: TraceFrames = trace_stack
+    while cell is not None:
+        if cell[0] is None:
             return None
-        frames.append(s[0])
-        s = s[1]
+        frames.append(cell[0])
+        cell = cell[1]
     methods = {index.root_method}
     for call_site in reversed(frames):
         if call_site.method is None or call_site.method not in methods:
@@ -341,7 +388,7 @@ def resync(key: str | None, trace_stack, index: GraphIndex | None) -> tuple[SANo
         methods = {callee.method for callee in call_site.callees}
     if node.method is None or node.method not in methods:
         return None
-    return node, trace_stack
+    return node, cast(CallStack, trace_stack)  # every frame is known (checked above)
 
 
 # --- which nodes are interesting ---------------------------------------------------------------
@@ -356,7 +403,7 @@ def is_interesting(node: SANode, stack: CallStack) -> bool:
     where the same question is asked again. Costs O(stack depth) per exception type the frame can
     throw.
     """
-    worklist = [(node, stack)]
+    worklist: list[tuple[SANode, CallStack]] = [(node, stack)]
     # The stack cells are shared with the caller's stack and alive for the whole query, so their
     # identities are stable keys.
     seen = set()
@@ -375,7 +422,7 @@ def is_interesting(node: SANode, stack: CallStack) -> bool:
             continue
         frame, below = pop(current_stack)
         if current.canReturn:
-            worklist.append((frame.return_site, below))
+            worklist.append((frame.resume_site(), below))
         for chain in current.escapes:
             if is_pseudo(chain):
                 worklist.extend(unwind_pseudo(chain[0], current_stack))
@@ -386,7 +433,7 @@ def is_interesting(node: SANode, stack: CallStack) -> bool:
     return False
 
 
-def compute_summaries(nodes) -> None:
+def compute_summaries(nodes: list[SANode]) -> None:
     """
     Computes each node's reachesTargetSameLevel, canReturn and escapes, as the least fixpoint of
 
@@ -428,15 +475,15 @@ def compute_summaries(nodes) -> None:
             dependents[id(s)].append(n)
         if n.is_call_site():
             unknown = [h for hs in n.unknown_handlers.values() for h in hs]
-            for s in [*n.callees, n.return_site, *n.handlers.values(), *unknown]:
+            for s in [*n.callees, n.resume_site(), *n.handlers.values(), *unknown]:
                 dependents[id(s)].append(n)
 
-    def evaluate(n: SANode) -> tuple[bool, bool, frozenset]:
+    def evaluate(n: SANode) -> tuple[bool, bool, frozenset[ExceptionChain]]:
         if n.isIncomplete:
             return True, True, frozenset()
         rts = n.isTarget
         cr = n.isExit
-        esc = set()
+        esc: set[ExceptionChain] = set()
         if n.exceptionChain is not None:
             esc.add(n.exceptionChain)
         for s in successors(n):
@@ -446,11 +493,11 @@ def compute_summaries(nodes) -> None:
         if n.is_call_site():
             # Where the caller may resume after any of the callees: at the return site, and at the
             # handlers of what they throw (an exception of a pseudo type may also be caught by none).
-            resumes = []
+            resumes: list[SANode] = []
             for entry in n.callees:
                 rts = rts or entry.reachesTargetSameLevel
                 if entry.canReturn:
-                    resumes.append(n.return_site)
+                    resumes.append(n.resume_site())
                 for chain in entry.escapes:
                     if is_pseudo(chain):
                         resumes.extend(n.unknown_handlers.get(chain[0], []))
@@ -481,13 +528,13 @@ def compute_summaries(nodes) -> None:
                     worklist.append(d)
 
 
-def compute_target_distances(nodes) -> None:
+def compute_target_distances(nodes: list[SANode]) -> None:
     """
     Sets each node's targetDistance: the fewest branches on any path from the node to a target
     point, following every edge kind (calls, returns and exceptional edges included) and ignoring
     the call stack. A 0-1 BFS backwards over `prev`: leaving a branch node costs 1, anything else 0.
     """
-    worklist = deque()
+    worklist: deque[SANode] = deque()
     for n in nodes:
         n.targetDistance = math.inf
         if n.isTarget:
@@ -542,12 +589,12 @@ RETURN_EDGES = {"RETURN", "EXCEPTIONAL_RETURN"}
 
 
 class SAGraph:
-    def __init__(self):
-        self.json_graph = {}
+    def __init__(self) -> None:
+        self.json_graph: dict[str, Any] = {}  # the extractor's JSON, as loaded
         self.nodes: dict[str, SANode] = {}
         self.entry_node: SANode | None = None
         # The relevance analysis' statistics, None if it did not run (see load_json_graph).
-        self.relevance_stats = None
+        self.relevance_stats: RelevanceStats | None = None
 
     def async_entry_sites(self) -> list[str]:
         """
@@ -565,7 +612,7 @@ class SAGraph:
                 sites.append(f'{json_node["id"]}: {match.group(1)}.{match.group(3)}')
         return sites
 
-    def load_json_graph(self, path: str, targets: str = "assertionPointIds", slicing: bool = True):
+    def load_json_graph(self, path: str, targets: str = "assertionPointIds", slicing: bool = True) -> None:
         """
         Loads the extractor's graph. `targets` names the metadata field with the target points of
         the property being checked: assertionPointIds (valid-assert) or runtimeExceptionPointIds

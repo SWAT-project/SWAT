@@ -1,3 +1,10 @@
+# Where a trace reached a loop-head state (see Tree.register_loop_states): (d, k, m), the number of
+# branches before it, their outcomes read as a binary number, and the number of states before it.
+Position = tuple[int, int, int]
+# A loop-head state (the executor's hash of it) with its position.
+PositionedState = tuple[str, Position]
+
+
 class Branch:
     """
     Represents a branch in an execution trace, capturing the details of a decision point.
@@ -14,8 +21,9 @@ class Branch:
     """
 
     def __init__(self, id: int, trace_id: str, has_branched: bool, constraint: str, concrete_only: bool = False,
-                 key: str | None = None, pops: int = 0, pushes: tuple = (), callback: bool = False, choice: bool = False,
-                 loop_states: tuple = (), merged: bool = False, merged_conditional: bool = False):
+                 key: str | None = None, pops: int = 0, pushes: tuple[str | None, ...] = (), callback: bool = False,
+                 choice: bool = False, loop_states: tuple[str, ...] = (), merged: bool = False,
+                 merged_conditional: bool = False) -> None:
         """
         Initializes a new instance of the Branch class.
 
@@ -47,7 +55,7 @@ class Branch:
         # The loop-head states reached since the previous branch (see Tree.register_loop_states).
         self.loop_states = loop_states
         # The same with their positions, set by Tree.register_loop_states.
-        self.positioned_loop_states = ()
+        self.positioned_loop_states: tuple[PositionedState, ...] = ()
         
-    def __str__(self):
+    def __str__(self) -> str:
         return f'[(B) - {self.id} - ({"T" if self.has_branched else "F"})]'

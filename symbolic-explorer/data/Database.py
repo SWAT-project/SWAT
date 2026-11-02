@@ -1,7 +1,8 @@
 import threading
 import copy
-from typing import Any, List, Union
+from typing import AbstractSet, Any, Callable, List, TypeVar, Union
 
+from data.BinaryExecutionTree.Node import Ident
 from data.BinaryExecutionTree.Tree import Tree
 from data.Solution.Solution import Solution
 from driver.SymbolicStorage import SymbolicVar
@@ -9,6 +10,8 @@ from data.trace.Input import Input
 from data.trace.UF import UF
 from data.trace.Special import Special
 from data.trace.Branch import Branch
+
+T = TypeVar('T')
 
 lock = threading.Lock()
 
@@ -185,7 +188,7 @@ class Database:
             ret = copy.deepcopy(self.tree[endpoint_id])
         return ret
     
-    def visit_tree(self, endpoint_id: Union[str, int], visit):
+    def visit_tree(self, endpoint_id: Union[str, int], visit: Callable[[Tree, AbstractSet[int], AbstractSet[int]], T]) -> T:
         """Returns visit(tree, solved, unsat) for the endpoint's tree, with the gids of the solved
         (or retired) and of the unsat branches, all under the lock and without copying: a copy of
         the whole tree in every round costs more than the walk itself. visit must not keep the
@@ -226,7 +229,7 @@ class Database:
         with lock:
             self.tree[endpoint_id].uncaught_exceptions += 1
 
-    def mark_last_leaf_abnormal(self, endpoint_id: Union[str, int]):
+    def mark_last_leaf_abnormal(self, endpoint_id: Union[str, int]) -> None:
         """Records that the run of the last added trace ended with an uncaught exception."""
         endpoint_id = str(endpoint_id)
         with lock:
@@ -239,7 +242,7 @@ class Database:
                     node.abnormal_below = True
                     node = node.parent
 
-    def projected_covered(self, endpoint_id: Union[str, int], ident, branched: bool) -> bool:
+    def projected_covered(self, endpoint_id: Union[str, int], ident: Ident, branched: bool) -> bool:
         """Whether the last walk found the side of the branch `ident` (a candidate's sig and key,
         see dfs) explored by some path with the same relevant decisions."""
         endpoint_id = str(endpoint_id)
@@ -265,7 +268,7 @@ class Database:
         with lock:
             self.tree[endpoint_id].expected_divergences += 1
 
-    def record_execution_error(self, endpoint_id: Union[str, int], kind: str, message: str):
+    def record_execution_error(self, endpoint_id: Union[str, int], kind: str, message: str) -> None:
         endpoint_id = str(endpoint_id)
         with lock:
             self._add_endpoint(endpoint_id)

@@ -6,7 +6,7 @@ import subprocess
 import os
 import time
 from contextlib import contextmanager
-from typing import List, Tuple
+from typing import Any, List, Tuple
 from pathlib import Path
 
 
@@ -16,6 +16,8 @@ from solver.ConstraintCache import get_constraint_cache
 from data.Database import Database
 from data.BinaryExecutionTree.Node import Node
 from data.BinaryExecutionTree.Tree import Tree
+from data.trace.Branch import Branch
+from data.trace.Special import Special
 
 from strategy.StrategyService import StrategyService
 from strategy import DFS
@@ -107,7 +109,7 @@ class State:
         self.verdict = Verdict.UNKNOWN
         self.branch_to_explore: Node | None = None
         # The solution the next run executes (for branch_to_explore)
-        self.solution: dict | None = None
+        self.solution: dict[str, Any] | None = None  # see Z3Handler.solve
         # Whether the solution for branch_to_explore came from a trace with an approximate model,
         # so that the next run may legitimately diverge from it.
         self.solution_is_guess: bool = False
@@ -130,7 +132,7 @@ class SVCompDriver:
         self.symbolicStorage = SymbolicStorage()
         self.shutdown_flag = False
         self.verification_category = VerificationCategory(self.args.property)
-        self.sa_graph = SAGraph() # static analysis graph, empty until the pre-analysis is adopted
+        self.sa_graph: SAGraph = SAGraph()  # static analysis graph, empty until the pre-analysis is adopted
         self.sa = StaticPreAnalysis(args)
         self.precheck = PropertyPreCheck(args, self.verification_category.value)
         self.sa_adopted_round: int | None = None
@@ -141,14 +143,14 @@ class SVCompDriver:
         self.rlimit_level: dict[int, int] = {}
         self.divergence_retries = getattr(args, 'divergence_retries', DIVERGENCE_RETRIES)
         # The solutions of each branch (by gid) whose runs did not reach it
-        self.failed_solutions: dict[int, list[dict]] = {}
+        self.failed_solutions: dict[int, list[dict[str, Any]]] = {}
         # Branches given up on after their solutions kept failing, with the side that was not reached
         # (True: branched), unless the solutions were only guesses (see check_divergence)
         self.given_up: list[tuple[Node, bool]] = []
         self.divergence_retry_count = 0 # branches scheduled to be re-solved
         # A run whose solution left irrelevant constraints out (see check_divergence), to be
         # checked against the next walk: (target, solution, guess, reason)
-        self.pending_projected = None
+        self.pending_projected: tuple[Node, dict[str, Any] | None, bool, str] | None = None
         self.projected_reached = 0 # such runs that reached the target on another path
         DFS.SLICING = not getattr(args, 'no_sa_slicing', False)
         self.budget = ResourceBudget(memory_limit_mb=getattr(args, 'memory_limit', None) or DEFAULT_MEMORY_LIMIT_MB,
@@ -486,13 +488,14 @@ class SVCompDriver:
             self.state.verdict = Verdict.SAFE
         return self.state.verdict
 
-    def check_divergence(self, trace) -> None:
+    def check_divergence(self, trace: list[Branch | Special]) -> None:
         """Checks that the last run took the side of branch_to_explore its solution was solved for.
 
         If not, the branch is re-solved with the failed solutions excluded (see solve_retry), up to
         divergence_retries times; only then is it given up on (give_up_branch).
         """
         target = self.state.branch_to_explore
+        assert target is not None, "check_divergence without a branch to explore"
         # The tree has one level per trace element (but for UNMODELLED_EXCEPTION markers, see
         # Tree.structural), so the target is at its depth in the trace.
         # Matching by id alone would be wrong: ids repeat within a trace (all keys of a
@@ -534,7 +537,7 @@ class SVCompDriver:
         self.divergence_failed(target, solution, guess, reason + ' (sliced query, not reached with the same relevant decisions either)')
         return True
 
-    def divergence_failed(self, target: Node, solution, guess: bool, reason: str) -> None:
+    def divergence_failed(self, target: Node, solution: dict[str, Any] | None, guess: bool, reason: str) -> None:
         """A run did not reach the side of `target` its solution was solved for: re-solve it without
         the failed solutions, or give up on it after divergence_retries of them."""
         if guess:
@@ -638,7 +641,7 @@ class SVCompDriver:
                                 'No other solution left.')
         return sat, sol
 
-    def adopt_sa_graph(self):
+    def adopt_sa_graph(self) -> None:
         """Switches branch selection to the pre-analysis graph once it is ready (at most once).
 
         Switching mid-exploration is safe: every selection walks the tree from its root, and the
@@ -870,7 +873,7 @@ class SVCompDriver:
 
         self.kill_current_process()
 
-    def sa_stats(self) -> dict:
+    def sa_stats(self) -> dict[str, Any]:
         """The pre-analysis' statistics, with the counts of the last walk (Tree.walk) and what the
         relevance analysis did in the walks."""
         stats = self.sa.stats(self.sa_adopted_round)

@@ -32,31 +32,36 @@ region on some path, or when a path ends abnormally inside it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Final, Iterable, Iterator, Literal, Optional, Union
 
-from data.StaticAnalysisGraph.SAGraph import is_pseudo
+from data.StaticAnalysisGraph.SAGraph import CallStack, ExceptionChain, Location, SANode, is_pseudo
 
-ANY = "*"
+ANY: Final = "*"
 
-# Virtual nodes of a method's control-flow graph (see _MethodCFG): its normal exit, its harmful
-# exceptional exit, and the end both lead to.
-EXIT = "EXIT"
-EXIT_EXC = "EXIT_EXC"
-END = "END"
+# Virtual nodes of a method's control-flow graph (see _postdominators): its normal exit, its
+# harmful exceptional exit, and the end both lead to.
+EXIT: Final = "EXIT"
+EXIT_EXC: Final = "EXIT_EXC"
+END: Final = "END"
+# A node of a method's control-flow graph: a graph node, or a virtual one.
+CfgNode = Union[SANode, Literal["EXIT", "EXIT_EXC", "END"]]
+# A method by its signature; None for nodes without one (SANode.method).
+Method = Optional[str]
 
 
-def is_local(location: str) -> bool:
+def is_local(location: Location) -> bool:
     return location.startswith("l:") or location.startswith("p:") or location == "ret"
 
 
 @dataclass(eq=False)
 class RegionFacts:
     """What the region of one branch contains (see the module comment)."""
-    nodes: frozenset            # the SANodes of the region, in the branch's own frame
-    writes: frozenset           # locations it may write (scoped), callees included
-    reaches_target: bool        # contains a target point, or calls code that may reach one
-    terminates: bool            # may end the program
-    branches: tuple             # the branch nodes in the region (same frame)
-    callee_methods: frozenset   # the methods called in the region
+    nodes: frozenset[SANode]         # the nodes of the region, in the branch's own frame
+    writes: frozenset[Location]      # locations it may write (scoped), callees included
+    reaches_target: bool             # contains a target point, or calls code that may reach one
+    terminates: bool                 # may end the program
+    branches: tuple[SANode, ...]     # the branch nodes in the region (same frame)
+    callee_methods: frozenset[Method]  # the methods called in the region
 
 
 @dataclass
@@ -67,7 +72,7 @@ class RelevanceStats:
     all_relevant: bool = False
     iterations: int = 0
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return dict(branches=self.branches, irrelevant=self.irrelevant,
                     no_postdominator=self.no_postdominator, all_relevant=self.all_relevant,
                     iterations=self.iterations)
@@ -76,10 +81,10 @@ class RelevanceStats:
 class Relevance:
     """Computes SANode.irrelevant, summary_ok and region for every branch of a loaded graph."""
 
-    def __init__(self, nodes):
+    def __init__(self, nodes: Iterable[SANode]) -> None:
         self.nodes = list(nodes)
         self.stats = RelevanceStats()
-        self.by_method: dict[str, list] = {}
+        self.by_method: dict[str, list[SANode]] = {}
         for n in self.nodes:
             if n.method is not None:
                 self.by_method.setdefault(n.method, []).append(n)
@@ -88,25 +93,26 @@ class Relevance:
     # --- scoping -----------------------------------------------------------------------------
 
     @staticmethod
-    def scoped(method: str | None, locations) -> set:
+    def scoped(method: str | None, locations: Iterable[Location]) -> set[Location]:
+        """The locations, with those local to a method (see is_local) named `<method>|<location>`."""
         return {f"{method}|{loc}" if is_local(loc) else loc for loc in locations}
 
     # --- exceptions ----------------------------------------------------------------------------
 
-    def _compute_harmful(self):
+    def _compute_harmful(self) -> None:
         """
         The exception chains (and pseudo types) that some handler may catch harmfully: the handler
         may reach a target, return normally, end the program, or let a harmful exception go on.
         Anything else ends with an uncaught exception, or never ends.
         """
-        handlers: dict[tuple, set] = {}
-        chains = set()
+        handlers: dict[ExceptionChain, set[SANode]] = {}
+        chains: set[ExceptionChain] = set()
         for n in self.nodes:
             chains |= set(n.escapes)
             if n.exceptionChain is not None:
                 chains.add(n.exceptionChain)
         for chain in chains:
-            found = set()
+            found: set[SANode] = set()
             for cs in self.call_sites:
                 if is_pseudo(chain):
                     found.update(cs.unknown_handlers.get(chain[0], []))
@@ -115,7 +121,7 @@ class Relevance:
                     if h is not None:
                         found.add(h)
             handlers[chain] = found
-        harmful = set()
+        harmful: set[ExceptionChain] = set()
         changed = True
         while changed:
             changed = False
@@ -132,12 +138,12 @@ class Relevance:
 
     # --- the per-method control-flow graph ----------------------------------------------------
 
-    def _successors(self, n) -> list:
-        succ = []
+    def _successors(self, n: SANode) -> list[CfgNode]:
+        succ: list[CfgNode] = []
         if n.is_call_site():
             callees = n.callees
             if any(e.canReturn for e in callees):
-                succ.append(n.return_site)
+                succ.append(n.resume_site())
             for e in callees:
                 for chain in e.escapes:
                     if is_pseudo(chain):
@@ -163,7 +169,7 @@ class Relevance:
             succ.append(EXIT_EXC)
         return succ
 
-    def _postdominators(self, method_nodes):
+    def _postdominators(self, method_nodes: list[SANode]) -> tuple[dict[CfgNode, CfgNode], dict[CfgNode, list[CfgNode]]]:
         """
         Immediate post-dominators within a method (Cooper, Harvey and Kennedy's iterative
         algorithm on the reverse graph), over the nodes that can reach END. Returns (ipdom, succ):
@@ -171,7 +177,7 @@ class Relevance:
         successors in the method (virtual nodes included).
         """
         own = set(method_nodes)
-        succ = {}
+        succ: dict[CfgNode, list[CfgNode]] = {}
         for n in method_nodes:
             # Only successors in the same method (or virtual): a call's callee is not, nor is a
             # handler in another frame (those are reached through the call site's own edges).
@@ -179,14 +185,14 @@ class Relevance:
         succ[EXIT] = [END]
         succ[EXIT_EXC] = [END]
         succ[END] = []
-        preds = {n: [] for n in succ}
-        for n, ss in succ.items():
+        preds: dict[CfgNode, list[CfgNode]] = {n: [] for n in succ}
+        for x, ss in succ.items():
             for s in ss:
-                preds[s].append(n)
+                preds[s].append(x)
         # Post-order of a DFS from END over predecessors (the reverse graph).
-        order = []
-        seen = {END}
-        stack = [(END, iter(preds[END]))]
+        order: list[CfgNode] = []
+        seen: set[CfgNode] = {END}
+        stack: list[tuple[CfgNode, Iterator[CfgNode]]] = [(END, iter(preds[END]))]
         while stack:
             node, it = stack[-1]
             advanced = False
@@ -200,16 +206,16 @@ class Relevance:
                 stack.pop()
                 order.append(node)
         index = {n: i for i, n in enumerate(order)}  # END has the highest
-        ipdom = {END: END}
+        ipdom: dict[CfgNode, CfgNode] = {END: END}
         rpo = list(reversed(order))
         changed = True
         while changed:
             changed = False
-            for n in rpo:
-                if n is END:
+            for x in rpo:
+                if x is END:
                     continue
-                new = None
-                for s in succ[n]:
+                new: CfgNode | None = None
+                for s in succ[x]:
                     if s in ipdom:
                         if new is None:
                             new = s
@@ -221,24 +227,24 @@ class Relevance:
                                 while index[b] < index[a]:
                                     b = ipdom[b]
                             new = a
-                if new is not None and ipdom.get(n) is not new:
-                    ipdom[n] = new
+                if new is not None and ipdom.get(x) is not new:
+                    ipdom[x] = new
                     changed = True
         return ipdom, succ
 
     # --- the analysis ---------------------------------------------------------------------------
 
-    def compute(self):
+    def compute(self) -> RelevanceStats:
         nodes = self.nodes
         # Which methods may end the program, and which global locations they may write, callees
         # included (least fixpoints over the call graph).
-        callees_of: dict[str, set] = {m: set() for m in self.by_method}
+        callees_of: dict[Method, set[Method]] = {m: set() for m in self.by_method}
         for cs in self.call_sites:
             for e in cs.callees:
                 if cs.method is not None and e.method is not None:
                     callees_of.setdefault(cs.method, set()).add(e.method)
-        terminates = {m: any(n.terminates for n in ns) for m, ns in self.by_method.items()}
-        global_writes = {m: set() for m in self.by_method}
+        terminates: dict[Method, bool] = {m: any(n.terminates for n in ns) for m, ns in self.by_method.items()}
+        global_writes: dict[Method, set[Location]] = {m: set() for m in self.by_method}
         for m, ns in self.by_method.items():
             for n in ns:
                 for written, _ in n.dataflow:
@@ -246,32 +252,32 @@ class Relevance:
         changed = True
         while changed:
             changed = False
-            for m, cs in callees_of.items():
-                for c in cs:
-                    if terminates.get(c) and not terminates.get(m):
-                        terminates[m] = True
+            for caller, called in callees_of.items():
+                for c in called:
+                    if terminates.get(c) and not terminates.get(caller):
+                        terminates[caller] = True
                         changed = True
-                    extra = global_writes.get(c, set()) - global_writes.setdefault(m, set())
+                    extra = global_writes.get(c, set()) - global_writes.setdefault(caller, set())
                     if extra:
-                        global_writes[m] |= extra
+                        global_writes[caller] |= extra
                         changed = True
         self._method_terminates = terminates
         self._compute_harmful()
 
         # The data dependencies: each written location on what it may be computed from.
-        deps: dict[str, set] = {}
-        star_reads: set = set()
+        deps: dict[Location, set[Location]] = {}
+        star_reads: set[Location] = set()
 
-        def depend(written, read):
+        def depend(written: set[Location], read: set[Location]) -> None:
             if ANY in written:
                 star_reads.update(read)
             for w in written:
                 deps.setdefault(w, set()).update(read)
 
         for n in nodes:
-            m = n.method
+            method = n.method
             for written, read in n.dataflow:
-                depend(self.scoped(m, written), self.scoped(m, read))
+                depend(self.scoped(method, written), self.scoped(method, read))
             if n.call is not None and n.is_call_site():
                 args = n.call.get("args", [])
                 base = n.call.get("base", [])
@@ -279,22 +285,22 @@ class Relevance:
                 for e in n.callees:
                     em = e.method
                     for i, arg in enumerate(args):
-                        depend({f"{em}|p:{i}"}, self.scoped(m, arg))
-                    depend({f"{em}|p:this"}, self.scoped(m, base))
+                        depend({f"{em}|p:{i}"}, self.scoped(method, arg))
+                    depend({f"{em}|p:this"}, self.scoped(method, base))
                     if result is not None:
-                        depend(self.scoped(m, [result]), {f"{em}|ret"}
-                               | self.scoped(m, n.call.get("resultAddress", [])))
+                        depend(self.scoped(method, [result]), {f"{em}|ret"}
+                               | self.scoped(method, n.call.get("resultAddress", [])))
 
         # Regions.
-        regions: dict = {}
+        regions: dict[SANode, RegionFacts] = {}
         branches = [n for n in nodes if n.is_branch()]
         self.stats.branches = len(branches)
-        no_ipdom = set()
+        no_ipdom: set[SANode] = set()
         # Statements that may throw to somewhere that matters (a local handler, or a harmful
         # escape) are implicit branches: whether they throw depends on what they read (a null
         # receiver, a cast's operand, a callee's arguments), so they get a region too, and their
         # reads become relevant when it is. They are no tree branches: nothing flips them.
-        throwers = []
+        throwers: list[SANode] = []
         for m, method_nodes in self.by_method.items():
             mbranches = [n for n in method_nodes if n.is_branch()]
             if not mbranches and not any(n.next_exceptional or n.is_call_site() or n.exceptionChain
@@ -310,7 +316,7 @@ class Relevance:
                     # differently: either may matter.
                     no_ipdom.add(b)
                     continue
-                seen = set()
+                seen: set[CfgNode] = set()
                 work = [s for s in succ[b] if s is not stop]
                 while work:
                     x = work.pop()
@@ -322,11 +328,11 @@ class Relevance:
                 if EXIT_EXC in seen or EXIT in seen:
                     no_ipdom.add(b)  # cannot happen below END, but be safe
                     continue
-                writes = set()
+                writes: set[Location] = set()
                 reaches_target = False
                 term = False
-                rbranches = []
-                cmethods = set()
+                rbranches: list[SANode] = []
+                cmethods: set[Method] = set()
                 for x in region_nodes:
                     for written, _ in x.dataflow:
                         writes |= self.scoped(m, written)
@@ -351,10 +357,10 @@ class Relevance:
         self.stats.no_postdominator = sum(1 for b in no_ipdom if b.is_branch())
 
         # The least fixpoint: relevant locations and relevant branches.
-        relevant_locations: set = set()
+        relevant_locations: set[Location] = set()
         everything = False
 
-        def add(locations):
+        def add(locations: Iterable[Location]) -> None:
             nonlocal everything
             work = [l for l in locations if l not in relevant_locations]
             first = not relevant_locations
@@ -381,7 +387,7 @@ class Relevance:
             if n.terminates:
                 add(self.scoped(n.method, n.control))
 
-        def reads_of(n):
+        def reads_of(n: SANode) -> set[Location]:
             """What a branch's decision depends on; for an implicit branch (a thrower), everything
             it reads."""
             if n.is_branch():
@@ -399,12 +405,12 @@ class Relevance:
         for b in no_ipdom:
             add(reads_of(b))
         candidates = [b for b in branches + throwers if b in regions]
-        callers_of: dict[str, set] = {}
-        for m, cs in callees_of.items():
-            for c in cs:
-                callers_of.setdefault(c, set()).add(m)
+        callers_of: dict[Method, set[Method]] = {}
+        for caller, called in callees_of.items():
+            for c in called:
+                callers_of.setdefault(c, set()).add(caller)
 
-        def methods_running(relevant) -> set:
+        def methods_running(relevant: set[SANode]) -> set[Method]:
             """The methods that run a relevant branch, callees included."""
             methods = {b.method for b in relevant if b.is_branch()}
             work = list(methods)
@@ -460,23 +466,25 @@ class Relevance:
         return self.stats
 
 
-def in_region(region_owner, owner_stack, node, stack) -> bool | None:
+def in_region(region_owner: SANode, owner_stack: CallStack, node: SANode, stack: CallStack) -> bool:
     """
     Whether the walk's position (`node` under call stack `stack`) is still inside the region of the
-    irrelevant branch `region_owner`, reached with `owner_stack`: in the region in the owner's own
-    frame, or in a frame called from a call site in the region. None if it cannot be told.
+    sliced branch `region_owner`, reached with `owner_stack`: in the region in the owner's own
+    frame, or in a frame called from a call site in the region.
     """
     d = 0 if owner_stack is None else owner_stack[2]
     depth = 0 if stack is None else stack[2]
     if depth < d:
         return False
+    region = region_owner.region
+    assert region is not None, f"{region_owner.id} has no region"
     cell = stack
-    inner_site = None
-    while (0 if cell is None else cell[2]) > d:
+    inner_site: SANode | None = None
+    while cell is not None and cell[2] > d:
         inner_site = cell[0]
         cell = cell[1]
     if cell is not owner_stack:
         return False  # the owner's frame is gone
     if inner_site is None:
-        return node in region_owner.region
-    return inner_site in region_owner.region
+        return node in region
+    return inner_site in region

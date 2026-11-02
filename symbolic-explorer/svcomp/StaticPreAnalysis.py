@@ -17,12 +17,14 @@ call tree (another thread, a shutdown hook, an uncaught-exception handler) is no
 ``SAGraph.async_entry_sites``.
 """
 
+import argparse
 import os
 import subprocess
 import threading
 import time
 import traceback
 from enum import Enum
+from typing import Any
 
 from data.StaticAnalysisGraph.SAGraph import SAGraph
 
@@ -50,7 +52,7 @@ class SAStatus(Enum):
 
 
 class StaticPreAnalysis:
-    def __init__(self, args):
+    def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.status = SAStatus.NOT_STARTED if self.enabled else SAStatus.DISABLED
         self.duration: float | None = None  # wall time from start until done or cancelled
@@ -58,13 +60,13 @@ class StaticPreAnalysis:
         self._graph: SAGraph | None = None
         self._start: float | None = None
         self._thread: threading.Thread | None = None
-        self._proc: subprocess.Popen | None = None
+        self._proc: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()  # orders starting the extractor against cancel()
         self._cancelled = threading.Event()
         self._done = threading.Event()
         # Whether to compute which branches are irrelevant to the targets (see Relevance)
         self.slicing = not getattr(args, "no_sa_slicing", False)
-        self.relevance_stats: dict | None = None
+        self.relevance_stats: dict[str, Any] | None = None  # see RelevanceStats
 
     @property
     def requested(self) -> bool:
@@ -102,7 +104,7 @@ class StaticPreAnalysis:
         """The graph's metadata field with the target points of the property, or None."""
         return SA_TARGETS.get(os.path.basename(getattr(self.args, "property", None) or ""))
 
-    def start(self):
+    def start(self) -> None:
         if not self.enabled:
             if self.requested:
                 logger.info(f'[EXPLORER] Static pre-analysis is disabled: its graph has no target points '
@@ -120,7 +122,7 @@ class StaticPreAnalysis:
     def is_done(self) -> bool:
         return self._done.is_set()
 
-    def wait(self):
+    def wait(self) -> None:
         self._done.wait()
 
     def take_graph(self) -> SAGraph | None:
@@ -130,7 +132,7 @@ class StaticPreAnalysis:
         graph, self._graph = self._graph, None
         return graph
 
-    def cancel(self, join_timeout_s: float = 10.0):
+    def cancel(self, join_timeout_s: float = 10.0) -> None:
         """Stop the pre-analysis if it is still running: kill the extractor and join the thread."""
         if self._thread is None or self._done.is_set():
             return
@@ -146,21 +148,28 @@ class StaticPreAnalysis:
             # daemon thread ends with the process.
             logger.warning(f'[EXPLORER] Static pre-analysis thread did not stop within {join_timeout_s}s.')
             self.status = SAStatus.CANCELLED
-            self.duration = time.perf_counter() - self._start
+            self.duration = self._elapsed()
 
-    def _run(self):
+    def _elapsed(self) -> float:
+        """The wall time since start()."""
+        assert self._start is not None, "not started"
+        return time.perf_counter() - self._start
+
+    def _run(self) -> None:
+        targets = self.targets
+        assert targets is not None  # (only started if enabled)
         graph = SAGraph()
         try:
             if self.args.sa_file:
                 logger.info(f'[EXPLORER] Loading static pre-analysis graph from provided file...')
-                graph.load_json_graph(self.args.sa_file, self.targets, slicing=self.slicing)
+                graph.load_json_graph(self.args.sa_file, targets, slicing=self.slicing)
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph from provided file.')
             else:
                 logger.info(f'[EXPLORER] Running static pre-analysis...')
                 if not self._run_extractor():
                     return
                 logger.info(f'[EXPLORER] Loading static pre-analysis graph...')
-                graph.load_json_graph(self.graph_file, self.targets, slicing=self.slicing)
+                graph.load_json_graph(self.graph_file, targets, slicing=self.slicing)
                 logger.info(f'[EXPLORER] Loaded static pre-analysis graph.')
             async_sites = graph.async_entry_sites()
             if self._cancelled.is_set():
@@ -186,7 +195,7 @@ class StaticPreAnalysis:
                 self.status = SAStatus.FAILED
         finally:
             # Record on every path: a timed-out, failed or cancelled pre-analysis still costs wall time.
-            self.duration = time.perf_counter() - self._start
+            self.duration = self._elapsed()
             logger.info(f'[EXPLORER] Static pre-analysis finished with status {self.status.value} after {self.duration:.2f}s.')
             self._done.set()
 
@@ -226,7 +235,7 @@ class StaticPreAnalysis:
             raise subprocess.CalledProcessError(returncode, cmd)
         return True
 
-    def stats(self, adopted_at_round: int | None) -> dict:
+    def stats(self, adopted_at_round: int | None) -> dict[str, Any]:
         return {
             'enabled': self.enabled,
             'requested': self.requested,

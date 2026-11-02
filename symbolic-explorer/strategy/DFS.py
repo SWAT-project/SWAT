@@ -24,12 +24,15 @@ branches relevant for good (*poisons* them, Node.poisoned), and the caller walks
 
 A lost or unverified walk prunes and slices nothing, which is always safe.
 """
-from typing import NamedTuple
+from __future__ import annotations
 
-from data.BinaryExecutionTree.Node import Node
+from collections import Counter
+from typing import AbstractSet, Final, Literal, NamedTuple, Optional, Tuple, Union
+
+from data.BinaryExecutionTree.Node import Ident, Node
 from data.BinaryExecutionTree.Leaf import Leaf
 from data.BinaryExecutionTree.Tree import Tree
-from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, GraphIndex, is_interesting, \
+from data.StaticAnalysisGraph.SAGraph import SANode, CallStack, GraphIndex, TraceStack, is_interesting, \
     apply_stack_delta, check_branch, resync
 from data.StaticAnalysisGraph.Relevance import in_region
 
@@ -45,34 +48,40 @@ SLICING = True
 
 # How the walk paired a branch with the graph (see _pair). Only VERIFIED and RESYNCED pairings prune
 # or slice anything.
-VERIFIED = "verified"      # the graph's branch, checked by key and call stack
-RESYNCED = "resynced"      # found again by key, under the trace's call stack, after the walk was lost
-UNVERIFIED = "unverified"  # followed, but a key or a call site is missing to check it
-LOST = "lost"              # the graph cannot say where the execution is
-MASKED = "masked"          # a branch the graph has no node for: the walk holds its place
+VERIFIED: Final = "verified"      # the graph's branch, checked by key and call stack
+RESYNCED: Final = "resynced"      # found again by key, under the trace's call stack, after the walk was lost
+UNVERIFIED: Final = "unverified"  # followed, but a key or a call site is missing to check it
+LOST: Final = "lost"              # the graph cannot say where the execution is
+MASKED: Final = "masked"          # a branch the graph has no node for: the walk holds its place
+Pairing = Literal["verified", "resynced", "unverified", "lost", "masked"]
 
 # What a branch is for the search (see _classify).
-DECISION = "decision"  # flipped, its constraint kept, its outcome part of the path's sig
-SLICED = "sliced"      # irrelevant, or a summarized loop whose other effects are: opens a region
-MERGED = "merged"      # merged by a loop summary with only local effects: needs no region
+DECISION: Final = "decision"  # flipped, its constraint kept, its outcome part of the path's sig
+SLICED: Final = "sliced"      # irrelevant, or a summarized loop whose other effects are: opens a region
+MERGED: Final = "merged"      # merged by a loop summary with only local effects: needs no region
+Role = Literal["decision", "sliced", "merged"]
+
+# The regions of the sliced branches a path is in, innermost first, as a linked list: the sliced
+# branch's tree node, its graph node and the call stack there, and the regions outside it.
+OpenRegions = Optional[Tuple[Tuple[Node, SANode, CallStack], "OpenRegions"]]
 
 
 class _At(NamedTuple):
     """The walk's state on reaching a tree node."""
-    node: object               # the tree node (a Node, a Leaf, or None)
-    sa_node: SANode | None     # where the graph walk stands; None: lost
-    sa_stack: CallStack        # the graph walk's call stack
-    trace_stack: object        # the call stack as the trace reports it (SAGraph.apply_stack_delta)
-    clinit_depth: int          # how many static initializers the path is in
-    sig: int                   # the path's relevant decisions so far (see _sig)
-    open_regions: tuple | None # the regions of sliced branches the path is in, innermost first:
-                               # ((tree node, graph node, call stack), outer regions)
-    walk_only: bool            # below a side that cannot reach a target, walked only because a
-                               # path there ended abnormally (_abnormal_below): yields no candidates
+    node: Node | Leaf | None    # the tree node (None: an unexplored side)
+    sa_node: SANode | None      # where the graph walk stands; None: lost
+    sa_stack: CallStack         # the graph walk's call stack
+    trace_stack: TraceStack     # the call stack as the trace reports it (SAGraph.apply_stack_delta)
+    clinit_depth: int           # how many static initializers the path is in
+    sig: int                    # the path's relevant decisions so far (see _sig)
+    open_regions: OpenRegions   # the regions of the sliced branches the path is in
+    walk_only: bool             # below a side that cannot reach a target, walked only because a
+                                # path there ended abnormally (_abnormal_below): yields no candidates
 
 
-def dfs(tree: Tree | None, root, solved_branches: set[int], unsat_branch_ids: set[int],
-        sa_entry: SANode | None = None, distances: dict[Node, float] | None = None) -> list[Node]:
+def dfs(tree: Tree | None, root: Node | Leaf | None, solved_branches: AbstractSet[int],
+        unsat_branch_ids: AbstractSet[int], sa_entry: SANode | None = None,
+        distances: dict[Node, float] | None = None) -> list[Node]:
     """
     The branches below `root` worth flipping: those with an unexplored side that is interesting,
     that are no sliced or merged branch, not solved or found infeasible already, and not covered
@@ -87,9 +96,10 @@ def dfs(tree: Tree | None, root, solved_branches: set[int], unsat_branch_ids: se
     tree.begin_walk()
     counts = tree.walk
     index: GraphIndex | None = sa_entry.graph_index if sa_entry is not None else None
-    possible_nodes = []
+    # The candidates with their open side (see side below), in the walk's order.
+    possible_nodes: list[tuple[Node, tuple[Ident, bool]]] = []
     # The (candidate identity, side) pairs explored, solved or found infeasible on some path.
-    covered = set()
+    covered: set[tuple[Ident, bool]] = set()
 
     # A pre-order over the tree: a node, then the subtree of its skipped side, then that of its
     # branched side. It keeps its own stack, since paths can be longer than the interpreter's
@@ -141,48 +151,53 @@ def dfs(tree: Tree | None, root, solved_branches: set[int], unsat_branch_ids: se
         # (the executor's search for the element a symbolic index selects): the walk holds its place
         # until a branch it does have a node for.
         masked = clinit_depth > 0 or node.callback or node.choice
+        pairing: Pairing
         if masked:
             pairing = MASKED
         else:
             sa_node, sa_stack, trace_stack, pairing = _pair(tree, node, sa_node, sa_stack, trace_stack, index)
         counts[pairing] += 1
-        verified = pairing in (VERIFIED, RESYNCED)
+        # The graph's branch, if the pairing was verified: only then does the graph prune or slice.
+        verified = sa_node if pairing in (VERIFIED, RESYNCED) else None
 
         # 2. Prune: which sides can still reach a target point.
-        if verified:
-            skip_is_interesting = is_interesting(sa_node.next_fallthrough, sa_stack)
-            branch_is_interesting = is_interesting(sa_node.next_branched, sa_stack)
+        if verified is not None:
+            fallthrough, branched = verified.sides()
+            skip_is_interesting = is_interesting(fallthrough, sa_stack)
+            branch_is_interesting = is_interesting(branched, sa_stack)
             counts['pruned_sides'] += (not skip_is_interesting) + (not branch_is_interesting)
         else:
             skip_is_interesting = branch_is_interesting = True
 
         # 3. Slice: close the regions the branch is outside of, then see what it is for the search.
-        if open_regions is not None and verified:
+        if verified is not None:
             while open_regions is not None:
                 _, owner_sa, owner_stack = open_regions[0]
-                if in_region(owner_sa, owner_stack, sa_node, sa_stack):
+                if in_region(owner_sa, owner_stack, verified, sa_stack):
                     break
                 open_regions = open_regions[1]
-        role = _classify(node, sa_node, verified)
+        role = _classify(node, verified)
         node.sliced = role != DECISION
-        node.ident = (sig, node.key if node.key is not None else ('id', node.id))
+        ident: Ident = (sig, node.key if node.key is not None else ('id', node.id))
+        node.ident = ident
         if role == DECISION:
             if open_regions is not None:
                 _poison(tree, open_regions, f"branch {node.key or node.id} in its region"
-                        + ("" if verified else " (not paired with the graph)"))
-            sig_skipped = _sig(tree.sig_ids, node.ident, False)
-            sig_branched = _sig(tree.sig_ids, node.ident, True)
+                        + ("" if verified is not None else " (not paired with the graph)"))
+            sig_skipped = _sig(tree.sig_ids, ident, False)
+            sig_branched = _sig(tree.sig_ids, ident, True)
             if node.skipped is not None:
-                covered.add((node.ident, False))
+                covered.add((ident, False))
             if node.branched is not None:
-                covered.add((node.ident, True))
+                covered.add((ident, True))
             if node.gid in solved_branches or node.gid in unsat_branch_ids:
-                covered.add((node.ident, node.branched is None))  # its open side
+                covered.add((ident, node.branched is None))  # its open side
         else:
             counts[role] += 1
             sig_skipped = sig_branched = sig
             if role == SLICED:
-                open_regions = ((node, sa_node, sa_stack), open_regions)
+                assert verified is not None  # (see _classify)
+                open_regions = ((node, verified, sa_stack), open_regions)
 
         # One line per branch node and round: at INFO this was most of the log (270 MB in 900 s on
         # MinePump) and much of the explorer's own CPU time, so it is below DEBUG.
@@ -197,17 +212,19 @@ def dfs(tree: Tree | None, root, solved_branches: set[int], unsat_branch_ids: se
         if role == DECISION and not walk_only and not node.concrete_only \
                 and ((node.skipped is None and skip_is_interesting) or (node.branched is None and branch_is_interesting)) \
                 and node.gid not in solved_branches and node.gid not in unsat_branch_ids:
-            possible_nodes.append(node)
+            possible_nodes.append((node, (ident, node.branched is None)))  # (True: the branched side is open)
             if distances is not None and sa_node is not None and not masked:
-                unexplored = sa_node.next_fallthrough if node.skipped is None else sa_node.next_branched
+                unexplored = sa_node.sides()[0] if node.skipped is None else sa_node.sides()[1]
                 distances[node] = unexplored.targetDistance
 
         # Walk on along both sides, each with its own successor in the graph. The branched side goes
         # on the stack first, so that the skipped side's subtree is walked before it. A side that
         # cannot reach a target is still walked (for the regions only) if a path below it ended
         # abnormally inside an open region.
+        sa_skipped: SANode | None
+        sa_branched: SANode | None
         if sa_node is not None and not masked:
-            sa_skipped, sa_branched = sa_node.next_fallthrough, sa_node.next_branched
+            sa_skipped, sa_branched = sa_node.sides()
         else:
             sa_skipped = sa_branched = sa_node
         for child, sa_child, interesting, child_sig in ((node.branched, sa_branched, branch_is_interesting, sig_branched),
@@ -224,10 +241,9 @@ def dfs(tree: Tree | None, root, solved_branches: set[int], unsat_branch_ids: se
     # Candidates whose side a path with the same relevant decisions has covered already, and
     # repeats of the same candidate, are left out.
     tree.covered = covered
-    kept = []
-    seen = set()
-    for n in possible_nodes:
-        side = (n.ident, n.branched is None)  # (True: the branched side is the open one)
+    kept: list[Node] = []
+    seen: set[tuple[Ident, bool]] = set()
+    for n, side in possible_nodes:
         if side in covered or side in seen:
             counts['covered'] += 1
             if distances is not None:
@@ -238,7 +254,8 @@ def dfs(tree: Tree | None, root, solved_branches: set[int], unsat_branch_ids: se
     return kept
 
 
-def _pair(tree, node: Node, sa_node: SANode | None, sa_stack: CallStack, trace_stack, index: GraphIndex | None):
+def _pair(tree: Tree, node: Node, sa_node: SANode | None, sa_stack: CallStack, trace_stack: TraceStack,
+          index: GraphIndex | None) -> tuple[SANode | None, CallStack, TraceStack, Pairing]:
     """
     Pairs the tree's branch `node` with a graph branch: follows the graph from `sa_node` to its next
     branch and checks that against the trace; if the walk is lost (or just found out of step),
@@ -271,9 +288,10 @@ def _pair(tree, node: Node, sa_node: SANode | None, sa_stack: CallStack, trace_s
     return resumed[0], resumed[1], trace_stack, RESYNCED
 
 
-def _classify(node: Node, sa_node: SANode | None, verified: bool) -> str:
+def _classify(node: Node, verified: SANode | None) -> Role:
     """
-    What the branch is for the search: a DECISION, SLICED or MERGED.
+    What the branch is for the search: a DECISION, SLICED or MERGED. `verified` is the graph's
+    branch it was paired with, if the pairing was verified (only then can it be SLICED).
 
     A loop summary's branch (Node.merged) is no decision: both outcomes lead to the merged state.
     If the executor merged a loop whose body does other things too (a call, a field or array
@@ -283,20 +301,20 @@ def _classify(node: Node, sa_node: SANode | None, verified: bool) -> str:
     """
     if node.merged and not node.merged_conditional:
         return MERGED
-    if SLICING and verified and not node.poisoned \
-            and (sa_node.irrelevant or (node.merged and sa_node.summary_ok)):
+    if SLICING and verified is not None and not node.poisoned \
+            and (verified.irrelevant or (node.merged and verified.summary_ok)):
         return SLICED
     return DECISION
 
 
-def _abnormal_below(child) -> bool:
+def _abnormal_below(child: Node | Leaf | None) -> bool:
     """Whether a path through `child` ended with an uncaught exception."""
     if isinstance(child, Leaf):
         return child.abnormal
     return child is not None and child.abnormal_below
 
 
-def _sig(sig_ids: dict, ident: tuple, side: bool) -> int:
+def _sig(sig_ids: dict[tuple[Ident, bool], int], ident: Ident, side: bool) -> int:
     """The sig of a path that has the relevant decisions of sig `ident[0]`, then took `side` at
     the branch `ident[1]`: a number for the sequence of relevant decisions, interned on the tree so
     that it is the same in every walk."""
@@ -308,7 +326,7 @@ def _sig(sig_ids: dict, ident: tuple, side: bool) -> int:
     return s
 
 
-def _poison(tree, open_regions, why: str) -> None:
+def _poison(tree: Tree, open_regions: OpenRegions, why: str) -> None:
     """Makes the sliced branches whose regions are open relevant again, for good."""
     while open_regions is not None:
         owner = open_regions[0][0]
@@ -320,7 +338,7 @@ def _poison(tree, open_regions, why: str) -> None:
         open_regions = open_regions[1]
 
 
-def describe_walk(counts) -> str:
+def describe_walk(counts: Counter[str]) -> str:
     """One line on what a walk did, from its counts (Tree.walk), in the terms of the module comment:
     how its branches were paired, sides pruned, and (with slicing) branches sliced or merged,
     candidates covered by a path with the same relevant decisions, and sliced branches poisoned."""

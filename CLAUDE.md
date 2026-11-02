@@ -151,6 +151,15 @@ python3 tests/check_marking_on_graphs.py <graph.json>...   # checks marking agai
 ../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_prefer_small -v # small models
 ```
 
+The SA modules are fully annotated and pass mypy (not in the venvs; install it into a scratch
+venv), run from `symbolic-explorer/`:
+
+```bash
+mypy --explicit-package-bases --ignore-missing-imports --follow-imports=silent --check-untyped-defs \
+     --disallow-untyped-defs --disallow-any-generics strategy/DFS.py strategy/StrategyService.py \
+     data/StaticAnalysisGraph/*.py data/BinaryExecutionTree/*.py svcomp/StaticPreAnalysis.py
+```
+
 `dfs` only descends into real `data.BinaryExecutionTree.Node` instances. In tests, build them with
 `Node.__new__(Node)` and set the fields directly (the per-node flags have class defaults). `pytest`
 is not installed; use `unittest`.
