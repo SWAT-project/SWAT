@@ -134,9 +134,26 @@ next steps: swat-benchmarks/RESULTS.md, "Loop summarization". Pre-pass tests: `.
 
 **Other exploration features:**
 
-- **Small models**: a solution with an integral input beyond 65536 is re-solved with the inputs
-  bounded first (`SVCompDriver.prefer_small`, `--no-prefer-small-models`); a loop bound of 2^30
-  otherwise makes the next run never end (+4 valid-assert, +1 no-runtime-exception).
+- **Small models**: a solution with a numeric input (integral or floating-point, also infinite)
+  beyond 65536 is re-solved with the inputs bounded first (`SVCompDriver.prefer_small`,
+  `--no-prefer-small-models`); a loop bound of 2^30 otherwise makes the next run never end (+4
+  valid-assert, +1 no-runtime-exception), and an approximate Math model is only right near its
+  samples. Bounded queries get at most twice the units of the branch's unbounded query, at least
+  10M (`BOUNDED_RLIMIT`): they can be far harder than the unbounded one.
+- **Approximate models** (`SampledMath`, executor): Math functions are exact at sample inputs
+  (nice values, and since 2026-11-03 the edges of the double and integral ranges, so overflows to
+  infinity and NaN are reachable) and the run's own result elsewhere; floating-point `%`
+  (`JavaRemainder`) is exact where the quotient is at most 1 in magnitude. Both are declared
+  approximate, so a branch over them is a precision loss and rules out SAFE. Before 2026-11-03
+  `%` had no formula at all and silently gave false SAFE (PieSegment).
+- **Loop-head state matching** (`loopStateMatching`, executor `LoopStateMatcher`; explorer
+  `--no-loop-state-matching`): a branch below a state already reached at a smaller position is not
+  flipped. It is what makes nondet-guarded loops with a repeating concrete state SAFE (28 tasks of
+  sv-benchmarks valid-assert, 27 of them in `float_unboundedloop`, +56 points, with dfs and
+  coverage alike; 2 in swat-benchmarks `dispatcher`). A run stops reporting states after any call
+  into untracked code other than a whitelist (`isPureCall`): from 2026-10-19 to 2026-11-03
+  `Class.desiredAssertionStatus`, which every class with an `assert` calls, was missing, and the
+  feature did nothing in any valid-assert task.
 - **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.
