@@ -13,6 +13,9 @@ set -euo pipefail
 # - cfg-extraction/build/libs/cfg-extractor-precheck.jar, or cfg-extractor-precheck.jar
 #   at the root: the property pre-check, built from cfg-extraction at the ref pinned in
 #   cfg-extraction.ref (./gradlew precheckJar)
+# - cfg-extraction/build/libs/cfg-extractor-1.0-SNAPSHOT-all.jar, or cfg-extractor-1.0-SNAPSHOT-all.jar
+#   at the root: the static pre-analysis (the extractor's fat jar, ./gradlew fatJar, same ref), which
+#   run_swat.py runs under valid-assert
 #
 # Set SWAT_SVCOMP_PYTHON_DIR to the Python dependency directory produced by
 # scripts/build-svcomp-python-runtime.sh (it includes the witnesscreator
@@ -139,6 +142,12 @@ PRECHECK_JAR="$(first_artifact_file \
   cfg-extraction/build/libs/cfg-extractor-precheck.jar \
   cfg-extractor-precheck.jar)"
 copy_artifact_file "$PRECHECK_JAR" "$PACKAGE_DIR/cfg-extraction/cfg-extractor-precheck.jar"
+
+# The static pre-analysis from cfg-extraction (svcomp/StaticPreAnalysis.py, --sa-jar).
+EXTRACTOR_JAR="$(first_artifact_file \
+  cfg-extraction/build/libs/cfg-extractor-1.0-SNAPSHOT-all.jar \
+  cfg-extractor-1.0-SNAPSHOT-all.jar)"
+copy_artifact_file "$EXTRACTOR_JAR" "$PACKAGE_DIR/cfg-extraction/cfg-extractor.jar"
 
 copy_tree_files symbolic-explorer "$PACKAGE_DIR/symbolic-explorer"
 

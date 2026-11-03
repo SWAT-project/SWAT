@@ -32,6 +32,10 @@ import log
 logger = log.get_logger()
 
 EXTRACTOR_TIMEOUT_S = 120
+# The extractor's fat jar in a cfg-extraction checkout (--sa-path); --sa-jar names the jar itself.
+EXTRACTOR_JAR = os.path.join("build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar")
+# The class the SV-COMP executor runs (SVCompDriver.build_command): the graph's entry without --target.
+SVCOMP_MAIN_CLASS = "Main"
 
 # The properties the graph has target points for, and the metadata field that lists them.
 SA_TARGETS = {
@@ -70,7 +74,15 @@ class StaticPreAnalysis:
 
     @property
     def requested(self) -> bool:
-        return bool(self.args.sa_file or self.args.sa_path)
+        return bool(self.args.sa_file or self.args.sa_path or getattr(self.args, "sa_jar", None))
+
+    @property
+    def extractor_jar(self) -> str:
+        """The extractor to run: --sa-jar, else the fat jar in the --sa-path checkout."""
+        sa_jar = getattr(self.args, "sa_jar", None)
+        if sa_jar:
+            return str(sa_jar)
+        return os.path.join(self.args.sa_path, EXTRACTOR_JAR)
 
     @property
     def enabled(self) -> bool:
@@ -91,7 +103,8 @@ class StaticPreAnalysis:
         if sa_entry:
             entry_class, _, entry_method = sa_entry.partition("#")
             return entry_class, entry_method
-        return self.args.target, "main"
+        # The SV-COMP executor always runs Main, and the SV-COMP archive passes no --target.
+        return self.args.target or SVCOMP_MAIN_CLASS, "main"
 
     @property
     def graph_file(self) -> str:
@@ -210,7 +223,7 @@ class StaticPreAnalysis:
 
     def _run_extractor(self) -> bool:
         """Runs the extractor; False if it was cancelled or timed out."""
-        cmd = ["java", "-jar", os.path.join(self.args.sa_path, "build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar"),
+        cmd = ["java", "-jar", self.extractor_jar,
                ':'.join(os.path.abspath(p) for p in self.args.classpath if not self._is_swat_library(p)),
                self.args.logdir, *self.entry, "inter"] \
               + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else [])

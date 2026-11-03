@@ -210,6 +210,14 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   check is skipped (`missing_jar`). CI builds it at the cfg-extraction tag in `cfg-extraction.ref` (cfg-extraction is public, MIT)
   and the archive ships it as `cfg-extraction/cfg-extractor-precheck.jar`. Its soundness gate is
   `cfg-extraction/scripts/precheck_gate.py` (0 contradictions over sv-benchmarks).
+- **SV-COMP archive** (`scripts/package-svcomp.sh`, run by CI; `run-swat.sh` → `run_swat.py`):
+  ships the extractor's fat jar as `cfg-extraction/cfg-extractor.jar`, built by CI at the same
+  ref as the pre-check, and `run_swat.py` passes it as `--sa-jar` (instead of `--sa-path`, a
+  checkout) under valid-assert only, like the harness. Without `--target` the graph starts at
+  `Main.main`, the class the executor runs. `scripts/check-svcomp-package.sh` fails unless the
+  smoke test's `stats.json` has `static_analysis.status` `loaded`. Every jar in the archive
+  carries `META-INF/swat-third-party.json` (the fat jar's from cfg-extraction's
+  `fatJarComponentList`), which `third_party_licenses.py` needs for each bundled component.
 - **Search order:** `--search-order` picks which open branch is flipped next (`StrategyService`):
   `coverage` (default since 2026-11-03: sides no trace took yet, then the shallowest), `dfs`,
   `shallow`, `coverage-dfs`, `generational`. The harness always passes it explicitly. Plain DFS

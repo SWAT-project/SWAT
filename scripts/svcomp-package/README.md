@@ -11,6 +11,8 @@ Important entry points:
 - `sv-comp.cfg`: SWAT configuration for SV-COMP mode.
 - `cfg-extraction/cfg-extractor-precheck.jar`: the static property pre-check (from
   cfg-extraction), which can prove no-runtime-exception or valid-assert before exploring.
+- `cfg-extraction/cfg-extractor.jar`: the static pre-analysis (from cfg-extraction), whose
+  control-flow graph of the task prunes and slices the exploration under valid-assert.
 - `THIRD-PARTY-LICENSES.md`: bundled third-party components and their licenses.
 
 Requirements (SV-COMP 2027 environment, Ubuntu 26.04): `python3` (3.14) and
