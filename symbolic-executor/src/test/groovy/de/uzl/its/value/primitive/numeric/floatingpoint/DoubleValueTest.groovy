@@ -193,7 +193,7 @@ class DoubleValueTest extends Specification {
         def d2 = new DoubleValue(context, c2)
 
         when:
-            def d3 = d1.DREM(d2)
+            def d3 = d1.DREM(d2, null)  // concrete operands need no trace handler
             prover.addConstraint(fpmgr.equalWithFPSemantics(d3.formula, fpmgr.makeNumber(res, DoubleValue.precision)))
             println fmgr.dumpFormula(fpmgr.equalWithFPSemantics(d3.formula, fpmgr.makeVariable('float', DoubleValue.precision)))
             println fmgr.dumpFormula(fpmgr.equalWithFPSemantics(d3.formula, fpmgr.makeNumber(res, DoubleValue.precision)))

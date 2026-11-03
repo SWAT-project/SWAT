@@ -42,7 +42,7 @@ import org.sosy_lab.java_smt.api.SolverContext;
  * definitions never constrain each other: each one can always be satisfied by its own function
  * value, whatever the inputs, and leaves the queries that do not mention it unchanged.
  */
-final class SampledMath {
+public final class SampledMath {
 
     private static final double[] NICE_INPUTS = {
         0.0, -0.0, 0.5, -0.5, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 10, -10, 100, -100, 1000, 0.1, -0.1,
@@ -147,15 +147,17 @@ final class SampledMath {
 
     /**
      * A fresh function {@code math_<key>_<n>} applied to {@code args}, defined as {@code value} by a
-     * trace constraint.
+     * trace constraint, and declared approximate: a branch over it is a precision loss, and the
+     * explorer treats queries over it as guesses. For any model that is exact only in part (see
+     * also JavaRemainder).
      */
-    private static FloatingPointFormula define(SolverContext ctx, String key, SymbolicTraceHandler sth,
-                                               FloatingPointFormula value, FloatingPointFormula... args) {
+    public static FloatingPointFormula define(SolverContext ctx, String key, SymbolicTraceHandler sth,
+                                              FloatingPointFormula value, FloatingPointFormula... args) {
         FormulaManager fmgr = ctx.getFormulaManager();
         List<FormulaType<?>> argTypes = new ArrayList<>();
-        for (FloatingPointFormula arg : args) argTypes.add(DOUBLE);
+        for (FloatingPointFormula arg : args) argTypes.add(fmgr.getFormulaType(arg));
         String name = UF_PREFIX + key + "_" + CALLS.getAndIncrement();
-        FunctionDeclaration<FloatingPointFormula> uf = fmgr.getUFManager().declareUF(name, DOUBLE, argTypes);
+        FunctionDeclaration<FloatingPointFormula> uf = fmgr.getUFManager().declareUF(name, fmgr.getFormulaType(value), argTypes);
         // The table is exact only at the samples: a branch over the function is a precision loss
         // (DTOBuilder). The definition alone constrains nothing else, as the function is fresh.
         SymbolRegistry.declare(name, SymbolRegistry.Kind.APPROXIMATE_MODEL_FUNCTION);

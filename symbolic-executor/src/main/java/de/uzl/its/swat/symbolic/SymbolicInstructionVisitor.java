@@ -901,7 +901,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         try {
             DoubleValue d2 = (DoubleValue) stack.popWideOperand();
             DoubleValue d1 = (DoubleValue) stack.popWideOperand();
-            stack.pushWideOperand(d1.DREM(d2));
+            stack.pushWideOperand(d1.DREM(d2, symbolicTraceHandler));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
@@ -1306,7 +1306,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         try {
             FloatValue f2 = stack.popOperand().asFloatValue();
             FloatValue f1 = stack.popOperand().asFloatValue();
-            stack.pushOperand(f1.FREM(f2));
+            stack.pushOperand(f1.FREM(f2, symbolicTraceHandler));
         } catch (Throwable t) {
             throw new SymbolicInstructionException(inst, t);
         }
