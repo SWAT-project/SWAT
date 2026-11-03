@@ -35,7 +35,7 @@ def is_port_available(port: int) -> bool:
         return False
 
 
-def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, no_sa_slicing: bool = False, no_loop_summaries: bool = False, no_prefer_small_models: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'dfs', sa_no_runtime_exception: bool = False) -> list[str]:
+def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=8087, config_file:str = 'swat.cfg', no_sa: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, no_sa_slicing: bool = False, no_loop_summaries: bool = False, no_prefer_small_models: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'coverage', sa_no_runtime_exception: bool = False) -> list[str]:
 
 
     test_case_dir = ver_task['file_path'].parent
@@ -67,7 +67,7 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
                     (["--no-loop-summaries"] if no_loop_summaries else []) + \
                     (["--no-prefer-small-models"] if no_prefer_small_models else []) + \
                     (["--solver-rlimit", str(solver_rlimit)] if solver_rlimit else []) + \
-                    (["--search-order", search_order] if search_order != 'dfs' else []) + \
+                    ["--search-order", search_order] + \
                     (["--cpu-limit", str(cpu_limit_s)] if cpu_limit_s else [])
 
     cp: list[str] = []
@@ -111,7 +111,7 @@ def write_run_info(run_dir: Path, **settings) -> Path:
     return path
 
 
-def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, no_sa_slicing: bool = False, no_loop_summaries: bool = False, no_prefer_small_models: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'dfs', sa_no_runtime_exception: bool = False) -> list[VerificationTask]:
+def generate_commands(ver_tasks: list[VerificationTask], config_file: str = 'swat.cfg', run_timestamp: Optional[str] = None, no_sa: bool = False, parallel_sa: bool = False, sa_rank_distance: bool = False, sa_no_callback_targets: bool = False, no_sa_slicing: bool = False, no_loop_summaries: bool = False, no_prefer_small_models: bool = False, solver_rlimit: int = 0, cpu_limit_s: Optional[int] = None, search_order: str = 'coverage', sa_no_runtime_exception: bool = False) -> list[VerificationTask]:
 
     port = 9000
     skipped_ports = []

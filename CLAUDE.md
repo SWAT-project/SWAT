@@ -211,10 +211,16 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   and the archive ships it as `cfg-extraction/cfg-extractor-precheck.jar`. Its soundness gate is
   `cfg-extraction/scripts/precheck_gate.py` (0 contradictions over sv-benchmarks).
 - **Search order:** `--search-order` picks which open branch is flipped next (`StrategyService`):
-  `dfs` (default), `shallow`, `coverage` (sides no trace took yet, then the shallowest),
-  `coverage-dfs`, `generational`. Plain DFS keeps unrolling input-parsing loops one char per round
-  with ever larger queries; `coverage` found 6 more violations than `dfs` on 978 valid-assert tasks
-  (300 s, no SA) and lost none. The order changes only how fast violations are found, not SAFE.
+  `coverage` (default since 2026-11-03: sides no trace took yet, then the shallowest), `dfs`,
+  `shallow`, `coverage-dfs`, `generational`. The harness always passes it explicitly. Plain DFS
+  keeps unrolling input-parsing loops one char per round with ever larger queries. The order changes
+  only how fast violations are found, not SAFE. Coverage against dfs (300 s, 32 workers, with SA,
+  2026-11-03, runs `run_20261103_103945` to `_115003`): swat-benchmarks 694 vs 688 (+6 violations,
+  none lost), sv-benchmarks valid-assert 1034 vs 1031 (+4 that dfs never found in five runs, -1 a
+  flaky one), no-runtime-exception the same but for `WeibullGenerator_exceptionless`, a real bug dfs
+  finds and coverage did not in 300 s (label fixed below). SAFE verdicts were identical; violations
+  both find took fewer rounds with coverage. Without SA (978 valid-assert tasks, 300 s), coverage
+  found 6 more violations and lost none.
 - **Int/string queries:** `solver/Int2BvLifting.py` rewrites the executor's bit-vector ints where
   they meet string lengths, indices and char codes into Integer arithmetic before solving, and
   solves bit-vector inputs used only as numbers over Integer stand-ins (`lift_inputs`, mapped back
@@ -241,6 +247,10 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   - `argv-tasks/AlbersProjection_true`: valid-assert is false (the early return for small `Te`
     skips the finite check, e.g. qs = 0, Te = 0 returns 0); no upstream MR yet (MR 1703 was
     undone by commit b4857700).
+  - `argv-tasks/WeibullGenerator_exceptionless`: no-runtime-exception is false (a tiny negative
+    `beta` makes `1 / beta` -Infinity, `(int)` of it Integer.MIN_VALUE and `Math.pow` +Infinity,
+    which times `lamda = 0` is NaN and throws, e.g. beta's nondet = -2.0722615e-317); not reported
+    upstream yet.
 - **Verdicts:** false SAFE (`violation -> safe`) is the outcome that matters most, and a pruning
   bug causes exactly that. Check any new one before trusting a run.
 - **String inputs:** the explorer passes solved Strings as `-Dswat.input...` escaped by

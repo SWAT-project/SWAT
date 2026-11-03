@@ -42,6 +42,8 @@ def declared_ufs(smt: str) -> frozenset[str]:
 # "generational" is "coverage", but among the branches that reach nothing new, it first takes those
 # of the traces that covered the most sides first (as SAGE's generational search): a trace that
 # found something new is where combinations with it are found.
+# "coverage" is the default: on sv-benchmarks and swat-benchmarks it finds more violations than
+# "dfs" in the same time (2026-11-03, see CLAUDE.md), and the order cannot change a SAFE verdict.
 SEARCH_ORDERS = ("dfs", "shallow", "coverage", "coverage-dfs", "generational")
 
 # The loop count in the top 6 bits of an iid; without it, an iid names the branch instruction
@@ -110,7 +112,7 @@ class StrategyService:
     
     @staticmethod
     def select_branch(endpoint_id: str | int | None, sa_node: SANode | None = None,
-                      rank_by_distance: bool = False, search_order: str = "dfs") -> list[Node]:
+                      rank_by_distance: bool = False, search_order: str = "coverage") -> list[Node]:
         """The branches worth flipping on the endpoint's tree (see dfs), in the order to try them.
         `sa_node` is the SA graph's entry node (None: no graph); `search_order` is one of
         SEARCH_ORDERS."""
