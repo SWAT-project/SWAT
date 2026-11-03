@@ -58,10 +58,14 @@ DIVERGENCE_RETRIES = 3
 # 2^31-1 for a size, and then the allocation fails (OutOfMemoryError) before the run gets to the
 # branch; or a double of 2^67 where an approximate Math model is only right for small arguments.
 RETRY_BOUNDS = (16, 256, 65536)
-# Resource limit of each bounded query (about 4 s): they only look for a nicer solution, so they
-# must not use up the budget. Bounding floating-point inputs can make a query far harder than the
-# unbounded one (ReverseInterpolator_false: 261 s instead of 2 s).
+# Resource limit of each bounded query: BOUNDED_RLIMIT_FACTOR times what the branch's unbounded query
+# used, but at least BOUNDED_RLIMIT (about 4 s). They only look for a nicer solution, so they must not
+# use up the budget: bounding floating-point inputs can make a query far harder than the unbounded
+# one (ReverseInterpolator_false: 261 s instead of 2 s). A fixed limit is too small where the query
+# is expensive anyway (jbmc-regression/calc: 22M units unbounded, 25M bounded; without the bounded
+# solution the run allocates an array of 2^31 - 1 and runs out of memory).
 BOUNDED_RLIMIT = 10_000_000
+BOUNDED_RLIMIT_FACTOR = 2
 # A solution with a numeric input beyond this magnitude (or infinite) is re-solved with the inputs
 # bounded by RETRY_BOUNDS first (see prefer_small): solvers like extreme values, and a loop bound of
 # 2^31 - 1 makes the next run never end.
@@ -153,6 +157,8 @@ class SVCompDriver:
         # (True: branched), unless the solutions were only guesses (see check_divergence)
         self.given_up: list[tuple[Node, bool]] = []
         self.divergence_retry_count = 0 # branches scheduled to be re-solved
+        # Resource units the unbounded query of each branch (by gid) used, see bounded_rlimit
+        self.query_cost: dict[int, int] = {}
         # A run whose solution left irrelevant constraints out (see check_divergence), to be
         # checked against the next walk: (target, solution, guess, reason)
         self.pending_projected: tuple[Node, dict[str, Any] | None, bool, str] | None = None
@@ -611,10 +617,10 @@ class SVCompDriver:
                 return True
         return False
 
-    @staticmethod
-    def bounded_rlimit(rlimit: int | None) -> int:
-        """The resource limit of a query with bounded inputs (see BOUNDED_RLIMIT)."""
-        return BOUNDED_RLIMIT if not rlimit else min(rlimit, BOUNDED_RLIMIT)
+    def bounded_rlimit(self, branch: Node, rlimit: int | None) -> int:
+        """The resource limit of a query for the branch with bounded inputs (see BOUNDED_RLIMIT)."""
+        cap = max(BOUNDED_RLIMIT, BOUNDED_RLIMIT_FACTOR * self.query_cost.get(branch.gid, 0))
+        return cap if not rlimit else min(rlimit, cap)
 
     def prefer_small(self, branch: Node, sol: dict, rlimit: int | None) -> dict:
         """A solution for the branch with small inputs if there is one, else `sol`.
@@ -629,7 +635,7 @@ class SVCompDriver:
             extra = Z3Handler.bound_constraints(sol, bound)
             if not extra:
                 return sol
-            sat, small = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=self.bounded_rlimit(rlimit), extra_exprs=extra,
+            sat, small = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=self.bounded_rlimit(branch, rlimit), extra_exprs=extra,
                                                       approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
             self.nr_solver_calls += 1
             if sat == SATResult.SAT:
@@ -649,7 +655,7 @@ class SVCompDriver:
         for bound in RETRY_BOUNDS + (None,):
             extra = Z3Handler.retry_constraints(failed, bound)
             sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None,
-                                                    solver_rlimit=rlimit if bound is None else self.bounded_rlimit(rlimit), extra_exprs=extra,
+                                                    solver_rlimit=rlimit if bound is None else self.bounded_rlimit(branch, rlimit), extra_exprs=extra,
                                                     approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
             self.nr_solver_calls += 1
             if sat == SATResult.SAT or bound is None:
@@ -717,6 +723,7 @@ class SVCompDriver:
                         sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit,
                                                                 approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
                         self.nr_solver_calls += 1
+                        self.query_cost[branch.gid] = Z3Handler.last_rlimit_used
                 if interrupted_by():
                     logger.info(f'[SYMBOLIC EXPLORATION] Query for branch {branch.id} stopped by the resource budget ({interrupted_by()})')
                     gave_up = True

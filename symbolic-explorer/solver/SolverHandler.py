@@ -104,6 +104,9 @@ def _satisfies(model, assertions) -> bool:
 class Z3Handler:
     """Class to handle symbolic solving and related tasks."""
 
+    # The resource units the last query (solve) used, so that a caller can size follow-up queries.
+    last_rlimit_used: int = 0
+
     @staticmethod
     def encode_array(model, array_var, element_type_prefix: str, length: int) -> str:
         """
@@ -618,6 +621,7 @@ class Z3Handler:
 
         res, sol, solver, t_check, rlimit_used = Z3Handler.check_query(
             solver, query, original, timeout_ms=timeout_ms, rlimit=rlimit, fp_tactic=fp_tactic)
+        Z3Handler.last_rlimit_used = rlimit_used
 
         if res == SATResult.SAT:
             t_start = time.perf_counter()

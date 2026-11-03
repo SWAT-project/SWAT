@@ -59,6 +59,7 @@ class DivergenceTestBase(unittest.TestCase):
         self.driver.state = svcomp.State()
         self.driver.divergence_retries = 2
         self.driver.failed_solutions = {}
+        self.driver.query_cost = {}
         self.driver.given_up = []
         self.driver.divergence_retry_count = 0
         self.driver.nr_solver_calls = 0
