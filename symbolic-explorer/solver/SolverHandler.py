@@ -776,7 +776,7 @@ class Z3Handler:
 
     @staticmethod
     def bound_constraints(sol: dict, bound: int, ctx=None) -> list:
-        """Constraints restricting every integral input of the solution `sol` to [-bound, bound]
+        """Constraints restricting every numeric input of the solution `sol` to [-bound, bound]
         (chars: [0, bound]), without excluding `sol` itself (see retry_constraints)."""
         return Z3Handler.retry_constraints([sol], bound, ctx)[1:]
 
@@ -784,7 +784,8 @@ class Z3Handler:
     def retry_constraints(failed: list, bound: int | None = None, ctx=None) -> list:
         """Constraints for re-solving a branch whose earlier solutions `failed` did not lead the
         run to it: each of them is excluded (by its scalar inputs), and with `bound`, every
-        integral input is restricted to [-bound, bound] (chars: [0, bound]).
+        numeric input is restricted to [-bound, bound] (chars: [0, bound]; floating-point inputs
+        also to neither NaN nor infinite).
 
         Both only remove models, so UNSAT under them proves nothing about the branch.
         """
@@ -809,6 +810,10 @@ class Z3Handler:
                         exprs.append(z3.And(c >= -bound, c <= bound))
                 elif z3.is_int(c):
                     exprs.append(z3.And(c >= -bound, c <= bound))
+                elif z3.is_fp(c):
+                    # (The FPRef operators use c's context; z3.fpGEQ etc. would use the global one.)
+                    lo, hi = z3.FPVal(-bound, fps=c.sort(), ctx=c.ctx), z3.FPVal(bound, fps=c.sort(), ctx=c.ctx)
+                    exprs.append(z3.And(c >= lo, c <= hi))
         return exprs
 
     @staticmethod

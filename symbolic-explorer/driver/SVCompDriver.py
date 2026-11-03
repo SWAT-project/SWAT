@@ -53,13 +53,14 @@ INCOMPLETE_SEARCH_ERRORS = ('tree_mismatch', 'trace_ingest_failed', 'no_trace', 
 # this many times (by default), each time with the solutions that failed so far excluded. Only if
 # all of them fail too is the branch given up on, which rules out SAFE (see run()).
 DIVERGENCE_RETRIES = 3
-# A retry first looks for small values: every integral input is bounded by each of these magnitudes
-# in turn, then left unbounded. The solver likes extreme values such as 2^31-1 for a size, and then
-# the allocation fails (OutOfMemoryError) before the run gets to the branch.
+# A retry first looks for small values: every numeric input (integral or floating-point) is bounded
+# by each of these magnitudes in turn, then left unbounded. The solver likes extreme values such as
+# 2^31-1 for a size, and then the allocation fails (OutOfMemoryError) before the run gets to the
+# branch; or a double of 2^67 where an approximate Math model is only right for small arguments.
 RETRY_BOUNDS = (16, 256, 65536)
-# A solution with an integral input beyond this magnitude is re-solved with the inputs bounded by
-# RETRY_BOUNDS first (see prefer_small): solvers like extreme values, and a loop bound of 2^31 - 1
-# makes the next run never end.
+# A solution with a numeric input beyond this magnitude (or infinite) is re-solved with the inputs
+# bounded by RETRY_BOUNDS first (see prefer_small): solvers like extreme values, and a loop bound of
+# 2^31 - 1 makes the next run never end.
 LARGE_INPUT = 65536
 # Execution errors after which an exhausted search proves nothing: a run was cut short, so the
 # rest of its path was never explored.
@@ -582,7 +583,8 @@ class SVCompDriver:
 
     @staticmethod
     def is_large(sol: dict) -> bool:
-        """Whether a solution has an integral input beyond LARGE_INPUT in magnitude."""
+        """Whether a solution has a numeric input beyond LARGE_INPUT in magnitude: an integral one, or
+        a floating-point one (infinities included, NaN not)."""
         import z3
         values = [v.get('plain_value') for v in sol.values() if isinstance(v, dict)] if isinstance(sol, dict) else []
         for value in values:
@@ -592,6 +594,13 @@ class SVCompDriver:
                 n = value.as_signed_long()
             elif z3.is_int_value(value):
                 n = value.as_long()
+            elif z3.is_fp_value(value):
+                # Infinities count as large, NaN does not. (The FPRef operators use value's context.)
+                hi = z3.FPVal(LARGE_INPUT, fps=value.sort(), ctx=value.ctx)
+                lo = z3.FPVal(-LARGE_INPUT, fps=value.sort(), ctx=value.ctx)
+                if z3.is_true(z3.simplify(z3.Or(value > hi, value < lo))):
+                    return True
+                continue
             else:
                 continue
             if abs(n) > LARGE_INPUT:
@@ -601,7 +610,7 @@ class SVCompDriver:
     def prefer_small(self, branch: Node, sol: dict, rlimit: int | None) -> dict:
         """A solution for the branch with small inputs if there is one, else `sol`.
 
-        Re-solves the same query with every integral input bounded by RETRY_BOUNDS in turn; any
+        Re-solves the same query with every numeric input bounded by RETRY_BOUNDS in turn; any
         model of it is one of the query, so this only picks another execution of the same path
         prefix, one that is cheaper to run. Bounded queries without a model prove nothing and are
         not recorded (see solve_branch)."""
