@@ -50,6 +50,18 @@ final class SampledMath {
         1.5 * Math.PI, -1.5 * Math.PI, 2 * Math.PI, -2 * Math.PI
     };
 
+    /**
+     * Inputs at the edges of the double range and of the integral types a double is cast from or to.
+     * Results that overflow to infinity or turn into NaN (e.g. {@code Math.pow(0.7, (int) (1 / beta))}
+     * with a tiny negative beta: the int cast gives Integer.MIN_VALUE, and the power +Infinity) lie
+     * only out here, so without these the model cannot reach a branch that needs them.
+     */
+    private static final double[] EXTREME_INPUTS = {
+        Integer.MIN_VALUE, Integer.MAX_VALUE, Long.MIN_VALUE, Long.MAX_VALUE,
+        -Double.MAX_VALUE, Double.MAX_VALUE, Double.MIN_VALUE, -Double.MIN_VALUE,
+        Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, Double.NaN
+    };
+
     private static final double[] NICE_OUTPUTS = {0.0, 0.5, -0.5, 1, -1, 2, -2, 3, -3, 5, -5, 10, -10, 100};
 
     /** Grid for functions of two symbolic arguments. */
@@ -168,12 +180,13 @@ final class SampledMath {
     }
 
     /**
-     * The nice inputs, and for each nice output t the input inverse(t), or a neighbour of it at
-     * which f gives exactly t. Non-finite inputs are dropped.
+     * The nice and the extreme inputs, and for each nice output t the input inverse(t), or a
+     * neighbour of it at which f gives exactly t (dropped if not finite).
      */
     static double[] samples(DoubleUnaryOperator f, DoubleUnaryOperator inverse) {
         Map<Long, Double> samples = new LinkedHashMap<>();
         for (double x : NICE_INPUTS) samples.put(Double.doubleToRawLongBits(x), x);
+        for (double x : EXTREME_INPUTS) samples.put(Double.doubleToRawLongBits(x), x);
         for (double t : NICE_OUTPUTS) {
             double x = inverse.applyAsDouble(t);
             if (!Double.isFinite(x)) continue;
