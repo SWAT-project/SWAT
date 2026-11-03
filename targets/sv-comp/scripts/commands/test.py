@@ -72,7 +72,7 @@ def list_tests(ctx, benchmark_dir, stats):
 @click.option('--no-sa-slicing', 'no_sa_slicing', is_flag=True, default=False, help='Do not use the static pre-analysis relevance analysis (slicing): flip branches that cannot affect a target too')
 @click.option('--sa-no-runtime-exception', 'sa_no_runtime_exception', is_flag=True, default=False, help='Also prune with the static pre-analysis under no-runtime-exception (by default only under valid-assert)')
 @click.option('--sa-rank-distance', 'sa_rank_distance', is_flag=True, default=False, help='Try branches closest to an assert in the static pre-analysis graph first')
-@click.option('--search-order', 'search_order', type=click.Choice(['dfs', 'shallow', 'coverage', 'coverage-dfs', 'generational']), default='dfs', help='Order in which open branches are tried (see SymbolicExplorer.py --search-order)')
+@click.option('--search-order', 'search_order', type=click.Choice(['dfs', 'shallow', 'coverage', 'coverage-dfs', 'generational']), default='coverage', help='Order in which open branches are tried (see SymbolicExplorer.py --search-order)')
 @click.option('--solver-rlimit', 'solver_rlimit', type=int, default=0, help='Z3 resource limit for the first query of each branch, growing on retries (0: unlimited)')
 @click.option('--testcase-timeout-s', type=int, default=15 * 60, help='Timeout of the symbolic-explorer in seconds for each test case')
 @click.pass_context
