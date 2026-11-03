@@ -13,6 +13,11 @@ ORIGINAL_CWD = os.getcwd()
 WITNESS_DIR = os.path.join(SCRIPT_DIR, 'witness')
 # The explorer's logs and testcase statistics (stats.json)
 LOG_DIR = os.path.join(SCRIPT_DIR, 'logs')
+# The static pre-analysis (cfg-extraction's extractor), which prunes and slices the exploration with a
+# control-flow graph of the task. As in SWAT's harness (targets/sv-comp/scripts/lib/command_gen.py)
+# it runs under valid-assert only: under no-runtime-exception it is sound but costs more than it saves.
+SA_JAR = os.path.join(SCRIPT_DIR, 'cfg-extraction', 'cfg-extractor.jar')
+SA_PROPERTIES = ('valid-assert.prp',)
 
 
 class ExecutionStatus(enum.Enum):
@@ -117,6 +122,9 @@ def generate_command(args, property_file: str, property_path: str, input_paths: 
                      "--logdir", LOG_DIR,
                      "--mode", "sv-comp",
                      '--port', "8000",
+                     # The class the executor runs; the static pre-analysis' graph starts at its main.
+                     "--target", "Main",
+                     *(["--sa-jar", SA_JAR] if property_file in SA_PROPERTIES else []),
                      "--witness-dir", WITNESS_DIR,
                      "--witness-property", property_path,
                      "--witness-base-dir", ORIGINAL_CWD,
