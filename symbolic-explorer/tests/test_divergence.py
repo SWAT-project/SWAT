@@ -216,8 +216,8 @@ class SolveRetryTest(DivergenceTestBase):
         with self.solver([SATResult.SAT]):
             sat, sol = self.driver.solve_retry(self.target, None)
         self.assertEqual(sat, SATResult.SAT)
-        # The exclusion plus the bound on I_0
-        self.assertEqual(self.calls, [(70, None, 2)])
+        # The exclusion plus the bound on I_0; a bounded query gets at most BOUNDED_RLIMIT
+        self.assertEqual(self.calls, [(70, svcomp.BOUNDED_RLIMIT, 2)])
         self.assertEqual(self.retired, set())
 
     def test_bounded_failures_move_on(self):

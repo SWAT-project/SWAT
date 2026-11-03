@@ -58,6 +58,10 @@ DIVERGENCE_RETRIES = 3
 # 2^31-1 for a size, and then the allocation fails (OutOfMemoryError) before the run gets to the
 # branch; or a double of 2^67 where an approximate Math model is only right for small arguments.
 RETRY_BOUNDS = (16, 256, 65536)
+# Resource limit of each bounded query (about 4 s): they only look for a nicer solution, so they
+# must not use up the budget. Bounding floating-point inputs can make a query far harder than the
+# unbounded one (ReverseInterpolator_false: 261 s instead of 2 s).
+BOUNDED_RLIMIT = 10_000_000
 # A solution with a numeric input beyond this magnitude (or infinite) is re-solved with the inputs
 # bounded by RETRY_BOUNDS first (see prefer_small): solvers like extreme values, and a loop bound of
 # 2^31 - 1 makes the next run never end.
@@ -607,6 +611,11 @@ class SVCompDriver:
                 return True
         return False
 
+    @staticmethod
+    def bounded_rlimit(rlimit: int | None) -> int:
+        """The resource limit of a query with bounded inputs (see BOUNDED_RLIMIT)."""
+        return BOUNDED_RLIMIT if not rlimit else min(rlimit, BOUNDED_RLIMIT)
+
     def prefer_small(self, branch: Node, sol: dict, rlimit: int | None) -> dict:
         """A solution for the branch with small inputs if there is one, else `sol`.
 
@@ -620,7 +629,7 @@ class SVCompDriver:
             extra = Z3Handler.bound_constraints(sol, bound)
             if not extra:
                 return sol
-            sat, small = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit, extra_exprs=extra,
+            sat, small = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=self.bounded_rlimit(rlimit), extra_exprs=extra,
                                                       approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
             self.nr_solver_calls += 1
             if sat == SATResult.SAT:
@@ -639,7 +648,8 @@ class SVCompDriver:
         failed = self.failed_solutions[branch.gid]
         for bound in RETRY_BOUNDS + (None,):
             extra = Z3Handler.retry_constraints(failed, bound)
-            sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None, solver_rlimit=rlimit, extra_exprs=extra,
+            sat, sol = StrategyService.solve_branch(branch, solver_timeout_ms=None,
+                                                    solver_rlimit=rlimit if bound is None else self.bounded_rlimit(rlimit), extra_exprs=extra,
                                                     approximate_rlimit=getattr(self.args, 'approximate_rlimit', None))
             self.nr_solver_calls += 1
             if sat == SATResult.SAT or bound is None:
