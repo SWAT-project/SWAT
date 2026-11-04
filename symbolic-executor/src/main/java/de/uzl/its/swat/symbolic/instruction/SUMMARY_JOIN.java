@@ -4,11 +4,11 @@ import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
 
 /**
  * SUMMARY_JOIN - Probe at the label where the two sides of a merged diamond meet again (see
- * {@link de.uzl.its.swat.symbolic.summary.LoopSummaries}).
+ * {@link de.uzl.its.swat.symbolic.summary.SummaryProbes}).
  */
 public class SUMMARY_JOIN extends Instruction {
 
-    /** The join's id (see LoopSummaries.Diamond.join). */
+    /** The join's id (see cfg-extraction's LoopSummaries.Diamond.join; unique within its method). */
     public final int join;
 
     public SUMMARY_JOIN(long iid, int join) {

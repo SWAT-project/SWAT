@@ -110,7 +110,7 @@ public final class LoopStateMatcher {
         if (stopped) {
             return null;
         }
-        LoopHeads.Head head = LoopHeads.get(inst.head);
+        LoopHeadProbes.Head head = LoopHeadProbes.get(inst.head);
         if (head == null || threads != 1 || inst.locals.length != head.slots().length) {
             logger.debug("[LOOP STATE] Not hashed: unknown head or several threads");
             return null;
@@ -190,7 +190,7 @@ public final class LoopStateMatcher {
     }
 
     /** The head's method must be the only application frame on the stack. */
-    private static void checkStack(LoopHeads.Head head) throws Unhashable {
+    private static void checkStack(LoopHeadProbes.Head head) throws Unhashable {
         List<String> app = StackWalker.getInstance().walk(s -> s
                 .map(f -> f.getClassName().replace('.', '/'))
                 .filter(LoopStateMatcher::isApplicationClassName)
@@ -201,7 +201,7 @@ public final class LoopStateMatcher {
         }
     }
 
-    private static void checkShadow(LoopHeads.Head head, ShadowContext shadow,
+    private static void checkShadow(LoopHeadProbes.Head head, ShadowContext shadow,
             Map<String, Value<?, ?>[]> shadowStatics) throws Unhashable {
         Frame active = shadow.getActiveFrame();
         // The entry method runs in the initial frame
@@ -260,7 +260,7 @@ public final class LoopStateMatcher {
         return c.getClassLoader() != null && !c.isHidden() && isApplicationClassName(c.getName().replace('.', '/'));
     }
 
-    private static String hash(LoopHeads.Head head, Object[] locals) throws Unhashable {
+    private static String hash(LoopHeadProbes.Head head, Object[] locals) throws Unhashable {
         MessageDigest md;
         try {
             md = MessageDigest.getInstance("SHA-256");
@@ -332,10 +332,10 @@ public final class LoopStateMatcher {
 
         void local(char kind, Object value) throws IOException, Unhashable, IllegalAccessException {
             switch (kind) {
-                case LoopHeads.INT -> out.writeInt((Integer) value);
-                case LoopHeads.LONG -> out.writeLong((Long) value);
-                case LoopHeads.FLOAT -> out.writeInt(Float.floatToRawIntBits((Float) value));
-                case LoopHeads.DOUBLE -> out.writeLong(Double.doubleToRawLongBits((Double) value));
+                case LoopHeadProbes.INT -> out.writeInt((Integer) value);
+                case LoopHeadProbes.LONG -> out.writeLong((Long) value);
+                case LoopHeadProbes.FLOAT -> out.writeInt(Float.floatToRawIntBits((Float) value));
+                case LoopHeadProbes.DOUBLE -> out.writeLong(Double.doubleToRawLongBits((Double) value));
                 default -> ref(value);
             }
         }

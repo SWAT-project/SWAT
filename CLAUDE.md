@@ -118,7 +118,32 @@ data-flow facts; off with `--no-sa-slicing` (explorer and harness). Results and 
   slice is context-insensitive (fix: a "return value relevant / not" variant per method, chosen
   per call site and looked up by the walk's stack).
 
-**Loop summaries** (executor `symbolic/summary`): diamonds (an int `if` whose sides are
+**Loop facts** (since 2026-11-04): *where* the loop heads are, which locals they hold, and which
+diamonds and counting loops can be summarized is static analysis and lives in cfg-extraction
+(`de.uzl.its.cfg.loops`: `LoopHeads`, `LoopSummaries`, `BodyAnalysis`, `TaintCheck`). The extractor
+writes the facts of every class on the classpath to `loop_facts.json` in the log directory, first
+thing; the driver passes it as `-DloopFacts`. When `InstructionClassAdapter` instruments a method,
+`instrument/loopfacts/LoopFactsSource` takes its facts from the file if the method's code hash
+matches, else computes them with the same library, which the executor bundles (`cfgLoopsJar`
+builds `cfg-extractor-loops.jar` from `../cfg-extraction`, `-PcfgExtractionDir`, or a clone of
+`cfg-extraction.ref`; the shadow jar relocates it). What stays in the executor is what runs: the
+probes (`LoopHeadProbes`, `SummaryProbes`), `Merger` and `LoopStateMatcher`. In the file, jumps are
+named by ordinal and labels by the number of real instructions before them (`Positions`).
+
+- **SWAT's own rewrites change the code first.** The no-cache, reference-equality and SV-COMP
+  transformers run before the instrumentation and are `LocalVariablesSorter`s: they renumber the
+  locals and insert code. So facts of the class on disk name the wrong slots for most rewritten
+  methods, and the hash check rejects them: over sv-benchmarks and swat-benchmarks only 227 of the
+  717 methods with facts keep their code (2026-11-04). The executor computes the rest itself, so
+  results are the same either way, but facts that only a whole-program analysis can compute (or
+  hand-written ones) would not reach rewritten methods. Before relying on them, make the rewrites
+  keep the original slots (new locals after `maxLocals`) or move them after the binding of facts.
+  Marking the facts' places in the original code with no-op calls was tried and dropped for this
+  reason.
+- **Tests:** `./gradlew test --tests 'de.uzl.its.cfg.loops.*'` in cfg-extraction (`LoopFactsSpec`:
+  the round trip, and that the facts do not depend on how the class was read).
+
+**Loop summaries** (applied by executor `symbolic/summary`): diamonds (an int `if` whose sides are
 straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting loops
 (`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged `merged` and
 `dfs` treats them as no decision, like sliced ones. A counting loop whose body does other things
@@ -129,8 +154,8 @@ re-entries). `TaintCheck` drops a summary whose merged values could reach a call
 store, an array index or size, or a return, since a dropped constraint must not be needed where the
 executor concretizes (13 false SAFE before, via `Verifier.assume`). Ignoring a `merged` flag is
 always sound. Config `loopSummaries` (on in `sv-comp.cfg`), `--no-loop-summaries`. Results, limits,
-next steps: swat-benchmarks/RESULTS.md, "Loop summarization". Pre-pass tests: `./gradlew
-:symbolic-executor:test --tests 'de.uzl.its.swat.symbolic.summary.*'`.
+next steps: swat-benchmarks/RESULTS.md, "Loop summarization". The analysis' tests are in
+cfg-extraction (see loop facts above).
 
 **Other exploration features:**
 
@@ -146,7 +171,8 @@ next steps: swat-benchmarks/RESULTS.md, "Loop summarization". Pre-pass tests: `.
   (`JavaRemainder`) is exact where the quotient is at most 1 in magnitude. Both are declared
   approximate, so a branch over them is a precision loss and rules out SAFE. Before 2026-11-03
   `%` had no formula at all and silently gave false SAFE (PieSegment).
-- **Loop-head state matching** (`loopStateMatching`, executor `LoopStateMatcher`; explorer
+- **Loop-head state matching** (`loopStateMatching`, executor `LoopStateMatcher`, heads from the
+  loop facts; explorer
   `--no-loop-state-matching`): a branch below a state already reached at a smaller position is not
   flipped. It is what makes nondet-guarded loops with a repeating concrete state SAFE (28 tasks of
   sv-benchmarks valid-assert, 27 of them in `float_unboundedloop`, +56 points, with dfs and

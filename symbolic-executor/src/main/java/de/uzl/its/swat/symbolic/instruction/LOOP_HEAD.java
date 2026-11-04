@@ -4,14 +4,14 @@ import de.uzl.its.swat.common.exceptions.SymbolicInstructionException;
 
 /**
  * LOOP_HEAD - Probe at the target of a backward jump, carrying the concrete values of the locals
- * defined there (see {@link de.uzl.its.swat.symbolic.loopstate.LoopHeads}).
+ * defined there (see {@link de.uzl.its.swat.symbolic.loopstate.LoopHeadProbes}).
  */
 public class LOOP_HEAD extends Instruction {
 
-    /** The loop head's stable name: class, method and position (see LoopHeads). */
+    /** The loop head's stable name: class, method and position (see LoopHeadProbes). */
     public final String head;
 
-    /** The values of the head's locals, in the order LoopHeads lists their slots. */
+    /** The values of the head's locals, in the order LoopHeadProbes.Head lists their slots. */
     public final Object[] locals;
 
     public LOOP_HEAD(long iid, String head, Object[] locals) {

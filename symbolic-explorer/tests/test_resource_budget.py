@@ -265,9 +265,19 @@ class DriverTest(unittest.TestCase):
     def test_heap_and_jvm_options_in_the_command(self):
         self.driver.symbolicStorage = SimpleNamespace(input_type=None)
         self.driver.args = SimpleNamespace()
+        self.driver.sa = SimpleNamespace(loop_facts_file='/nonexistent/loop_facts.json')
         cmd = self.driver.build_command('agent.jar', 'sv-comp.cfg', 'z3', 8000, ['cp'], java_path='java')
         self.assertIn(f'-Xmx{self.driver.budget.heap_mib}m', cmd)
         self.assertIn('-XX:TieredStopAtLevel=1', cmd)
+        self.assertFalse(any(a.startswith('-DloopFacts=') for a in cmd))  # no file yet: the executor computes them
+
+    def test_loop_facts_file_in_the_command_once_written(self):
+        self.driver.symbolicStorage = SimpleNamespace(input_type=None)
+        self.driver.args = SimpleNamespace()
+        with tempfile.NamedTemporaryFile(suffix='.json') as f:
+            self.driver.sa = SimpleNamespace(loop_facts_file=f.name)
+            cmd = self.driver.build_command('agent.jar', 'sv-comp.cfg', 'z3', 8000, ['cp'], java_path='java')
+        self.assertIn(f'-DloopFacts={f.name}', cmd)
 
     def test_no_query_after_the_cpu_deadline(self):
         self.driver.args = SimpleNamespace(solver_rlimit=0)

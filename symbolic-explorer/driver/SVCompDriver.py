@@ -209,6 +209,8 @@ class SVCompDriver:
             *cds_options,
             f'-Dconfig.path={config}',
             *(['-DloopSummaries=false'] if getattr(self.args, 'no_loop_summaries', False) else []),
+            # The loop facts of the static analysis, once it has written them (the executor computes them otherwise)
+            *([f'-DloopFacts={self.sa.loop_facts_file}'] if os.path.isfile(self.sa.loop_facts_file) else []),
             f'-Dexplorer.port={port}',
             f'-javaagent:{javaagent}',
             f"-Djava.library.path={Z3_DIR}",

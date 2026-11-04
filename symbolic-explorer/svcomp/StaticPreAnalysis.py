@@ -35,6 +35,8 @@ logger = log.get_logger()
 EXTRACTOR_TIMEOUT_S = 120
 # The extractor's fat jar in a cfg-extraction checkout (--sa-path); --sa-jar names the jar itself.
 EXTRACTOR_JAR = os.path.join("build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar")
+# The extractor writes this file first, into the log directory (cfg-extraction's Main.LOOP_FACTS_FILE).
+LOOP_FACTS_FILE = "loop_facts.json"
 # The class the SV-COMP executor runs (SVCompDriver.build_command): the graph's entry without --target.
 SVCOMP_MAIN_CLASS = "Main"
 
@@ -124,6 +126,13 @@ class StaticPreAnalysis:
         """Where the extractor writes the graph: named after the entry's simple class name and method."""
         entry_class, entry_method = self.entry
         return os.path.join(self.args.logdir, f"{entry_class.rsplit('.', 1)[-1]}_{entry_method}_interprocedural.json")
+
+    @property
+    def loop_facts_file(self) -> str:
+        """Where the extractor writes the loop facts (cfg-extraction's Main.LOOP_FACTS_FILE): the loop
+        heads and summaries of every class on the classpath, which the executor reads instead of
+        computing them (it computes those of any method the file lacks, so the file is optional)."""
+        return os.path.join(self.args.logdir, LOOP_FACTS_FILE)
 
     @property
     def targets(self) -> str | None:

@@ -10,7 +10,9 @@ import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
 import de.uzl.its.swat.instrument.TryCatchBlock;
 import de.uzl.its.swat.instrument.Utils;
 import de.uzl.its.swat.metadata.ClassDepot;
-import de.uzl.its.swat.symbolic.loopstate.LoopHeads;
+import de.uzl.its.swat.symbolic.loopstate.LoopHeadProbes;
+import de.uzl.its.swat.symbolic.summary.SummaryProbes;
+import de.uzl.its.cfg.loops.LoopSummaries;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -113,7 +115,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
         if (methodName.equals("<clinit>")) {
             if (config.isLoopStateMatching() && !owner.startsWith("de/uzl/its/swat/")) {
-                LoopHeads.emitClassInit(mv, owner);
+                LoopHeadProbes.emitClassInit(mv, owner);
             }
             int cIdx = classDepot.getClassIndex(this.owner);
             String clinit_desc = "(JIJ)V"; // (long iid, int cIdx, long invokeId)
@@ -137,38 +139,41 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         Utils.addJpushInsn(mv, val);
     }
 
-    /** The method's loop heads (see LoopHeads), by the label that starts each. */
-    private java.util.Map<Label, LoopHeads.Head> loopHeads = java.util.Map.of();
+    /** The method's loop heads (see LoopHeadProbes), by the label that starts each. */
+    private java.util.Map<Label, LoopHeadProbes.Head> loopHeads = java.util.Map.of();
 
-    public void setLoopHeads(java.util.Map<Label, LoopHeads.Head> loopHeads) {
+    public void setLoopHeads(java.util.Map<Label, LoopHeadProbes.Head> loopHeads) {
         this.loopHeads = loopHeads;
     }
 
-    /** The method's loop summaries (see symbolic/summary/LoopSummaries), and the jumps seen so far. */
-    private de.uzl.its.swat.symbolic.summary.LoopSummaries.MethodPlans loopSummaries =
-            de.uzl.its.swat.symbolic.summary.LoopSummaries.MethodPlans.NONE;
+    /**
+     * The method's loop summaries (see SummaryProbes): plans by jump ordinal, join ids by label; and
+     * the jumps seen so far.
+     */
+    private java.util.Map<Integer, LoopSummaries.Plan> summaryPlans = java.util.Map.of();
+    private java.util.Map<Label, Integer> summaryJoins = java.util.Map.of();
     private int jumpOrdinal = 0;
 
-    public void setLoopSummaries(de.uzl.its.swat.symbolic.summary.LoopSummaries.MethodPlans plans) {
-        this.loopSummaries = plans;
+    public void setLoopSummaries(java.util.Map<Integer, LoopSummaries.Plan> plans, java.util.Map<Label, Integer> joins) {
+        this.summaryPlans = plans;
+        this.summaryJoins = joins;
     }
 
     /**
-     * At a loop head, probes the state. The probe goes through the processor like an instruction,
-     * so the symbolic execution, which lags one instruction behind, handles it once the jump that
-     * led here has been recorded.
+     * At a loop head, probes the state; at a join, merges the pending diamonds. The probes go
+     * through the processor like instructions, so the symbolic execution, which lags one instruction
+     * behind, handles them once the jump that led here has been recorded.
      */
     @Override
     public void visitLabel(Label label) {
         super.visitLabel(label);
-        LoopHeads.Head head = loopHeads.get(label);
+        LoopHeadProbes.Head head = loopHeads.get(label);
         if (head != null) {
-            LoopHeads.emitProbe(mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), head);
+            LoopHeadProbes.emitProbe(mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), head);
         }
-        Integer join = loopSummaries.joins().get(label);
+        Integer join = summaryJoins.get(label);
         if (join != null) {
-            de.uzl.its.swat.symbolic.summary.LoopSummaries.emitJoinProbe(
-                    mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), join);
+            SummaryProbes.emitJoinProbe(mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), join);
         }
     }
     /** Push a value onto the stack. */
@@ -1821,9 +1826,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         long iid3;
         String desc = "(JI)V";
         addJpushInsn(mv, iid3 = instrumentationState.incAndGetId());
-        de.uzl.its.swat.symbolic.summary.LoopSummaries.Plan summary = loopSummaries.byJump().get(jumpOrdinal++);
+        LoopSummaries.Plan summary = summaryPlans.get(jumpOrdinal++);
         if (summary != null) {
-            de.uzl.its.swat.symbolic.summary.LoopSummaries.register(iid3, summary);
+            SummaryProbes.register(iid3, summary);
         }
 
         addBipushInsn(mv, System.identityHashCode(label)); // label.getOffset()
