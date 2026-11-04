@@ -28,8 +28,9 @@ jobs:
       run: ./gradlew copyNativeLibs
     - name: Build
       run: ./gradlew --no-daemon build -x test
-    # The property pre-check (svcomp/PropertyPreCheck.py) is part of cfg-extraction's static
-    # pre-analysis; SWAT pins the cfg-extraction ref it ships in cfg-extraction.ref.
+    # The property pre-check (svcomp/PropertyPreCheck.py) and the static pre-analysis
+    # (svcomp/StaticPreAnalysis.py) come from cfg-extraction; SWAT pins the cfg-extraction ref it
+    # ships in cfg-extraction.ref.
     - name: Read pinned cfg-extraction ref
       id: cfg
       run: echo "ref=$(tr -d '[:space:]' < cfg-extraction.ref)" >> "${GITHUB_OUTPUT}"
@@ -39,9 +40,9 @@ jobs:
         repository: SWAT-project/cfg-extraction
         ref: ${{ steps.cfg.outputs.ref }}
         path: cfg-extraction
-    - name: Build the property pre-check
+    - name: Build the property pre-check and the static pre-analysis
       working-directory: cfg-extraction
-      run: ./gradlew --no-daemon precheckJar
+      run: ./gradlew --no-daemon precheckJar fatJar
     - name: Upload JARs
       uses: actions/upload-artifact@v7
       with:
@@ -49,6 +50,7 @@ jobs:
         path: |
           symbolic-executor/lib/symbolic-executor.jar
           cfg-extraction/build/libs/cfg-extractor-precheck.jar
+          cfg-extraction/build/libs/cfg-extractor-1.0-SNAPSHOT-all.jar
         if-no-files-found: error
         retention-days: 1
 

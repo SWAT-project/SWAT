@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint;
 
+import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.thread.ThreadHandler;
@@ -155,13 +157,20 @@ public class FloatValue extends NumericalValue<FloatingPointFormula, Float> {
     }
 
     /**
-     * Gets the remainder from the division of two floats WARNING: This is not symbolically tracked!
+     * Gets the remainder from the division of two floats, as Java computes it; symbolic as an
+     * approximate model (see {@link JavaRemainder}).
      *
-     * @param f The other flaot
+     * @param f The other float
+     * @param sth Where the model's definition goes (only used if an operand is symbolic)
      * @return The resulting FloatValue
      */
-    public FloatValue FREM(FloatValue f) {
-        return new FloatValue(context, concrete % f.concrete);
+    public FloatValue FREM(FloatValue f, SymbolicTraceHandler sth) {
+        float result = concrete % f.concrete;
+        if (!isSymbolic() && !f.isSymbolic()) {
+            return new FloatValue(context, result);
+        }
+        return new FloatValue(context, result,
+                JavaRemainder.approximate(context, formula, f.formula, new FloatValue(context, result).formula, sth));
     }
 
     /**

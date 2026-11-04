@@ -207,7 +207,7 @@ class FloatValueTest extends Specification {
         def f2 = new FloatValue(context, c2)
 
         when:
-        def f3 = f1.FREM(f2)
+        def f3 = f1.FREM(f2, null)  // concrete operands need no trace handler
         prover.addConstraint(fpmgr.equalWithFPSemantics(f3.formula, fpmgr.makeNumber(res, FloatValue.precision)))
 
         then:

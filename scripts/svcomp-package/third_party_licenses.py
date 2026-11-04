@@ -6,7 +6,8 @@ Usage: third_party_licenses.py <package_dir>
 Inputs, all read from the package itself:
 - META-INF/swat-third-party.json inside symbolic-executor/lib/symbolic-executor.jar
   (written by the thirdPartyList Gradle task: the Java components shaded into the jar), and the
-  same file inside cfg-extraction/cfg-extractor-precheck.jar (cfg-extraction's precheckJar task);
+  same file inside cfg-extraction/cfg-extractor-precheck.jar (cfg-extraction's precheckJar task)
+  and cfg-extraction/cfg-extractor.jar (its fatJar task: the static pre-analysis);
 - libs/java-library-path/z3-LICENSE.txt (LICENSE.txt of the bundled Z3 release);
 - every libs/python/*.dist-info (bundled Python packages and the license files they ship).
 
@@ -25,6 +26,7 @@ from pathlib import Path
 LICENSE_DIR = Path(__file__).resolve().parent / "licenses"
 JAR = "symbolic-executor/lib/symbolic-executor.jar"
 PRECHECK_JAR = "cfg-extraction/cfg-extractor-precheck.jar"
+EXTRACTOR_JAR = "cfg-extraction/cfg-extractor.jar"
 JAR_LIST = "META-INF/swat-third-party.json"
 Z3_LICENSE = "libs/java-library-path/z3-LICENSE.txt"
 PYTHON_DIR = "libs/python"
@@ -36,6 +38,9 @@ JAVA_LICENSES = {
     "the apache license, version 2.0": "Apache-2.0",
     "the apache software license, version 2.0": "Apache-2.0",
     "gnu lesser general public license, version 2.1": "LGPL-2.1-only",
+    "gnu lesser general public license 2.1": "LGPL-2.1-only",  # SootUp
+    "gnu lesser general public license version 2.1, february 1999": "LGPL-2.1-only",  # JGraphT
+    "eclipse public license (epl) 2.0": "EPL-2.0",  # JGraphT
     "the mit license": "MIT",
     "mit license": "MIT",
 }
@@ -75,7 +80,7 @@ def java_components(pkg, jar_path=JAR):
         try:
             entries = json.loads(zf.read(JAR_LIST))
         except KeyError:
-            fail(f"{jar_path} has no {JAR_LIST}; build it with the thirdPartyList (or precheckJar) Gradle task")
+            fail(f"{jar_path} has no {JAR_LIST}; build it with the thirdPartyList (or precheckJar, fatJar) Gradle task")
     comps = []
     for e in entries:
         coord = f"{e['group']}:{e['name']}"
@@ -170,6 +175,7 @@ def main():
     pkg = Path(sys.argv[1])
     java = java_components(pkg)
     precheck = java_components(pkg, PRECHECK_JAR)
+    extractor = java_components(pkg, EXTRACTOR_JAR)
     z3_license = pkg / Z3_LICENSE
     if not z3_license.is_file():
         fail(f"native Z3: missing license text {Z3_LICENSE}")
@@ -198,6 +204,10 @@ def main():
         "",
         table(precheck),
         "",
+        f"## Java (bundled in `{EXTRACTOR_JAR}`, the static pre-analysis from cfg-extraction)",
+        "",
+        table(extractor),
+        "",
         "## Native (`libs/java-library-path/`)",
         "",
         table(native),
@@ -211,8 +221,8 @@ def main():
         "### Java",
         "",
     ]
-    for spdx in sorted({i for c in java + precheck for i in c["ids"]}):
-        users = ", ".join(dict.fromkeys(c["name"] for c in java + precheck if spdx in c["ids"]))
+    for spdx in sorted({i for c in java + precheck + extractor for i in c["ids"]}):
+        users = ", ".join(dict.fromkeys(c["name"] for c in java + precheck + extractor if spdx in c["ids"]))
         out += [f"#### {spdx}", "", f"Used by: {users}", "",
                 block((LICENSE_DIR / f"{spdx}.txt").read_text(encoding="utf-8")), ""]
     out += ["### Native", "", "#### Z3", "", block(z3_license.read_text(encoding="utf-8")), "",
@@ -222,7 +232,7 @@ def main():
             out += [f"#### {c['name']} {c['version']}: {fname}", "", block(text), ""]
     target = pkg / "THIRD-PARTY-LICENSES.md"
     target.write_text("\n".join(out), encoding="utf-8")
-    print(f"Wrote {target}: {len(java) + len(precheck)} Java, {len(native)} native, {len(python)} Python components")
+    print(f"Wrote {target}: {len(java) + len(precheck) + len(extractor)} Java, {len(native)} native, {len(python)} Python components")
 
 
 if __name__ == "__main__":

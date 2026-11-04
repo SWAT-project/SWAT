@@ -27,7 +27,7 @@ top_dirs="$(unzip -Z1 "$ZIP_PATH" | cut -d/ -f1 | sort -u)"
 check_dir="$(mktemp -d "${TMPDIR:-/tmp}/swat-svcomp-check.XXXXXX")"
 unzip -q "$ZIP_PATH" -d "$check_dir"
 tool_dir="${check_dir}/${top_dirs}"
-for f in LICENSE README.md smoketest.sh run-swat.sh libs/python/PYTHON_VERSION cfg-extraction/cfg-extractor-precheck.jar; do
+for f in LICENSE README.md smoketest.sh run-swat.sh libs/python/PYTHON_VERSION cfg-extraction/cfg-extractor-precheck.jar cfg-extraction/cfg-extractor.jar; do
   [[ -f "${tool_dir}/${f}" ]] || fail "missing ${f} in archive root ${top_dirs}/"
 done
 [[ -s "${tool_dir}/THIRD-PARTY-LICENSES.md" ]] || fail "missing or empty THIRD-PARTY-LICENSES.md in archive root ${top_dirs}/"
@@ -51,5 +51,10 @@ docker run --rm -v "${tool_dir}:/tool" -w /tool -e UBUNTU_PACKAGES="$UBUNTU_PACK
   echo "smoketest stdout: $(wc -c < smoketest.out) bytes"
   [ -f witness/witness.yml ] && [ -f witness/witness.graphml ] || { echo "error: smoketest left no witness/witness.yml + witness.graphml" >&2; exit 1; }
   tail -n 1 smoketest.out
+  # The smoke test is a valid-assert task, so the static pre-analysis must have run and its graph
+  # been used: a failing extractor only shows as an unpruned exploration, not as a wrong verdict.
+  sa_status="$(python3 -c "import json; print(json.load(open(\"logs/stats.json\"))[\"static_analysis\"][\"status\"])")"
+  echo "static pre-analysis: ${sa_status}"
+  [ "$sa_status" = "loaded" ] || { echo "error: the static pre-analysis did not load its graph (status ${sa_status}), see out.log" >&2; exit 1; }
 '
 echo "SV-COMP package check passed."

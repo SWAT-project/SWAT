@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint;
 
+import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.thread.ThreadHandler;
@@ -175,16 +177,20 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
     }
 
     /**
-     * Gets the remainder from the division of two doubles WARNING: This is not symbolically
-     * tracked!
+     * Gets the remainder from the division of two doubles, as Java computes it; symbolic as an
+     * approximate model (see {@link JavaRemainder}).
      *
      * @param d The other double
+     * @param sth Where the model's definition goes (only used if an operand is symbolic)
      * @return The resulting DoubleValue
      */
-    public DoubleValue DREM(DoubleValue d) {
-        // ToDo (Nils): This is not (yet) symbolically tracked!
-        // See https://git.its.uni-luebeck.de/research-projects/pet-hmr/knife-fuzzer/-/issues/64
-        return new DoubleValue(context, concrete % d.concrete);
+    public DoubleValue DREM(DoubleValue d, SymbolicTraceHandler sth) {
+        double result = concrete % d.concrete;
+        if (!isSymbolic() && !d.isSymbolic()) {
+            return new DoubleValue(context, result);
+        }
+        return new DoubleValue(context, result,
+                JavaRemainder.approximate(context, formula, d.formula, new DoubleValue(context, result).formula, sth));
     }
 
     /**
