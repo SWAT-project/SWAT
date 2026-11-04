@@ -176,6 +176,11 @@ public final class LoopStateMatcher {
                 return true;
             case "java/lang/Object":
                 return name.equals("<init>");
+            case "java/lang/Class":
+                // The static initializer of every class with an assert calls it (javac's
+                // $assertionsDisabled). It reads the JVM's assertion setting, the same in every
+                // run, and the result lands in a static field of the class, which is hashed.
+                return name.equals("desiredAssertionStatus");
             case "java/lang/Double", "java/lang/Float", "java/lang/Integer", "java/lang/Long":
                 // getInteger and getLong read System properties
                 return isStatic && !name.equals("getInteger") && !name.equals("getLong");
