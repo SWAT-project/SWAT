@@ -48,6 +48,7 @@ class SolveCandidatesTest(unittest.TestCase):
         d.solver_limit_hits = 0
         d.rlimit_level = {}
         d.failed_solutions = {}
+        d.query_cost = {}
         d.budget = ResourceBudget(cgroup_limit=0)
         return d
 
