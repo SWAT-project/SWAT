@@ -49,6 +49,11 @@ public class ShadowContext {
         heap.put(hashCode, value);
     }
 
+    /** All values of the shadow heap. */
+    public java.util.Collection<Value<?, ?>> heapValues() {
+        return heap.values();
+    }
+
     public Value<?, ?> getFromHeap(int hashCode) {
         return heap.get(hashCode);
     }
@@ -62,6 +67,85 @@ public class ShadowContext {
     public void pushFrame(Frame frame) {
         activeFrame = frame;
         frameStack.push(frame);
+        if (isSwatHelper(frame)) {
+            helperFrames++;
+        } else {
+            pushedSinceBranch.add(frame);
+        }
+    }
+
+    /**
+     * A frame of SWAT's own instrumented helpers (e.g. {@code UtilInstrumented.refEquals}). They
+     * are not in the static pre-analysis graph: how many branches {@code refEquals} takes depends on
+     * the runtime types of its arguments. So the stack changes the trace reports leave their frames
+     * out, and their branches are reported like callbacks ({@link #inSwatHelper}), which the walk
+     * holds its place for.
+     */
+    private static boolean isSwatHelper(Frame frame) {
+        return frame.getClassName() != null && frame.getClassName().startsWith("de/uzl/its/swat/");
+    }
+
+    /**
+     * How the frame stack changed since the last branch (see {@link #takeStackDelta}): the number
+     * of the frames then present that were popped, and the frames pushed since that are still there.
+     */
+    private int poppedSinceBranch = 0;
+    private final ArrayList<Frame> pushedSinceBranch = new ArrayList<>();
+
+    /** How many frames on the stack are library frames that application code was called back in. */
+    private int callbackFrames = 0;
+
+    /** How many frames on the stack are SWAT helper frames (see {@link #isSwatHelper}). */
+    private int helperFrames = 0;
+
+    /** How deep code SWAT inlined into the target runs (see {@link #enterInlinedSwatCode}). */
+    private int inlinedSwatCode = 0;
+
+    /** Whether a SWAT helper runs, e.g. a rewritten reference comparison: its branches are not in the graph. */
+    public boolean inSwatHelper() {
+        return helperFrames > 0 || inlinedSwatCode > 0;
+    }
+
+    /**
+     * Code SWAT inlines into the target's own method starts, e.g. the loop lifting the elements of
+     * a list parameter of an endpoint. It is not in the original bytecode, so not in the graph
+     * either: its branches are reported like a helper's (Intrinsics.enterInlinedSwatCode).
+     */
+    public void enterInlinedSwatCode() {
+        inlinedSwatCode++;
+    }
+
+    /** See {@link #enterInlinedSwatCode}. */
+    public void leaveInlinedSwatCode() {
+        if (inlinedSwatCode > 0) inlinedSwatCode--;
+    }
+
+    /**
+     * Marks the active frame, a library frame, as running application code that the library
+     * called back (a delegation).
+     */
+    public void markActiveFrameCallback() {
+        if (!activeFrame.isCallback()) {
+            activeFrame.markCallback();
+            callbackFrames++;
+        }
+    }
+
+    /** Whether application code runs inside a library call, i.e. a callback is on the stack. */
+    public boolean inCallback() {
+        return callbackFrames > 0;
+    }
+
+    /** The change of the frame stack since the last call, as frames popped and frames pushed. */
+    public record StackDelta(int popped, List<Frame> pushed) {
+    }
+
+    /** Returns how the frame stack changed since the last call, and starts counting anew. */
+    public StackDelta takeStackDelta() {
+        StackDelta delta = new StackDelta(poppedSinceBranch, List.copyOf(pushedSinceBranch));
+        poppedSinceBranch = 0;
+        pushedSinceBranch.clear();
+        return delta;
     }
 
     /**
@@ -72,6 +156,16 @@ public class ShadowContext {
     public Frame popFrame() {
         assert !frameStack.isEmpty() : "[SWAT] Unable to remove method frame, as no stack frames are left";
         Frame oldFrame = frameStack.pop();
+        if (oldFrame.isCallback()) {
+            callbackFrames--;
+        }
+        if (isSwatHelper(oldFrame)) {
+            helperFrames--; // not counted in the stack changes on push either
+        } else if (pushedSinceBranch.isEmpty()) {
+            poppedSinceBranch++;
+        } else {
+            pushedSinceBranch.remove(pushedSinceBranch.size() - 1);
+        }
         activeFrame = getActiveFrame();
         return oldFrame;
     }
@@ -318,9 +412,11 @@ public class ShadowContext {
      * @param owner The parent object of the invoked method
      * @param name The name of the method
      * @param isInstance If the method is a static method or an instance of an object
+     * @param callSite The iid of the call instruction
      */
-    public void newStackFrame(String desc, String owner, String name, boolean isInstance) throws NoThreadContextException, NotImplementedException, ValueConversionException {
+    public void newStackFrame(String desc, String owner, String name, boolean isInstance, long callSite) throws NoThreadContextException, NotImplementedException, ValueConversionException {
         Frame newFrame = initializeFrame(owner, name, desc);
+        newFrame.setCallSite(callSite);
 
         Type[] types = Type.getArgumentTypes(desc);
         Value<?, ?>[] arguments = fetchArguments(types);

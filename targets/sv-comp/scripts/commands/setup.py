@@ -15,9 +15,12 @@ def setup():
 
 
 @setup.command(name='checkout-benchmarks')
+@click.option('--source', default=None, help='Where to pull from instead of the SWAT-project GitHub repository, e.g. a local clone of it')
 @click.pass_context
-def checkout_benchmarks(ctx):
-    """Checkout SV-Benchmarks repository (sparse checkout of java folder)."""
+def checkout_benchmarks(ctx, source):
+    """Checkout SV-Benchmarks repository (sparse checkout of java folder).
+
+    Refuses to overwrite an existing sv-benchmarks/; move it aside first (see checkout.sh)."""
     script_dir = ctx.obj['script_dir']
     checkout_script = script_dir / 'checkout.sh'
 
@@ -30,7 +33,7 @@ def checkout_benchmarks(ctx):
 
     try:
         result = subprocess.run(
-            ['bash', str(checkout_script)],
+            ['bash', str(checkout_script)] + ([source] if source else []),
             cwd=script_dir,
             check=True,
             capture_output=True,

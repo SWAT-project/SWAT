@@ -17,7 +17,7 @@ from .execution import (
     check_port_availability,
     ExecutionStatus,
 )
-from .witness import generate_and_validate_witness
+from .witness import validate_witness
 from .analysis.context_loss import main as analyze_context_loss
 from .comparison import compare_results
 from .utils import ci_print
@@ -50,7 +50,7 @@ __all__ = [
     "check_port_availability",
     "ExecutionStatus",
     # Witness
-    "generate_and_validate_witness",
+    "validate_witness",
     # Analysis
     "analyze_context_loss",
     # Comparison

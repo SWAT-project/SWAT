@@ -22,8 +22,20 @@ def validate_property_file_format(data: dict[str, Any]) -> bool:
         "options" in data and "language" in data["options"] and data["options"]["language"] == "Java"
     )
 
+def benchmark_root(path: Path) -> Path:
+    """The folder task paths are taken relative to: the benchmark dir's java/ folder if it has one."""
+    path = path.resolve()
+    return path / 'java' if (path / 'java').is_dir() else path
+
+
+def task_rel_dir(ver_task: VerificationTask) -> Path:
+    """The task's directory relative to its benchmark root, e.g. argv-tasks/Foo."""
+    return ver_task['file_path'].parent.resolve().relative_to(ver_task['benchmark_root'])
+
+
 def extract_testcases(path: Path) -> list[VerificationTask]:
     ver_tasks: list[VerificationTask] = []
+    root = benchmark_root(path)
 
     # Use Path.rglob to recursively find all YAML files
     yaml_files = [*path.rglob("*.yml"), *path.rglob("*.yaml")]
@@ -45,7 +57,8 @@ def extract_testcases(path: Path) -> list[VerificationTask]:
                     'file_path': file_path,
                     'input_files': data["input_files"],
                     'command': None,
-                    'result': None
+                    'result': None,
+                    'benchmark_root': root,
                 }
                 ver_tasks.append(ver_task)
 

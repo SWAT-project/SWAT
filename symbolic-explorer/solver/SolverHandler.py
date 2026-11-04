@@ -1,6 +1,8 @@
+import copy
 import re
 import time
 from svcomp.SymbolicStorage import DataTypes
+import z3
 from z3 import Solver, is_true, Not, Optimize, Z3_OP_UNINTERPRETED, Abs
 from enum import Enum
 from typing import Union, Dict, Tuple, Any
@@ -12,14 +14,98 @@ from data.Database import Database
 
 logger = logging.getLogger("explorer.log")
 
+# Z3 5.1 made a new regex solver the default (smt.seq.regex_monadic). On the string queries of
+# String/Character method models (str.in_re over re.range with many char bounds) it is much
+# slower than the previous one (e.g. jbmc-regression/StaticCharMethods02/03: seconds before,
+# minutes or no answer after), so keep the previous solver. Older Z3 has no such parameter.
+try:
+    z3.set_param("smt.seq.regex_monadic", False)
+except z3.Z3Exception:
+    pass
+
 
 class SATResult(Enum):
     SAT = 'sat'
     UNSAT = 'unsat'
     UNKNOWN = 'unknown'
+    # The solver ran out of the resource limit (rlimit) it was given. Unlike UNKNOWN, a larger
+    # limit may still decide the query. Only returned when solve() is given an rlimit.
+    LIMIT = 'limit'
     
+# The shared Z3 context's cumulative resource count after the last check. Checks run one at a time,
+# so the difference to the count after the next one is what that check used (see _rlimit_used).
+_last_rlimit_count = 0
+
+
+def _rlimit_used(solver) -> int:
+    """The resources (Z3 rlimit units) the check just run on `solver` used."""
+    global _last_rlimit_count
+    stats = solver.statistics()
+    count = next((stats.get_key_value(k) for k in stats.keys() if k == 'rlimit count'), _last_rlimit_count)
+    used, _last_rlimit_count = count - _last_rlimit_count, count
+    return used
+
+
+def _has_fp(exprs) -> bool:
+    """Whether any of the expressions contains a floating-point or rounding-mode sorted term.
+
+    Walks the term DAG through the C API (about 3x faster than the z3py wrappers, which build a
+    Python object per child), with a memo of the AST ids seen in this call only: an id is unique
+    only among live ASTs of one context, and these are all kept alive by `exprs` while it runs."""
+    exprs = list(exprs)
+    if not exprs:
+        return False
+    c = exprs[0].ctx.ref()
+    seen = set()
+    stack = [e.as_ast() for e in exprs]
+    while stack:
+        a = stack.pop()
+        k = z3.Z3_get_ast_id(c, a)
+        if k in seen:
+            continue
+        seen.add(k)
+        kind = z3.Z3_get_ast_kind(c, a)
+        if kind != z3.Z3_APP_AST and kind != z3.Z3_NUMERAL_AST:
+            continue
+        sort_kind = z3.Z3_get_sort_kind(c, z3.Z3_get_sort(c, a))
+        if sort_kind == z3.Z3_FLOATING_POINT_SORT or sort_kind == z3.Z3_ROUNDING_MODE_SORT:
+            return True
+        if kind == z3.Z3_APP_AST:
+            app = z3.Z3_to_app(c, a)
+            stack.extend(z3.Z3_get_app_arg(c, app, i) for i in range(z3.Z3_get_app_num_args(c, app)))
+    return False
+
+
+def _entry_has_fp(entry: dict) -> bool:
+    """_has_fp of a ConstraintCache entry's expressions, computed once and kept in the entry
+    (which lives as long as its expressions, so the flag cannot go stale)."""
+    flag = entry.get('has_fp')
+    if flag is None:
+        flag = entry['has_fp'] = _has_fp(entry['exprs'])
+    return flag
+
+
+def _cut_short(reason: str) -> bool:
+    """Whether a check that ended in unknown was stopped from outside rather than given up: its
+    rlimit ran out ("canceled"; older Z3: "max. resource limit exceeded"), its timeout passed, or
+    the context was interrupted (ResourceBudget). The default solver and the qffp tactic solver
+    report the same strings."""
+    return any(s in reason for s in ('canceled', 'resource', 'timeout', 'interrupted'))
+
+
+def _satisfies(model, assertions) -> bool:
+    """Whether every assertion is true in the model. Evaluates on a copy, as model completion
+    adds interpretations to the model it evaluates in, which would change the inputs that
+    extract_and_encode_values() reports."""
+    completed = copy.copy(model)
+    return all(is_true(completed.evaluate(a, model_completion=True)) for a in assertions)
+
+
 class Z3Handler:
     """Class to handle symbolic solving and related tasks."""
+
+    # The resource units the last query (solve) used, so that a caller can size follow-up queries.
+    last_rlimit_used: int = 0
 
     @staticmethod
     def encode_array(model, array_var, element_type_prefix: str, length: int) -> str:
@@ -176,7 +262,11 @@ class Z3Handler:
 
             return str(encoded)
         elif prefix == DataTypes.STRING.value:
-            return value.as_string()
+            # as_string() escapes some characters as \u{...} but prints a backslash as is, so its
+            # output is ambiguous. Read the code points instead.
+            n = z3.simplify(z3.Length(value)).as_long()
+            return ''.join(chr(z3.simplify(z3.StrToCode(z3.SubString(value, i, 1))).as_long())
+                           for i in range(n))
         else:
             raise ValueError(f"Unsupported prefix {prefix} for value {value}")
 
@@ -238,6 +328,9 @@ class Z3Handler:
         for var_decl in model.decls():
             # Extract the variable (as an expression) and its value
             name = str(var_decl.name())
+            # Functions (e.g. the executor's Math models, math_tan_3) are not inputs
+            if var_decl.arity() > 0:
+                continue
             # Updated regex to match array names like "[I_0" as well as regular names
             if not re.match(r'(\[?[\w\/]+)_(\d+)', name):
                 continue
@@ -358,7 +451,81 @@ class Z3Handler:
         return filepath
 
     @staticmethod
-    def solve(node: Any, path_constraints: list) -> Tuple[SATResult, Dict[str, Any]]:
+    def lift_int2bv(cache, assertions: list) -> Tuple[list, dict]:
+        """(assertions, inputs): the assertions with comparisons over int_to_bv of string lengths,
+        indices and char codes made over the Integers, and bit-vector inputs used only as numbers
+        replaced by Integers (see Int2BvLifting.lift_inputs), which Z3 decides much faster.
+        Equivalent for Java strings (at most 2^31 - 1 chars of at most 0xFFFF each); `inputs` maps
+        each Integer stand-in to its input (see map_lifted_inputs). On any error, the assertions as
+        they are."""
+        from solver.Int2BvLifting import Int2BvLifting, lift_inputs
+        try:
+            # One lifting per char code range, as each caches its results across queries.
+            lifting = getattr(cache, 'int2bv_lifting', None)
+            if lifting is None:
+                lifting = cache.int2bv_lifting = Int2BvLifting(java_chars=True)
+            if not all(lifting.java_chars_only(a) for a in assertions):
+                # The query itself puts a char above 0xFFFF (or one it cannot bound) into a string.
+                lifting = getattr(cache, 'int2bv_lifting_unicode', None)
+                if lifting is None:
+                    lifting = cache.int2bv_lifting_unicode = Int2BvLifting()
+            return lift_inputs(lifting, assertions)
+        except Exception as e:
+            logger.warning(f"[SOLVER] int_to_bv lifting failed, solving the query as it is: {e}")
+            return assertions, {}
+
+    @staticmethod
+    def map_lifted_inputs(model, inputs: dict, encoded: Dict[str, Any]) -> None:
+        """Adds the values of the bit-vector inputs that the query had replaced by Integer
+        stand-ins (see lift_int2bv) to the encoded solution: v = x mod 2^w."""
+        for x, v in inputs.values():
+            value = model.eval(x, model_completion=True)
+            if not z3.is_int_value(value):
+                continue
+            bv = z3.BitVecVal(value.as_long() % 2 ** v.size(), v.size(), v.ctx)
+            name = str(v.decl().name())
+            prefix, _, idx = name.partition('_')
+            encoded[name] = {
+                'encoded_value': Z3Handler.encode_value(prefix, bv),
+                'plain_value': bv,
+                'index': idx,
+            }
+
+    @staticmethod
+    def shorten_strings(solver, model, t_check: float):
+        """A model of the solver's assertions in which each string input is as short as they allow
+        (shortest first for the first input, then the next, ...), or `model` where finding one
+        takes too long. Z3 fills the chars a query leaves open with whatever it likes, often more of
+        them than needed; in a parser, every extra char is one more step down an error path.
+        Each check gets a short timeout (twice the first check's time, at least 0.2 s)."""
+        solver.set("timeout", max(200, int(2000 * t_check)))
+        for d in model.decls():
+            if d.arity() > 0 or not z3.is_string(d()) or not re.match(r'[\w/]+_\d+$', d.name()):
+                continue
+            s = d()
+            lo, hi = 0, model.eval(z3.Length(s), model_completion=True).as_long()
+            while lo < hi:
+                mid = (lo + hi) // 2
+                solver.push()
+                solver.add(z3.Length(s) <= mid)
+                res = solver.check()
+                if res == z3.sat:
+                    model = solver.model()
+                    hi = model.eval(z3.Length(s), model_completion=True).as_long()
+                    solver.pop()
+                elif res == z3.unsat:
+                    solver.pop()
+                    lo = mid + 1
+                else:
+                    solver.pop()
+                    return model
+            # Keep this input at its length while shrinking the next ones.
+            solver.add(z3.Length(s) == hi)
+        return model
+
+    @staticmethod
+    def solve(node: Any, path_constraints: list, timeout_ms: int | None = 60 * 1000, rlimit: int | None = None,
+              extra_exprs: list | None = None) -> Tuple[SATResult, Dict[str, Any]]:
         """
         Solve for the given node and path constraints using ConstraintCache (modern approach).
 
@@ -368,14 +535,18 @@ class Z3Handler:
         Args:
         - node (Any): The node for which to solve.
         - path_constraints (list): List of path constraint SMT strings.
+        - timeout_ms: Wall-clock limit for the check, or None.
+        - rlimit: Z3 resource limit for the check, or None. Unlike a timeout it is deterministic:
+          the same query gets as far regardless of machine load. Running out of it gives LIMIT.
+        - extra_exprs: Further Z3 constraints (in the cache's shared context) on the inputs, e.g.
+          from retry_constraints().
 
         Returns:
         - Tuple[SATResult, Dict[str, Any]]: Tuple containing SAT result and solution dictionary.
         """
-        import time
         from solver.ConstraintCache import get_constraint_cache
 
-        t_start = time.time()
+        t_start = time.perf_counter()
 
 
         # Get the global constraint cache (with shared context)
@@ -388,27 +559,43 @@ class Z3Handler:
 
         # Get cached path constraints
         all_exprs = list(node_exprs)  # Start with node constraint
+        entries = [node_cached]
         for i, path_constraint_str in enumerate(path_constraints):
             path_cached = cache.get_smt_constraint(path_constraint_str, source=f"path_{i}")
             all_exprs.extend(path_cached['exprs'])
+            entries.append(path_cached)
+        
+        # logger.debug(f"[SOLVER] all_exprs: {all_exprs}")
 
-
-        # Create solver with shared context from cache
-        solver = Solver(ctx=cache.shared_context)
 
         # The FIRST set of expressions are from the node constraint - we need to NEGATE them
         # (We're looking for a solution that takes a different path)
+        original, query, lifted_inputs = [], [], {}
         if len(node_exprs) > 0:
-            # Negate all node constraint expressions and add them
-            for expr in node_exprs:
-                negated = Not(expr)
-                solver.add(negated)
+            # Negate all node constraint expressions, then add all path constraint expressions
+            # (already parsed and cached)
+            # (The extra constraints restrict inputs too, so they are lifted with the rest.)
+            original = [Not(expr) for expr in node_exprs] + all_exprs[len(node_exprs):] + list(extra_exprs or [])
+            query, lifted_inputs = Z3Handler.lift_int2bv(cache, original)
 
-            # Add all path constraint expressions (already parsed and cached)
-            for i, path_expr in enumerate(all_exprs[len(node_exprs):]):
-                solver.add(path_expr)
+        # Create solver with shared context from cache
+        solver = Solver(ctx=cache.shared_context)
+        solver.add(*query)
+        # The lifting neither adds nor removes floating-point terms, so whether the query has
+        # any is known from the cached constraints it is built from (each checked once).
+        fp_tactic = (bool(query) and getattr(Database.instance(), 'fp_tactic', True)
+                     and (any(_entry_has_fp(e) for e in entries) or _has_fp(extra_exprs or [])))
+        if fp_tactic and lifted_inputs:
+            # The tactic's model is checked against the original assertions too; it gives the
+            # Integer stand-ins, not the inputs they replace.
+            subs = [(v, z3.Int2BV(x, v.size())) for x, v in lifted_inputs.values()]
+            original = [z3.substitute(a, *subs) for a in original]
 
-        t_path = time.time() - t_start
+        # Building the solver is Z3 work (SMT-LIB parsing on cache misses, assertion
+        # construction), so it counts towards the SMT solver stage rather than the
+        # explorer residual. It is not a query, hence count=False.
+        t_path = time.perf_counter() - t_start
+        TimingManager.instance().record_solver_time(t_path, count=False)
 
         # Array length constraints are now added in the Java symbolic executor
         # when the array length is made symbolic (InternalInvocation.java)
@@ -432,15 +619,14 @@ class Z3Handler:
             except Exception as e:
                 logger.warning(f"[SOLVER] Failed to save SMT formula: {e}")
 
-        solver.set("timeout", 60 * 1000)
-        t_start = time.time()
-        res = solver.check()
-        t_check = time.time() - t_start
+        res, sol, solver, t_check, rlimit_used = Z3Handler.check_query(
+            solver, query, original, timeout_ms=timeout_ms, rlimit=rlimit, fp_tactic=fp_tactic)
+        Z3Handler.last_rlimit_used = rlimit_used
 
-
-        if str(res) == SATResult.SAT.value:
-            t_start = time.time()
-            sol = solver.model()
+        if res == SATResult.SAT:
+            t_start = time.perf_counter()
+            if Database.instance().prefer_short_strings:
+                sol = Z3Handler.shorten_strings(solver, sol, t_check)
 
             # Log model to disk for debugging (if enabled)
             if Database.instance().log_smt_formulas:
@@ -459,33 +645,180 @@ class Z3Handler:
                 except Exception as e:
                     logger.warning(f"[SOLVER] Failed to save model: {e}")
 
-            # DEBUG: Print the full Z3 model
-            for decl in sol.decls():
-                var_name = decl.name()
-                var_value = sol[decl]
-
-                # For arrays, show first few elements
-                if '[' in str(var_name):
-                    from z3 import Int as Z3Int
-                    try:
-                        # Get context from the array to avoid context mismatch
-                        ctx = var_value.ctx if hasattr(var_value, 'ctx') else None
-                        for i in range(min(5, 10)):  # Show first 5 elements
-                            idx = Z3Int(i, ctx=ctx) if ctx is not None else Z3Int(i)
-                            elem_val = sol.eval(var_value[idx], model_completion=True)
-                    except:
-                        pass
-
-            # DEBUG: Verify model satisfies constraints
-            for i, constraint in enumerate(solver.assertions()):
-                satisfied = sol.evaluate(constraint, model_completion=True)
-                status = "✓" if satisfied else "✗"
+            # Sanity check: every assertion must hold under the returned model.
+            # Evaluating all assertions is real Z3 work, so only do it when DEBUG
+            # logging is actually enabled. (A model of the qffp tactic is checked always, in
+            # check_query.) This evaluates in the model itself, so model completion adds the
+            # inputs the model left out, which extract_and_encode_values() then reports.
+            if logger.isEnabledFor(logging.DEBUG):
+                for constraint in solver.assertions():
+                    if not is_true(sol.evaluate(constraint, model_completion=True)):
+                        logger.warning(f"[SOLVER] Model does not satisfy assertion: {constraint}")
 
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
-            t_encode = time.time() - t_start
+            Z3Handler.map_lifted_inputs(sol, lifted_inputs, encoded_sol)
+            t_encode = time.perf_counter() - t_start
+            TimingManager.instance().record_solver_time(t_encode, count=False)
+            logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s model={t_encode:.3f}s rlimit={rlimit_used}")
             return SATResult.SAT, encoded_sol
-        else:
-            return SATResult.UNSAT if str(res) == SATResult.UNSAT.value else SATResult.UNKNOWN, {}
+        logger.debug(f"[SOLVER] build={t_path:.3f}s check={t_check:.3f}s rlimit={rlimit_used} ({res.value})")
+        return res, {}
+
+    @staticmethod
+    def check_query(solver, query: list, original: list | None = None, timeout_ms: int | None = None,
+                    rlimit: int | None = None, fp_tactic: bool = False):
+        """Checks a query: `solver` (a default z3.Solver) has `query` asserted already.
+
+        With fp_tactic, the query is first given to the qffp tactic (Tactic('qffp').solver()),
+        which bit-blasts floating-point terms eagerly (fpa2bv). The default solver only does
+        that for pure QF_FP/QF_FPBV; an uninterpreted function (the SampledMath models) or a
+        string term (parseFloat) in the query makes it use the lazy theory_fpa of the SMT core,
+        which is far slower on these queries. Whatever the tactic leaves after bit-blasting
+        (strings, Int arithmetic, arrays, UFs) goes to the SMT core at the end of its pipeline,
+        so it takes every query the default solver does.
+
+        - SAT from the tactic counts only if its model satisfies every assertion of `query` and
+          of `original` (the assertions before the int_to_bv lifting); otherwise the default
+          solver decides.
+        - UNSAT from the tactic is trusted as from the default solver. The tactic pipeline
+          (simplify, propagate-values, fpa2bv, bit-blast, SAT/SMT) is a satisfiability-preserving
+          transformation by Z3's own rewriters, the same fpa2bv that the default solver applies
+          to pure QF_FP queries, so its UNSAT is not less reliable than the default solver's.
+          There is no cheap independent check of UNSAT. On a corpus of 748 queries from SV-COMP
+          runs (248 of them with FP terms), the two never disagreed on SAT vs UNSAT.
+        - An unknown because the check was cut short (rlimit ran out, timeout passed, context
+          interrupted by the ResourceBudget) is the result, as from the default solver: falling
+          back would give the query its budget twice, and an interrupted check must stay
+          stopped. An unknown for any other reason, or an exception, falls back to the default
+          solver with what is left of the timeout and rlimit.
+
+        The rlimit counts the same Z3 resource units for both, but the tactic's work per unit
+        differs from the SMT core's: on FP queries it decides with fewer units, so a fixed
+        rlimit (e.g. --approximate-rlimit for queries over approximate Math models) reaches
+        further with the tactic.
+
+        Returns (result, model or None, the solver that decided or None, check seconds, rlimit
+        units used)."""
+        timing = TimingManager.instance()
+        t_check = 0.0
+        rlimit_used = 0
+        checks = 0
+
+        def run(s, timeout, limit):
+            nonlocal t_check, rlimit_used, checks
+            if timeout is not None:
+                s.set("timeout", timeout)
+            if limit is not None:
+                # Z3 gives each check this much on top of what the (shared) context has used already.
+                s.set("rlimit", limit)
+            t = time.perf_counter()
+            try:
+                return s.check()
+            finally:
+                dt = time.perf_counter() - t
+                t_check += dt
+                # A fallback check is the same query again: one query for the timing stats
+                timing.record_solver_time(dt, count=checks == 0)
+                checks += 1
+                rlimit_used += _rlimit_used(s)
+
+        timeout_left, rlimit_left = timeout_ms, rlimit
+        if fp_tactic:
+            try:
+                tactic_solver = z3.Tactic('qffp', ctx=solver.ctx).solver()
+                tactic_solver.add(*query)
+                res = run(tactic_solver, timeout_ms, rlimit)
+                if res == z3.unsat:
+                    return SATResult.UNSAT, None, tactic_solver, t_check, rlimit_used
+                if res == z3.sat:
+                    model = tactic_solver.model()
+                    # by id: most of the original assertions are the very terms of the query
+                    check = list({a.get_id(): a for a in query + list(original or [])}.values())
+                    if _satisfies(model, check):
+                        return SATResult.SAT, model, tactic_solver, t_check, rlimit_used
+                    logger.warning("[SOLVER] qffp tactic model does not satisfy the query, using the default solver")
+                else:
+                    reason = tactic_solver.reason_unknown()
+                    if _cut_short(reason):
+                        return Z3Handler._unknown(reason, rlimit, timeout_ms, t_check), None, tactic_solver, t_check, rlimit_used
+                    logger.debug(f"[SOLVER] qffp tactic unknown ({reason}), using the default solver")
+            except z3.Z3Exception as e:
+                logger.warning(f"[SOLVER] qffp tactic failed ({e}), using the default solver")
+            # What is left of the budget for the default solver
+            if timeout_ms is not None:
+                timeout_left = int(timeout_ms - t_check * 1000)
+                if timeout_left <= 0:
+                    return SATResult.UNKNOWN, None, None, t_check, rlimit_used
+            if rlimit is not None:
+                rlimit_left = rlimit - rlimit_used
+                if rlimit_left <= 0:
+                    return Z3Handler._unknown('canceled', rlimit, timeout_ms, t_check), None, None, t_check, rlimit_used
+
+        res = run(solver, timeout_left, rlimit_left)
+        if res == z3.sat:
+            return SATResult.SAT, solver.model(), solver, t_check, rlimit_used
+        if res == z3.unsat:
+            return SATResult.UNSAT, None, solver, t_check, rlimit_used
+        return Z3Handler._unknown(solver.reason_unknown(), rlimit, timeout_ms, t_check), None, solver, t_check, rlimit_used
+
+    @staticmethod
+    def _unknown(reason: str, rlimit: int | None, timeout_ms: int | None, t_check: float) -> SATResult:
+        """LIMIT or UNKNOWN for a check that ended in unknown for `reason`."""
+        # With only an rlimit set, a check cut short is reported as "canceled" (older Z3:
+        # "max. resource limit exceeded"); anything else is the solver giving up for good.
+        if rlimit is not None and timeout_ms is None and ('canceled' in reason or 'resource' in reason):
+            logger.debug(f"[SOLVER] resource limit {rlimit} exhausted after {t_check:.3f}s")
+            return SATResult.LIMIT
+        logger.debug(f"[SOLVER] unknown: {reason}")
+        return SATResult.UNKNOWN
+
+    @staticmethod
+    def solution_values(sol: Dict[str, Any]) -> Dict[str, Any]:
+        """The scalar input values of a solution (from extract_and_encode_values) as Z3 values,
+        by name. Arrays are left out: their plain value is only a description."""
+        return {name: val['plain_value'] for name, val in sol.items() if z3.is_expr(val.get('plain_value'))}
+
+    @staticmethod
+    def bound_constraints(sol: dict, bound: int, ctx=None) -> list:
+        """Constraints restricting every numeric input of the solution `sol` to [-bound, bound]
+        (chars: [0, bound]), without excluding `sol` itself (see retry_constraints)."""
+        return Z3Handler.retry_constraints([sol], bound, ctx)[1:]
+
+    @staticmethod
+    def retry_constraints(failed: list, bound: int | None = None, ctx=None) -> list:
+        """Constraints for re-solving a branch whose earlier solutions `failed` did not lead the
+        run to it: each of them is excluded (by its scalar inputs), and with `bound`, every
+        numeric input is restricted to [-bound, bound] (chars: [0, bound]; floating-point inputs
+        also to neither NaN nor infinite).
+
+        Both only remove models, so UNSAT under them proves nothing about the branch.
+        """
+        if ctx is None:
+            from solver.ConstraintCache import get_constraint_cache
+            ctx = get_constraint_cache().shared_context
+        exprs = []
+        consts = {}
+        for sol in failed:
+            values = Z3Handler.solution_values(sol)
+            pairs = [(z3.Const(name, v.sort()), v) for name, v in values.items()]
+            consts.update((name, c) for (c, _), name in zip(pairs, values))
+            # With no scalar input to tell models apart, the failed one cannot be excluded alone.
+            exprs.append(z3.Or([c != v for c, v in pairs]) if pairs else z3.BoolVal(False, ctx=ctx))
+        if bound is not None:
+            for name, c in consts.items():
+                if z3.is_bv(c):
+                    width = c.size()
+                    if name.startswith(DataTypes.CHAR.value + '_'):
+                        exprs.append(z3.ULE(c, z3.BitVecVal(min(bound, 2**width - 1), width, ctx=c.ctx)))
+                    elif bound < 2**(width - 1):
+                        exprs.append(z3.And(c >= -bound, c <= bound))
+                elif z3.is_int(c):
+                    exprs.append(z3.And(c >= -bound, c <= bound))
+                elif z3.is_fp(c):
+                    # (The FPRef operators use c's context; z3.fpGEQ etc. would use the global one.)
+                    lo, hi = z3.FPVal(-bound, fps=c.sort(), ctx=c.ctx), z3.FPVal(bound, fps=c.sort(), ctx=c.ctx)
+                    exprs.append(z3.And(c >= lo, c <= hi))
+        return exprs
 
     @staticmethod
     def solve_with_optimization(node: Any, path_constraints: list) -> Tuple[SATResult, Dict[str, Any]]:
@@ -499,6 +832,7 @@ class Z3Handler:
         Returns:
         - Tuple[SATResult, Dict[str, Any]]: Tuple containing SAT result and solution dictionary.
         """
+        build_start = time.perf_counter()
         c = Not(Z3Handler.string_to_expr(node.constraint[node.trace_id]))
         optimizer = Optimize()
         optimizer.add(c)
@@ -521,6 +855,10 @@ class Z3Handler:
                         optimizer.minimize(Abs(var))
 
         optimizer.set("timeout", 60 * 1000)
+        # Same accounting as Z3Handler.solve(): building the optimizer is solver work
+        # but not a query, so it is recorded with count=False.
+        TimingManager.instance().record_solver_time(time.perf_counter() - build_start, count=False)
+
         smt_file = Z3Handler.write_optimizer_to_file(optimizer)
         print(f"Saved SMT-LIB file to: {smt_file}")
 
@@ -533,8 +871,10 @@ class Z3Handler:
         TimingManager.instance().record_solver_time(solver_duration)
 
         if str(res) == SATResult.SAT.value:
+            model_start = time.perf_counter()
             sol = optimizer.model()
             encoded_sol = Z3Handler.extract_and_encode_values(sol)
+            TimingManager.instance().record_solver_time(time.perf_counter() - model_start, count=False)
             return SATResult.SAT, encoded_sol
         else:
             return SATResult.UNSAT if str(res) == SATResult.UNSAT.value else SATResult.UNKNOWN, {}

@@ -19,7 +19,9 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 import de.uzl.its.swat.thread.ThreadHandler;
+import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.util.CheckClassAdapter;
 
 import javax.annotation.Nullable;
 
@@ -42,10 +44,6 @@ public class Util {
 
     private static final HashMap<String, Boolean> shouldInstrumentCache = new HashMap<>();
 
-    // Maintain a set of class names that have been de-interned
-    private static final Set<String> deInternedClasses = new HashSet<>(Arrays.asList(
-            String.class.getName(), Boolean.class.getName(), Byte.class.getName(), Short.class.getName(),
-            Character.class.getName(), Integer.class.getName(), Long.class.getName()));
 
     /**
      * Just a method for validating the engine!
@@ -193,6 +191,22 @@ public class Util {
         return verdict;
     }
 
+    /**
+     * The visitor a transformer writes the instrumented class through: {@code cv} wrapped in ASM's
+     * {@link CheckClassAdapter} (which checks every visit and runs a data-flow analysis of each
+     * method) if {@code instrumentation.checkClassAdapter} is set for the class, {@code cv} itself
+     * otherwise. The checks only find instrumentation bugs and cost about a tenth of an executor
+     * run's CPU time, so they are off unless configured.
+     */
+    public static ClassVisitor withCheckClassAdapter(ClassVisitor cv, String cname) {
+        return withCheckClassAdapter(cv, cname, config.isUseCheckClassAdapter(), config.getCheckClassAdapterClass());
+    }
+
+    static ClassVisitor withCheckClassAdapter(ClassVisitor cv, String cname, boolean enabled, String classFilter) {
+        boolean forClass = "*".equals(classFilter) || formatClassName(cname).equals(classFilter);
+        return enabled && forClass ? new CheckClassAdapter(cv, true) : cv;
+    }
+
     public static boolean useCheckClassAdapterForClass(String cname) {
 
         if (Config.instance().getCheckClassAdapterClass().equals("*")) {
@@ -233,14 +247,18 @@ public class Util {
         return interfaces;
     }
 
+    /**
+     * Asserts that a class name is not a type descriptor. A reference descriptor has the form
+     * {@code Lpkg/Name;}, so the trailing ';' identifies it; a leading 'L' alone does not, as
+     * class names such as {@code LinkedList} or {@code LinkedListEntry} start with it too.
+     */
     private static void checkClassName(String className) {
         if (className.startsWith("[")) {
             return; // array class, skip check for now
         }
         SWATAssert.check(
-                !className.contains(";") && !className.contains("(") && !className.contains(")")
-                        && !className.startsWith("L"),
-                "Class name '{}' should not contain ';' or brackets", className);
+                !className.contains(";") && !className.contains("(") && !className.contains(")"),
+                "Class name '{}' should not be a descriptor (contains ';', '(' or ')')", className);
     }
 
     /**
@@ -412,21 +430,6 @@ public class Util {
         String symbolicMethodPattern = config.getInstrumentationParameterSymbolicMethodNames().get(cidx);
 
         return Pattern.matches(symbolicMethodPattern, name);
-    }
-
-    static boolean shouldUseValueEquality(Object a, Object b) {
-        // If either is null, Objects.equals handles it correctly anyway
-        if (a == null || b == null) {
-            return true;
-        }
-
-        // Check if either object's class has been de-interned
-        return isDeInternedClass(a.getClass()) || isDeInternedClass(b.getClass());
-    }
-
-    private static boolean isDeInternedClass(Class<?> clazz) {
-        // Check the exact class and optionally superclasses if inheritance matters
-        return deInternedClasses.contains(clazz.getName());
     }
 
 }

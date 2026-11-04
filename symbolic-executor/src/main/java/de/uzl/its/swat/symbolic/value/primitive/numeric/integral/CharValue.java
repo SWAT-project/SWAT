@@ -1,5 +1,6 @@
 package de.uzl.its.swat.symbolic.value.primitive.numeric.integral;
 
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
@@ -83,8 +84,8 @@ public class CharValue extends NumericalValue<BitvectorFormula, Character> {
         this.bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
         this.imgr = context.getFormulaManager().getIntegerFormulaManager();
         this.concrete = concrete;
-        // Convert IntegerFormula to BitvectorFormula
-        this.formula = bvmgr.makeBitvector(BIT_WIDTH, intFormula);
+        // Convert IntegerFormula to BitvectorFormula, over bit-vectors where it allows
+        this.formula = BitvectorEncoding.toBitvector(context.getFormulaManager(), intFormula, BIT_WIDTH);
     }
 
     /**
@@ -250,7 +251,9 @@ public class CharValue extends NumericalValue<BitvectorFormula, Character> {
 
     @Override
     public String getConcreteEncoded() {
-        return Character.toString(concrete);
+        // As a number: the explorer passes it back on the command line, where Verifier.nondetChar
+        // parses it with Integer.parseInt (and a raw '\0' would not even survive the command line).
+        return Integer.toString(concrete);
     }
 
     @Override

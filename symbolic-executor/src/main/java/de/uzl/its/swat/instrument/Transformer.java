@@ -3,13 +3,16 @@ package de.uzl.its.swat.instrument;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import de.uzl.its.swat.common.ErrorHandler;
+import de.uzl.its.swat.common.StackOverflowGuard;
 import de.uzl.its.swat.common.PrintBox;
+import de.uzl.its.swat.common.Profile;
 import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.InstrumentationException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.annotation.AnnotationTransformer;
+import de.uzl.its.swat.instrument.assertion.AssertionThrowTransformer;
 import de.uzl.its.swat.instrument.classinfo.ClassInfoTransformer;
 import de.uzl.its.swat.instrument.classvariables.ClassVariablesTransformer;
 import de.uzl.its.swat.instrument.dataendpoint.SpringRepositoryTransformer;
@@ -35,8 +38,12 @@ import org.slf4j.LoggerFactory;
 public abstract class Transformer implements ClassFileTransformer {
 
     static {
+        Profile.mark("agent.clinit");
         // register the hook as early as possible
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            // A target that ends the JVM abruptly (System.exit) must not lose its trace
+            Intrinsics.terminateOnShutdown();
+            Profile.dump("shutdown.hook");
             LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
             // this will flush and close all appenders (including your buffered FileAppender)
             lc.stop();
@@ -131,9 +138,18 @@ public abstract class Transformer implements ClassFileTransformer {
 
     @SuppressWarnings("unused")
     public static void premain(String agentArgs, Instrumentation inst) {
+        Profile.mark("premain.start");
         try {
-            ThreadHandler.init();
+            // Initialised here, not on first use: that can be on an exhausted stack, where a
+            // failing static initialiser would break the class for the rest of the run
+            StackOverflowGuard.init();
+            new ErrorHandler();
+            Profile.mark("premain.handlers");
             ThreadHandler.addThreadContext(-1, "SymbolicThread", -1); // Main thread used during initialization and instrumentation
+            Profile.mark("premain.context");
+            if (config.isDeadlockWatchdog()) {
+                de.uzl.its.swat.thread.DeadlockWatchdog.start();
+            }
 
             if (config.getInstrumentationTransformer().equals(TransformerType.SV_COMP)) {
                 Verifier.retrieveInputs(); // ToDo only conditionally and at a petter place
@@ -142,6 +158,7 @@ public abstract class Transformer implements ClassFileTransformer {
             }
 
 
+            Profile.mark("premain.inputs");
             instrumentation = inst;
             logMissedClasses();
             if (config.getInstrumentationTransformer().equals(TransformerType.NONE)) {
@@ -167,6 +184,7 @@ public abstract class Transformer implements ClassFileTransformer {
             printBox.addMsg("Working Directory: " + System.getProperty("user.dir"));
             printBox.addMsg("");
 
+            if (Profile.ON) inst.addTransformer(Profile.begin());
             inst.addTransformer(new ClassInfoTransformer());
             inst.addTransformer(new NoCacheTransformer());
             inst.addTransformer(new RefEqualityTransformer());
@@ -177,6 +195,7 @@ public abstract class Transformer implements ClassFileTransformer {
                 }
                 case SPRING_ENDPOINT -> {
                     inst.addTransformer(new SpringEndpointTransformer());
+                    inst.addTransformer(new AssertionThrowTransformer());
                     // inst.addTransformer(new SpringExceptionTransformer());
                     if (Config.instance().isUseDataEndpointAdapter()) {
                         inst.addTransformer(new SpringRepositoryTransformer());
@@ -209,7 +228,9 @@ public abstract class Transformer implements ClassFileTransformer {
             if (config.isLoggingClasses()) {
                 inst.addTransformer(new ClassSavingTransformer());
             }
+            if (Profile.ON) inst.addTransformer(Profile.end());
             logger.info(printBox.toString());
+            Profile.mark("premain.end");
         } catch (Throwable t) {
             // The ErrorHandler has to be here as this method transfers control to ASM
             new ErrorHandler().handleException(new InstrumentationException(t));

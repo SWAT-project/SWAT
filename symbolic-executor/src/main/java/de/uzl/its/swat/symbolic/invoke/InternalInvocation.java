@@ -57,6 +57,14 @@ public class InternalInvocation {
             return checkSink(args);
         } else if (name.equals("injectAssignment")) {
             return PlaceHolder.instance;
+        } else if (name.equals("enterInlinedSwatCode")) {
+            // Here rather than in the concrete call, to keep in step with the symbolic processing of
+            // the branches around it (see ShadowContext.enterInlinedSwatCode)
+            ThreadHandler.getSymbolicVisitor(currentThread().getId()).getStack().enterInlinedSwatCode();
+            return PlaceHolder.instance;
+        } else if (name.equals("leaveInlinedSwatCode")) {
+            ThreadHandler.getSymbolicVisitor(currentThread().getId()).getStack().leaveInlinedSwatCode();
+            return PlaceHolder.instance;
         }
         SWATAssert.check(false, "Unknown internal method {} with {} arguments: {}", name, args.length, Arrays.toString(args));
         return PlaceHolder.instance;

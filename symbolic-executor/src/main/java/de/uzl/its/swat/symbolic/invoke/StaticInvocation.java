@@ -15,6 +15,7 @@ import de.uzl.its.swat.symbolic.invoke.java.lang.LongInvocation;
 import de.uzl.its.swat.symbolic.invoke.java.lang.MathInvocation;
 import de.uzl.its.swat.symbolic.invoke.java.lang.ShortInvocation;
 import de.uzl.its.swat.symbolic.invoke.java.lang.StringInvocation;
+import de.uzl.its.swat.symbolic.invoke.java.lang.SystemInvocation;
 import de.uzl.its.swat.symbolic.invoke.java.util.ObjectsInvocation;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
@@ -47,12 +48,15 @@ public final class StaticInvocation {
                     case "java/lang/Long" -> LongInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
                     case "java/lang/Math", "java/lang/StrictMath" -> MathInvocation.invokeStaticMethod(
-                            name, args, desc, symbolicStateHandler);
+                            name, args, desc, symbolicStateHandler, owner.equals("java/lang/StrictMath"));
                     case "java/lang/Short" -> ShortInvocation.invokeStaticMethod(name, args, desc);
                     case "java/lang/Float" -> FloatInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
                     case "java/lang/Double" -> DoubleInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
+                    case "java/lang/System" -> SystemInvocation.invokeStaticMethod(name, args, desc);
+                    case "de/uzl/its/swat/common/RefIdentity" -> RefIdentityInvocation.invokeStaticMethod(
+                            name, args, symbolicStateHandler);
                     case "java/util/Objects" -> ObjectsInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
                     default -> PlaceHolder.instance;

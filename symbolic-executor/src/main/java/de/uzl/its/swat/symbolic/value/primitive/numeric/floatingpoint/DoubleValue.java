@@ -1,5 +1,10 @@
 package de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint;
 
+import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import de.uzl.its.swat.thread.ThreadHandler;
 import org.sosy_lab.java_smt.api.BitvectorFormula;
 import org.sosy_lab.java_smt.api.BitvectorFormulaManager;
 import org.sosy_lab.java_smt.api.BooleanFormula;
@@ -12,6 +17,7 @@ import org.sosy_lab.java_smt.api.IntegerFormulaManager;
 import org.sosy_lab.java_smt.api.NumeralFormula;
 import org.sosy_lab.java_smt.api.SolverContext;
 
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.NumericalValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ByteValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.CharValue;
@@ -21,6 +27,11 @@ import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.ShortValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.DoubleObjectValue;
 import lombok.Getter;
+import de.uzl.its.swat.common.exceptions.NoThreadContextException;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
+import de.uzl.its.swat.thread.ThreadHandler;
+
+import static java.lang.Thread.currentThread;
 
 /**
  * Wrapper for doubles to represent symbolic and concrete information on the symbolic stack
@@ -166,16 +177,20 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
     }
 
     /**
-     * Gets the remainder from the division of two doubles WARNING: This is not symbolically
-     * tracked!
+     * Gets the remainder from the division of two doubles, as Java computes it; symbolic as an
+     * approximate model (see {@link JavaRemainder}).
      *
      * @param d The other double
+     * @param sth Where the model's definition goes (only used if an operand is symbolic)
      * @return The resulting DoubleValue
      */
-    public DoubleValue DREM(DoubleValue d) {
-        // ToDo (Nils): This is not (yet) symbolically tracked!
-        // See https://git.its.uni-luebeck.de/research-projects/pet-hmr/knife-fuzzer/-/issues/64
-        return new DoubleValue(context, concrete % d.concrete);
+    public DoubleValue DREM(DoubleValue d, SymbolicTraceHandler sth) {
+        double result = concrete % d.concrete;
+        if (!isSymbolic() && !d.isSymbolic()) {
+            return new DoubleValue(context, result);
+        }
+        return new DoubleValue(context, result,
+                JavaRemainder.approximate(context, formula, d.formula, new DoubleValue(context, result).formula, sth));
     }
 
     /**
@@ -236,7 +251,6 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
         }
 
         BooleanFormulaManager bmgr = context.getFormulaManager().getBooleanFormulaManager();
-        IntegerFormulaManager imgr = context.getFormulaManager().getIntegerFormulaManager();
         FloatingPointFormulaManager fmgr = context.getFormulaManager().getFloatingPointFormulaManager();
 
         BooleanFormula isNaN1 = fmgr.isNaN(formula);
@@ -246,18 +260,12 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
         BooleanFormula gtCond = fmgr.greaterThan(formula, f.formula);
         BooleanFormula eqCond = fmgr.equalWithFPSemantics(formula, f.formula);
 
-        NumeralFormula.IntegerFormula res = bmgr.ifThenElse(
+        // Built over bit-vectors: Z3 decides int_to_bv over FP comparisons badly.
+        BitvectorFormulaManager bvmgr = context.getFormulaManager().getBitvectorFormulaManager();
+        BitvectorFormula res = bmgr.ifThenElse(
                 isNaN,
-                imgr.makeNumber(nanResult),
-                bmgr.ifThenElse(
-                        gtCond,
-                        imgr.makeNumber(1),
-                        bmgr.ifThenElse(
-                                eqCond,
-                                imgr.makeNumber(0),
-                                imgr.makeNumber(-1)
-                        )
-                )
+                bvmgr.makeBitvector(32, nanResult),
+                BitvectorEncoding.compareResult(context.getFormulaManager(), eqCond, gtCond, 32)
         );
 
         return new IntValue(context, c, res);
@@ -441,10 +449,22 @@ public class DoubleValue extends NumericalValue<FloatingPointFormula, Double> {
         return D2L();
     }
 
-    //@Override
-    //public StringValue asStringValue() {
-    //    return new StringValue(context, String.valueOf(concrete), -1);
-    //}
+    /**
+     * The string of the concrete value, as String.valueOf(double). The shortest decimal string that
+     * identifies the value has no practical exact encoding, so a symbolic value loses its link to
+     * the string: context loss.
+     */
+    @Override
+    public StringValue asStringValue() {
+        if (isSymbolic()) {
+            try {
+                ThreadHandler.getSymbolicTraceHandler(Thread.currentThread().getId()).recordSymbolicContextLoss();
+            } catch (NoThreadContextException e) {
+                throw new IllegalStateException("[SWAT] No thread context for a symbolic double", e);
+            }
+        }
+        return new StringValue(context, String.valueOf(concrete), ObjectValue.ADDRESS_UNKNOWN);
+    }
 
     @Override
     public DoubleObjectValue asObjectValue(){

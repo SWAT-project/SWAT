@@ -1,6 +1,6 @@
 buildscript {
     ext {
-        asmAsmVersion = "9.6" // https://gitlab.ow2.org/asm/asm/-/tags
+        asmAsmVersion = "9.11.1" // https://gitlab.ow2.org/asm/asm/-/tags
     }
     configurations {
         classpath {
@@ -18,8 +18,8 @@ plugins {
     id 'groovy'
     id 'eclipse'
     id 'application'
-    id 'io.freefair.lombok' version '8.4'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'io.freefair.lombok' version '8.14.4'
+    id 'com.gradleup.shadow' version '8.3.11'
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -28,6 +28,14 @@ tasks.withType(JavaCompile).configureEach {
 
 
 repositories {
+    // JavaSMT built by scripts/build-javasmt.sh, only from there; its dependencies come from
+    // Maven Central
+    exclusiveContent {
+        forRepository {
+            maven { url = rootProject.file('libs/maven') }
+        }
+        filter { includeModule('org.sosy-lab', 'java-smt') }
+    }
     mavenCentral()
 }
 
@@ -51,11 +59,48 @@ test {
     // Surface SWAT errors as exceptions instead of halting the test JVM
     systemProperty "exitOnError", "false"
 
+    useJUnitPlatform {
+        excludeTags "slow"   // skip @Tag("slow") tests
+    }
+    // Forked-agent specs need the built agent jar; they run via agentTest
+    exclude '**/*AgentSpec*'
+
     testLogging {
         // Show events for passed, skipped, and failed tests
         events "passed", "failed", "skipped"
         // Enable standard output/error to be shown
-        showStandardStreams = true
+        showStandardStreams = false
+    }
+}
+
+// Forked-agent tests: run a small target with the real agent (solver.mode=PRINT) and check the
+// TraceDTO printed to stdout. Needs the agent jar in lib/, hence the copyJar dependency.
+tasks.register('agentTest', Test) {
+    dependsOn copyJar
+    description = 'Runs the *AgentSpec tests against the built agent jar'
+    group = 'verification'
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching '*AgentSpec'
+    }
+    testLogging {
+        events "passed", "failed", "skipped"
+        showStandardStreams = false
+    }
+}
+
+tasks.register('testFull', Test) {
+    systemProperty "java.library.path", "../libs/java-library-path"
+    // Surface SWAT errors as exceptions instead of halting the test JVM
+    systemProperty "exitOnError", "false"
+    
+    useJUnitPlatform()
+
+    testLogging {
+        // Show events for passed, skipped, and failed tests
+        events "passed", "failed", "skipped"
+        // Enable standard output/error to be shown
+        showStandardStreams = false
     }
 }
 
@@ -75,7 +120,69 @@ jar {
 
 }
 
+// Lists the third-party components bundled into the shadow JAR as META-INF/swat-third-party.json,
+// with license and project URL from each module's POM (or the nearest parent POM declaring them).
+// scripts/svcomp-package/third_party_licenses.py turns it into THIRD-PARTY-LICENSES.md.
+def thirdPartyDir = layout.buildDirectory.dir('generated/third-party')
+tasks.register('thirdPartyList') {
+    description = 'Writes META-INF/swat-third-party.json for the shadow JAR'
+    def classpath = configurations.runtimeClasspath
+    inputs.files(classpath)
+    outputs.dir(thirdPartyDir)
+    notCompatibleWithConfigurationCache('resolves POMs at execution time')
+    doLast {
+        def pomOf = { String g, String a, String v ->
+            def result = project.dependencies.createArtifactResolutionQuery()
+                    .forModule(g, a, v)
+                    .withArtifacts(MavenModule, MavenPomArtifact)
+                    .execute()
+            def artifacts = result.resolvedComponents*.getArtifacts(MavenPomArtifact).flatten()
+                    .findAll { it instanceof ResolvedArtifactResult }
+            if (artifacts.isEmpty()) throw new GradleException("No POM found for ${g}:${a}:${v}")
+            new groovy.xml.XmlSlurper().parse(artifacts[0].file)
+        }
+        def entries = []
+        classpath.incoming.artifacts.each { ResolvedArtifactResult art ->
+            def id = art.id.componentIdentifier
+            if (id instanceof ProjectComponentIdentifier) return // first-party code
+            def name = art.file.name
+            boolean hasClasses = name.endsWith('.jar') &&
+                    project.zipTree(art.file).matching { include '**/*.class' }.files.size() > 0
+            if (!hasClasses) return // e.g. guava's empty listenablefuture placeholder
+            if (id instanceof ModuleComponentIdentifier) {
+                def license = null, url = null
+                def pom = pomOf(id.group, id.module, id.version)
+                while (pom != null && (license == null || url == null)) {
+                    if (license == null && pom.licenses.license.size() > 0) {
+                        license = pom.licenses.license.collect {
+                            [name: it.name.text().trim(), url: it.url.text().trim()]
+                        }
+                    }
+                    if (url == null && pom.url.text().trim()) url = pom.url.text().trim()
+                    def parent = pom.parent
+                    pom = parent.size() > 0 ?
+                            pomOf(parent.groupId.text(), parent.artifactId.text(), parent.version.text()) : null
+                }
+                entries << [group: id.group, name: id.module, version: id.version,
+                            licenses: license ?: [], url: url ?: '']
+            } else if (name == 'com.microsoft.z3.jar') {
+                // File dependency from libs/java-library-path (copyNativeLibs in the root build)
+                entries << [group: 'com.microsoft', name: 'z3', version: '5.3.1',
+                            licenses: [[name: 'MIT', url: 'https://github.com/Z3Prover/z3/blob/master/LICENSE.txt']],
+                            url: 'https://github.com/Z3Prover/z3']
+            } else {
+                throw new GradleException("Unknown bundled file dependency ${name}: add it to thirdPartyList")
+            }
+        }
+        def out = thirdPartyDir.get().file('META-INF/swat-third-party.json').asFile
+        out.parentFile.mkdirs()
+        out.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(
+                entries.sort { "${it.group}:${it.name}" }))
+    }
+}
+
 shadowJar {
+    from(tasks.named('thirdPartyList'))
     mainClassName = ""
     relocate 'ch.qos.logback', 'shadow.swat.ch.qos.logback'
     relocate 'org.slf4j', 'shadow.swat.org.slf4j'
@@ -104,10 +211,6 @@ tasks.register('copyJar', Copy) {
     rename (String fileName) -> { fileName = 'symbolic-executor.jar' }
 }
 
-
-test {
-    useJUnitPlatform()
-}
 
 // Set duplicate strategy to remove a warning
 // distTar.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE)

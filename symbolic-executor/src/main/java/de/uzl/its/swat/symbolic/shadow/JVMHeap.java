@@ -20,6 +20,10 @@ public class JVMHeap {
         objects.put(hashCode, value);
     }
 
+    public java.util.Collection<Value<?, ?>> values() {
+        return java.util.Collections.unmodifiableCollection(objects.values());
+    }
+
     public Value<?, ?> get(int hashCode) {
         return objects.get(hashCode);
     }

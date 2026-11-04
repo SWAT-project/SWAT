@@ -3,7 +3,6 @@ package de.uzl.its.swat.common.exceptions;
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.logging.GlobalLogger;
-import de.uzl.its.swat.common.logging.records.ErrorRecord;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.symbolic.instruction.Instruction;
 import de.uzl.its.swat.thread.ThreadContext;

@@ -21,14 +21,18 @@ class SymbolicStorage:
         self.input_type = None
 
     def register_vars(self, vars: Dict[str, Input]) -> None:
+        # Keyed by name: inputs of different types can share an index (I_0 and [I_0).
         for var in vars:
             v = SymbolicVar(identifier=var.name, value=var.value)
-            self.vars[v.idx] = v
+            self.vars[var.name] = v
 
 
     def store_solution(self, sol: dict):
-        for s in sol.values():
-            self.vars[s['index']].newValue = s['encoded_value']
+        for name, s in sol.items():
+            # The model also names symbolic values that are no Verifier input, e.g. an array
+            # ([I_0) the executor made symbolic; those cannot be passed to the program.
+            if name in self.vars:
+                self.vars[name].newValue = s['encoded_value']
 
                 
             

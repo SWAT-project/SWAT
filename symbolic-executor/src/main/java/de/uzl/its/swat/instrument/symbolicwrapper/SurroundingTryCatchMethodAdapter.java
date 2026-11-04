@@ -67,8 +67,13 @@ public class SurroundingTryCatchMethodAdapter extends AbstractMethodAdapter {
 
         visitInsn(Opcodes.DUP);
 
+        // Prints the stack trace and records the violating location for the witness
         visitMethodInsn(
-                Opcodes.INVOKEVIRTUAL, "java/lang/Throwable", "printStackTrace", "()V", false);
+                Opcodes.INVOKESTATIC,
+                "de/uzl/its/swat/witness/Witness",
+                "recordTarget",
+                "(Ljava/lang/Throwable;)V",
+                false);
 
         // Duplicate exception for instanceof check
         visitInsn(Opcodes.DUP);

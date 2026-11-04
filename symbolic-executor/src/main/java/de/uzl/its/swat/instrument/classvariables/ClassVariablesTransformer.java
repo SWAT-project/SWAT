@@ -70,11 +70,11 @@ public class ClassVariablesTransformer implements ClassFileTransformer {
 
         try {
             if (classBeingRedefined != null || cname == null || !Util.shouldInstrument(cname)) {
-                return cbuf;
+                return null;
             }
 
             if (!Transformer.containsRequestBodyClass(cname)) {
-                return cbuf;
+                return null;
             }
             getPrintBox().addMsg("Class: " + cname);
 
@@ -83,7 +83,7 @@ public class ClassVariablesTransformer implements ClassFileTransformer {
             cr.accept(cn, 0);
 
             // if (Transformer.getRequestBodyClassTransformed().contains(cname)) {
-            //     return cbuf;
+            //     return null;
             // }
 
             ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_FRAMES);
@@ -106,6 +106,6 @@ public class ClassVariablesTransformer implements ClassFileTransformer {
             errorHandler.handleException("Error while instrumenting class: " + cname, e);
         }
         Transformer.addInstrumentedClass(cname, InternalTransformerType.CLASS_VARIABLES);
-        return cbuf;
+        return null;
     }
 }

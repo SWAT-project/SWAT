@@ -1,0 +1,99 @@
+// Expected verdict: VIOLATION. Violating inputs (nondet call order): int:1001 int:2996 int:0 int:1 int:2 int:3 int:4 int:5 int:6 int:7 int:8 int:9 int:10 int:11 int:12 int:13 int:14 int:15 int:16 int:17 int:18 int:19 int:20 int:21 int:22 int:23 int:24 int:25 int:26 int:27 int:28 int:29 int:30 int:31
+import org.sosy_lab.sv_benchmarks.Verifier;
+
+// validation-gauntlet/return: 32 checks that each leave early, then the only assert.
+public class Main {
+    public static void main(String[] args) {
+        int a = Verifier.nondetInt();
+        int b = Verifier.nondetInt();
+        int v0 = Verifier.nondetInt();
+        int v1 = Verifier.nondetInt();
+        int v2 = Verifier.nondetInt();
+        int v3 = Verifier.nondetInt();
+        int v4 = Verifier.nondetInt();
+        int v5 = Verifier.nondetInt();
+        int v6 = Verifier.nondetInt();
+        int v7 = Verifier.nondetInt();
+        int v8 = Verifier.nondetInt();
+        int v9 = Verifier.nondetInt();
+        int v10 = Verifier.nondetInt();
+        int v11 = Verifier.nondetInt();
+        int v12 = Verifier.nondetInt();
+        int v13 = Verifier.nondetInt();
+        int v14 = Verifier.nondetInt();
+        int v15 = Verifier.nondetInt();
+        int v16 = Verifier.nondetInt();
+        int v17 = Verifier.nondetInt();
+        int v18 = Verifier.nondetInt();
+        int v19 = Verifier.nondetInt();
+        int v20 = Verifier.nondetInt();
+        int v21 = Verifier.nondetInt();
+        int v22 = Verifier.nondetInt();
+        int v23 = Verifier.nondetInt();
+        int v24 = Verifier.nondetInt();
+        int v25 = Verifier.nondetInt();
+        int v26 = Verifier.nondetInt();
+        int v27 = Verifier.nondetInt();
+        int v28 = Verifier.nondetInt();
+        int v29 = Verifier.nondetInt();
+        int v30 = Verifier.nondetInt();
+        int v31 = Verifier.nondetInt();
+        run(a, b, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v27, v28, v29, v30, v31);
+    }
+
+    static void run(int a, int b, int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11, int v12, int v13, int v14, int v15, int v16, int v17, int v18, int v19, int v20, int v21, int v22, int v23, int v24, int v25, int v26, int v27, int v28, int v29, int v30, int v31) {
+        if (v0 < 0) return;
+        if (v1 < 1) return;
+        if (v2 < 2) return;
+        if (v3 < 3) return;
+        if (v4 < 4) return;
+        if (v5 < 5) return;
+        if (v6 < 6) return;
+        if (v7 < 7) return;
+        if (v8 < 8) return;
+        if (v9 < 9) return;
+        if (v10 < 10) return;
+        if (v11 < 11) return;
+        if (v12 < 12) return;
+        if (v13 < 13) return;
+        if (v14 < 14) return;
+        if (v15 < 15) return;
+        if (v16 < 16) return;
+        if (v17 < 17) return;
+        if (v18 < 18) return;
+        if (v19 < 19) return;
+        if (v20 < 20) return;
+        if (v21 < 21) return;
+        if (v22 < 22) return;
+        if (v23 < 23) return;
+        if (v24 < 24) return;
+        if (v25 < 25) return;
+        if (v26 < 26) return;
+        if (v27 < 27) return;
+        if (v28 < 28) return;
+        if (v29 < 29) return;
+        if (v30 < 30) return;
+        if (v31 < 31) return;
+        stage1(a, b);
+    }
+
+    static void stage1(int a, int b) {
+        stage2(a + 1, b);
+    }
+
+    static void stage2(int a, int b) {
+        target(a - 1, b);
+    }
+
+
+    // The only assertion in the program.
+    static void target(int a, int b) {
+        if (a > 1000 && a < 100000) {
+            if (b == 3 * a - 7) {
+                if (b > a) {
+                    assert false;
+                }
+            }
+        }
+    }
+}

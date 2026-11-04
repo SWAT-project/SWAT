@@ -1,5 +1,7 @@
 package de.uzl.its.targets.finance_engine.service;
 
+import de.uzl.its.targets.finance_engine.Bugs;
+
 import de.uzl.its.targets.finance_engine.util.InsertionSorter;
 import org.springframework.stereotype.Service;
 import de.uzl.its.targets.finance_engine.model.Transaction;
@@ -62,6 +64,10 @@ public class TransactionService {
                 String q = queryText.toLowerCase();
                 boolean inRaw = t.raw != null && t.raw.toLowerCase().indexOf(q) >= 0;
                 boolean inMerchant = t.merchant != null && t.merchant.toLowerCase().indexOf(q) >= 0;
+                if (Bugs.FILTER_QUERY) {
+                    // Inserted bug: matching the merchant only was meant to search the raw text too
+                    assert !(inMerchant && !inRaw && q.length() >= 4) : "BUG filter: merchant-only match";
+                }
                 if (!(inRaw || inMerchant)) ok = false;
             }
             if (ok) out.add(t);

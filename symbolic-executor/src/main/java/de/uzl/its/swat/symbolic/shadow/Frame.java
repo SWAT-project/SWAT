@@ -21,21 +21,66 @@ public class Frame {
     /** Number of words that are returned on invoke method end */
     public final int nReturnWords;
     /** The symbolic version of Javas locals */
-    @Getter private final ArrayList<Value<?, ?>> locals = new ArrayList<>(8);
+    @Getter
+    private final ArrayList<Value<?, ?>> locals = new ArrayList<>(8);
     /** The symbolic version of Javas operand stack */
-    @Getter private final ArrayList<Value<?, ?>> operandStack = new ArrayList<>(8);
+    @Getter
+    private final ArrayList<Value<?, ?>> operandStack = new ArrayList<>(8);
     /** The return value of the symbolic stack frame */
-    @Getter private Value<?, ?> ret;
+    @Getter
+    private Value<?, ?> ret;
     /** The class name of the method that is invoked */
-    @Getter private final String className;
+    @Getter
+    private final String className;
     /** The method name of the method that is invoked */
-    @Getter private final String methodName;
+    @Getter
+    private final String methodName;
+    /**
+     * Whether application code runs in this library frame: library code called back into it (a
+     * delegation, see SymbolicInstructionProcessor). Its branches, and those of whatever it calls,
+     * are not in the static pre-analysis graph (see ShadowContext.inCallback).
+     */
+    @Getter
+    private boolean callback = false;
+
+    void markCallback() {
+        callback = true;
+    }
+
+    /** The iid of the call instruction that pushed this frame, or -1 (see BranchKeys). */
+    @Getter @lombok.Setter
+    private long callSite = -1;
 
     /**
      * Constructor for Frame
      *
      * @param nReturnWords Number of words that are returned on invoke method end
      */
+    /** Loop summaries in progress in this frame (see symbolic/summary/Merger), created on demand. */
+    private java.util.Map<Integer, Object> summaryJoins;
+    private java.util.Map<Long, Object> summaryLoops;
+
+    public java.util.Map<Integer, Object> summaryJoins() {
+        if (summaryJoins == null) {
+            summaryJoins = new java.util.HashMap<>();
+        }
+        return summaryJoins;
+    }
+
+    public java.util.Map<Integer, Object> summaryJoinsIfAny() {
+        return summaryJoins;
+    }
+
+    /** The counting loop whose back edge this frame took last, until its head is reached. */
+    public Object summaryBackEdge;
+
+    public java.util.Map<Long, Object> summaryLoops() {
+        if (summaryLoops == null) {
+            summaryLoops = new java.util.HashMap<>();
+        }
+        return summaryLoops;
+    }
+
     public Frame(String className, String methodName, int nReturnWords) {
         this.nReturnWords = nReturnWords;
         ret = PlaceHolder.instance;
@@ -101,6 +146,11 @@ public class Frame {
             diff--;
         }
         locals.set(index, o);
+    }
+
+    /** Removes all symbolic locals */
+    public void clearLocals() {
+        locals.clear();
     }
 
     /**
@@ -249,14 +299,19 @@ public class Frame {
         // purposes.
         Logger stateLogger = ThreadHandler.getShadowStateLogger(id);
 
-        int cnt = 3;
+        int cnt = 4;
         for (int i = operandStack.size() - 1; i >= 0; i--) {
             stateLogger.info("[{}]: {}", operandStack.size() - i, operandStack.get(i));
-            if(--cnt == 0) break;
+            if (--cnt == 0)
+                break;
         }
         int remaining = operandStack.size() - 4;
-        if (remaining >= 0) stateLogger.info("... ({} more)", remaining);
+        if (remaining > 0)
+            stateLogger.info("... ({} more)", remaining);
+
+        // stateLogger.info("LOCALS: {}", locals);
     }
+
     /**
      * Override of the default toString method for printing the Current symbolic stack frame and
      * locals
