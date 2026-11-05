@@ -18,5 +18,5 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 urllib3==2.8.0
 uvicorn==0.54.0
-witnesscreator @ git+https://github.com/SWAT-project/WitnessCreator@v1.0.0
+witnesscreator @ git+https://github.com/SWAT-project/WitnessCreator@v1.1.0
 z3-solver==5.3.1.0
