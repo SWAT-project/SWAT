@@ -27,6 +27,7 @@ from enum import Enum
 from typing import Any
 
 from data.StaticAnalysisGraph.SAGraph import SAGraph
+from svcomp.ResourceBudget import SA_MIN_HEAP_MIB
 
 import log
 logger = log.get_logger()
@@ -58,6 +59,10 @@ class SAStatus(Enum):
 class StaticPreAnalysis:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
+        # -Xmx (MiB) for the extractor, and whether the budget is too small to run it at all. Set by
+        # set_budget() from the resource budget; until then no explicit heap is passed (as in tests).
+        self._sa_heap_mib: int | None = None
+        self._sa_disabled_by_budget: bool = False
         self.status = SAStatus.NOT_STARTED if self.enabled else SAStatus.DISABLED
         self.duration: float | None = None  # wall time from start until done or cancelled
         self.rejected_reason: str | None = None
@@ -86,7 +91,15 @@ class StaticPreAnalysis:
 
     @property
     def enabled(self) -> bool:
-        return self.requested and self.property_supported
+        return self.requested and self.property_supported and not self._sa_disabled_by_budget
+
+    def set_budget(self, sa_heap_mib: int | None) -> None:
+        """Sets the extractor's heap from the resource budget. None means the budget is too small to
+        run the pre-analysis (see ResourceBudget.sa_heap_mib), which is then skipped instead of run
+        into an out-of-memory error. Call before start()."""
+        self._sa_heap_mib = sa_heap_mib
+        self._sa_disabled_by_budget = sa_heap_mib is None
+        self.status = SAStatus.NOT_STARTED if self.enabled else SAStatus.DISABLED
 
     @property
     def property_supported(self) -> bool:
@@ -119,7 +132,10 @@ class StaticPreAnalysis:
 
     def start(self) -> None:
         if not self.enabled:
-            if self.requested:
+            if self._sa_disabled_by_budget:
+                logger.info(f'[EXPLORER] Static pre-analysis is disabled: the memory budget is too small '
+                            f'for the extractor (needs about {SA_MIN_HEAP_MIB} MiB of heap).')
+            elif self.requested:
                 logger.info(f'[EXPLORER] Static pre-analysis is disabled: its graph has no target points '
                             f'for property {self.args.property} (only {", ".join(SA_TARGETS)}).')
             else:
@@ -223,7 +239,12 @@ class StaticPreAnalysis:
 
     def _run_extractor(self) -> bool:
         """Runs the extractor; False if it was cancelled or timed out."""
-        cmd = ["java", "-jar", self.extractor_jar,
+        cmd = ["java",
+               # Explicit heap: the extractor scans the JDK/JRT (~1.5 GiB), and the JVM's container
+               # default (~25% of the cgroup) is far too little under a tight limit and OOMs. Sized
+               # to the budget by set_budget(); absent only when no budget was set (e.g. tests).
+               *([f"-Xmx{self._sa_heap_mib}m"] if self._sa_heap_mib is not None else []),
+               "-jar", self.extractor_jar,
                ':'.join(os.path.abspath(p) for p in self.args.classpath if not self._is_swat_library(p)),
                self.args.logdir, *self.entry, "inter"] \
               + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else [])

@@ -45,6 +45,21 @@ INTERRUPT_GRACE_S = 1.0
 EXPLORER_SHARE_MB = 1500
 MIN_HEAP_MB = 256
 
+# Static pre-analysis (SA) extractor heap. The extractor (SootUp) scans the JDK/JRT, which needs
+# ~1.5 GiB largely independent of the program, so it is launched with an explicit -Xmx: the JVM's
+# container default (~25% of the cgroup) is far too little under a tight limit and OOMs. It runs
+# before round 0 while the executor is idle (see sa_phase()), so it may use the budget up to the
+# SA-phase ceiling (memory_limit - SA_PHASE_HEADROOM_MB) minus the explorer's own footprint. Below
+# SA_MIN_HEAP_MIB there is no room (a very small budget) and the pre-analysis is skipped rather than
+# run into an OOM; a full limit leaves ample room (capped at SA_MAX_HEAP_MIB).
+SA_MIN_HEAP_MIB = 1536
+SA_MAX_HEAP_MIB = 4096
+SA_EXPLORER_RESERVE_MB = 500
+# Headroom kept below the real limit while only the SA extractor runs (sa_phase). Much smaller than
+# the execution-phase HEADROOM: the extractor's heap is -Xmx-bounded and there is no Z3 query or
+# executor JVM that can balloon between polls, only reclaimable page cache and the files written.
+SA_PHASE_HEADROOM_MB = 500
+
 # Stop this much before the CPU limit: polling lag (up to 4 cores per poll interval), killing the
 # executor and writing the verdict, the witness and the statistics.
 CPU_MARGIN_S = 20
@@ -178,6 +193,7 @@ class ResourceBudget:
         self.wall_deadline = self.wall_limit - CPU_MARGIN_S
         self._started_at = time.monotonic()
         self.wall_deadline_reached = False
+        self._sa_phase = False  # True while the static pre-analysis runs before round 0 (sa_phase())
 
         self.cpu_exceeded = threading.Event()
         self.cpu_exceeded_at: float | None = None
@@ -200,10 +216,43 @@ class ResourceBudget:
         # the memory limit, or the main thread did not wind down after the CPU deadline.
         self.on_emergency = None
 
+    @property
+    def sa_phase_threshold(self) -> int:
+        """Memory ceiling (bytes) while the static pre-analysis runs (see sa_phase()): close to the
+        real limit, since only the -Xmx-bounded extractor and the idle explorer are running."""
+        return self.memory_limit - SA_PHASE_HEADROOM_MB * MB
+
+    @property
+    def sa_heap_mib(self) -> int | None:
+        """The -Xmx (MiB) for the static pre-analysis extractor, or None if the budget cannot fit it.
+
+        The extractor runs before round 0 while the executor is idle (see sa_phase()), so it may use
+        the budget up to the SA-phase ceiling, less the explorer's own footprint. Below
+        SA_MIN_HEAP_MIB there is no room (a very small budget) and the pre-analysis is skipped
+        instead of running into an out-of-memory error.
+        """
+        available = (self.sa_phase_threshold - SA_EXPLORER_RESERVE_MB * MB) // MIB
+        if available < SA_MIN_HEAP_MIB:
+            return None
+        return min(available, SA_MAX_HEAP_MIB)
+
+    @contextmanager
+    def sa_phase(self):
+        """Marks the window where the static pre-analysis runs before round 0 (sequential SA). In it
+        the monitor lets memory rise to sa_phase_threshold rather than the execution-phase
+        memory_threshold: only the -Xmx-bounded extractor and the idle explorer are running, with no
+        Z3 query or executor JVM that can balloon between polls."""
+        self._sa_phase = True
+        try:
+            yield
+        finally:
+            self._sa_phase = False
+
     def describe(self) -> str:
         cg = f', cgroup limit {self.cgroup_memory_limit // MB} MB' if self.cgroup_memory_limit else ''
+        sa = f'{self.sa_heap_mib} MiB' if self.sa_heap_mib is not None else 'skipped (budget too small)'
         return (f'memory limit {self.memory_limit // MB} MB{cg} (executor heap {self.heap_mib} MiB, '
-                f'stop at {self.memory_threshold // MB} MB), CPU limit {self.cpu_limit:.0f} s '
+                f'SA heap {sa}, stop at {self.memory_threshold // MB} MB), CPU limit {self.cpu_limit:.0f} s '
                 f'(stop at {self.cpu_deadline:.0f} s, {self.cpu_used_before:.1f} s used before)')
 
     # ---- measuring ----
@@ -324,19 +373,25 @@ class ResourceBudget:
             self._stop_work('cpu')
             if time.monotonic() - self.cpu_exceeded_at > GRACE_S:
                 self._emergency(f'the explorer did not stop within {GRACE_S} s of the CPU deadline')
-        if rss >= self.memory_threshold:
+        # Before round 0 the only memory users are the -Xmx-bounded SA extractor and the idle
+        # explorer (sa_phase); there is no Z3 query or executor JVM that can balloon between polls, so
+        # the large execution-phase headroom is not needed and the pre-analysis may use most of the
+        # budget. In that window both thresholds relax to sa_phase_threshold (close to the real limit).
+        mem_threshold = self.sa_phase_threshold if self._sa_phase else self.memory_threshold
+        hard_threshold = self.sa_phase_threshold if self._sa_phase else self.hard_memory_threshold
+        if rss >= mem_threshold:
             stopped = self._stop_work('memory')
             if stopped:
                 self.memory_hits += 1
-                logger.warning(f'[BUDGET] Memory {rss // MB} MB reached {self.memory_threshold // MB} MB, '
+                logger.warning(f'[BUDGET] Memory {rss // MB} MB reached {mem_threshold // MB} MB, '
                                f'stopped the work in progress')
             elif stopped is None and self._solver_context is not None:
                 # An interrupted query that keeps its memory, or keeps growing
-                if rss >= self.hard_memory_threshold or time.monotonic() - self._solver_interrupted_at > INTERRUPT_GRACE_S:
+                if rss >= hard_threshold or time.monotonic() - self._solver_interrupted_at > INTERRUPT_GRACE_S:
                     self._emergency(f'a Z3 query uses {rss // MB} MB of the {self.memory_limit // MB} MB limit and does not stop')
             elif stopped is False:
                 _malloc_trim()
-                if self.usage()[0] >= self.hard_memory_threshold:
+                if self.usage()[0] >= hard_threshold:
                     self._emergency(f'the explorer uses {rss // MB} MB of the {self.memory_limit // MB} MB limit')
 
     def _emergency(self, why: str):
