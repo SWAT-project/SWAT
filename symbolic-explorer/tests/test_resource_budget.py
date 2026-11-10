@@ -75,6 +75,46 @@ class LimitsTest(unittest.TestCase):
         self.assertEqual(b.memory_limit, 8_000 * MB)
         self.assertLess(b.heap_mib * MIB + 1_500 * MB, b.memory_threshold)
 
+    def test_sa_heap_mib(self):
+        # Full budget: the extractor gets the capped heap.
+        self.assertEqual(ResourceBudget(cgroup_limit=0).sa_heap_mib, rb.SA_MAX_HEAP_MIB)
+        self.assertEqual(ResourceBudget(cgroup_limit=8_000 * MB).sa_heap_mib, rb.SA_MAX_HEAP_MIB)
+        # Reduced ~3 GB pre-run: the SA phase lets the extractor run with a fitting heap (not skipped),
+        # and that heap plus the explorer reserve stays within the SA-phase ceiling.
+        b3 = ResourceBudget(cgroup_limit=2_999 * MB)
+        self.assertIsNotNone(b3.sa_heap_mib)
+        self.assertGreaterEqual(b3.sa_heap_mib, rb.SA_MIN_HEAP_MIB)
+        self.assertLessEqual(b3.sa_heap_mib * MIB + rb.SA_EXPLORER_RESERVE_MB * MB, b3.sa_phase_threshold)
+        # A very small budget: no room for the extractor even in the SA phase, so it is skipped.
+        self.assertIsNone(ResourceBudget(cgroup_limit=2_000 * MB).sa_heap_mib)
+
+    def test_sa_phase_threshold(self):
+        # The SA-phase ceiling is close to the real limit, well above the execution memory_threshold.
+        b = ResourceBudget(cgroup_limit=2_999 * MB)
+        self.assertEqual(b.sa_phase_threshold, b.memory_limit - rb.SA_PHASE_HEADROOM_MB * MB)
+        self.assertGreater(b.sa_phase_threshold, b.memory_threshold)
+        self.assertLess(b.sa_phase_threshold, b.memory_limit)
+
+    def test_sa_phase_defers_emergency_until_near_the_limit(self):
+        b = ResourceBudget(cgroup_limit=2_999 * MB)
+        fired = []
+        b.on_emergency = lambda why: fired.append(why)
+        # Usage above the execution hard threshold but below the SA-phase ceiling: no emergency during
+        # SA, but an emergency outside it (where Z3/executor can still balloon past the headroom).
+        mid = (b.hard_memory_threshold + b.sa_phase_threshold) // 2
+        with mock.patch.object(b, 'usage', return_value=(mid, 0.0)):
+            with b.sa_phase():
+                b.check()
+            self.assertEqual(fired, [])
+            b.check()  # outside the SA phase the same usage is over the limit
+        self.assertTrue(fired)
+        # Above the SA-phase ceiling: emergency even during SA.
+        fired.clear()
+        with mock.patch.object(b, 'usage', return_value=(b.sa_phase_threshold + 1, 0.0)):
+            with b.sa_phase():
+                b.check()
+        self.assertTrue(fired)
+
     def test_cpu_used_before_counts(self):
         b = ResourceBudget(cgroup_limit=0, cpu_used_s=12.5)
         self.assertGreaterEqual(b.usage()[1], 12.5)

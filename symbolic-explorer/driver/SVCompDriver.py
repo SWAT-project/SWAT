@@ -168,6 +168,9 @@ class SVCompDriver:
                                      cpu_limit_s=getattr(args, 'cpu_limit', None) or DEFAULT_CPU_LIMIT_S,
                                      cpu_used_s=getattr(args, 'cpu_used', None) or 0.0)
         self.budget.on_emergency = self.end_run_now
+        # Size the static pre-analysis extractor's heap to the budget (None => skip it: the budget is
+        # too small to run it without an OOM, e.g. the reduced pre-run limit). See ResourceBudget.
+        self.sa.set_budget(self.budget.sa_heap_mib)
         # Only one verdict is reported, by the main thread or, in an emergency, by the monitor
         self.verdict_lock = threading.Lock()
         self.verdict_reported = False
@@ -398,9 +401,15 @@ class SVCompDriver:
         # folded into the symbolic explorer residual). With --parallel-sa it runs in the background
         # while exploration already starts without pruning, and the graph is adopted in
         # retrieve_solution() once it is ready.
-        self.sa.start()
-        if not self.args.parallel_sa:
-            self.sa.wait()
+        if self.args.parallel_sa:
+            # Runs alongside exploration: it shares the budget with the executor, so no relaxed phase.
+            self.sa.start()
+        else:
+            # Runs alone before round 0: let the monitor allow memory up to the SA-phase ceiling so
+            # the extractor (which scans the JDK/JRT) is not emergency-stopped under a tight budget.
+            with self.budget.sa_phase():
+                self.sa.start()
+                self.sa.wait()
             self.adopt_sa_graph()
 
         next_step = Action.RANDOMNEXT
