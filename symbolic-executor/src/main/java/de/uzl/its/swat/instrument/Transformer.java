@@ -17,11 +17,9 @@ import de.uzl.its.swat.instrument.classinfo.ClassInfoTransformer;
 import de.uzl.its.swat.instrument.classvariables.ClassVariablesTransformer;
 import de.uzl.its.swat.instrument.dataendpoint.SpringRepositoryTransformer;
 import de.uzl.its.swat.instrument.instruction.InstructionTransformer;
-import de.uzl.its.swat.instrument.nocache.NoCacheTransformer;
 import de.uzl.its.swat.instrument.parameter.ParameterTransformer;
-import de.uzl.its.swat.instrument.refequality.RefEqualityTransformer;
+import de.uzl.its.swat.instrument.rewrite.RewriteTransformer;
 import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
-import de.uzl.its.swat.instrument.svcomp.SVCompTransformer;
 import de.uzl.its.swat.instrument.svcomp.Verifier;
 import de.uzl.its.swat.instrument.symbolicwrapper.SymbolicWrapperTransformer;
 import de.uzl.its.swat.thread.ThreadHandler;
@@ -44,6 +42,8 @@ public abstract class Transformer implements ClassFileTransformer {
             // A target that ends the JVM abruptly (System.exit) must not lose its trace
             Intrinsics.terminateOnShutdown();
             Profile.dump("shutdown.hook");
+            GlobalLogger.getSymbolicExecutionLogger().info("[PREPARE] Classes loaded prepared: {}, rewritten at load time: {}",
+                    RewriteTransformer.PREPARED.get(), RewriteTransformer.REWRITTEN.get());
             LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
             // this will flush and close all appenders (including your buffered FileAppender)
             lc.stop();
@@ -59,7 +59,8 @@ public abstract class Transformer implements ClassFileTransformer {
 
     private static final List<String> requestBodyClass = new ArrayList<String>();
 
-    @Getter private static PrintBox printBox;
+    /** Replaced in premain; set here so that the transformers also work outside the agent (Prepare). */
+    @Getter private static PrintBox printBox = new PrintBox(60, "SWAT transformers");
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
 
     public static void addRequestBodyClass(String parameter) {
@@ -186,8 +187,9 @@ public abstract class Transformer implements ClassFileTransformer {
 
             if (Profile.ON) inst.addTransformer(Profile.begin());
             inst.addTransformer(new ClassInfoTransformer());
-            inst.addTransformer(new NoCacheTransformer());
-            inst.addTransformer(new RefEqualityTransformer());
+            // SWAT's semantic rewrites (no-cache, reference equality, SV-COMP), skipped for classes
+            // prepared ahead of time (see Rewrites)
+            inst.addTransformer(new RewriteTransformer());
 
             switch (config.getInstrumentationTransformer()) {
                 case WEB_SERVLET -> {
@@ -212,7 +214,7 @@ public abstract class Transformer implements ClassFileTransformer {
                             new ClassVariablesTransformer(), false); // TODO retransform has to be enabled
                 }
                 case SV_COMP -> {
-                    inst.addTransformer(new SVCompTransformer());
+                    // The SV-COMP rewrite is one of the RewriteTransformer's steps
                 }
                 case ANNOTATION -> {
                     inst.addTransformer(new AnnotationTransformer());
