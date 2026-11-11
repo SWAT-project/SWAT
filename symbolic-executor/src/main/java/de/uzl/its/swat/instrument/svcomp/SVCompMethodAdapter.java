@@ -150,7 +150,7 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
                     "(" + retType + "J" + ")" + retType,
                     false);
             SVCompTransformer.getPrintBox().addMsg("      => Adding symbolic tracking");
-        } else if (name.equals("assume")) {
+        } else if (name.equals("assume") && owner.equals(targetOwner) && descriptor.equals("(Z)V")) {
             String newOwner = "de/uzl/its/swat/instrument/svcomp/Verifier";
             mv.visitMethodInsn(opcode, newOwner, name, descriptor, isInterface);
         } else if (owner.equals("java/lang/System") && name.equals("exit") && descriptor.equals("(I)V")) {

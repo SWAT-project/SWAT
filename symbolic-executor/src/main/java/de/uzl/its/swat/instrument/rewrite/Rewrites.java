@@ -34,7 +34,7 @@ import java.util.List;
 public final class Rewrites {
 
     /** Version of the prepared-class format; bump it when the rewrites or the marker change. */
-    public static final int FORMAT_VERSION = 1;
+    public static final int FORMAT_VERSION = 2;
 
     private Rewrites() {}
 

@@ -116,6 +116,7 @@ public final class Prepare {
                     continue;
                 }
                 Path target = out.resolve(Integer.toString(i));
+                deleteRecursively(target); // no stale classes from an earlier preparation
                 prepareDirectory(entry, target, steps, loader, seen, mark, r);
                 r.classpath.add(target.toString());
             }
@@ -169,6 +170,15 @@ public final class Prepare {
             } else {
                 Files.write(dest, mark ? PreparedMarker.mark(rewritten, r.config) : rewritten);
                 r.prepared++;
+            }
+        }
+    }
+
+    private static void deleteRecursively(Path dir) throws IOException {
+        if (!Files.exists(dir)) return;
+        try (Stream<Path> walk = Files.walk(dir)) {
+            for (Path p : walk.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                Files.delete(p);
             }
         }
     }
