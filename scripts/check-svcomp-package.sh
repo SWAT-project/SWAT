@@ -34,7 +34,13 @@ done
 [[ -x "${tool_dir}/run-swat.sh" && -x "${tool_dir}/smoketest.sh" ]] || fail "run-swat.sh and smoketest.sh must be executable"
 
 echo "Running checks in ${BASE_IMAGE} (packages: ${UBUNTU_PACKAGES})"
-docker run --rm -v "${tool_dir}:/tool" -w /tool -e UBUNTU_PACKAGES="$UBUNTU_PACKAGES" "$BASE_IMAGE" bash -euc '
+# --network host: resolve DNS through the runner host, not the default docker bridge. On
+# GitHub-hosted runners the bridge network's container DNS fails intermittently (apt reports
+# "Could not resolve archive.ubuntu.com" while the host itself resolves fine and even pulled this
+# image), which blocks the in-container apt-get and fails the check for reasons unrelated to the
+# package; see actions/runner-images#10911. The host network is the layer that works, and this is
+# a short-lived throwaway container, so sharing it is fine.
+docker run --rm --network host -v "${tool_dir}:/tool" -w /tool -e UBUNTU_PACKAGES="$UBUNTU_PACKAGES" "$BASE_IMAGE" bash -euc '
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $UBUNTU_PACKAGES > /dev/null
   echo "python3: $(python3 --version)"
