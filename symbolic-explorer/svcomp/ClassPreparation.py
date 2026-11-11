@@ -95,6 +95,12 @@ class ClassPreparation:
                 logger.warning(f'[PREPARE] Not prepared (rewritten at load time instead): {f}')
         return self.classpath
 
+    @property
+    def prepared_dirs(self) -> list[str]:
+        """The prepared copies of the classpath's directories (empty unless preparation succeeded)."""
+        out = os.path.abspath(self.out_dir) + os.sep
+        return [p for p in (self.classpath or []) if os.path.abspath(p).startswith(out)]
+
     def stats(self) -> dict[str, Any]:
         return {
             'enabled': self.enabled,

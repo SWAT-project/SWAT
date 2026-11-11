@@ -44,6 +44,8 @@ public abstract class Transformer implements ClassFileTransformer {
             Profile.dump("shutdown.hook");
             GlobalLogger.getSymbolicExecutionLogger().info("[PREPARE] Classes loaded prepared: {}, rewritten at load time: {}",
                     RewriteTransformer.PREPARED.get(), RewriteTransformer.REWRITTEN.get());
+            GlobalLogger.getSymbolicExecutionLogger().info("[LOOP FACTS] {}",
+                    de.uzl.its.swat.instrument.loopfacts.LoopFactsSource.stats());
             LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory();
             // this will flush and close all appenders (including your buffered FileAppender)
             lc.stop();

@@ -212,6 +212,8 @@ class SVCompDriver:
             f'-Dconfig.path={config}',
             *(['-DloopSummaries=false'] if getattr(self.args, 'no_loop_summaries', False) else []),
             # The loop facts of the static analysis, once it has written them (the executor computes them otherwise)
+            # (in prepared classes the extractor also annotates them on the methods, which the executor
+            # prefers; the file covers unprepared classes and extractors without --annotate-loop-facts)
             *([f'-DloopFacts={self.sa.loop_facts_file}'] if os.path.isfile(self.sa.loop_facts_file) else []),
             f'-Dexplorer.port={port}',
             f'-javaagent:{javaagent}',
@@ -403,6 +405,7 @@ class SVCompDriver:
         if prepared is not None:
             cp = prepared
             self.sa.classpath = prepared
+            self.sa.annotate_dirs = self.preparation.prepared_dirs
 
         # Static property pre-check (on the original classes): if it proves the property, round 0
         # only cross-checks it.

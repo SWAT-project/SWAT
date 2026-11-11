@@ -62,6 +62,9 @@ class StaticPreAnalysis:
     def __init__(self, args: argparse.Namespace) -> None:
         # The classpath to analyse: the prepared one once class preparation succeeded (ClassPreparation)
         self.classpath: list[str] | None = None
+        # Directories whose class files the extractor writes the loop facts into (the prepared
+        # copies, never the task's own classes): the executor reads them from there
+        self.annotate_dirs: list[str] = []
         self.args = args
         # -Xmx (MiB) for the extractor, and whether the budget is too small to run it at all. Set by
         # set_budget() from the resource budget; until then no explicit heap is passed (as in tests).
@@ -258,7 +261,8 @@ class StaticPreAnalysis:
                "-jar", self.extractor_jar,
                ':'.join(os.path.abspath(p) for p in (self.classpath or self.args.classpath) if not self._is_swat_library(p)),
                self.args.logdir, *self.entry, "inter"] \
-              + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else [])
+              + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else []) \
+              + (["--annotate-loop-facts", ':'.join(self.annotate_dirs)] if self.annotate_dirs else [])
         with self._lock:
             if self._cancelled.is_set():
                 self.status = SAStatus.CANCELLED

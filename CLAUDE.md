@@ -130,6 +130,12 @@ builds `cfg-extractor-loops.jar` from `../cfg-extraction`, `-PcfgExtractionDir`,
 probes (`LoopHeadProbes`, `SummaryProbes`), `Merger` and `LoopStateMatcher`. In the file, jumps are
 named by ordinal and labels by the number of real instructions before them (`Positions`).
 
+- **The facts are in the prepared classes themselves** (since 2026-11-11): the driver passes the
+  prepared directories as `--annotate-loop-facts`, the extractor annotates each method with its facts
+  (cfg-extraction `LoopFactsAnnotations`), and `LoopFactsSource` takes a method's facts from its
+  annotation, else from `-DloopFacts`, else computes them, always only for a matching hash. The
+  executor logs the split at exit (`[LOOP FACTS] n from annotations, ...`, with the debug log on).
+  This is the carrier for later SA facts (section 5 of `/home/niklas/SWAT/BRIEF-sa-annotations.md`).
 - **The facts are computed on prepared classes** (class preparation, below): the extractor sees
   the code after SWAT's rewrites, as the executor does, so the facts file applies to every method
   with facts (7753 of 7753 over the task classpaths of sv-benchmarks and swat-benchmarks,
