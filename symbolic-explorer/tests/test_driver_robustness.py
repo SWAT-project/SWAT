@@ -82,6 +82,7 @@ class DriverTest(unittest.TestCase):
         self.driver.verdict_reported = False
         self.driver.kill_current_process = lambda: None
         self.driver.precheck = not_proven()
+        self.driver.preparation = SimpleNamespace(run=lambda: None, stats=lambda: {})
         self.driver.budget = ResourceBudget(cgroup_limit=0)
         self.driver.verdict_lock = svcomp.threading.Lock()
         self.driver.given_up = []
@@ -153,6 +154,7 @@ class NoTraceTest(unittest.TestCase):
         driver.state.branch_to_explore = SimpleNamespace(id=7, branched=None, parent=None)
         driver.sa = SimpleNamespace(start=lambda: None)
         driver.precheck = not_proven()
+        driver.preparation = SimpleNamespace(run=lambda: None, stats=lambda: {})
         driver.symbolicStorage = SimpleNamespace(input_type=None)
         driver.build_command = lambda **kwargs: []
         driver.run_command_with_timeout = lambda cmd: (svcomp.ExecutionStatus.ERROR, [])

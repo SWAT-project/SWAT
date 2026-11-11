@@ -60,6 +60,8 @@ class SAStatus(Enum):
 
 class StaticPreAnalysis:
     def __init__(self, args: argparse.Namespace) -> None:
+        # The classpath to analyse: the prepared one once class preparation succeeded (ClassPreparation)
+        self.classpath: list[str] | None = None
         self.args = args
         # -Xmx (MiB) for the extractor, and whether the budget is too small to run it at all. Set by
         # set_budget() from the resource budget; until then no explicit heap is passed (as in tests).
@@ -254,7 +256,7 @@ class StaticPreAnalysis:
                # to the budget by set_budget(); absent only when no budget was set (e.g. tests).
                *([f"-Xmx{self._sa_heap_mib}m"] if self._sa_heap_mib is not None else []),
                "-jar", self.extractor_jar,
-               ':'.join(os.path.abspath(p) for p in self.args.classpath if not self._is_swat_library(p)),
+               ':'.join(os.path.abspath(p) for p in (self.classpath or self.args.classpath) if not self._is_swat_library(p)),
                self.args.logdir, *self.entry, "inter"] \
               + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else [])
         with self._lock:

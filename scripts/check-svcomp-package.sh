@@ -56,5 +56,10 @@ docker run --rm -v "${tool_dir}:/tool" -w /tool -e UBUNTU_PACKAGES="$UBUNTU_PACK
   sa_status="$(python3 -c "import json; print(json.load(open(\"logs/stats.json\"))[\"static_analysis\"][\"status\"])")"
   echo "static pre-analysis: ${sa_status}"
   [ "$sa_status" = "loaded" ] || { echo "error: the static pre-analysis did not load its graph (status ${sa_status}), see out.log" >&2; exit 1; }
+  # The classes are prepared ahead of time with the agent jar (svcomp/ClassPreparation.py); a
+  # failure falls back to load-time rewrites silently, so check it here.
+  prep_status="$(python3 -c "import json; print(json.load(open(\"logs/stats.json\"))[\"class_preparation\"][\"status\"])")"
+  echo "class preparation: ${prep_status}"
+  [ "$prep_status" = "prepared" ] || { echo "error: the class preparation did not succeed (status ${prep_status}), see out.log" >&2; exit 1; }
 '
 echo "SV-COMP package check passed."

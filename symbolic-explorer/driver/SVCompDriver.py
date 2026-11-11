@@ -24,6 +24,7 @@ from strategy import DFS
 from data.StaticAnalysisGraph.SAGraph import SAGraph
 from svcomp.StaticPreAnalysis import StaticPreAnalysis
 from svcomp.PropertyPreCheck import PropertyPreCheck
+from svcomp.ClassPreparation import ClassPreparation
 
 from enum import Enum
 from svcomp.SymbolicStorage import SymbolicStorage, DataTypes
@@ -144,6 +145,7 @@ class SVCompDriver:
         self.sa_graph: SAGraph = SAGraph()  # static analysis graph, empty until the pre-analysis is adopted
         self.sa = StaticPreAnalysis(args)
         self.precheck = PropertyPreCheck(args, self.verification_category.value)
+        self.preparation = ClassPreparation(args)
         self.sa_adopted_round: int | None = None
         self.round_idx = 0
         self.nr_solver_calls = 0
@@ -395,7 +397,15 @@ class SVCompDriver:
     def run_testcase(self, java_path, agentpath: str, configpath: str, z3path, port, cp) -> Verdict:
         """Runs the testcase using the constructed Java command."""
 
-        # Static property pre-check: if it proves the property, round 0 only cross-checks it.
+        # SWAT's semantic rewrites, once ahead of time: the extractor and the executor get the
+        # prepared classes, so both see the code that runs (see svcomp/ClassPreparation.py)
+        prepared = self.preparation.run()
+        if prepared is not None:
+            cp = prepared
+            self.sa.classpath = prepared
+
+        # Static property pre-check (on the original classes): if it proves the property, round 0
+        # only cross-checks it.
         self.precheck.run()
 
         # Static pre-analysis: an external Java subprocess plus loading its graph. By default
@@ -927,7 +937,7 @@ class SVCompDriver:
         write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
                              self.round_idx, self.nr_solver_calls, self.sa_stats(),
                              self.solver_limit_hits, self.precheck.stats(), self.divergence_retry_count,
-                             resources=self.budget.stats())
+                             resources=self.budget.stats(), class_preparation=self.preparation.stats())
 
     def end_run_now(self, why: str):
         """Called by the resource budget's monitor when the run must end at once: reports UNKNOWN

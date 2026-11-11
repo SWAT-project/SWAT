@@ -26,7 +26,7 @@ def _signature(inv: dict) -> str:
 
 def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, static_analysis: dict,
                          solver_limit_hits: int = 0, property_precheck: dict | None = None, divergence_retries: int = 0,
-                         resources: dict | None = None) -> dict:
+                         resources: dict | None = None, class_preparation: dict | None = None) -> dict:
     """
     Assemble the consolidated per-testcase statistics dictionary.
 
@@ -37,6 +37,7 @@ def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int,
         static_analysis: The pre-analysis outcome, see StaticPreAnalysis.stats().
         property_precheck: The property pre-check outcome, see PropertyPreCheck.stats().
         resources: The resource budget and its use, see ResourceBudget.stats().
+        class_preparation: Status and duration of the class preparation, see ClassPreparation.stats().
 
     Returns:
         A JSON-serializable dict describing the testcase outcome.
@@ -80,16 +81,17 @@ def build_testcase_stats(verdict, category, tree, symbolic_exec_iterations: int,
         },
         'static_analysis': static_analysis,
         'property_precheck': property_precheck,
+        'class_preparation': class_preparation,
         'resources': resources,
     }
 
 
 def write_testcase_stats(filepath: Path, verdict, category, tree, symbolic_exec_iterations: int, nr_solver_calls: int, static_analysis: dict,
                          solver_limit_hits: int = 0, property_precheck: dict | None = None, divergence_retries: int = 0,
-                         resources: dict | None = None):
+                         resources: dict | None = None, class_preparation: dict | None = None):
     """Write the consolidated per-testcase statistics to ``filepath`` as JSON."""
     data = build_testcase_stats(verdict, category, tree, symbolic_exec_iterations, nr_solver_calls, static_analysis, solver_limit_hits,
-                                property_precheck, divergence_retries, resources)
+                                property_precheck, divergence_retries, resources, class_preparation)
 
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, 'w') as f:

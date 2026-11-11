@@ -143,6 +143,34 @@ named by ordinal and labels by the number of real instructions before them (`Pos
 - **Tests:** `./gradlew test --tests 'de.uzl.its.cfg.loops.*'` in cfg-extraction (`LoopFactsSpec`:
   the round trip, and that the facts do not depend on how the class was read).
 
+**Class preparation** (since 2026-11-11, `svcomp/ClassPreparation.py`, executor `prepare/Prepare` and
+`instrument/rewrite/`): SWAT's semantic rewrites (no-cache, reference equality, SV-COMP; the
+transformers that change *what* runs, before the instrumentation) are applied once, ahead of time,
+so that the static analysis and the executor see the same code.
+
+- **One implementation, two places:** `Rewrites.steps()` is the chain (same order as the agent
+  always ran it). `Prepare` runs it over the task's classpath (about 0.2 s): each directory entry
+  `i` is copied to `<logdir>/prepared/<i>`, with every class the chain changes replaced by its
+  rewritten version; jars stay as they are. At load time, `RewriteTransformer` runs the same chain
+  on every class that is not prepared (jars, classes generated at run time, other classpaths).
+- **Marker:** a prepared class carries an invisible class annotation `Lde/uzl/its/swat/Prepared;`
+  with `version` (`Rewrites.FORMAT_VERSION`) and `config` (`Rewrites.configHash()`: transformer
+  type, include/exclude packages, `useStringInterning`). The agent passes a matching class on
+  without rewriting; a mismatching one is an error (a class must never be rewritten twice). Bump
+  `FORMAT_VERSION` when a rewrite changes.
+- **The invariant:** a prepared class is byte for byte what the agent's load-time chain makes of
+  the original. `scripts/check-prepare.py <bench dirs>` checks it per task classpath (the agent
+  dumps its output with `-Dswat.dumpRewritten`, `prepare/LoadClasses` loads every class), and that
+  the agent rewrites nothing on a prepared classpath. So the rewrites must be deterministic: nondet
+  call ids are derived from the call site (`NondetIds`: class, method, descriptor, ordinal), not
+  from a load-order counter.
+- **Who gets what:** the extractor and the executor get the prepared classpath; the property
+  pre-check keeps the original classes (it models the SV-COMP `Verifier` and a JDK whitelist, and
+  its proof is about the original program). Witnesses use the original source directories.
+- **Fallback:** if preparation fails or times out, the run uses the original classpath, as
+  before; `stats.json` has `class_preparation` (status, counts, duration). Off with
+  `--no-prepare-classes` (explorer and harness).
+
 **Loop summaries** (applied by executor `symbolic/summary`): diamonds (an int `if` whose sides are
 straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting loops
 (`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged `merged` and
