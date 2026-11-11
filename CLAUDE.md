@@ -211,6 +211,12 @@ cfg-extraction (see loop facts above).
   into untracked code other than a whitelist (`isPureCall`): from 2026-10-19 to 2026-11-03
   `Class.desiredAssertionStatus`, which every class with an `assert` calls, was missing, and the
   feature did nothing in any valid-assert task.
+- **Only live locals are hashed** (since 2026-11-11, cfg-extraction `LoopHeads`, loop facts
+  version 2): a local dead at the head (written again before any read, exception edges included)
+  is neither hashed nor required to be concrete. Sound, but it changed no verdict on
+  sv-benchmarks or swat-benchmarks valid-assert (`run_20261111_193209`, `_194711`: the same 48 and
+  226 loop-state prunes); what keeps states from matching is elsewhere (one application frame only,
+  concrete heap and statics).
 - **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.
