@@ -21,6 +21,13 @@ DUMP_AT_ROUND the archive is dumped (-Xshare:dump, about one and a half rounds o
 short runs do not pay for it); later rounds use it (-XX:SharedArchiveFile). If any step fails the
 run goes on without the archive; a JVM that cannot use an archive (e.g. a jar changed) silently
 runs without it (-Xshare:auto, the default).
+
+The executor JVMs load the agent with -javaagent, which resolves the java.instrument module and
+records it in the jdk.module.addmods property that CDS checks when it maps an archive. The dump
+runs without -javaagent, so it must add that module explicitly (DUMP_ADD_MODULES); otherwise the
+dump-time and run-time module sets differ and the JVM rejects the archive at startup with
+"Mismatched values for property jdk.module.addmods ... java.instrument" and disables optimized
+module handling, silently defeating the archive from round DUMP_AT_ROUND on.
 """
 import os
 import shutil
@@ -35,6 +42,9 @@ logger = log.get_logger()
 
 # The round before which the archive is dumped: runs of fewer rounds do not pay for the dump
 DUMP_AT_ROUND = 3
+# Modules the executor runs add implicitly and that the dump must therefore also declare, so the
+# archive's jdk.module.addmods matches at map time: -javaagent resolves java.instrument.
+DUMP_ADD_MODULES = ('java.instrument',)
 # Do not scan class path directories with more files than this for name clashes
 MAX_SCAN_FILES = 50_000
 DUMP_TIMEOUT_S = 120
@@ -153,7 +163,8 @@ class ExecutorCDS:
             return
         prefix = [e for e in self.layout if e.endswith('.jar')]
         prefix = prefix[:next((i for i, e in enumerate(self.layout) if not e.endswith('.jar')), len(prefix))]
-        cmd = [java_path, *jvm_options(), '-Xshare:dump', f'-XX:SharedClassListFile={self.classlist}',
+        cmd = [java_path, *jvm_options(), '--add-modules', ','.join(DUMP_ADD_MODULES),
+               '-Xshare:dump', f'-XX:SharedClassListFile={self.classlist}',
                f'-XX:SharedArchiveFile={self.archive}', '-cp', ':'.join(prefix)]
         before = os.times()
         start = time.perf_counter()
