@@ -28,6 +28,9 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
             Set.of("Z", "B", "S", "C", "I", "J", "F", "D", "Ljava/lang/String;");
 
     int lineNumber = 0;
+
+    /** Number of nondet calls given an id so far in this method (see {@link NondetIds}). */
+    private int nondetOrdinal = 0;
     /**
      * Constructor that calls the super from the default MethodVisitor
      *
@@ -98,7 +101,7 @@ public class SVCompMethodAdapter extends LocalVariablesSorter {
             String newDescriptor = "(J)" + descriptor.substring(2);
 
             String retType = descriptor.split("\\)")[1];
-            long nextId = Verifier.getNextId();
+            long nextId = NondetIds.of(cname, this.name, this.desc, nondetOrdinal++);
             // Index of this call among the nondet calls on the same source line (bytecode order
             // follows the left-to-right evaluation order); lets the witness locate the call.
             int callIndex = nondetCallsPerLine.merge(lineNumber, 1, Integer::sum) - 1;

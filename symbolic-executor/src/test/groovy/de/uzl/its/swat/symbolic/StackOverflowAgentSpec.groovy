@@ -1,6 +1,7 @@
 package de.uzl.its.swat.symbolic
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.uzl.its.swat.testsupport.NondetInputs
 import spock.lang.Shared
 import spock.lang.Specification
 
@@ -97,8 +98,8 @@ class StackOverflowAgentSpec extends Specification {
                    "-Dsolver.mode=PRINT",
                    "-DexitOnError=true",
                    "-DlogShadowStateToConsole=false",
-                   "-Dswat.input.I_0=${n}".toString(),
-                   "-Dswat.input.I_1=${uncaught}".toString(),
+                   "-Dswat.input.I_${NondetInputs.ids(classes, "Main")[0]}=${n}".toString(),
+                   "-Dswat.input.I_${NondetInputs.ids(classes, "Main")[1]}=${uncaught}".toString(),
                    "-cp", classes.toString(), "-ea", "Main"]
         def proc = new ProcessBuilder(cmd).directory(classes.toFile()).redirectErrorStream(true).start()
         def out = proc.inputStream.text

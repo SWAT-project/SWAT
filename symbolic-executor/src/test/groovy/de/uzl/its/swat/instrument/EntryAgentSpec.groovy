@@ -1,6 +1,7 @@
 package de.uzl.its.swat.instrument
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.uzl.its.swat.testsupport.NondetInputs
 import spock.lang.Specification
 
 import javax.tools.ToolProvider
@@ -23,44 +24,51 @@ class EntryAgentSpec extends Specification {
 
     def "an input read by the entry class's static initializer is tracked"() {
         when:
-        def output = run("clinit", ["-Dswat.input.I_0=7"])
+        def (String output, List<String> inputs) = run("clinit", [7])
         def trace = parseTrace(output)
 
         then:
         !output.contains("NoThreadContextException")
-        trace.inputs*.name == ["I_0"]
+        trace.inputs*.name == inputs
         !trace.trace.isEmpty()
         trace.violation?.throwable == "java.lang.AssertionError"
     }
 
     def "a main called from the entry method continues the running execution"() {
         when:
-        def output = run("nested", ["-Dswat.input.I_0=2", "-Dswat.input.I_1=2"])
+        def (String output, List<String> inputs) = run("nested", [2, 2], ["Main", "Harness"])
         def trace = parseTrace(output)
 
         then:
         !output.contains("DuplicateThreadContextException")
         traceCount(output) == 1
-        trace.inputs*.name.toSet() == ["I_0", "I_1"].toSet()
+        trace.inputs*.name.toSet() == inputs.toSet()
         trace.violation?.throwable == "java.lang.AssertionError"
     }
 
     def "an exception leaving a super constructor does not break the invocation stack"() {
         when:
-        def output = run("initexception", ["-Dswat.input.I_0=3"])
+        def (String output, List<String> inputs) = run("initexception", [3])
         def trace = parseTrace(output)
 
         then:
         !output.contains("Invocation stack is broken")
-        trace.inputs*.name == ["I_0"]
+        trace.inputs*.name == inputs
         trace.violation?.throwable == "java.lang.AssertionError"
     }
 
-    private static String run(String target, List<String> inputs) {
+    /**
+     * Runs a target with the given values for its nondet calls (in the order of {@code nondetClasses}),
+     * returns the output and the inputs' names.
+     */
+    private static List run(String target, List<Integer> values, List<String> nondetClasses = ["Main"]) {
         assert Files.isRegularFile(AGENT_JAR): "agent jar missing, run copyJar first: ${AGENT_JAR}"
         Path classes = Files.createTempDirectory("swat-entry-agent-spec")
         try {
             compile([TARGETS.resolve("entry").resolve(target), TARGETS.resolve("svcomp").resolve("org")], classes)
+            def ids = NondetInputs.ids(classes, nondetClasses as String[])
+            List<String> names = values.indices.collect { "I_${ids[it]}".toString() }
+            List<String> inputs = values.indices.collect { "-Dswat.input.${names[it]}=${values[it]}".toString() }
             def java = Path.of(System.getProperty("java.home"), "bin", "java").toString()
             def cmd = [java,
                        "-javaagent:${AGENT_JAR}".toString(),
@@ -74,7 +82,7 @@ class EntryAgentSpec extends Specification {
             def proc = new ProcessBuilder(cmd).directory(classes.toFile()).redirectErrorStream(true).start()
             def out = proc.inputStream.text
             assert proc.waitFor(5, TimeUnit.MINUTES): "target did not finish:\n${out}"
-            return out
+            return [out, names]
         } finally {
             classes.toFile().deleteDir()
         }

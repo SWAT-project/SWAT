@@ -1,6 +1,7 @@
 package de.uzl.its.swat.witness
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.uzl.its.swat.testsupport.NondetInputs
 import spock.lang.Shared
 import spock.lang.Specification
 
@@ -98,7 +99,7 @@ class SvcompExitAgentSpec extends Specification {
                    "-Dsolver.mode=PRINT",
                    "-DexitOnError=false",
                    "-DlogShadowStateToConsole=false",
-                   "-Dswat.input.I_0=${input}".toString(),
+                   "-Dswat.input.I_${NondetInputs.ids(classes, mainClass)[0]}=${input}".toString(),
                    "-cp", classes.toString(), "-ea", mainClass]
         def proc = new ProcessBuilder(cmd).directory(classes.toFile()).redirectErrorStream(true).start()
         def out = proc.inputStream.text

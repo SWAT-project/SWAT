@@ -1,6 +1,7 @@
 package de.uzl.its.swat.instrument.svcomp
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.uzl.its.swat.testsupport.NondetInputs
 import spock.lang.Shared
 import spock.lang.Specification
 
@@ -41,14 +42,15 @@ class SvcompNondetObjectAgentSpec extends Specification {
 
     def "the choices of an instrumented factory are symbolic and reach the violation"() {
         when:
-        def output = run("Main", ["-Dswat.input.I_0=1", "-Dswat.input.I_1=42"])
+        def ids = NondetInputs.ids(classes, "objects/BoxFactory")
+        def output = run("Main", ["-Dswat.input.I_${ids[0]}=1".toString(), "-Dswat.input.I_${ids[1]}=42".toString()])
         def trace = parseTrace(output)
 
         then:
         !output.contains("Error while instrumenting")
         trace.inputs*.name.findAll { it.startsWith("I_") }.size() == 2
-        trace.trace.findAll { it.constraint?.contains("I_0") }.size() > 0
-        trace.trace.findAll { it.constraint?.contains("I_1") }.size() > 0
+        trace.trace.findAll { it.constraint?.contains("I_${ids[0]}".toString()) }.size() > 0
+        trace.trace.findAll { it.constraint?.contains("I_${ids[1]}".toString()) }.size() > 0
         !trace.symbolicContextLoss
         trace.violation?.throwable == "java.lang.AssertionError"
         trace.nondetReturns*.function == ["nondetInt", "nondetInt"]
@@ -58,12 +60,13 @@ class SvcompNondetObjectAgentSpec extends Specification {
 
     def "the null object is a path of its own"() {
         when:
-        def trace = parseTrace(run("Main", ["-Dswat.input.I_0=0"]))
+        def first = "I_${NondetInputs.ids(classes, "objects/BoxFactory")[0]}".toString()
+        def trace = parseTrace(run("Main", ["-Dswat.input.${first}=0".toString()]))
 
         then:
         trace.violation == null
         !trace.symbolicContextLoss
-        trace.trace.findAll { it.constraint?.contains("I_0") }.size() > 0
+        trace.trace.findAll { it.constraint?.contains(first) }.size() > 0
     }
 
     def "a factory that is not instrumented causes context loss"() {

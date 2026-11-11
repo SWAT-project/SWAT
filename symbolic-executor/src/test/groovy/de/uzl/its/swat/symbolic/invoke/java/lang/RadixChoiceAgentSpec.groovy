@@ -1,6 +1,7 @@
 package de.uzl.its.swat.symbolic.invoke.java.lang
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.uzl.its.swat.testsupport.NondetInputs
 import spock.lang.Specification
 
 import javax.tools.ToolProvider
@@ -26,17 +27,18 @@ class RadixChoiceAgentSpec extends Specification {
         compile(classes)
 
         when:
-        def trace = parseTrace(run(classes, ["-Dswat.input.I_0=-1295", "-Dswat.input.I_1=" + radix]))
+        def ids = NondetInputs.ids(classes, "Main")
+        def trace = parseTrace(run(classes, ["-Dswat.input.I_${ids[0]}=-1295".toString(), "-Dswat.input.I_${ids[1]}=".toString() + radix]))
         def choices = trace.trace.findAll { it.choice }
 
         then: "binary search over [2, 37): the branch radix < mid of each step"
         choices*.branched == steps
         choices*.key.collect { it.substring(it.indexOf('#')) } == (0..<steps.size()).collect { "#radix" + it }
-        choices.every { it.constraint.contains("I_1") }
+        choices.every { it.constraint.contains("I_${ids[1]}".toString()) }
 
         and: "the conversion has no context loss, and the equality depends on the number"
         trace.symbolicContextLoss == false
-        trace.trace.any { !it.choice && it.constraint?.contains("I_0") }
+        trace.trace.any { !it.choice && it.constraint?.contains("I_${ids[0]}".toString()) }
 
         cleanup:
         classes?.toFile()?.deleteDir()

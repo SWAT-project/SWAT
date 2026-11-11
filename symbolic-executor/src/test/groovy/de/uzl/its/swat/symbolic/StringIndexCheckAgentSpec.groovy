@@ -1,6 +1,7 @@
 package de.uzl.its.swat.symbolic
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.uzl.its.swat.testsupport.NondetInputs
 import spock.lang.Shared
 import spock.lang.Specification
 
@@ -31,7 +32,7 @@ class StringIndexCheckAgentSpec extends Specification {
         classes = Files.createTempDirectory("swat-string-index-agent-spec")
         compile(classes)
         shortTrace = parseTrace(run(classes, []))
-        longTrace = parseTrace(run(classes, ["-Dswat.input.java/lang/String_0=abcdefgh"]))
+        longTrace = parseTrace(run(classes, ["-Dswat.input.java/lang/String_${NondetInputs.ids(classes, "Main")[0]}=abcdefgh".toString()]))
     }
 
     def cleanupSpec() {

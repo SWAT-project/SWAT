@@ -1,6 +1,7 @@
 package de.uzl.its.swat.symbolic.array
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.uzl.its.swat.testsupport.NondetInputs
 import spock.lang.Shared
 import spock.lang.Specification
 
@@ -25,13 +26,15 @@ class ObjectArrayIndexAgentSpec extends Specification {
     @Shared List<Map> choices
     @Shared Map trace
     @Shared Map largeTrace
+    @Shared String input
 
     def setupSpec() {
         assert Files.isRegularFile(AGENT_JAR): "agent jar missing, run copyJar first: ${AGENT_JAR}"
         classes = Files.createTempDirectory("swat-object-array-spec")
         compile(classes)
-        trace = parseTrace(run(classes, ["-Dswat.input.I_0=7"], []))
-        largeTrace = parseTrace(run(classes, ["-Dswat.input.I_0=7"], ["large"]))
+        input = "I_${NondetInputs.ids(classes, "Main")[0]}".toString()
+        trace = parseTrace(run(classes, ["-Dswat.input.${input}=7".toString()], []))
+        largeTrace = parseTrace(run(classes, ["-Dswat.input.${input}=7".toString()], ["large"]))
         choices = trace.trace.findAll { it.choice }
     }
 
@@ -45,7 +48,7 @@ class ObjectArrayIndexAgentSpec extends Specification {
         choices.size() == 6
         choices*.branched == [false, false, true] * 2
         choices*.key.collect { it.substring(it.indexOf('#')) } == ["#idx0", "#idx1", "#idx2"] * 2
-        choices.every { it.constraint.contains("I_0") }
+        choices.every { it.constraint.contains(input) }
     }
 
     def "the searched accesses record no precision loss"() {

@@ -1,6 +1,7 @@
 package de.uzl.its.swat.symbolic
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.uzl.its.swat.testsupport.NondetInputs
 import spock.lang.Shared
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -47,7 +48,7 @@ class JdkContainerAgentSpec extends Specification {
 
         then:
         !trace.symbolicContextLoss
-        trace.trace.any { !it.concreteOnly && it.constraint?.contains("String_0") }
+        trace.trace.any { !it.concreteOnly && it.constraint?.contains("String_${NondetInputs.ids(classes, "Main")[0]}".toString()) }
 
         where:
         scenario << ["list", "iterator", "map", "array", "arraycopy"]
