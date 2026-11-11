@@ -130,16 +130,13 @@ builds `cfg-extractor-loops.jar` from `../cfg-extraction`, `-PcfgExtractionDir`,
 probes (`LoopHeadProbes`, `SummaryProbes`), `Merger` and `LoopStateMatcher`. In the file, jumps are
 named by ordinal and labels by the number of real instructions before them (`Positions`).
 
-- **SWAT's own rewrites change the code first.** The no-cache, reference-equality and SV-COMP
-  transformers run before the instrumentation and are `LocalVariablesSorter`s: they renumber the
-  locals and insert code. So facts of the class on disk name the wrong slots for most rewritten
-  methods, and the hash check rejects them: over sv-benchmarks and swat-benchmarks only 227 of the
-  717 methods with facts keep their code (2026-11-04). The executor computes the rest itself, so
-  results are the same either way, but facts that only a whole-program analysis can compute (or
-  hand-written ones) would not reach rewritten methods. Before relying on them, make the rewrites
-  keep the original slots (new locals after `maxLocals`) or move them after the binding of facts.
-  Marking the facts' places in the original code with no-op calls was tried and dropped for this
-  reason.
+- **The facts are computed on prepared classes** (class preparation, below): the extractor sees
+  the code after SWAT's rewrites, as the executor does, so the facts file applies to every method
+  with facts (7753 of 7753 over the task classpaths of sv-benchmarks and swat-benchmarks,
+  2026-11-11; on the classes on disk it was 2697: the rewrites renumber locals and insert code).
+  Without preparation (`--no-prepare-classes`, or when it fails) the executor computes the facts of
+  rewritten methods itself, so results are the same either way; facts that only a whole-program
+  analysis (or a person) can provide reach every method only through preparation.
 - **Tests:** `./gradlew test --tests 'de.uzl.its.cfg.loops.*'` in cfg-extraction (`LoopFactsSpec`:
   the round trip, and that the facts do not depend on how the class was read).
 
