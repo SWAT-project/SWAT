@@ -808,3 +808,22 @@ VIOLATION, so it needs its own soundness review.
   need one round per iteration, and plain DFS starves the branches behind them: it keeps flipping
   the loop's exit one iteration further (`body-branch`, `heap-in-loop`, `body-*-relevant`: 130+
   rounds, UNKNOWN). `--search-order coverage` addresses that independently.
+
+## Loop-state matching with live locals only, 2026-11-12
+
+cfg-extraction `LoopHeads` (`2930f8c`) leaves locals that are dead at a loop head out of the
+state the executor hashes there (and out of what must be concrete). On sv-benchmarks and
+swat-benchmarks valid-assert it changed no verdict (`run_20261111_193209`, `_194711`), so the
+suite `loop-liveness` shows where it matters (300 s, coverage):
+
+| task | without liveness (`run_20261112_111222`) | with (`run_20261112_111606`) |
+|---|---|---|
+| `dead-input_true` | UNKNOWN (284 rounds) | SAFE (5 rounds, 3 loop-state prunes) |
+| `dead-input-nested_true` | UNKNOWN (282 rounds) | SAFE (17 rounds, 15 prunes) |
+| `dead-input_false` | VIOLATION | VIOLATION |
+| `live-after-loop_false` | VIOLATION | VIOLATION |
+| `handler-reads_false` | VIOLATION | VIOLATION |
+
+The two soundness tasks catch a wrong liveness (checked by mutation, 120 s): ignoring exception
+edges turns `handler-reads_false` into a false SAFE (`run_20261112_111508`), treating every local
+as dead turns both into false SAFE (`run_20261112_111540`).

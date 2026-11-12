@@ -53,6 +53,13 @@ match would hide a violation: an `Object[]` whose length is symbolic (also under
 thread interrupt flag), and a class in a package SWAT does not instrument. None may come out SAFE;
 the unbounded variant may time out.
 
+`loop-liveness`: hand-written tasks for loop-state matching with live locals only (cfg-extraction
+`LoopHeads`, 2026-11-11). `dead-input_true` and `dead-input-nested_true` have a symbolic input held
+in a local that is dead at the loop head; they are SAFE only if that local is left out of the
+hash (UNKNOWN before). `dead-input_false` is the sanity pair; `live-after-loop_false` (the local is
+read after the loop) and `handler-reads_false` (read only by a catch handler, through an exception
+edge) are VIOLATION tasks that a too-eager liveness turns into false SAFE.
+
 `real-tools` (`scripts/tools.py`, harnesses in `scripts/tools/`): harnesses around unmodified
 GNU java-getopt 1.0.13 (`getopt-minitar`, a tar-like CLI) and opencsv 2.3's `CSVParser`
 (`opencsv-import`). The tools are not in the repository: `scripts/fetch_tools.sh` downloads their
