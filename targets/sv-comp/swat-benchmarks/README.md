@@ -60,6 +60,14 @@ hash (UNKNOWN before). `dead-input_false` is the sanity pair; `live-after-loop_f
 read after the loop) and `handler-reads_false` (read only by a catch handler, through an exception
 edge) are VIOLATION tasks that a too-eager liveness turns into false SAFE.
 
+`user-facts`: hand-written facts in the source (SWAT's annotations module; the tasks' `.yml` ask
+for `--user-facts`, `build.sh` copies the module's sources into `common/`). SAFE/VIOLATION pairs:
+`irrelevant-method` (`@Irrelevant` on a logging method) and `irrelevant-region`
+(`Swat.beginIrrelevant/endIrrelevant` around a logging loop), 3^12 paths whose irrelevance SWAT's
+relevance analysis cannot see (the assert reads library state); `summary` (a hand-written summary of
+a quadratic sum, which SWAT's affine summaries cannot merge); `target` (`@Target` on a shell sink in
+a program without assertions). Compare with `--no-user-facts`.
+
 `real-tools` (`scripts/tools.py`, harnesses in `scripts/tools/`): harnesses around unmodified
 GNU java-getopt 1.0.13 (`getopt-minitar`, a tar-like CLI) and opencsv 2.3's `CSVParser`
 (`opencsv-import`). The tools are not in the repository: `scripts/fetch_tools.sh` downloads their

@@ -174,6 +174,34 @@ so that the static analysis and the executor see the same code.
   before; `stats.json` has `class_preparation` (status, counts, duration). Off with
   `--no-prepare-classes` (explorer and harness).
 
+**Hand-written facts** (user facts, since 2026-11-12; `annotations/` module, executor `facts/`):
+facts a person (or an LLM) writes into the program's source, for real applications whose loops
+and libraries the SA cannot handle. Off unless asked for: executor `-DuserFacts=true`, explorer and
+harness `--user-facts`; a swat-benchmarks task asks for it with `options: swat-user-facts: true` in
+its `.yml` (harness `--no-user-facts` overrides). Never for SV-COMP, which measures SWAT itself.
+
+- **The facts** (package `de.uzl.its.swat.annotations`):
+  - `@Irrelevant` on a class, method or constructor, and `Swat.beginIrrelevant()` /
+    `Swat.endIrrelevant()` around statements or a loop (the code between the two calls in bytecode
+    order; callees are not covered): their branches cannot affect a target. The instrumentation
+    registers those branch instructions (`UserFacts.register`, by iid like the branch keys); the
+    trace flags their branches `merged` with `userFact`, and `dfs` treats them as no decision.
+  - `if (Swat.summary()) { closed form } else { loop }`: a loop summary in plain Java (javac picks
+    the locals; any Java expression works). `Swat.summary()` returns false; with user facts the
+    rewrite `UserFactsTransformer` turns it into `UserFacts.summary("<id>")`, which returns true.
+  - `@Target` on a method: reaching it is a violation. `UserFactsTransformer` starts the method with
+    `throw new AssertionError("@Target reached: ...")`, so the extractor sees an assertion point and
+    the executor a violation.
+- **Where:** `UserFactsTransformer` is the first of SWAT's rewrites (`Rewrites.steps`), so prepared
+  classes have it and the extractor analyses it; the config hash covers `userFacts`. With user
+  facts, the property pre-check runs on the prepared classes (the originals have no `@Target`
+  throws); if preparation fails, pre-check and SA are off for the run.
+- **Trust:** the facts are not checked. A wrong `@Irrelevant` or summary can hide a violation. Every
+  trace lists the facts it relied on (`userFacts`), and the explorer logs
+  `[USER FACTS] SAFE assuming n user fact(s): ...` and records them in `stats.json` (`user_facts`).
+- **Results:** swat-benchmarks `user-facts` (RESULTS.md, "Hand-written facts"); agent test
+  `UserFactsAgentSpec`.
+
 **Loop summaries** (applied by executor `symbolic/summary`): diamonds (an int `if` whose sides are
 straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting loops
 (`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged `merged` and

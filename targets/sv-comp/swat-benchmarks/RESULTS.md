@@ -827,3 +827,42 @@ suite `loop-liveness` shows where it matters (300 s, coverage):
 The two soundness tasks catch a wrong liveness (checked by mutation, 120 s): ignoring exception
 edges turns `handler-reads_false` into a false SAFE (`run_20261112_111508`), treating every local
 as dead turns both into false SAFE (`run_20261112_111540`).
+
+## Hand-written facts (`user-facts`), 2026-11-12
+
+Facts written into the source with SWAT's annotations module (`@Irrelevant`, `@Target`,
+`Swat.beginIrrelevant/endIrrelevant`, `Swat.summary()`; see SWAT's CLAUDE.md, "Hand-written
+facts"). 300 s, coverage; with facts `run_20261112_121835`, `--no-user-facts`
+`run_20261112_121848`:
+
+| task | without facts | with facts | fact assumed |
+|---|---|---|---|
+| `irrelevant-method_true` | UNKNOWN (188 rounds) | SAFE (2 rounds) | `@Irrelevant Main.record(I)V` |
+| `irrelevant-method_false` | VIOLATION (4) | VIOLATION (2) | same |
+| `irrelevant-region_true` | UNKNOWN (182) | SAFE (2) | the region in `main` |
+| `irrelevant-region_false` | VIOLATION (4) | VIOLATION (2) | same |
+| `summary_true` | UNKNOWN (193) | SAFE (2) | the `Swat.summary()` |
+| `summary_false` | VIOLATION (103) | VIOLATION (3) | same |
+| `target_false` | SAFE (pre-check: no assertion), wrong | VIOLATION (5) | (a target, not an assumption) |
+| `target_true` | SAFE | SAFE (6) | |
+
+- **Irrelevance:** the logging branches (3^12 paths) cannot be sliced by SWAT's relevance
+  analysis, because the assertion reads a `HashMap` and all library state is one location (`g:lib`).
+  With the fact they are no decisions (the walk shows 37 merged branches), and one path is left.
+- **Summary:** without it every `n` up to 2000 is its own path (the sum is quadratic, so SWAT's
+  affine loop summaries do not apply); with it one path covers all, with `s = n(n-1)/2` as a
+  formula, and the solver finds `n = 101` for the violation.
+- **Target:** without the fact the program has no target at all and SAFE is the only answer; with
+  it, the prepared classes throw at the start of `exec`, the pre-check (on the prepared classes) is
+  not proven, and the search reaches it.
+- **Trust:** the facts are not checked. A wrong one can hide a violation; the explorer logs
+  `[USER FACTS] SAFE assuming 1 user fact(s): ...` and `stats.json` lists them (`user_facts`).
+  No SA desync in any of the runs.
+
+Regressions with the change (user facts only where a task asks for them; 300 s, 32 workers,
+coverage), task by task against the runs before it: swat-benchmarks valid-assert
+`run_20261112_123007` 717 points (698 before, identical on every older task; the 13 new
+`loop-liveness` and `user-facts` tasks all correct); sv-benchmarks valid-assert
+`run_20261112_123611` 1100, identical; no-runtime-exception (`--sa-no-runtime-exception`)
+`run_20261112_125129` 1302 vs 1300 (`objects06` SAFE instead of UNKNOWN: the baseline ran out of
+CPU time after 224 rounds, this run finished its search at 240). No false SAFE, no SA desync.
