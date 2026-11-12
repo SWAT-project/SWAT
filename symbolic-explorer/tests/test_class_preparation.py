@@ -53,16 +53,16 @@ class ClassPreparationTest(unittest.TestCase):
     def test_directories_are_replaced_by_their_prepared_copies(self):
         task = os.path.join(BENCH, 'jbmc-regression', 'aastore_aaload1')
         common = os.path.join(BENCH, 'common')
-        cp = [common, Z3_JAR, task, Z3_JAR]
+        cp = [common, task, Z3_JAR]
         prep = ClassPreparation(self.args(classpath=cp))
         prepared = prep.run()
         self.assertEqual(prep.status, 'prepared', prep.reason)
         self.assertEqual(len(prepared), len(cp))
         out = os.path.join(self.logdir, 'prepared')
-        self.assertEqual(prepared, [os.path.join(out, '0'), Z3_JAR, os.path.join(out, '2'), Z3_JAR])
-        self.assertTrue(os.path.isfile(os.path.join(out, '2', 'Main.class')))
+        self.assertEqual(prepared, [os.path.join(out, '0'), os.path.join(out, '1'), Z3_JAR])
+        self.assertTrue(os.path.isfile(os.path.join(out, '1', 'Main.class')))
         # The class is rewritten and marked; the benchmark's Verifier (excluded) is copied unchanged
-        with open(os.path.join(out, '2', 'Main.class'), 'rb') as f:
+        with open(os.path.join(out, '1', 'Main.class'), 'rb') as f:
             self.assertIn(b'Lde/uzl/its/swat/Prepared;', f.read())
         with open(os.path.join(out, '0', 'org', 'sosy_lab', 'sv_benchmarks', 'Verifier.class'), 'rb') as f, \
                 open(os.path.join(common, 'org', 'sosy_lab', 'sv_benchmarks', 'Verifier.class'), 'rb') as g:

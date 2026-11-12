@@ -76,7 +76,9 @@ def generate_command(ver_task: VerificationTask, logging_dir: Path, port: int=80
     for input_file in ver_task['input_files']:
         inputs.append(str((test_case_dir / input_file).resolve()))
         cp.append(inputs[-1])
-        cp.append(str(BASE_PATH / 'libs' / 'java-library-path' / 'com.microsoft.z3.jar'))
+    # Once, after the task's entries (it was appended per input file before 2026-11-12, so older
+    # runs have it several times and their prepared directories are numbered 0, 2, 4, ...)
+    cp.append(str(BASE_PATH / 'libs' / 'java-library-path' / 'com.microsoft.z3.jar'))
 
     # The explorer writes the violation witness (witness.yml/witness.graphml) to <logging_dir>/witness
     # from the trace of the violating execution; it needs the task's input files and property file.
