@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.shadow;
 
+import de.uzl.its.swat.facts.UserFacts;
+
 import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
@@ -67,6 +69,11 @@ public class ShadowContext {
     public void pushFrame(Frame frame) {
         activeFrame = frame;
         frameStack.push(frame);
+        // Entered from irrelevant code (user facts): the callee's branches are irrelevant too
+        frame.setUserFact(frame.getCallSite() < 0 ? null : UserFacts.irrelevantFact(frame.getCallSite()));
+        if (frame.getUserFact() != null) {
+            irrelevantFrames++;
+        }
         if (isSwatHelper(frame)) {
             helperFrames++;
         } else {
@@ -131,6 +138,28 @@ public class ShadowContext {
         }
     }
 
+    /** Frames on the stack entered from code a hand-written irrelevance fact covers (user facts). */
+    private int irrelevantFrames = 0;
+
+    /**
+     * The hand-written irrelevance fact whose dynamic extent the execution is in (user facts): of
+     * the outermost frame entered from code that an {@code @Irrelevant} class or method, or a
+     * {@code Swat.beginIrrelevant} region, covers; null if none. Branches below such a call, in
+     * callees, constructors, lambdas and callbacks alike, are irrelevant; the same methods called
+     * from elsewhere are not.
+     */
+    public String irrelevantFact() {
+        if (irrelevantFrames == 0) {
+            return null;
+        }
+        for (Frame f : frameStack) { // bottom first: the outermost fact names the region
+            if (f.getUserFact() != null) {
+                return f.getUserFact();
+            }
+        }
+        return null;
+    }
+
     /** Whether application code runs inside a library call, i.e. a callback is on the stack. */
     public boolean inCallback() {
         return callbackFrames > 0;
@@ -158,6 +187,9 @@ public class ShadowContext {
         Frame oldFrame = frameStack.pop();
         if (oldFrame.isCallback()) {
             callbackFrames--;
+        }
+        if (oldFrame.getUserFact() != null) {
+            irrelevantFrames--;
         }
         if (isSwatHelper(oldFrame)) {
             helperFrames--; // not counted in the stack changes on push either

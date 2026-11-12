@@ -136,8 +136,12 @@ public class SymbolicTraceHandler {
             pushes.add(frame.getCallSite() < 0 ? null : BranchKeys.keyOf(frame.getCallSite()));
         }
         branch.setPushes(pushes);
-        // A hand-written irrelevance fact: no decision for the explorer, as a merged branch
-        String fact = UserFacts.irrelevantFact(iid);
+        // A hand-written irrelevance fact: no decision for the explorer, as a merged branch. Its
+        // dynamic extent first (a call from irrelevant code), then the branch's own code.
+        String fact = stack.irrelevantFact();
+        if (fact == null) {
+            fact = UserFacts.irrelevantFact(iid);
+        }
         if (fact != null) {
             branch.setMerged(true);
             branch.setUserFact(fact);

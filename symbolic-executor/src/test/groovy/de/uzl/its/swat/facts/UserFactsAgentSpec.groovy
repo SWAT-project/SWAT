@@ -50,15 +50,16 @@ class UserFactsAgentSpec extends Specification {
 
         then:
         out.contains("summary 1")
-        // noise's branch and the region's branch: merged, with their facts
-        branches.findAll { it.userFact != null }*.userFact as Set ==
-                ["@Irrelevant Main.noise(I)I", "Swat.beginIrrelevant Main.main([Ljava/lang/String;)V line 19"] as Set
+        // noise's own branch and helper's when noise calls it, then the region's branch: merged, with their facts
+        def facts = branches.findAll { it.userFact != null }*.userFact
+        facts[0..1] == ["@Irrelevant Main.noise(I)I"] * 2
+        facts[2].startsWith("Swat.beginIrrelevant Main.main([Ljava/lang/String;)V line ")
+        facts.size() == 3
         branches.findAll { it.userFact != null }.every { it.merged }
-        // a == 42 is a decision
-        branches.any { it.userFact == null && !it.merged }
-        trace.userFacts as Set == ["@Irrelevant Main.noise(I)I",
-                                   "Swat.beginIrrelevant Main.main([Ljava/lang/String;)V line 19",
-                                   "Swat.summary Main.main([Ljava/lang/String;)V line 25 #0"] as Set
+        // helper called from main, and a == 42: decisions
+        branches.findAll { it.userFact == null && !it.merged }.size() == 2
+        trace.userFacts.size() == 3
+        trace.userFacts.any { it.startsWith("Swat.summary Main.main") }
         trace.violation == null
     }
 

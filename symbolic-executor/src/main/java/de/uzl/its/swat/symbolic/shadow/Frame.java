@@ -52,6 +52,14 @@ public class Frame {
     private long callSite = -1;
 
     /**
+     * The hand-written irrelevance fact covering the call that pushed this frame (user facts, see
+     * de.uzl.its.swat.facts.UserFacts), or null: everything this frame and its callees run is
+     * irrelevant. Set by ShadowContext.pushFrame.
+     */
+    @Getter @lombok.Setter(lombok.AccessLevel.PACKAGE)
+    private String userFact;
+
+    /**
      * Constructor for Frame
      *
      * @param nReturnWords Number of words that are returned on invoke method end
