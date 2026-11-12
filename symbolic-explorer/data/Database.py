@@ -120,7 +120,8 @@ class Database:
                   reference_semantic_change: bool = False, missing_invocations: list = None,
                   witness_data: dict = None,
                   approximate_model: bool = False,
-                  stack_overflow: bool = False):
+                  stack_overflow: bool = False,
+                  user_facts: list[str] | None = None):
         endpoint_id = str(endpoint_id)
         if self.strip_static_initializers:
             from data.trace.StaticInitializers import strip_static_initializers
@@ -134,6 +135,7 @@ class Database:
             tree.record_precision_loss() if symbolic_precision_loss else None
             tree.record_reference_semantic_change() if reference_semantic_change else None
             tree.approximate_traces.add(trace_id) if approximate_model else None
+            tree.user_facts.update(user_facts or ())
             tree.stack_overflow_traces.add(trace_id) if stack_overflow else None
             tree.record_missing_invocations(missing_invocations)
             tree.record_inputs(inputs)

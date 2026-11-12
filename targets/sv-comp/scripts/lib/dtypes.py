@@ -36,5 +36,7 @@ class VerificationTask(TypedDict):
     result: Optional[VerificationResult]
     # The java/ folder of the benchmark dir the task was found in; logs mirror paths below it.
     benchmark_root: Path
+    # The task's labels assume the hand-written facts in its source (explorer --user-facts)
+    user_facts: bool
     
     

@@ -1,6 +1,7 @@
 package de.uzl.its.swat.instrument.rewrite;
 
 import de.uzl.its.swat.config.Config;
+import de.uzl.its.swat.facts.UserFactsTransformer;
 import de.uzl.its.swat.instrument.TransformerType;
 import de.uzl.its.swat.instrument.nocache.NoCacheTransformer;
 import de.uzl.its.swat.instrument.refequality.RefEqualityTransformer;
@@ -17,7 +18,8 @@ import java.util.List;
 /**
  * SWAT's semantic rewrites: the changes to a class that come before the instrumentation and alter
  * what runs (de-interned strings and boxes, reference comparisons through {@code
- * UtilInstrumented.refEquals}, SV-COMP's {@code Verifier} calls redirected to SWAT's). There is one
+ * UtilInstrumented.refEquals}, SV-COMP's {@code Verifier} calls redirected to SWAT's, and with
+ * {@code userFacts} the hand-written {@code @Target}s and summaries, see facts/UserFacts). There is one
  * implementation, used in two places:
  *
  * <ul>
@@ -34,13 +36,17 @@ import java.util.List;
 public final class Rewrites {
 
     /** Version of the prepared-class format; bump it when the rewrites or the marker change. */
-    public static final int FORMAT_VERSION = 2;
+    public static final int FORMAT_VERSION = 3;
 
     private Rewrites() {}
 
     /** The rewrite steps for the configured transformer type, in the order the agent runs them. */
     public static List<ClassFileTransformer> steps() {
         List<ClassFileTransformer> steps = new ArrayList<>();
+        if (Config.instance().isUserFacts()) {
+            // First, so that the later rewrites treat the @Target throw like any other code
+            steps.add(new UserFactsTransformer());
+        }
         steps.add(new NoCacheTransformer());
         steps.add(new RefEqualityTransformer());
         if (Config.instance().getInstrumentationTransformer() == TransformerType.SV_COMP) {
@@ -77,7 +83,8 @@ public final class Rewrites {
                 + ";transformer=" + c.getInstrumentationTransformer()
                 + ";include=" + String.join(",", c.getInstrumentationScope())
                 + ";exclude=" + String.join(",", c.getInstrumentationExcludePackages())
-                + ";stringInterning=" + c.isUseStringInterning();
+                + ";stringInterning=" + c.isUseStringInterning()
+                + ";userFacts=" + c.isUserFacts();
         try {
             byte[] h = MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(h, 0, 16);

@@ -25,6 +25,8 @@ public class InstructionClassAdapter extends ClassVisitor {
     private final String cname;
     /** Whether the class has a static initializer (see visitEnd). */
     private boolean hasClinit = false;
+    /** The class's @Irrelevant fact (user facts), or null; class annotations come before the methods. */
+    private String classFact = null;
     /**
      * Constructor that calls the super from the default ClassVisitor
      *
@@ -33,6 +35,14 @@ public class InstructionClassAdapter extends ClassVisitor {
     public InstructionClassAdapter(ClassVisitor cv, String cname) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
+    }
+
+    @Override
+    public org.objectweb.asm.AnnotationVisitor visitAnnotation(String desc, boolean visible) {
+        if (Config.instance().isUserFacts() && de.uzl.its.swat.facts.UserFacts.IRRELEVANT.equals(desc)) {
+            classFact = "@Irrelevant " + cname;
+        }
+        return super.visitAnnotation(desc, visible);
     }
 
     @Override
@@ -93,6 +103,7 @@ public class InstructionClassAdapter extends ClassVisitor {
                             name,
                             desc,
                             cname);
+            ima.setClassFact(classFact);
             boolean loopHeads = Config.instance().isLoopStateMatching();
             boolean summaries = Config.instance().isLoopSummaries();
             if ((loopHeads || summaries) && !cname.startsWith("de/uzl/its/swat/")) {

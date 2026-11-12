@@ -211,6 +211,7 @@ class SVCompDriver:
             *cds_options,
             f'-Dconfig.path={config}',
             *(['-DloopSummaries=false'] if getattr(self.args, 'no_loop_summaries', False) else []),
+            *(['-DuserFacts=true'] if getattr(self.args, 'user_facts', False) else []),
             # The loop facts of the static analysis, once it has written them (the executor computes them otherwise)
             # (in prepared classes the extractor also annotates them on the methods, which the executor
             # prefers; the file covers unprepared classes and extractors without --annotate-loop-facts)
@@ -406,6 +407,16 @@ class SVCompDriver:
             cp = prepared
             self.sa.classpath = prepared
             self.sa.annotate_dirs = self.preparation.prepared_dirs
+            if getattr(self.args, 'user_facts', False):
+                # Only the prepared classes have the @Target throws (see ClassPreparation)
+                self.precheck.classpath = prepared
+        elif getattr(self.args, 'user_facts', False):
+            # Without prepared classes, the pre-check and the graph would not see the @Target
+            # assertion points: a proof or pruning could hide a violation
+            logger.warning('[USER FACTS] Class preparation failed: no property pre-check and no static pre-analysis')
+            self.precheck.enabled = False
+            self.precheck.status = 'disabled_user_facts_unprepared'
+            self.sa.disabled_reason = 'user facts without prepared classes'
 
         # Static property pre-check (on the original classes): if it proves the property, round 0
         # only cross-checks it.
@@ -902,6 +913,10 @@ class SVCompDriver:
                 return
             self.verdict_reported = True
             verdict_logger.info(f'[VERDICT {self.verification_category.value}] {verdict.value}')
+        facts = sorted(Database.instance().get_tree(ENDPOINT_ID).user_facts)
+        if facts:
+            # Hand-written facts are trusted: say which ones a verdict relied on
+            logger.warning(f'[USER FACTS] {verdict.name} assuming {len(facts)} user fact(s): {"; ".join(facts)}')
         self.budget.stop()
         logger.info(f'[EXPLORER] Symbolic execution terminated after {self.round_idx} iterations')
 
@@ -940,7 +955,13 @@ class SVCompDriver:
         write_testcase_stats(Path(stats_file), verdict, self.verification_category, Database.instance().get_tree(ENDPOINT_ID),
                              self.round_idx, self.nr_solver_calls, self.sa_stats(),
                              self.solver_limit_hits, self.precheck.stats(), self.divergence_retry_count,
-                             resources=self.budget.stats(), class_preparation=self.preparation.stats())
+                             resources=self.budget.stats(), class_preparation=self.preparation.stats(),
+                             user_facts=self.user_facts_stats())
+
+    def user_facts_stats(self) -> dict[str, Any]:
+        """Whether hand-written facts were read, and which ones the verdict relied on."""
+        facts = sorted(Database.instance().get_tree(ENDPOINT_ID).user_facts)
+        return {'enabled': bool(getattr(self.args, 'user_facts', False)), 'assumed': len(facts), 'facts': facts}
 
     def end_run_now(self, why: str):
         """Called by the resource budget's monitor when the run must end at once: reports UNKNOWN

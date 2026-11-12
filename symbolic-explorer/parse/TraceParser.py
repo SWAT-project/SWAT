@@ -27,6 +27,7 @@ class Parser:
                                      choice=branch.choice,
                                      merged=branch.merged,
                                      merged_conditional=branch.mergedConditional,
+                                     user_fact=branch.userFact,
                                      loop_states=tuple(branch.loopStates)))
             else:
                 _trace.append(Special(id=branch.iid,

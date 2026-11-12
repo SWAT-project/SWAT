@@ -65,6 +65,9 @@ class StaticPreAnalysis:
         # Directories whose class files the extractor writes the loop facts into (the prepared
         # copies, never the task's own classes): the executor reads them from there
         self.annotate_dirs: list[str] = []
+        # Set when the driver turns the pre-analysis off for this run (e.g. user facts without
+        # prepared classes: the graph would lack the @Target assertion points)
+        self.disabled_reason: str | None = None
         self.args = args
         # -Xmx (MiB) for the extractor, and whether the budget is too small to run it at all. Set by
         # set_budget() from the resource budget; until then no explicit heap is passed (as in tests).
@@ -98,7 +101,8 @@ class StaticPreAnalysis:
 
     @property
     def enabled(self) -> bool:
-        return self.requested and self.property_supported and not self._sa_disabled_by_budget
+        return self.requested and self.property_supported and not self._sa_disabled_by_budget \
+            and self.disabled_reason is None
 
     def set_budget(self, sa_heap_mib: int | None) -> None:
         """Sets the extractor's heap from the resource budget. None means the budget is too small to
@@ -146,7 +150,9 @@ class StaticPreAnalysis:
 
     def start(self) -> None:
         if not self.enabled:
-            if self._sa_disabled_by_budget:
+            if self.disabled_reason is not None:
+                logger.info(f'[EXPLORER] Static pre-analysis is disabled: {self.disabled_reason}')
+            elif self._sa_disabled_by_budget:
                 logger.info(f'[EXPLORER] Static pre-analysis is disabled: the memory budget is too small '
                             f'for the extractor (needs about {SA_MIN_HEAP_MIB} MiB of heap).')
             elif self.requested:
@@ -298,6 +304,7 @@ class StaticPreAnalysis:
             'timed_out': self.status == SAStatus.TIMEOUT,
             'cancelled': self.status == SAStatus.CANCELLED,
             'rejected_reason': self.rejected_reason,
+            'disabled_reason': self.disabled_reason,
             'duration_s': self.duration,
             # Round whose branch selection first used the graph; None if it never was.
             'adopted_at_round': adopted_at_round,

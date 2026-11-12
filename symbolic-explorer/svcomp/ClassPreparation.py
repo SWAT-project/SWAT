@@ -57,7 +57,9 @@ class ClassPreparation:
 
     def command(self) -> list[str]:
         return [getattr(self.args, "java_path", None) or "java", "-Xmx1g",
-                f"-Dconfig.path={self.args.config}", "-cp", self.args.agent, PREPARE_CLASS,
+                f"-Dconfig.path={self.args.config}",
+                *(["-DuserFacts=true"] if getattr(self.args, "user_facts", False) else []),
+                "-cp", self.args.agent, PREPARE_CLASS,
                 self.out_dir, *[os.path.abspath(p) for p in self.args.classpath]]
 
     def run(self) -> list[str] | None:

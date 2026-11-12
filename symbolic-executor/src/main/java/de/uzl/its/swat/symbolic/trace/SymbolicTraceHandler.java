@@ -1,5 +1,7 @@
 package de.uzl.its.swat.symbolic.trace;
 
+import de.uzl.its.swat.facts.UserFacts;
+
 import ch.qos.logback.classic.Logger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import de.uzl.its.swat.common.ErrorHandler;
@@ -134,6 +136,13 @@ public class SymbolicTraceHandler {
             pushes.add(frame.getCallSite() < 0 ? null : BranchKeys.keyOf(frame.getCallSite()));
         }
         branch.setPushes(pushes);
+        // A hand-written irrelevance fact: no decision for the explorer, as a merged branch
+        String fact = UserFacts.irrelevantFact(iid);
+        if (fact != null) {
+            branch.setMerged(true);
+            branch.setUserFact(fact);
+            UserFacts.use(fact);
+        }
     }
 
     /**

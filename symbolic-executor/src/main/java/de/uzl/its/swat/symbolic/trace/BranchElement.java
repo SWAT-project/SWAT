@@ -46,6 +46,9 @@ public final class BranchElement extends Element {
     // The merge is only exact if what the loop does besides its locals cannot matter: the explorer
     // decides that with its relevance analysis (see symbolic/summary/LoopSummaries).
     @lombok.Setter private boolean mergedConditional;
+    // The hand-written irrelevance fact that covers the branch (user facts, see
+    // de.uzl.its.swat.facts.UserFacts), null if none; such a branch is also flagged merged.
+    @lombok.Setter private String userFact;
 
     /**
      * Constructs a branch element.

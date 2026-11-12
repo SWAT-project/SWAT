@@ -46,6 +46,7 @@ class ConstraintController:
         violation = request.violation
         approximateModel = request.approximateModel
         stackOverflow = request.stackOverflow
+        userFacts = request.userFacts
 
         # Start a new thread to add constraints
         thread = threading.Thread(target=ConstraintService.add_constraints, kwargs={
@@ -61,7 +62,8 @@ class ConstraintController:
             'nondet_returns': nondetReturns,
             'violation': violation,
             'approximate_model': approximateModel,
-            'stack_overflow': stackOverflow})
+            'stack_overflow': stackOverflow,
+            'user_facts': userFacts})
         thread.start()
         thread.join() # To ensure trace is added in SV-Comp mode
         # Return a response indicating that the request has been accepted

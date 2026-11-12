@@ -82,9 +82,42 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      * every instruction that reports a branch or pushes a frame. Called before its instrumentation
      * allocates its iid.
      */
+    /** Hand-written irrelevance facts (user facts, see de.uzl.its.swat.facts.UserFacts): of the class, the method, the open region. */
+    private String classFact = null;
+    private String methodFact = null;
+    private String regionFact = null;
+
+    public void setClassFact(String fact) {
+        classFact = fact;
+    }
+
+    @Override
+    public org.objectweb.asm.AnnotationVisitor visitAnnotation(String adesc, boolean visible) {
+        if (config.isUserFacts() && de.uzl.its.swat.facts.UserFacts.IRRELEVANT.equals(adesc)) {
+            methodFact = "@Irrelevant " + owner + "." + methodName + desc;
+        }
+        return super.visitAnnotation(adesc, visible);
+    }
+
+    /** Opens or closes a Swat.beginIrrelevant/endIrrelevant region at a call to the markers. */
+    private void markRegion(String calledOwner, String name, String calledDesc) {
+        if (!config.isUserFacts() || !calledOwner.equals(de.uzl.its.swat.facts.UserFacts.SWAT) || !calledDesc.equals("()V")) {
+            return;
+        }
+        if (name.equals("beginIrrelevant")) {
+            regionFact = "Swat.beginIrrelevant " + owner + "." + methodName + desc + " line " + line;
+        } else if (name.equals("endIrrelevant")) {
+            regionFact = null;
+        }
+    }
+
     private void nameInstruction(String kind) {
         if (owner.startsWith("de/uzl/its/swat/")) {
             return; // SWAT's helpers: the graph has their branches inline in the caller, without keys
+        }
+        String fact = regionFact != null ? regionFact : methodFact != null ? methodFact : classFact;
+        if (fact != null) {
+            instrumentationState.setPendingFact(fact);
         }
         String group = line + "|" + kind;
         int ordinal = keyOrdinals.merge(group, 1, Integer::sum) - 1;
@@ -1756,6 +1789,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
+        markRegion(owner, name, desc);
         nameInstruction("call:" + name + desc);
         if (opcode == INVOKESPECIAL && name.equals("<init>")) {
             if (isInit) {

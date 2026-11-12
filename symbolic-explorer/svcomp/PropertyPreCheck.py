@@ -53,6 +53,9 @@ class PropertyPreCheck:
         self.reason: str | None = None
         self.duration: float | None = None
         self.version: str | None = None
+        # The classpath to check, if not the original one (the prepared one with user facts: only
+        # there do @Target methods throw)
+        self.classpath: list[str] | None = None
 
     @staticmethod
     def _is_swat_library(path: str) -> bool:
@@ -67,7 +70,7 @@ class PropertyPreCheck:
         return next((os.path.normpath(p) for p in DEFAULT_JARS if os.path.isfile(p)), None)
 
     def command(self) -> list[str]:
-        classpath = [os.path.abspath(p) for p in self.args.classpath if not self._is_swat_library(p)]
+        classpath = [os.path.abspath(p) for p in (self.classpath or self.args.classpath) if not self._is_swat_library(p)]
         return [self.args.java_path, "-Xmx2g", "-cp", self.jar(), CHECK_CLASS, *classpath]
 
     def run(self) -> bool:

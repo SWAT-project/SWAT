@@ -299,7 +299,8 @@ def _classify(node: Node, verified: SANode | None) -> Role:
     (Relevance: summary_ok), and like a sliced branch it then opens a region. Unhonored, the closed
     forms with the kept constraints describe the same path: sound.
     """
-    if node.merged and not node.merged_conditional:
+    if node.user_fact is not None or (node.merged and not node.merged_conditional):
+        # (A hand-written irrelevance fact, user facts: trusted, and counted by the tree.)
         return MERGED
     if SLICING and verified is not None and not node.poisoned \
             and (verified.irrelevant or (node.merged and verified.summary_ok)):

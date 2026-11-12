@@ -23,7 +23,7 @@ class Branch:
     def __init__(self, id: int, trace_id: str, has_branched: bool, constraint: str, concrete_only: bool = False,
                  key: str | None = None, pops: int = 0, pushes: tuple[str | None, ...] = (), callback: bool = False,
                  choice: bool = False, loop_states: tuple[str, ...] = (), merged: bool = False,
-                 merged_conditional: bool = False) -> None:
+                 merged_conditional: bool = False, user_fact: str | None = None) -> None:
         """
         Initializes a new instance of the Branch class.
 
@@ -52,6 +52,8 @@ class Branch:
         self.merged = merged
         # ... only if the loop's other effects cannot matter (see dfs)
         self.merged_conditional = merged_conditional
+        # The hand-written irrelevance fact covering the branch, if any: no decision (see dfs)
+        self.user_fact = user_fact
         # The loop-head states reached since the previous branch (see Tree.register_loop_states).
         self.loop_states = loop_states
         # The same with their positions, set by Tree.register_loop_states.
