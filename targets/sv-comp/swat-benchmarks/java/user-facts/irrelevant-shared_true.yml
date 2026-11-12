@@ -1,0 +1,11 @@
+format_version: '2.0'
+input_files:
+  - ../common/
+  - irrelevant-shared_true/
+properties:
+  - property_file: ../properties/valid-assert.prp
+    expected_verdict: true
+options:
+  language: Java
+  # The label assumes the task's hand-written facts (the harness passes --user-facts)
+  swat-user-facts: true
