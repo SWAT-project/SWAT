@@ -895,3 +895,47 @@ lambda's frame (a boxed `Integer` argument), open.
 Regressions (300 s, 32 workers, coverage): swat-benchmarks valid-assert `run_20261112_141433`
 729 points (identical on every older task; the 8 new tasks correct), sv-benchmarks valid-assert
 `run_20261112_142056` 1100, identical. No false SAFE, no SA desync.
+
+## Hand-written facts on `real-tools`, 2026-11-12
+
+Can hand-written facts give new verdicts, or faster ones, on the two real tools (GNU getopt,
+opencsv's `CSVParser`)? `scripts/real_tools_facts.py` generates the variants (facts in the harness,
+or in a copy of the tool's source). 300 s, 16 workers, coverage; facts `run_20261112_231142`,
+unchanged tasks `run_20261112_230441`:
+
+| task | facts | verdict | rounds | queries | context loss |
+|---|---|---|---|---|---|
+| `getopt-minitar_false` | none | UNKNOWN | 97 | 293 | no |
+| `getopt-harness_false` | 4× `@Irrelevant` (usage, version, doCreate, doList) | UNKNOWN | 97 | 293 | no |
+| `getopt-minitar_true` | none | UNKNOWN | 97 | 293 | no |
+| `getopt-harness_true` | same 4 | UNKNOWN | 97 | 293 | no |
+| `getopt-wrong_false` | **wrong**: irrelevant region around the option loop | **SAFE (false)** | 1 | 0 | no |
+| `opencsv-import_false` | none | VIOLATION | 23 | 38 | yes |
+| `opencsv-region_false` | region around the embedded-quote block | VIOLATION | 22 | 36 | yes |
+| `opencsv-toarray_false` | `Swat.summary()` for `List.toArray` | VIOLATION | 23 | 38 | **no** |
+| `opencsv-import_true` | none | UNKNOWN | 183 | 353 | yes |
+| `opencsv-both_true` | both | UNKNOWN | 184 | 325 | yes |
+
+**Answer: no new verdict and no real speed-up from correct facts; the fewest facts that change a
+verdict is one, and it is wrong.**
+
+- **getopt:** the only correct facts are on the harness's exit-code code, and SA reachability
+  pruning already drops those paths (the runs are identical; 2 of the 4 facts are ever reached).
+  Every branch inside getopt decides the option it returns or `optind`, which the assertion depends
+  on, so nothing there is irrelevant. The one fact that "works", marking the option loop irrelevant,
+  is wrong: it turns the VIOLATION task into a false SAFE in one round. What limits getopt is String
+  solving (about half the time in Z3, single queries up to 52 s) and the unbounded argv strings.
+- **opencsv:** two correct facts. The embedded-quote block only shapes a field's characters (one
+  round fewer). The `toArray` summary is the same code, element by element, and removes the context
+  loss from the VIOLATION task (a VIOLATION is not downgraded by context loss, so it changes no
+  verdict). The SAFE task still has context loss (`ArrayList.get` of a token loses it on some paths,
+  even through the concrete type) and, more fundamentally, the input line is unbounded: the search
+  keeps trying lines of 7 to 25 characters until the CPU limit, so no path enumeration ends.
+- **Why the `user-facts` tasks work and these do not:** facts help where there are decisions that
+  the property does not depend on (logging, formatting) or loops with a closed form. A parser's
+  branches are exactly what decides the parsed result the property reads. What would help here are
+  facts of another kind: an input domain (a bounded line or argv, which changes the property, so an
+  assumption rather than a fact about the code), or a summary of the whole parse loop with an
+  invariant (e.g. "the number of fields is at most the number of separators plus one"), which needs
+  a checked, not a trusted, summary to be worth it. And two executor gaps: modelling
+  `List.toArray`, and the context loss of `ArrayList.get` on tokens built by `StringBuilder`.

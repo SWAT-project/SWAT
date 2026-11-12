@@ -60,6 +60,10 @@ hash (UNKNOWN before). `dead-input_false` is the sanity pair; `live-after-loop_f
 read after the loop) and `handler-reads_false` (read only by a catch handler, through an exception
 edge) are VIOLATION tasks that a too-eager liveness turns into false SAFE.
 
+`real-tools-facts` (generated, gitignored, not for regular runs): `scripts/real_tools_facts.py`
+writes the `real-tools` tasks with hand-written facts, one of them deliberately wrong. See
+RESULTS.md, "Hand-written facts on real-tools".
+
 `user-facts`: hand-written facts in the source (SWAT's annotations module; the tasks' `.yml` ask
 for `--user-facts`, `build.sh` copies the module's sources into `common/`). SAFE/VIOLATION pairs:
 `irrelevant-method` (`@Irrelevant` on a logging method) and `irrelevant-region`
