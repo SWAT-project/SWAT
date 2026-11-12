@@ -183,9 +183,15 @@ its `.yml` (harness `--no-user-facts` overrides). Never for SV-COMP, which measu
 - **The facts** (package `de.uzl.its.swat.annotations`):
   - `@Irrelevant` on a class, method or constructor, and `Swat.beginIrrelevant()` /
     `Swat.endIrrelevant()` around statements or a loop (the code between the two calls in bytecode
-    order; callees are not covered): their branches cannot affect a target. The instrumentation
-    registers those branch instructions (`UserFacts.register`, by iid like the branch keys); the
-    trace flags their branches `merged` with `userFact`, and `dfs` treats them as no decision.
+    order): their branches, and those of everything they call, cannot affect a target. The
+    instrumentation registers the covered instructions, branches and call sites (`UserFacts.register`,
+    by iid like the branch keys). At run time a frame entered from a covered call site carries the
+    fact (`Frame.userFact`, set in `ShadowContext.pushFrame`), so a branch is covered if its own
+    instruction is or any frame below it is (`ShadowContext.irrelevantFact`): callees,
+    constructors, virtual calls and recursion, but only below the irrelevant code. The trace flags
+    covered branches `merged` with `userFact`, and `dfs` treats them as no decision. Library code
+    calling back into the application is not tracked symbolically at all (context loss), so facts
+    do not help there.
   - `if (Swat.summary()) { closed form } else { loop }`: a loop summary in plain Java (javac picks
     the locals; any Java expression works). `Swat.summary()` returns false; with user facts the
     rewrite `UserFactsTransformer` turns it into `UserFacts.summary("<id>")`, which returns true.

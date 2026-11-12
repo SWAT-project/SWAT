@@ -14,7 +14,7 @@ public final class Swat {
      * Starts a region whose branches cannot change whether a target is reached, nor any value a
      * target or a relevant branch reads (as {@link Irrelevant} for a method). The region is the
      * code between this call and the next {@link #endIrrelevant()} in the same method, in bytecode
-     * order (a block or a loop, as written); calls made from it are not covered. Regions do not nest.
+     * order (a block or a loop, as written), and everything called from there. Regions do not nest.
      */
     public static void beginIrrelevant() {}
 

@@ -866,3 +866,32 @@ coverage), task by task against the runs before it: swat-benchmarks valid-assert
 `run_20261112_123611` 1100, identical; no-runtime-exception (`--sa-no-runtime-exception`)
 `run_20261112_125129` 1302 vs 1300 (`objects06` SAFE instead of UNKNOWN: the baseline ran out of
 CPU time after 224 rounds, this run finished its search at 240). No false SAFE, no SA desync.
+
+### `@Irrelevant` over callees (2026-11-12)
+
+A fact now covers everything called from the irrelevant code: the executor marks a frame entered
+from a covered call site and treats every branch above it as covered (SWAT's CLAUDE.md, "Hand-written
+facts"). New pairs, 300 s; with facts `run_20261112_140159`, `--no-user-facts` `run_20261112_140215`
+(and `run_20261112_135537` for the older tasks):
+
+| task | without facts | with facts |
+|---|---|---|
+| `irrelevant-callee_true` (constructor, `format`, `pad` below `record`) | UNKNOWN (173 rounds) | SAFE (2) |
+| `irrelevant-dispatch_true` (interface call, recursion) | UNKNOWN (195) | SAFE (2) |
+| `irrelevant-region-callee_true` (helper called from a region) | UNKNOWN (188) | SAFE (2) |
+| `irrelevant-shared_true` (helper also called from `main`) | UNKNOWN (206) | SAFE (3) |
+| their `_false` twins | VIOLATION (4, 4, 4, 82) | VIOLATION (2 each) |
+
+`irrelevant-shared_false` is the soundness check: the helper's branch decides the violation when
+`main` calls it. A fact that outlives the irrelevant frame (checked by mutation: the frame count
+never decremented) makes it a false SAFE (`run_20261112_140553`); the real code finds it.
+
+Not covered: application code that a library calls back (e.g. a consumer passed to
+`ArrayList.forEach`). The executor does not track symbolic values through library code; such
+callbacks are symbolic context loss with or without a fact. The same task with a lambda instead
+of an anonymous class hits an executor bug: "Addresses must match" in the value fetch of the
+lambda's frame (a boxed `Integer` argument), open.
+
+Regressions (300 s, 32 workers, coverage): swat-benchmarks valid-assert `run_20261112_141433`
+729 points (identical on every older task; the 8 new tasks correct), sv-benchmarks valid-assert
+`run_20261112_142056` 1100, identical. No false SAFE, no SA desync.
