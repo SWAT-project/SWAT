@@ -50,7 +50,7 @@ class JdkContainerAgentSpec extends Specification {
         trace.trace.any { !it.concreteOnly && it.constraint?.contains("String_0") }
 
         where:
-        scenario << ["list", "iterator", "map", "array", "arraycopy"]
+        scenario << ["list", "iterator", "map", "array", "arraycopy", "typedArray", "sharedEmpty"]
     }
 
     @Unroll
@@ -59,10 +59,28 @@ class JdkContainerAgentSpec extends Specification {
         run(scenario).symbolicContextLoss
 
         where:
-        scenario << ["contains", "symbolicKey", "heldByUnmodelled"]
+        scenario << ["contains", "symbolicKey", "heldByUnmodelled", "lambdaCallback"]
+    }
+
+    def "a lambda that library code calls back runs without an executor error"() {
+        when:
+        String out = runOutput("lambdaCallback")
+
+        then:
+        !out.contains("Addresses must match")
+        !out.contains("SWAT Exception")
+        out.contains("long")
     }
 
     private Map run(String scenario) {
+        String out = runOutput(scenario)
+        int start = out.indexOf("\n{\n")
+        int end = out.indexOf("\n}\n", start)
+        assert start >= 0 && end > start: "no trace JSON in output:\n${out}"
+        return new ObjectMapper().readValue(out.substring(start + 1, end + 2), Map)
+    }
+
+    private String runOutput(String scenario) {
         def java = Path.of(System.getProperty("java.home"), "bin", "java").toString()
         def cmd = [java,
                    "-javaagent:${AGENT_JAR}".toString(),
@@ -76,9 +94,6 @@ class JdkContainerAgentSpec extends Specification {
         def proc = new ProcessBuilder(cmd).directory(classes.toFile()).redirectErrorStream(true).start()
         def out = proc.inputStream.text
         assert proc.waitFor(5, TimeUnit.MINUTES): "target did not finish:\n${out}"
-        int start = out.indexOf("\n{\n")
-        int end = out.indexOf("\n}\n", start)
-        assert start >= 0 && end > start: "no trace JSON in output:\n${out}"
-        return new ObjectMapper().readValue(out.substring(start + 1, end + 2), Map)
+        return out
     }
 }
