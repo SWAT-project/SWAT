@@ -41,7 +41,9 @@ construct sits on. Each task's comment says what it tests.
 
 `relevance` and `relevance-soundness` (`scripts/relevance.py`): tasks for the relevance analysis
 (slicing). `relevance` has the design example verbatim (`example`, `example-long`) and families over
-the loop length n in {10, 100, 1000} whose input-dependent branches cannot affect the assert;
+the loop length n in {10, 100, 1000} whose input-dependent branches cannot affect the assert
+(`assert-in-class`: the assertion in a nested class, whose static initializer must not make all
+library state relevant);
 `relevance-soundness` has SAFE/VIOLATION pairs where a wrong slice would hide a violation (writes
 through fields, arrays, aliases, callees, library objects, callbacks, static initializers; input
 reads; `assume`/`exit` and crashes inside a region; exceptions caught elsewhere). Some of them end

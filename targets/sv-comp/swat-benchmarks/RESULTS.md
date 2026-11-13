@@ -993,13 +993,36 @@ no-runtime-exception `run_20261113_133458` 1302, identical. No SA desync.
   real-tools SAFE tasks reachable, and stays open.
 - *Loop invariants* (`Swat.invariant`): need an inductive check (a solver query per loop).
 
-Findings on the way: `Class.desiredAssertionStatus()` (in the static initializer of every class
-with an `assert`) counts as a heap library call in `DataflowFacts`, so an assertion outside the
-entry class reads all library state and little around it can be sliced (a library fact
-`java.lang.Class.desiredAssertionStatus() pure` fixes it per task; a built-in fix would change
-SV-COMP graphs and is not done). The executor fails on `StringBuilder.append(Object)` with an
-application `toString()` ("Concrete value of the StringBuilder does not match the value in the
-stack").
+Found on the way, and fixed (branch `niklas/more-fixes`, on `niklas/executor-fixes`, merged here):
+
+- **`Class.desiredAssertionStatus()` read and wrote all library state** (cfg-extraction
+  `e81bd99`). javac calls it in the static initializer of every class with an `assert`. An earlier
+  fix (cfg-extraction `1bef88d`, 2026-10-26) stopped counting it as reflection (which read and
+  wrote *everything*, location `*`, and made every branch of MinePump and securibench relevant);
+  from then on it fell through to the generic library heap call: it read and wrote `g:lib` and
+  every array kind, and could call back. A statement that may run such an initializer gets those
+  effects, and the assertion reads the `$assertionsDisabled` field the initializer writes, so all
+  library state and all arrays were relevant wherever an assertion sits outside the entry class. (A
+  third, unrelated fix, SWAT `41f4072`, 2026-11-03, was about loop-state matching, which stopped
+  reporting states at this call.) Now it is pure. New `relevance` family `assert-in-class` (a loop
+  that only appends to a StringBuilder, the assertion in a nested class), 300 s: before
+  (`run_20261113_150434`) SAFE/VIOLATION after 12/4 (n = 10) and 102/19 rounds (n = 100), UNKNOWN
+  for n = 1000; after (`run_20261113_143137`) all six in 2 rounds. It changed no relevance result in
+  sv-benchmarks (978 graphs, 1380 irrelevant branches before and after): there the assertions sit
+  in the entry class, or nothing around them touches library state.
+- **The executor failed on `StringBuilder.append(Object)` with an application `toString()`**
+  (SWAT `294187d`): a library model is applied only when the call's next instruction is its own end;
+  a callback runs first, so no model was applied and the builder's shadow kept its old chars as if
+  known ("Concrete value of the StringBuilder does not match the value in the stack"). Now such a
+  call makes a StringBuilder receiver's chars unknown if the method may change them (read
+  concretely next time), with context loss if they or the arguments were symbolic. Agent test
+  `JdkContainerAgentSpec` (`appendCallback`, fails without the fix). The callback's own branches
+  stay untracked (context loss), as for every library callback.
+
+Regressions with both fixes (300 s, 32 workers, coverage), task by task against the runs above:
+swat-benchmarks valid-assert `run_20261113_143137` 759 (750; every older task identical, the 6
+new ones correct), sv-benchmarks valid-assert `run_20261113_143723` 1100, identical,
+no-runtime-exception `run_20261113_145251` 1302, identical. No SA desync.
 
 ## Hand-written facts on `real-tools`, 2026-11-12
 
