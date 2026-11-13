@@ -211,11 +211,13 @@ its `.yml` (harness `--no-user-facts` overrides). Never for SV-COMP, which measu
   run on the original classes too, and a failed preparation no longer switches anything off.
 - **What the graph does with them** (since 2026-11-13; cfg-extraction "Hand-written facts"):
   `@Target`: the method's entry is an assertion point. `@Irrelevant` and regions: their nodes carry
-  `userFact`; the relevance analysis (`Relevance._user_facts`) refutes a fact whose code (with the
-  methods only it calls) contains a target point, may end the program or calls code that may reach
-  a target, and `dfs` then ignores the executor's flag for it; otherwise it computes relevance a
-  second time with the fact's branches taken as irrelevant (`SANode.irrelevant_assuming`), which
-  slices branches outside the fact that only feed it. `Swat.summary()`: the branch's loop side is a
+  `userFact` (a region line that also holds code outside the region only `userFactNear`); the
+  relevance analysis (`Relevance._user_facts`) refutes a fact whose nodes (near ones included)
+  contain a target point, may end the program or call code that may reach a target, and `dfs`
+  then ignores the executor's flag for it; otherwise it computes relevance a second time with the
+  fact's own branches taken as irrelevant (`SANode.irrelevant_assuming`; never its callees', which
+  may also run from a callback, a lambda or a static initializer), which slices branches outside
+  the fact that only feed it. `Swat.summary()`: the branch's loop side is a
   dead end (`deadSide`). Library facts: a call with facts reads and writes only `g:lib:<family>`,
   every other library call all of `g:lib` and every family (`DataflowFacts`); `nocallback` and
   `@NotCalledBack` relax the callback rule (`CallbackTargets`: a library call that cannot call back

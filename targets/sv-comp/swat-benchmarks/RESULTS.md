@@ -1015,9 +1015,11 @@ Found on the way, and fixed (branch `niklas/more-fixes`, on `niklas/executor-fix
   a callback runs first, so no model was applied and the builder's shadow kept its old chars as if
   known ("Concrete value of the StringBuilder does not match the value in the stack"). Now such a
   call makes a StringBuilder receiver's chars unknown if the method may change them (read
-  concretely next time), with context loss if they or the arguments were symbolic. Agent test
-  `JdkContainerAgentSpec` (`appendCallback`, fails without the fix). The callback's own branches
-  stay untracked (context loss), as for every library callback.
+  concretely next time), always with context loss (what the callback contributed is untracked);
+  a modelled container whose call runs application code is context loss when its contents or the
+  arguments are symbolic (its model is not applied either). Agent test `JdkContainerAgentSpec`
+  (`appendCallback`, fails without the fix). The callback's own branches stay untracked, as for
+  every library callback.
 
 Regressions with both fixes (300 s, 32 workers, coverage), task by task against the runs above:
 swat-benchmarks valid-assert `run_20261113_143137` 759 (750; every older task identical, the 6
