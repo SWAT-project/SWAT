@@ -53,6 +53,37 @@ public class Main {
         branch(Arrays.asList(a).get(0));
         break;
       }
+      case "typedArray": {
+        List<String> l = new ArrayList<>();
+        l.add(s);
+        String[] a = l.toArray(new String[0]);
+        branch(a[0]);
+        break;
+      }
+      case "sharedEmpty": {
+        // StringBuilder.toString() of an empty builder returns the one shared "" object: two
+        // elements, one object, two shadows. get(i) and toArray must go by position.
+        List<String> l = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        l.add(sb.toString());
+        l.add(sb.toString());
+        l.add(s);
+        if (l.get(0).length() == 0) {
+          String[] a = l.toArray(new String[l.size()]);
+          branch(a[2]);
+        }
+        break;
+      }
+      case "lambdaCallback": {
+        // Library code (forEach) calls a lambda back: SWAT does not follow it (context loss), but
+        // must not take the forEach frame for the lambda's own
+        List<String> l = new ArrayList<>();
+        l.add(s);
+        l.forEach(x -> {
+          if (x.length() > 2) System.out.println("long");
+        });
+        break;
+      }
       case "contains": {
         List<String> l = new ArrayList<>();
         l.add(s);

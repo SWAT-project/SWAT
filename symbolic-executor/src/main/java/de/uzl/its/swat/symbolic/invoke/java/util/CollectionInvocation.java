@@ -109,7 +109,7 @@ public final class CollectionInvocation {
                 "iterator()Ljava/util/Iterator;", "listIterator()Ljava/util/ListIterator;",
                 "listIterator(I)Ljava/util/ListIterator;", "descendingIterator()Ljava/util/Iterator;",
                 "elements()Ljava/util/Enumeration;", "subList(II)Ljava/util/List;");
-        put(LIST, Op.ARRAY, -1, -1, "toArray()[Ljava/lang/Object;");
+        put(LIST, Op.ARRAY, -1, -1, "toArray()[Ljava/lang/Object;", "toArray([Ljava/lang/Object;)[Ljava/lang/Object;");
         put(LIST, Op.PLAIN, -1, -1,
                 "size()I", "isEmpty()Z", "clear()V", "trimToSize()V", "ensureCapacity(I)V");
 
@@ -134,7 +134,7 @@ public final class CollectionInvocation {
                 "next()Ljava/lang/Object;", "nextElement()Ljava/lang/Object;", "previous()Ljava/lang/Object;",
                 "getKey()Ljava/lang/Object;", "getValue()Ljava/lang/Object;", "get(I)Ljava/lang/Object;");
         put(VIEW, Op.VIEW, -1, -1, "iterator()Ljava/util/Iterator;", "listIterator()Ljava/util/ListIterator;");
-        put(VIEW, Op.ARRAY, -1, -1, "toArray()[Ljava/lang/Object;");
+        put(VIEW, Op.ARRAY, -1, -1, "toArray()[Ljava/lang/Object;", "toArray([Ljava/lang/Object;)[Ljava/lang/Object;");
     }
 
     private CollectionInvocation() {}
@@ -202,7 +202,11 @@ public final class CollectionInvocation {
         ContainerContents contents = instance.getContents();
         if (model.initFirst() || contents == null) {
             contents = new ContainerContents(kind);
+            if (!model.initFirst()) {
+                contents.forgetOrder(); // a list SWAT did not see created: its earlier elements are unknown
+            }
         }
+        trackOrder(model, name + desc, contents);
         if (kind == Kind.MAP && contents.keysSymbolic(new HashSet<>())) {
             return null;
         }
@@ -219,6 +223,10 @@ public final class CollectionInvocation {
                 contents.addKey(args[model.key()]);
             }
             contents.addValue(stored);
+            if (contents.ordered() != null && APPENDS.contains(name + desc)) {
+                List<Value<?, ?>> ordered = contents.ordered();
+                ordered.set(ordered.size() - 1, stored);
+            }
         }
         instance.setContents(contents);
         InvocationEntry call = new InvocationEntry(owner, name, desc, true, invokeId, true);
@@ -231,12 +239,59 @@ public final class CollectionInvocation {
                 }
                 List<Value<?, ?>> candidates =
                         name.equals("getOrDefault") || name.equals("push") ? List.of(args[args.length - 1]) : List.of();
+                Value<?, ?> positional = positional(contents, name + desc, args);
+                if (positional != null) {
+                    candidates = List.of(positional);
+                }
                 yield new ContainerPlaceHolder(Result.ELEMENT, contents, false, candidates, call);
             }
             case VIEW -> new ContainerPlaceHolder(
                     Result.VIEW, contents, name.equals("entrySet") || contents.yieldsEntries, List.of(), call);
-            case ARRAY -> new ContainerPlaceHolder(Result.ARRAY, contents, false, List.of(), call);
+            case ARRAY -> new ContainerPlaceHolder(Result.ARRAY, contents, false,
+                    contents.ordered() == null ? List.of() : List.copyOf(contents.ordered()), call);
         };
+    }
+
+    /** Calls that append at the end of a list: the only stores that keep its order known. */
+    private static final Set<String> APPENDS = Set.of(
+            "add(Ljava/lang/Object;)Z", "addLast(Ljava/lang/Object;)V", "offer(Ljava/lang/Object;)Z",
+            "offerLast(Ljava/lang/Object;)Z", "addElement(Ljava/lang/Object;)V");
+
+    /** Calls that read an element by position without changing the list. */
+    private static final Set<String> POSITIONAL_READS = Set.of("get(I)Ljava/lang/Object;", "elementAt(I)Ljava/lang/Object;");
+
+    /** Calls that neither change a list nor its order. */
+    private static final Set<String> ORDER_NEUTRAL = Set.of(
+            "get(I)Ljava/lang/Object;", "elementAt(I)Ljava/lang/Object;", "getFirst()Ljava/lang/Object;",
+            "getLast()Ljava/lang/Object;", "element()Ljava/lang/Object;", "peek()Ljava/lang/Object;",
+            "peekFirst()Ljava/lang/Object;", "peekLast()Ljava/lang/Object;", "firstElement()Ljava/lang/Object;",
+            "lastElement()Ljava/lang/Object;", "size()I", "isEmpty()Z", "trimToSize()V", "ensureCapacity(I)V",
+            "toArray()[Ljava/lang/Object;", "toArray([Ljava/lang/Object;)[Ljava/lang/Object;",
+            "<init>()V", "<init>(I)V");
+
+    /** Keeps a list's order (ContainerContents.ordered) up to date with a modelled call. */
+    private static void trackOrder(Model model, String sig, ContainerContents contents) {
+        if (contents.kind != Kind.LIST) {
+            return;
+        }
+        if (APPENDS.contains(sig)) {
+            contents.appendOrdered(null); // filled in below, once the stored value is known
+        } else if (sig.equals("clear()V")) {
+            contents.clearOrdered();
+        } else if (!ORDER_NEUTRAL.contains(sig)) {
+            contents.forgetOrder(); // inserts, removals, sets, copies, views (which can remove)
+        }
+    }
+
+    /** The shadow stored at the index a positional read asks for, or null if unknown. */
+    private static Value<?, ?> positional(ContainerContents contents, String sig, Value<?, ?>[] args) {
+        List<Value<?, ?>> ordered = contents.ordered();
+        if (ordered == null || !POSITIONAL_READS.contains(sig) || args.length != 1
+                || !(args[0] instanceof IntValue index) || index.isSymbolic()) {
+            return null;
+        }
+        int i = index.concrete;
+        return i >= 0 && i < ordered.size() ? ordered.get(i) : null;
     }
 
     private static Value<?, ?> invokeStatic(String owner, String name, String desc, Value<?, ?>[] args, long invokeId)
@@ -303,7 +358,8 @@ public final class CollectionInvocation {
      *       shadow is recovered as for any unmodelled call; if the container may hold a symbolic
      *       value, that recovery may have lost it, which is recorded as context loss.
      *   <li>A view or iterator gets contents backed by the container's.
-     *   <li>An array returned by {@code toArray()} gets the stored shadows as its elements.
+     *   <li>An array returned by {@code toArray()} or {@code toArray(T[])} gets the stored shadows
+     *       as its elements, with the concrete array's element type.
      * </ul>
      */
     public static Value<?, ?> resolve(
@@ -317,6 +373,8 @@ public final class CollectionInvocation {
         }
         switch (ph.result) {
             case ELEMENT -> {
+                // The one shadow stored under the address; if there are several (one object stored
+                // twice with different shadows), the candidate: for get(i) the one at that position
                 Value<?, ?> match = ph.contents.lookup(address);
                 if (match == null) {
                     for (Value<?, ?> c : ph.candidates) {
@@ -355,7 +413,9 @@ public final class CollectionInvocation {
                 }
                 long threadId = Thread.currentThread().getId();
                 IntValue size = new IntValue(ThreadHandler.getSolverContext(threadId), elements.length);
-                ObjectArrayValue array = ValueFactory.createObjectArrayValue("java/lang/Object", size);
+                // toArray(T[]) returns an array of T (the argument itself if it is large enough)
+                String elementType = elements.getClass().getComponentType().getName().replace('.', '/');
+                ObjectArrayValue array = ValueFactory.createObjectArrayValue(elementType, size);
                 array.setAddress(address);
                 boolean unmatched = false;
                 for (int i = 0; i < elements.length; i++) {
@@ -363,7 +423,17 @@ public final class CollectionInvocation {
                         array.storeElement(new IntValue(size.context, i), ValueFactory.createNULLValue());
                         continue;
                     }
-                    Value<?, ?> match = ph.contents.lookup(System.identityHashCode(elements[i]));
+                    int elementAddress = System.identityHashCode(elements[i]);
+                    // The shadow stored at this position, if the list's order is known and it was
+                    // stored for this very object; else the one stored under its address
+                    Value<?, ?> match = null;
+                    if (ph.candidates.size() == elements.length
+                            && ph.candidates.get(i) instanceof ObjectValue<?, ?> ov && ov.getAddress() == elementAddress) {
+                        match = ph.candidates.get(i);
+                    }
+                    if (match == null) {
+                        match = ph.contents.lookup(elementAddress);
+                    }
                     if (match != null && matches(match, elements[i])) {
                         array.storeElement(new IntValue(size.context, i), match);
                     } else {

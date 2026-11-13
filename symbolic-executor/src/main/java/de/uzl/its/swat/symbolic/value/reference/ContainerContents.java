@@ -62,6 +62,15 @@ public class ContainerContents {
     private final List<Value<?, ?>> addressUnknown = new ArrayList<>();
     private final List<Object> sources = new ArrayList<>();
 
+    /**
+     * For a list built only by appending since its modelled construction: the stored shadows in
+     * list order, so that {@code get(i)} and {@code toArray} can take the shadow at the index. The
+     * address alone is ambiguous when one object is stored twice with different shadows (e.g. the
+     * empty string, which StringBuilder.toString() returns as one shared object). Null once
+     * anything else changed the list (see CollectionInvocation).
+     */
+    private List<Value<?, ?>> ordered;
+
     public ContainerContents(Kind kind) {
         this(kind, false);
     }
@@ -69,6 +78,31 @@ public class ContainerContents {
     public ContainerContents(Kind kind, boolean yieldsEntries) {
         this.kind = kind;
         this.yieldsEntries = yieldsEntries;
+        this.ordered = kind == Kind.LIST ? new ArrayList<>() : null;
+    }
+
+    /** The stored shadows in list order, or null if the order is not known (see {@link #ordered}). */
+    public List<Value<?, ?>> ordered() {
+        return ordered;
+    }
+
+    /** Records a shadow appended at the end of the list, if the order is still known. */
+    public void appendOrdered(Value<?, ?> value) {
+        if (ordered != null) {
+            ordered.add(value);
+        }
+    }
+
+    /** The list was emptied: its order is known again (nothing). */
+    public void clearOrdered() {
+        if (kind == Kind.LIST) {
+            ordered = new ArrayList<>();
+        }
+    }
+
+    /** The list changed in a way not tracked in order: positions are unknown from now on. */
+    public void forgetOrder() {
+        ordered = null;
     }
 
     /** A view of {@code source}: a read-only container that holds what the source holds. */
