@@ -967,7 +967,8 @@ class SVCompDriver:
                          if f.startswith('REFUTED '))
         if refuted:
             stats['refuted_at_run_time'] = refuted
-        index = self.sa_graph.entry_node.graph_index if self.sa_graph.entry_node is not None else None
+        graph = getattr(self, 'sa_graph', None)
+        index = graph.entry_node.graph_index if graph is not None and graph.entry_node is not None else None
         if index is not None and (index.user_facts or index.refuted_facts):
             stats['irrelevance_facts_checked'] = sorted(index.user_facts)
             stats['irrelevance_facts_refuted'] = sorted(index.refuted_facts)
@@ -982,8 +983,9 @@ class SVCompDriver:
         tree = Database.instance().get_tree(ENDPOINT_ID)
         facts = {f for f in tree.user_facts if not self.is_irrelevance_fact(f) and not f.startswith('REFUTED ')} \
             | tree.relied_facts
-        if self.sa_graph.entry_node is not None:
-            facts |= set(self.sa_graph.assumed_facts())
+        graph = getattr(self, 'sa_graph', None)
+        if graph is not None and graph.entry_node is not None:
+            facts |= set(graph.assumed_facts())
         return sorted(facts)
 
     @staticmethod
