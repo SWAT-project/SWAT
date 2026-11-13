@@ -375,6 +375,8 @@ public interface InstructionProcessor {
 
     void LOOP_HEAD(long iid, String head, Object[] locals);
 
+    void LOOP_CALL(long iid, String site, long invoke, Object[] locals);
+
     void SUMMARY_JOIN(long iid, int join);
 
     void LOOP_END(long iid);

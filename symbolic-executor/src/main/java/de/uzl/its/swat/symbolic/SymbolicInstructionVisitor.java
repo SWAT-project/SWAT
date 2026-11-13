@@ -3925,6 +3925,20 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     /**
+     * Notes the caller's state at a call site with loop facts, for the states of loop heads the
+     * callee reaches (see LoopStateMatcher).
+     *
+     * @param inst The LOOP_CALL probe
+     */
+    public void visitLOOP_CALL(LOOP_CALL inst) throws SymbolicInstructionException {
+        try {
+            LoopStateMatcher.enterCall(inst, stack);
+        } catch (Throwable t) {
+            throw new SymbolicInstructionException(inst, t);
+        }
+    }
+
+    /**
      * Creates a multidimensional array of references. Currently, no symbolic handling here because
      * arrays are not of primitive type? See: <a
      * href="https://git.its.uni-luebeck.de/research-projects/pet-hmr/knife-fuzzer/-/issues/63">Issue

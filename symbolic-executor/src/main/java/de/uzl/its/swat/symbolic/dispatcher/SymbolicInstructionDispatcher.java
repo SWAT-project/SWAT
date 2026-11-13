@@ -3562,6 +3562,13 @@ public final class SymbolicInstructionDispatcher {
     }
 
     @SuppressWarnings("unused")
+    public static void LOOP_CALL(long iid, String site, long invoke, Object[] locals) {
+        InstructionProcessor instructionProcessor =
+                ThreadHandler.getProcessor(Thread.currentThread().getId());
+        instructionProcessor.LOOP_CALL(iid, site, invoke, locals);
+    }
+
+    @SuppressWarnings("unused")
     public static void LOOP_HEAD(long iid, String head, Object[] locals) {
         InstructionProcessor instructionProcessor =
                 ThreadHandler.getProcessor(Thread.currentThread().getId());

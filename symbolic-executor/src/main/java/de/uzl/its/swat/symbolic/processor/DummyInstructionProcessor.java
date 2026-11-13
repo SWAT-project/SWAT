@@ -380,6 +380,9 @@ public class DummyInstructionProcessor implements InstructionProcessor {
     public void LOOP_HEAD(long iid, String head, Object[] locals) {}
 
     @Override
+    public void LOOP_CALL(long iid, String site, long invoke, Object[] locals) {}
+
+    @Override
     public void SUMMARY_JOIN(long iid, int join) {}
 
     @Override

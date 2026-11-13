@@ -3016,6 +3016,9 @@ public final class NopDispatcher {
     public static void LOOP_HEAD(long iid, String head, Object[] locals) {}
 
     @SuppressWarnings("unused")
+    public static void LOOP_CALL(long iid, String site, long invoke, Object[] locals) {}
+
+    @SuppressWarnings("unused")
     public static void SUMMARY_JOIN(long iid, int join) {}
 
 

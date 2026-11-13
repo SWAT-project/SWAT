@@ -47,6 +47,14 @@ public class Frame {
         callback = true;
     }
 
+    /**
+     * The last call this frame made through a call site with loop facts (see LoopStateMatcher):
+     * the site, the iid of its INVOKE and the values of the locals live after it, or null. Only
+     * meaningful while the frame above this one was pushed by that INVOKE.
+     */
+    @Getter @lombok.Setter
+    private de.uzl.its.swat.symbolic.loopstate.LoopStateMatcher.PendingCall loopCall;
+
     /** The iid of the call instruction that pushed this frame, or -1 (see BranchKeys). */
     @Getter @lombok.Setter
     private long callSite = -1;

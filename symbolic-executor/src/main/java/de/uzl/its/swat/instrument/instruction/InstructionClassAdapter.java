@@ -117,6 +117,7 @@ public class InstructionClassAdapter extends ClassVisitor {
                         MethodFacts facts = LoopFactsSource.of(cname, this);
                         if (loopHeads) {
                             ima.setLoopHeads(LoopHeadProbes.bind(cname, this, facts.heads()));
+                            ima.setLoopCalls(LoopHeadProbes.bindCalls(cname, this, facts.calls()));
                         }
                         if (summaries) {
                             ima.setLoopSummaries(facts.plans().byJump(), SummaryProbes.joins(this, facts.plans()));

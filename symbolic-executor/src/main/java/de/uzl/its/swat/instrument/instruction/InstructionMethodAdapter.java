@@ -180,6 +180,18 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     }
 
     /**
+     * The method's call sites with loop facts (see LoopHeadProbes), by their ordinal among its
+     * method calls; the calls seen so far; and the site of the call being instrumented.
+     */
+    private java.util.Map<Integer, LoopHeadProbes.Call> loopCalls = java.util.Map.of();
+    private int callOrdinal = 0;
+    private LoopHeadProbes.Call loopCall;
+
+    public void setLoopCalls(java.util.Map<Integer, LoopHeadProbes.Call> loopCalls) {
+        this.loopCalls = loopCalls;
+    }
+
+    /**
      * The method's loop summaries (see SummaryProbes): plans by jump ordinal, join ids by label; and
      * the jumps seen so far.
      */
@@ -1647,7 +1659,14 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
             Utils.addTryCatchBlock(mv, false, tcb);
         } else {
             String d = "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
-            addJpushInsn(mv, instrumentationState.incAndGetId());
+            long iid = instrumentationState.incAndGetId();
+            if (loopCall != null) {
+                // Before the INVOKE probe, so that the caller's frame is still the active one
+                LoopHeadProbes.emitCallProbe(mv, config.getInstrumentationDispatcher(),
+                        instrumentationState.incAndGetId(), loopCall, iid);
+                loopCall = null;
+            }
+            addJpushInsn(mv, iid);
 
             addJpushInsn(mv, invokeId);
             mv.visitLdcInsn(owner);
@@ -1791,6 +1810,10 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
         markRegion(owner, name, desc);
         nameInstruction("call:" + name + desc);
+        LoopHeadProbes.Call site = loopCalls.get(callOrdinal++);
+        // Only calls into application code can reach a loop head whose state is hashed
+        loopCall = site != null && !owner.startsWith("de/uzl/its/swat/")
+                && de.uzl.its.swat.common.Util.shouldInstrument(owner) ? site : null;
         if (opcode == INVOKESPECIAL && name.equals("<init>")) {
             if (isInit) {
                 // This code is already inside an init method.
