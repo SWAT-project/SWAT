@@ -196,17 +196,41 @@ its `.yml` (harness `--no-user-facts` overrides). Never for SV-COMP, which measu
     the locals; any Java expression works). `Swat.summary()` returns false; with user facts the
     rewrite `UserFactsTransformer` turns it into `UserFacts.summary("<id>")`, which returns true.
   - `@Target` on a method: reaching it is a violation. `UserFactsTransformer` starts the method with
-    `throw new AssertionError("@Target reached: ...")`, so the extractor sees an assertion point and
-    the executor a violation.
+    `UserFacts.target("@Target reached: ...")`, which throws an AssertionError (a violation for the
+    executor); the method keeps its code.
+  - `@NotCalledBack` on a method (2026-11-13): library code never calls it, although it overrides a
+    library method or is a lambda target (see "Callbacks" below).
+  - Library facts (2026-11-13): a stub file `swat-library-facts.txt` at the root of a classpath
+    directory, one library method per line (`java.util.HashMap.get(java.lang.Object) reads=HashMap`;
+    `reads=`/`writes=` families of library state, `nocallback`, `pure`, `arrays`; format in
+    cfg-extraction's `facts/LibraryFacts`).
 - **Where:** `UserFactsTransformer` is the first of SWAT's rewrites (`Rewrites.steps`), so prepared
-  classes have it and the extractor analyses it; the config hash covers `userFacts`. With user
-  facts, the property pre-check runs on the prepared classes (the originals have no `@Target`
-  throws); if preparation fails, pre-check and SA are off for the run.
-- **Trust:** the facts are not checked. A wrong `@Irrelevant` or summary can hide a violation. Every
-  trace lists the facts it relied on (`userFacts`), and the explorer logs
-  `[USER FACTS] SAFE assuming n user fact(s): ...` and records them in `stats.json` (`user_facts`).
-- **Results:** swat-benchmarks `user-facts` (RESULTS.md, "Hand-written facts"); agent test
-  `UserFactsAgentSpec`.
+  classes have it; the config hash covers `userFacts`. The extractor reads the facts itself
+  (`--user-facts`, cfg-extraction `facts/UserFacts`, also on unprepared classes), and so does the
+  property pre-check for `@Target` (a reachable `@Target` method is not assertion-free). So both
+  run on the original classes too, and a failed preparation no longer switches anything off.
+- **What the graph does with them** (since 2026-11-13; cfg-extraction "Hand-written facts"):
+  `@Target`: the method's entry is an assertion point. `@Irrelevant` and regions: their nodes carry
+  `userFact`; the relevance analysis (`Relevance._user_facts`) refutes a fact whose code (with the
+  methods only it calls) contains a target point, may end the program or calls code that may reach
+  a target, and `dfs` then ignores the executor's flag for it; otherwise it computes relevance a
+  second time with the fact's branches taken as irrelevant (`SANode.irrelevant_assuming`), which
+  slices branches outside the fact that only feed it. `Swat.summary()`: the branch's loop side is a
+  dead end (`deadSide`). Library facts: a call with facts reads and writes only `g:lib:<family>`,
+  every other library call all of `g:lib` and every family (`DataflowFacts`); `nocallback` and
+  `@NotCalledBack` relax the callback rule (`CallbackTargets`: a library call that cannot call back
+  is no assertion point, a method that is not called back is no callback).
+- **Trust and checks:** a wrong `@Irrelevant`, summary or library fact can hide a violation. `dfs`
+  records a fact as relied on (`Tree.relied_facts`) only where the relevance analysis did not slice
+  the branch by itself, and for a branch sliced only assuming the facts; the graph's own facts
+  (library facts used, `@NotCalledBack`) always count once the graph is used. The explorer logs
+  `[USER FACTS] SAFE assuming n user fact(s): ...` and records them in `stats.json` (`user_facts`,
+  with the irrelevance facts checked and refuted). `@NotCalledBack` is also checked at run time: a
+  callback into such a method refutes it (`UserFacts.calledBack`, reported as `REFUTED ...` among the
+  trace's facts), and the verdict cannot be SAFE.
+- **Results:** swat-benchmarks `user-facts` and `extractor-facts` (RESULTS.md, "Hand-written
+  facts", "Hand-written facts in the extractor"); agent test `UserFactsAgentSpec`; explorer
+  `tests.test_relevance` (`UserFactsTest`).
 
 **Loop summaries** (applied by executor `symbolic/summary`): diamonds (an int `if` whose sides are
 straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting loops
