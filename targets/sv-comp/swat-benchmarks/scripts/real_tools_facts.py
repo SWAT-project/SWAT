@@ -15,7 +15,8 @@ Variants (all ask for --user-facts):
   opencsv-region_*   CSVParser: an irrelevant region around the embedded-quote block (it only
                      changes a field's characters, not where fields end)
   opencsv-toarray_*  CSVParser: Swat.summary() copying the token list element by element in
-                     place of List.toArray (which SWAT does not model)
+                     place of List.toArray (which SWAT did not model before 2026-11-13; the
+                     variant is kept to reproduce the experiment)
   opencsv-both_*     both CSVParser facts
 """
 import glob

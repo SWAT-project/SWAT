@@ -889,8 +889,10 @@ never decremented) makes it a false SAFE (`run_20261112_140553`); the real code 
 Not covered: application code that a library calls back (e.g. a consumer passed to
 `ArrayList.forEach`). The executor does not track symbolic values through library code; such
 callbacks are symbolic context loss with or without a fact. The same task with a lambda instead
-of an anonymous class hits an executor bug: "Addresses must match" in the value fetch of the
-lambda's frame (a boxed `Integer` argument), open.
+of an anonymous class hit an executor bug ("Addresses must match" in the value fetch of the
+lambda's frame): the executor took the `forEach` call's frame for the lambda body's. Fixed on
+2026-11-13 (branch `niklas/executor-fixes`): such a lambda is now a callback like the anonymous
+class.
 
 Regressions (300 s, 32 workers, coverage): swat-benchmarks valid-assert `run_20261112_141433`
 729 points (identical on every older task; the 8 new tasks correct), sv-benchmarks valid-assert
@@ -928,7 +930,7 @@ verdict is one, and it is wrong.**
 - **opencsv:** two correct facts. The embedded-quote block only shapes a field's characters (one
   round fewer). The `toArray` summary is the same code, element by element, and removes the context
   loss from the VIOLATION task (a VIOLATION is not downgraded by context loss, so it changes no
-  verdict). The SAFE task still has context loss (`ArrayList.get` of a token loses it on some paths,
+  verdict). The SAFE task still had context loss (`ArrayList.get` of a token lost it on some paths,
   even through the concrete type) and, more fundamentally, the input line is unbounded: the search
   keeps trying lines of 7 to 25 characters until the CPU limit, so no path enumeration ends.
 - **Why the `user-facts` tasks work and these do not:** facts help where there are decisions that
@@ -939,3 +941,15 @@ verdict is one, and it is wrong.**
   invariant (e.g. "the number of fields is at most the number of separators plus one"), which needs
   a checked, not a trusted, summary to be worth it. And two executor gaps: modelling
   `List.toArray`, and the context loss of `ArrayList.get` on tokens built by `StringBuilder`.
+
+**Executor gaps closed (2026-11-13, branch `niklas/executor-fixes`):** `List.toArray(T[])` is
+modelled, and a list built by appending keeps its element shadows in order, so `get(i)` and
+`toArray` no longer lose the empty fields (StringBuilder.toString() returns one shared `""`
+object for every empty field: one object, several shadows, which the lookup by address could not
+tell apart). The facts above are no longer needed for that: unmodified `real-tools`
+(`run_20261113_113351`) has no context loss left in either opencsv task. `opencsv-import_true` is
+still UNKNOWN (CPU limit after 183 rounds): the unbounded line remains. Regressions with the fixes (on `niklas/annotations`, 300 s, coverage), task by task:
+swat-benchmarks valid-assert `run_20261113_113642` 729, sv-benchmarks valid-assert
+`run_20261113_114227` 1100, no-runtime-exception `run_20261113_115750` 1302, all identical; no SA
+desync; tasks with context loss 12 -> 10 in swat-benchmarks (the two opencsv tasks), unchanged
+(54, 36) in sv-benchmarks.
