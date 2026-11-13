@@ -27,6 +27,8 @@ class TraceItem(BaseModel):
     merged: bool = False
     # Merged only if the loop's other effects are irrelevant (decided with the SA graph, see dfs).
     mergedConditional: bool = False
+    # The hand-written irrelevance fact covering the branch (user facts); such a branch is no decision.
+    userFact: Optional[str] = None
     # Hashes of the loop-head states the execution reached since the previous branch, in order.
     loopStates: list[str] = []
 class UFItem(BaseModel):
@@ -107,6 +109,8 @@ class ConstraintRequest(BaseModel):
     # A StackOverflowError reached the target's code: the path depends on the JVM's stack size, so a
     # violation of this execution is not a verdict (the executor also reports context loss).
     stackOverflow: bool = False
+    # The hand-written facts the execution relied on (user facts, executor facts/UserFacts).
+    userFacts: List[str] = []
 
 
 class CoverageRequest(BaseModel):

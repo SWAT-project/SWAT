@@ -2,9 +2,10 @@ package de.uzl.its.swat.symbolic.summary;
 
 import de.uzl.its.swat.symbolic.shadow.Frame;
 import de.uzl.its.swat.symbolic.shadow.ShadowContext;
-import de.uzl.its.swat.symbolic.summary.LoopSummaries.CountingLoop;
-import de.uzl.its.swat.symbolic.summary.LoopSummaries.Diamond;
-import de.uzl.its.swat.symbolic.summary.LoopSummaries.Op;
+import de.uzl.its.cfg.loops.LoopSummaries;
+import de.uzl.its.cfg.loops.LoopSummaries.CountingLoop;
+import de.uzl.its.cfg.loops.LoopSummaries.Diamond;
+import de.uzl.its.cfg.loops.LoopSummaries.Op;
 import de.uzl.its.swat.symbolic.trace.BranchElement;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
@@ -21,7 +22,7 @@ import org.sosy_lab.java_smt.api.BooleanFormulaManager;
 import org.sosy_lab.java_smt.api.SolverContext;
 
 /**
- * Applies loop summaries (see {@link LoopSummaries}) while the executor runs: at a summarized
+ * Applies loop summaries (see cfg-extraction's {@link LoopSummaries}) while the executor runs: at a summarized
  * branch it records what to merge, at the join (a diamond) or the loop's exit (a counting loop) it
  * gives the locals their merged formulas. Their concrete values are never changed: the merged
  * value's concrete part is the one the execution computed, which is checked; if it differs, the
@@ -64,7 +65,7 @@ public final class Merger {
         if (branch == null) {
             return;
         }
-        LoopSummaries.Plan plan = LoopSummaries.planAt(instIid);
+        LoopSummaries.Plan plan = SummaryProbes.planAt(instIid);
         Frame current = stack.getActiveFrame();
         Object backEdge = current == null ? null : current.summaryBackEdge;
         if (current != null) {
@@ -79,7 +80,7 @@ public final class Merger {
 
     /** At a GOTO: remembers the back edge of a counting loop, so that its head knows it is looping. */
     public void atGoto(long instIid) {
-        if (LoopSummaries.planAt(instIid) instanceof LoopSummaries.BackEdge b) {
+        if (SummaryProbes.planAt(instIid) instanceof LoopSummaries.BackEdge b) {
             Frame frame = stack.getActiveFrame();
             if (frame != null) {
                 frame.summaryBackEdge = b.loop();

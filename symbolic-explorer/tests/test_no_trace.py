@@ -99,6 +99,7 @@ class ReceivedTraceTest(unittest.TestCase):
         driver.args = SimpleNamespace(parallel_sa=True)
         driver.sa = SimpleNamespace(start=lambda: None)
         driver.precheck = SimpleNamespace(proven=proven, reason=None, run=lambda: None, stats=lambda: {})
+        driver.preparation = SimpleNamespace(run=lambda: None, stats=lambda: {})
         driver.budget = ResourceBudget(cgroup_limit=0)
         driver.build_command = lambda **kwargs: []
         def run_command(cmd):

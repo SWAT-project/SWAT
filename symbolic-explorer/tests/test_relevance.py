@@ -220,6 +220,133 @@ def link(*nodes):
                 c.parent = n
 
 
+def facts_example(fact_on=('b', 'p')):
+    """
+    Hand-written irrelevance facts (user facts):
+
+        x = nondet();
+        if (x > 0) flag = 1;        // c, cs
+        if (flag) log();            // b, p: log writes library state  (b, p: covered by fact F)
+        if (lib()) assert false;    // a, ae: the assertion reads library state
+
+    Without the fact, b is relevant (its region writes what the assertion reads), so flag is, and c.
+    """
+    g = FactGraph()
+    g.at('v', dataflow=[(['l:x', 'g:input'], ['g:input'])])
+    g.at('c', control=['l:x'])
+    g.at('cs', dataflow=[(['l:flag'], [])])
+    g.at('b', control=['l:flag'])
+    g.at('p', dataflow=[(['g:lib'], ['g:lib'])])
+    g.at('a', control=['g:lib'])
+    g.at('ae', assertion=True, dataflow=[(['l:e'], [])])
+    g.at('thr', dataflow=[(['g:exc'], ['l:e'])])
+    g.at('unc', chain=ASSERTION_CHAIN)
+    g.at('ret', exit=True)
+    g.edge('v', 'c')
+    g.branch('c', 'cs', 'b')
+    g.edge('cs', 'b')
+    g.branch('b', 'p', 'a')
+    g.edge('p', 'a')
+    g.branch('a', 'ae', 'ret')
+    g.edge('ae', 'thr').edge('thr', 'unc', 'THROW')
+    for n in g.nodes:
+        if n['id'] in fact_on:
+            n['userFact'] = 'F'
+    return g
+
+
+class UserFactsTest(unittest.TestCase):
+
+    def test_without_facts_the_example_is_relevant(self):
+        g = facts_example(fact_on=()).load()
+        self.assertEqual(irrelevant(g), set())
+        self.assertFalse(any(n.irrelevant_assuming for n in g.nodes.values()))
+
+    def test_a_branch_that_only_feeds_irrelevant_code_is_irrelevant_assuming_the_fact(self):
+        g = facts_example().load()
+        self.assertEqual(irrelevant(g), set())  # nothing without the fact
+        self.assertTrue(g.nodes['c'].irrelevant_assuming)
+        self.assertEqual({n.id for n in g.nodes['c'].region}, {'cs'})
+        self.assertFalse(g.nodes['b'].irrelevant_assuming)  # the fact's own branch: applied by the executor
+        self.assertFalse(g.nodes['a'].irrelevant_assuming)
+        self.assertEqual(g.entry_node.graph_index.user_facts, frozenset({'F'}))
+        self.assertEqual(g.relevance_stats.as_dict()['irrelevant_assuming'], 1)
+
+    def test_a_fact_whose_code_has_a_target_is_refuted(self):
+        g = facts_example(fact_on=('a', 'ae')).load()
+        self.assertEqual(g.entry_node.graph_index.refuted_facts, frozenset({'F'}))
+        self.assertEqual(g.entry_node.graph_index.user_facts, frozenset())
+        self.assertFalse(any(n.irrelevant_assuming for n in g.nodes.values()))
+
+    def test_a_target_on_a_line_near_a_region_refutes_it(self):
+        # The extractor could not tell by line whether the assertion is in the region: it is near
+        g = facts_example(fact_on=('b',))
+        for n in g.nodes:
+            if n['id'] in ('a', 'ae'):
+                n['userFactNear'] = 'F'
+        g = g.load()
+        self.assertEqual(g.entry_node.graph_index.refuted_facts, frozenset({'F'}))
+
+    def test_a_refuted_facts_merged_flag_does_not_honor_a_loop_summary(self):
+        g = keyed(facts_example(fact_on=('a', 'ae')).load())
+        g.nodes['a'].summary_ok = True  # as if the graph allowed a conditional loop summary here
+        a = branch_node('a', branched=leaf(), key='a')
+        a.user_fact = 'F'
+        a.merged = True  # set by the executor for the (refuted) fact, not by a summary
+        b = branch_node('b', branched=a, key='b')
+        c = branch_node('c', branched=b, key='c')
+        link(c, b)
+        link(b, a)
+        found = dfs(Tree(), c, set(), set(), g.entry_node)
+        self.assertIn('a', [n.id for n in found])
+
+    def test_dfs_slices_assuming_the_fact_and_counts_it(self):
+        # One path: c not taken, b (covered by F, applied by the executor) not taken, then a.
+        g = keyed(facts_example().load())
+        a = branch_node('a', branched=leaf(), key='a')
+        b = branch_node('b', branched=a, key='b')
+        b.user_fact = 'F'
+        c = branch_node('c', branched=b, key='c')
+        link(c, b)
+        link(b, a)
+        tree = Tree()
+        found = dfs(tree, c, set(), set(), g.entry_node)
+        self.assertEqual([n.id for n in found], ['a'])  # c sliced assuming F, b merged by F
+        self.assertEqual(tree.relied_facts, {'F'})
+
+    def test_dfs_does_not_count_a_fact_the_relevance_analysis_confirms(self):
+        # F covers b, but without the library write in p the analysis slices b by itself.
+        g = facts_example()
+        for n in g.nodes:
+            if n['id'] == 'p':
+                n['dataflow'] = [[['g:out'], []]]
+        g = keyed(g.load())
+        self.assertTrue(g.nodes['b'].irrelevant)
+        a = branch_node('a', branched=leaf(), key='a')
+        b = branch_node('b', branched=a, key='b')
+        b.user_fact = 'F'
+        c = branch_node('c', branched=b, key='c')
+        link(c, b)
+        link(b, a)
+        tree = Tree()
+        dfs(tree, c, set(), set(), g.entry_node)
+        self.assertEqual(tree.relied_facts, set())
+
+    def test_dfs_ignores_a_refuted_fact(self):
+        g = keyed(facts_example(fact_on=('a', 'ae')).load())
+        a = branch_node('a', branched=leaf(), key='a')
+        a.user_fact = 'F'  # the executor applied it, but the graph refuted it
+        a.merged = True  # as the executor flags it
+        b = branch_node('b', branched=a, key='b')
+        c = branch_node('c', branched=b, key='c')
+        link(c, b)
+        link(b, a)
+        tree = Tree()
+        found = dfs(tree, c, set(), set(), g.entry_node)
+        self.assertIn('a', [n.id for n in found])  # a decision again
+        self.assertEqual(tree.relied_facts, set())
+
+
 class SlicingTest(unittest.TestCase):
 
     def setUp(self):

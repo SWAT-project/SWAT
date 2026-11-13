@@ -39,9 +39,36 @@ repositories {
     mavenCentral()
 }
 
+// The loop facts library (de.uzl.its.cfg.loops: loop heads and loop summaries, and their facts
+// file) comes from cfg-extraction, which owns the static analyses. The checkout it is built from:
+// -PcfgExtractionDir=<dir>, else the one next to SWAT's (../cfg-extraction, the workspace layout),
+// else a clone of the ref pinned in cfg-extraction.ref (build/cfg-extraction, made on demand).
+// Its loopsJar task builds it; the shadow jar bundles it (relocated, like the ASM it uses).
+def cfgExtractionRef = rootProject.file('cfg-extraction.ref').text.trim()
+def cfgExtractionDir = findProperty('cfgExtractionDir') ? rootProject.file(findProperty('cfgExtractionDir'))
+        : rootProject.file('../cfg-extraction/gradlew').isFile() ? rootProject.file('../cfg-extraction')
+        : rootProject.file('build/cfg-extraction')
+def cfgLoopsJar = new File(cfgExtractionDir, 'build/libs/cfg-extractor-loops.jar')
+tasks.register('cloneCfgExtraction', Exec) {
+    description = "Clones cfg-extraction at ${cfgExtractionRef} into ${cfgExtractionDir} if there is no checkout"
+    onlyIf { !new File(cfgExtractionDir, 'gradlew').isFile() }
+    commandLine 'git', 'clone', '--quiet', '--depth', '1', '--branch', cfgExtractionRef,
+            'https://github.com/SWAT-project/cfg-extraction.git', cfgExtractionDir.absolutePath
+}
+tasks.register('cfgLoopsJar', Exec) {
+    group = 'build'
+    description = "Builds cfg-extraction's loop facts library in ${cfgExtractionDir}"
+    dependsOn 'cloneCfgExtraction'
+    workingDir cfgExtractionDir
+    commandLine new File(cfgExtractionDir, 'gradlew').absolutePath, '-q', 'loopsJar'
+    inputs.files(fileTree(new File(cfgExtractionDir, 'src/main/java/de/uzl/its/cfg/loops')))
+    outputs.file(cfgLoopsJar)
+}
+
 // In this section you declare the dependencies for your production and test code
 dependencies {
     implementation project(':annotations')
+    implementation files(cfgLoopsJar) { builtBy 'cfgLoopsJar' }
     implementation libs.bundles.logging
     implementation libs.bundles.asm
     implementation libs.jackson.databind
@@ -170,6 +197,12 @@ tasks.register('thirdPartyList') {
                 entries << [group: 'com.microsoft', name: 'z3', version: '5.3.1',
                             licenses: [[name: 'MIT', url: 'https://github.com/Z3Prover/z3/blob/master/LICENSE.txt']],
                             url: 'https://github.com/Z3Prover/z3']
+            } else if (name == 'cfg-extractor-loops.jar') {
+                // cfg-extraction's loop facts library (cfgLoopsJar above), at the ref SWAT pins
+                entries << [group: 'de.uzl.its', name: 'cfg-extractor-loops',
+                            version: cfgExtractionRef,
+                            licenses: [[name: 'MIT', url: 'https://github.com/SWAT-project/cfg-extraction/blob/master/LICENSE']],
+                            url: 'https://github.com/SWAT-project/cfg-extraction']
             } else {
                 throw new GradleException("Unknown bundled file dependency ${name}: add it to thirdPartyList")
             }
@@ -187,6 +220,7 @@ shadowJar {
     relocate 'ch.qos.logback', 'shadow.swat.ch.qos.logback'
     relocate 'org.slf4j', 'shadow.swat.org.slf4j'
     relocate 'org.objectweb.asm', 'shadow.swat.objectweb.asm'
+    relocate 'de.uzl.its.cfg', 'shadow.swat.de.uzl.its.cfg'
     relocate 'com.fasterxml.jackson', 'shadow.swat.com.fasterxml.jackson'
     relocate 'org.sosy_lab', 'shadow.swat.org.sosy_lab'
     //relocate 'ap', 'shadow.swat.ap'

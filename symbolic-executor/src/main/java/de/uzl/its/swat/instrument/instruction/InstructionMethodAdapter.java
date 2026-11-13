@@ -10,7 +10,9 @@ import de.uzl.its.swat.instrument.GlobalStateForInstrumentation;
 import de.uzl.its.swat.instrument.TryCatchBlock;
 import de.uzl.its.swat.instrument.Utils;
 import de.uzl.its.swat.metadata.ClassDepot;
-import de.uzl.its.swat.symbolic.loopstate.LoopHeads;
+import de.uzl.its.swat.symbolic.loopstate.LoopHeadProbes;
+import de.uzl.its.swat.symbolic.summary.SummaryProbes;
+import de.uzl.its.cfg.loops.LoopSummaries;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -80,9 +82,46 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      * every instruction that reports a branch or pushes a frame. Called before its instrumentation
      * allocates its iid.
      */
+    /** Hand-written irrelevance facts (user facts, see de.uzl.its.swat.facts.UserFacts): of the class, the method, the open region. */
+    private String classFact = null;
+    private String methodFact = null;
+    private String regionFact = null;
+
+    public void setClassFact(String fact) {
+        classFact = fact;
+    }
+
+    @Override
+    public org.objectweb.asm.AnnotationVisitor visitAnnotation(String adesc, boolean visible) {
+        if (config.isUserFacts() && de.uzl.its.swat.facts.UserFacts.IRRELEVANT.equals(adesc)) {
+            methodFact = "@Irrelevant " + owner + "." + methodName + desc;
+        }
+        if (config.isUserFacts() && de.uzl.its.swat.facts.UserFacts.NOT_CALLED_BACK.equals(adesc)) {
+            de.uzl.its.swat.facts.UserFacts.registerNotCalledBack(de.uzl.its.swat.common.Util.formatClassName(owner),
+                    de.uzl.its.swat.common.Util.formatMethodName(owner, methodName, desc));
+        }
+        return super.visitAnnotation(adesc, visible);
+    }
+
+    /** Opens or closes a Swat.beginIrrelevant/endIrrelevant region at a call to the markers. */
+    private void markRegion(String calledOwner, String name, String calledDesc) {
+        if (!config.isUserFacts() || !calledOwner.equals(de.uzl.its.swat.facts.UserFacts.SWAT) || !calledDesc.equals("()V")) {
+            return;
+        }
+        if (name.equals("beginIrrelevant")) {
+            regionFact = "Swat.beginIrrelevant " + owner + "." + methodName + desc + " line " + line;
+        } else if (name.equals("endIrrelevant")) {
+            regionFact = null;
+        }
+    }
+
     private void nameInstruction(String kind) {
         if (owner.startsWith("de/uzl/its/swat/")) {
             return; // SWAT's helpers: the graph has their branches inline in the caller, without keys
+        }
+        String fact = regionFact != null ? regionFact : methodFact != null ? methodFact : classFact;
+        if (fact != null) {
+            instrumentationState.setPendingFact(fact);
         }
         String group = line + "|" + kind;
         int ordinal = keyOrdinals.merge(group, 1, Integer::sum) - 1;
@@ -113,7 +152,7 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
 
         if (methodName.equals("<clinit>")) {
             if (config.isLoopStateMatching() && !owner.startsWith("de/uzl/its/swat/")) {
-                LoopHeads.emitClassInit(mv, owner);
+                LoopHeadProbes.emitClassInit(mv, owner);
             }
             int cIdx = classDepot.getClassIndex(this.owner);
             String clinit_desc = "(JIJ)V"; // (long iid, int cIdx, long invokeId)
@@ -137,38 +176,53 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         Utils.addJpushInsn(mv, val);
     }
 
-    /** The method's loop heads (see LoopHeads), by the label that starts each. */
-    private java.util.Map<Label, LoopHeads.Head> loopHeads = java.util.Map.of();
+    /** The method's loop heads (see LoopHeadProbes), by the label that starts each. */
+    private java.util.Map<Label, LoopHeadProbes.Head> loopHeads = java.util.Map.of();
 
-    public void setLoopHeads(java.util.Map<Label, LoopHeads.Head> loopHeads) {
+    public void setLoopHeads(java.util.Map<Label, LoopHeadProbes.Head> loopHeads) {
         this.loopHeads = loopHeads;
     }
 
-    /** The method's loop summaries (see symbolic/summary/LoopSummaries), and the jumps seen so far. */
-    private de.uzl.its.swat.symbolic.summary.LoopSummaries.MethodPlans loopSummaries =
-            de.uzl.its.swat.symbolic.summary.LoopSummaries.MethodPlans.NONE;
-    private int jumpOrdinal = 0;
+    /**
+     * The method's call sites with loop facts (see LoopHeadProbes), by their ordinal among its
+     * method calls; the calls seen so far; and the site of the call being instrumented.
+     */
+    private java.util.Map<Integer, LoopHeadProbes.Call> loopCalls = java.util.Map.of();
+    private int callOrdinal = 0;
+    private LoopHeadProbes.Call loopCall;
 
-    public void setLoopSummaries(de.uzl.its.swat.symbolic.summary.LoopSummaries.MethodPlans plans) {
-        this.loopSummaries = plans;
+    public void setLoopCalls(java.util.Map<Integer, LoopHeadProbes.Call> loopCalls) {
+        this.loopCalls = loopCalls;
     }
 
     /**
-     * At a loop head, probes the state. The probe goes through the processor like an instruction,
-     * so the symbolic execution, which lags one instruction behind, handles it once the jump that
-     * led here has been recorded.
+     * The method's loop summaries (see SummaryProbes): plans by jump ordinal, join ids by label; and
+     * the jumps seen so far.
+     */
+    private java.util.Map<Integer, LoopSummaries.Plan> summaryPlans = java.util.Map.of();
+    private java.util.Map<Label, Integer> summaryJoins = java.util.Map.of();
+    private int jumpOrdinal = 0;
+
+    public void setLoopSummaries(java.util.Map<Integer, LoopSummaries.Plan> plans, java.util.Map<Label, Integer> joins) {
+        this.summaryPlans = plans;
+        this.summaryJoins = joins;
+    }
+
+    /**
+     * At a loop head, probes the state; at a join, merges the pending diamonds. The probes go
+     * through the processor like instructions, so the symbolic execution, which lags one instruction
+     * behind, handles them once the jump that led here has been recorded.
      */
     @Override
     public void visitLabel(Label label) {
         super.visitLabel(label);
-        LoopHeads.Head head = loopHeads.get(label);
+        LoopHeadProbes.Head head = loopHeads.get(label);
         if (head != null) {
-            LoopHeads.emitProbe(mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), head);
+            LoopHeadProbes.emitProbe(mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), head);
         }
-        Integer join = loopSummaries.joins().get(label);
+        Integer join = summaryJoins.get(label);
         if (join != null) {
-            de.uzl.its.swat.symbolic.summary.LoopSummaries.emitJoinProbe(
-                    mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), join);
+            SummaryProbes.emitJoinProbe(mv, config.getInstrumentationDispatcher(), instrumentationState.incAndGetId(), join);
         }
     }
     /** Push a value onto the stack. */
@@ -1609,7 +1663,14 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
             Utils.addTryCatchBlock(mv, false, tcb);
         } else {
             String d = "(JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
-            addJpushInsn(mv, instrumentationState.incAndGetId());
+            long iid = instrumentationState.incAndGetId();
+            if (loopCall != null) {
+                // Before the INVOKE probe, so that the caller's frame is still the active one
+                LoopHeadProbes.emitCallProbe(mv, config.getInstrumentationDispatcher(),
+                        instrumentationState.incAndGetId(), loopCall, iid);
+                loopCall = null;
+            }
+            addJpushInsn(mv, iid);
 
             addJpushInsn(mv, invokeId);
             mv.visitLdcInsn(owner);
@@ -1751,7 +1812,12 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
      */
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
+        markRegion(owner, name, desc);
         nameInstruction("call:" + name + desc);
+        LoopHeadProbes.Call site = loopCalls.get(callOrdinal++);
+        // Only calls into application code can reach a loop head whose state is hashed
+        loopCall = site != null && !owner.startsWith("de/uzl/its/swat/")
+                && de.uzl.its.swat.common.Util.shouldInstrument(owner) ? site : null;
         if (opcode == INVOKESPECIAL && name.equals("<init>")) {
             if (isInit) {
                 // This code is already inside an init method.
@@ -1821,9 +1887,9 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         long iid3;
         String desc = "(JI)V";
         addJpushInsn(mv, iid3 = instrumentationState.incAndGetId());
-        de.uzl.its.swat.symbolic.summary.LoopSummaries.Plan summary = loopSummaries.byJump().get(jumpOrdinal++);
+        LoopSummaries.Plan summary = summaryPlans.get(jumpOrdinal++);
         if (summary != null) {
-            de.uzl.its.swat.symbolic.summary.LoopSummaries.register(iid3, summary);
+            SummaryProbes.register(iid3, summary);
         }
 
         addBipushInsn(mv, System.identityHashCode(label)); // label.getOffset()

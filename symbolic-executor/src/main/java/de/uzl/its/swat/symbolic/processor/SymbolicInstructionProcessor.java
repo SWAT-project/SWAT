@@ -301,6 +301,7 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
                     // application class implementing the frame's library type was called by the
                     // application itself through that type, e.g. Runnable.run(): the graph has it.)
                     visitor.getStack().markActiveFrameCallback();
+                    de.uzl.its.swat.facts.UserFacts.calledBack(Util.formatClassName(actualClassNameFull), actualMethodIdentifier);
                 }
 
                 // Track when we enter delegation context
@@ -422,6 +423,13 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
                 || org.objectweb.asm.Type.getReturnType(desc).getSize() != expected.nReturnWords) {
             return false;
         }
+        // ... and the receiver is a lambda object the JVM generated for this class. Otherwise the
+        // frame is a library call that calls the lambda back (e.g. ArrayList.forEach(consumer),
+        // which has the same shape): adopting it would hand the body the library call's
+        // receiver and arguments.
+        if (!isLambdaOf(locals.get(0), actualClassFull)) {
+            return false;
+        }
         Frame body = new Frame(actualClassFull, name, expected.nReturnWords);
         body.setCallSite(expected.getCallSite());
         for (Value<?, ?> local : locals.subList(1, locals.size())) {
@@ -432,6 +440,19 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
         logger.info("Running lambda body {} as {}:{}", actualMethodIdentifier, expectedClassFull,
                 expected.getMethodName());
         return true;
+    }
+
+    /**
+     * Whether {@code receiver} is an object of a class the JVM generated for a lambda in {@code
+     * classFull} (named {@code <class>$$Lambda...}).
+     */
+    static boolean isLambdaOf(Value<?, ?> receiver, String classFull) {
+        if (!(receiver instanceof de.uzl.its.swat.symbolic.value.reference.ObjectValue<?, ?> ov) || ov.className == null) {
+            return false;
+        }
+        String cname = ov.className.replace('.', '/');
+        String owner = classFull.replace('.', '/');
+        return cname.startsWith(owner + "$$Lambda");
     }
 
     private static boolean isStaticMethod(String classFull, String name, String desc) {

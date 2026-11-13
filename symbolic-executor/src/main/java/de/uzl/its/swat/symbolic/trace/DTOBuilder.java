@@ -135,6 +135,7 @@ class DTOBuilder {
                         .choice(be.isChoice())
                         .merged(be.isMerged())
                         .mergedConditional(be.isMergedConditional())
+                        .userFact(be.getUserFact())
                         .loopStates(be.getLoopStates()));
             } else if (el instanceof SpecialElement se) {
                 trace.add(new BranchDTO(se.getIid(), se.getInst()));
@@ -147,7 +148,8 @@ class DTOBuilder {
                     StackOverflowGuard.trackingLost, StackOverflowGuard.targetOverflowed);
         }
         return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), Witness.getNondetReturns(), Witness.getViolation(), symbolicTrace.isSymbolicContextLoss() || stackOverflow, symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange(),
-                symbolicTrace.isSymbolicPrecisionLoss(), StackOverflowGuard.targetOverflowed);
+                symbolicTrace.isSymbolicPrecisionLoss(), StackOverflowGuard.targetOverflowed)
+                .userFacts(de.uzl.its.swat.facts.UserFacts.used());
     }
 
     /** Symbols already reported as undeclared, so each is logged once. */

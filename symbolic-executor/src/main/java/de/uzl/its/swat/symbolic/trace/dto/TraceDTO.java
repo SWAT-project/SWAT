@@ -42,6 +42,16 @@ public class TraceDTO {
     @SuppressWarnings("unused")
     private boolean stackOverflow = false;
 
+    // The hand-written facts this execution relied on (see de.uzl.its.swat.facts.UserFacts)
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+    private java.util.List<String> userFacts = java.util.List.of();
+
+    public TraceDTO userFacts(java.util.List<String> userFacts) {
+        this.userFacts = userFacts;
+        return this;
+    }
+
     public TraceDTO(ArrayList<InputDTO> inputs, ArrayList<BranchDTO> trace, ArrayList<UFDTO> ufs, ArrayList<InvocationDTO> missingInvocations, ArrayList<NondetReturnDTO> nondetReturns, ViolationDTO violation, boolean symbolicContextLoss, boolean symbolicPrecisionLoss, boolean referenceSemanticChange, boolean approximateModel, boolean stackOverflow) {
         this.trace = trace;
         this.inputs = inputs;

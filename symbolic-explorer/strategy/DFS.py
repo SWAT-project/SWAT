@@ -176,7 +176,7 @@ def dfs(tree: Tree | None, root: Node | Leaf | None, solved_branches: AbstractSe
                 if in_region(owner_sa, owner_stack, verified, sa_stack):
                     break
                 open_regions = open_regions[1]
-        role = _classify(node, verified)
+        role = _classify(node, verified, tree, index)
         node.sliced = role != DECISION
         ident: Ident = (sig, node.key if node.key is not None else ('id', node.id))
         node.ident = ident
@@ -288,10 +288,16 @@ def _pair(tree: Tree, node: Node, sa_node: SANode | None, sa_stack: CallStack, t
     return resumed[0], resumed[1], trace_stack, RESYNCED
 
 
-def _classify(node: Node, verified: SANode | None) -> Role:
+def _classify(node: Node, verified: SANode | None, tree: Tree, index: GraphIndex | None) -> Role:
     """
     What the branch is for the search: a DECISION, SLICED or MERGED. `verified` is the graph's
     branch it was paired with, if the pairing was verified (only then can it be SLICED).
+
+    A hand-written irrelevance fact (user facts; Node.user_fact, applied by the executor) makes the
+    branch no decision, unless the graph refuted the fact (Relevance._user_facts). Where the
+    relevance analysis slices the branch anyway, the fact is not needed; everywhere else it is
+    trusted, and recorded on the tree (Tree.relied_facts), as are the graph's facts for a branch
+    that is irrelevant only if they hold (SANode.irrelevant_assuming): a SAFE verdict assumes them.
 
     A loop summary's branch (Node.merged) is no decision: both outcomes lead to the merged state.
     If the executor merged a loop whose body does other things too (a call, a field or array
@@ -299,10 +305,21 @@ def _classify(node: Node, verified: SANode | None) -> Role:
     (Relevance: summary_ok), and like a sliced branch it then opens a region. Unhonored, the closed
     forms with the kept constraints describe the same path: sound.
     """
-    if node.merged and not node.merged_conditional:
+    sliceable = SLICING and verified is not None and not node.poisoned
+    refuted = node.user_fact is not None and index is not None and node.user_fact in index.refuted_facts
+    if node.user_fact is not None and not refuted:
+        if sliceable and verified.irrelevant:
+            return SLICED  # the relevance analysis alone: the fact is not needed here
+        tree.relied_facts.add(node.user_fact)
         return MERGED
-    if SLICING and verified is not None and not node.poisoned \
-            and (verified.irrelevant or (node.merged and verified.summary_ok)):
+    # (The executor flags a branch a fact covers as merged too: a refuted fact's branch is not.)
+    merged = node.merged and not refuted
+    if merged and not node.merged_conditional:
+        return MERGED
+    if sliceable and (verified.irrelevant or (merged and verified.summary_ok)):
+        return SLICED
+    if sliceable and verified.irrelevant_assuming:
+        tree.relied_facts.update(index.user_facts if index is not None else ())
         return SLICED
     return DECISION
 

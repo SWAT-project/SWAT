@@ -57,6 +57,7 @@ class Node:
     choice: bool = False  # added by the executor to enumerate an operand's values: not in the SA graph
     merged: bool = False  # merged by a loop summary on every trace through it: not a decision
     merged_conditional: bool = False  # ... only if the loop's other effects are irrelevant (see dfs)
+    user_fact: str | None = None  # a hand-written irrelevance fact covers it: not a decision
     # Whether some trace threw an exception the SA graph does not model right before this node
     # (an UNMODELLED_EXCEPTION marker, which is not a node of its own, see Tree.structural).
     unmodelled_exception: bool = False
@@ -113,6 +114,7 @@ class Node:
             self.choice = branch.choice
             self.merged = branch.merged
             self.merged_conditional = branch.merged_conditional
+            self.user_fact = branch.user_fact
             self.loop_states = branch.positioned_loop_states
             self.constraint[branch.trace_id] = branch.constraint
 

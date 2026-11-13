@@ -1,6 +1,7 @@
 package de.uzl.its.swat.witness
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import de.uzl.its.swat.testsupport.NondetInputs
 import spock.lang.Shared
 import spock.lang.Specification
 
@@ -30,7 +31,8 @@ class SvcompWitnessAgentSpec extends Specification {
         assert Files.isRegularFile(AGENT_JAR): "agent jar missing, run copyJar first: ${AGENT_JAR}"
         classes = Files.createTempDirectory("swat-witness-agent-spec")
         compile(classes)
-        output = run(classes, ["-Dswat.input.I_0=3", "-Dswat.input.I_1=4"])
+        def ids = NondetInputs.ids(classes, "Main")
+        output = run(classes, ["-Dswat.input.I_${ids[0]}=3".toString(), "-Dswat.input.I_${ids[1]}=4".toString()])
         trace = parseTrace(output)
     }
 

@@ -3562,6 +3562,12 @@ public final class InstructionLoggingDispatcher {
 }
 
     @SuppressWarnings("unused")
+    public static void LOOP_CALL(long iid, String site, long invoke, Object[] locals) throws NoThreadContextException {
+    Logger logger = ThreadHandler.getShadowStateLogger(-1);
+    logger.info("LOOP_CALL {} {}", iid, site);
+}
+
+    @SuppressWarnings("unused")
     public static void LOOP_HEAD(long iid, String head, Object[] locals) throws NoThreadContextException {
     Logger logger = ThreadHandler.getShadowStateLogger(-1);
     logger.info("LOOP_HEAD {} {}", iid, head);

@@ -135,6 +135,12 @@ class SANode:
     irrelevant: bool = False
     summary_ok: bool = False
     region: frozenset[SANode] | None = field(default=None, repr=False)
+    # Hand-written facts (user facts, only with --user-facts): the irrelevance fact covering this
+    # node (the extractor's userFact); for a branch, whether it is irrelevant only if the graph's
+    # irrelevance facts hold (Relevance; dfs then counts them for the verdict).
+    user_fact: str | None = None
+    user_fact_near: str | None = None  # a region fact that shares this node's line (checked, never applied)
+    irrelevant_assuming: bool = False
 
     def is_branch(self) -> bool:
         return self.next_branched is not None
@@ -267,6 +273,10 @@ class GraphIndex:
     # callbacksReachingAssert). Such a callback may also run once main's frame is gone (a shutdown
     # hook, a finalizer, a thread still running), so leaving main is then interesting too.
     callbacks_reach_assert: bool = False
+    # Hand-written irrelevance facts (user facts): those the relevance analysis refuted, which dfs
+    # ignores where the executor applied them, and those it used.
+    refuted_facts: frozenset[str] = frozenset()
+    user_facts: frozenset[str] = frozenset()
 
 
 # The trace stack: the executor's view of the call stack at a branch, as the walk tracks it from the
@@ -596,6 +606,16 @@ class SAGraph:
         # The relevance analysis' statistics, None if it did not run (see load_json_graph).
         self.relevance_stats: RelevanceStats | None = None
 
+    def assumed_facts(self) -> list[str]:
+        """
+        The hand-written facts (user facts) that shaped the graph itself, so that any pruning may
+        rely on them: the library facts the extractor used, and @NotCalledBack. (Irrelevance facts
+        are counted where they are relied on, by dfs; @Target and summaries assume nothing here.)
+        """
+        facts = (self.json_graph.get("metadata") or {}).get("userFacts") or {}
+        used = [f"library fact: {e}" for e in (facts.get("library") or {}).get("used", [])]
+        return used + [f"@NotCalledBack {m}" for m in facts.get("notCalledBack", [])]
+
     def async_entry_sites(self) -> list[str]:
         """
         The library call sites (as `node id: method`) that may run application code outside main's
@@ -638,7 +658,9 @@ class SAGraph:
                           dataflow=tuple((tuple(w), tuple(r)) for w, r in json_node.get("dataflow", ())),
                           control=tuple(json_node.get("control", ())),
                           terminates=json_node.get("terminates", False) is True,
-                          call=json_node.get("call"))
+                          call=json_node.get("call"),
+                          user_fact=json_node.get("userFact"),
+                          user_fact_near=json_node.get("userFactNear"))
             self.nodes[node.id] = node
         for exit_id in self.json_graph.get("exitNodeIds", []):
             self.nodes[exit_id].isExit = True
@@ -646,6 +668,9 @@ class SAGraph:
         # (the extractor's cannotRaise, see RaiseSites in cfg-extraction): their exception side
         # leads nowhere, below.
         cannot_raise = {n["id"] for n in self.json_graph["nodes"] if n.get("cannotRaise") is True}
+        # The side of a branch on Swat.summary() that never runs (user facts): the loop the
+        # hand-written summary replaces. Also a dead end.
+        dead_sides = {n["id"]: n["deadSide"] for n in self.json_graph["nodes"] if n.get("deadSide")}
 
         for json_edge in self.json_graph["edges"]:
             source = self.nodes[json_edge["source"]]
@@ -655,6 +680,9 @@ class SAGraph:
                 # The exception side of a guard that cannot raise: a dead end, from which nothing
                 # is reachable. Should an execution take it after all, the walk is lost there,
                 # which prunes nothing.
+                target = SANode(f"dead[{source.id}]")
+                self.nodes[target.id] = target
+            elif dead_sides.get(source.id) == etype:
                 target = SANode(f"dead[{source.id}]")
                 self.nodes[target.id] = target
             if etype in FALLTHROUGH_EDGES:
@@ -708,7 +736,10 @@ class SAGraph:
         compute_summaries(list(self.nodes.values()))
         if slicing and metadata.get("dataflowFacts"):
             from data.StaticAnalysisGraph.Relevance import Relevance
-            self.relevance_stats = Relevance(self.nodes.values()).compute()
+            relevance = Relevance(self.nodes.values())
+            self.relevance_stats = relevance.compute()
+            graph_index.refuted_facts = frozenset(getattr(relevance, "refuted_facts", ()))
+            graph_index.user_facts = frozenset(getattr(relevance, "user_facts", ()))
         compute_target_distances(list(self.nodes.values()))
 
 

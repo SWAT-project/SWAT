@@ -28,7 +28,8 @@ class ConstraintService:
                         nondet_returns: List[NondetReturnItem] = None,
                         violation: Optional[ViolationItem] = None,
                         approximate_model: bool = False,
-                        stack_overflow: bool = False):
+                        stack_overflow: bool = False,
+                        user_facts: List[str] | None = None):
         """
         Adds constraints to the database.
 
@@ -76,7 +77,7 @@ class ConstraintService:
                 'violation': violation.model_dump() if violation is not None else None,
             }
             # Adding the trace and inputs to the database for the specified endpoint.
-            Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data, approximate_model, stack_overflow)
+            Database.instance().add_trace(endpoint_id, trace_id, trace_parsed, inputs_parsed, ufs_parsed, symbolic_context_loss, symbolic_precision_loss, reference_semantic_change, missing_invocations_data, witness_data, approximate_model, stack_overflow, user_facts)
             logger.info(f'[CONSTRAINT SERVICE] Added trace {trace_id} to endpoint {endpoint_id}')
         except Exception as e:
             # A trace that cannot be added must not end the run silently, nor let it go on as if the

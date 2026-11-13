@@ -41,7 +41,9 @@ construct sits on. Each task's comment says what it tests.
 
 `relevance` and `relevance-soundness` (`scripts/relevance.py`): tasks for the relevance analysis
 (slicing). `relevance` has the design example verbatim (`example`, `example-long`) and families over
-the loop length n in {10, 100, 1000} whose input-dependent branches cannot affect the assert;
+the loop length n in {10, 100, 1000} whose input-dependent branches cannot affect the assert
+(`assert-in-class`: the assertion in a nested class, whose static initializer must not make all
+library state relevant);
 `relevance-soundness` has SAFE/VIOLATION pairs where a wrong slice would hide a violation (writes
 through fields, arrays, aliases, callees, library objects, callbacks, static initializers; input
 reads; `assume`/`exit` and crashes inside a region; exceptions caught elsewhere). Some of them end
@@ -52,6 +54,43 @@ match would hide a violation: an `Object[]` whose length is symbolic (also under
 `no-runtime-exception`, and with an unbounded loop), state held by the JDK (a System property, the
 thread interrupt flag), and a class in a package SWAT does not instrument. None may come out SAFE;
 the unbounded variant may time out.
+
+`loop-liveness`: hand-written tasks for loop-state matching with live locals only (cfg-extraction
+`LoopHeads`, 2026-11-11). `dead-input_true` and `dead-input-nested_true` have a symbolic input held
+in a local that is dead at the loop head; they are SAFE only if that local is left out of the
+hash (UNKNOWN before). `dead-input_false` is the sanity pair; `live-after-loop_false` (the local is
+read after the loop) and `handler-reads_false` (read only by a catch handler, through an exception
+edge) are VIOLATION tasks that a too-eager liveness turns into false SAFE.
+
+`loop-frames`: loop-state matching at heads in callees (2026-11-13). `callee-loop_true`,
+`nested-callee_true` (two frames deep), `instance-callee_true` (the receiver's field) and
+`dead-caller-input_true` (a symbolic input in a caller local that is dead after the call) are SAFE
+only if a state can span frames (UNKNOWN before). `two-sites_false` (the same loop from two call
+sites) and `caller-local_false` (the same call site with different live caller locals) are
+VIOLATION tasks that a hash without the call site or without the callers' locals turns into false
+SAFE.
+
+`extractor-facts`: hand-written facts the extractor and the relevance analysis use (2026-11-13; all
+with `swat-user-facts: true`). `library-effects_true` is `user-facts/irrelevant-method_true`
+without `@Irrelevant` but with library facts (`swat-library-facts.txt` next to the class: the
+StringBuilder and HashMap families), `library-effects_false` its soundness pair (the assertion
+reads the log). `not-called-back_true` needs `@NotCalledBack` against the callback rule;
+`not-called-back-refuted_false` has a wrong one that the first run refutes. `irrelevant-checked_true`
+has an `@Irrelevant` the relevance analysis confirms (no fact assumed), `irrelevant-refuted_false`
+one it refutes (the method holds the assertion), and `irrelevant-caller_true` one that also slices
+the branches in `main` that only feed it.
+
+`real-tools-facts` (generated, gitignored, not for regular runs): `scripts/real_tools_facts.py`
+writes the `real-tools` tasks with hand-written facts, one of them deliberately wrong. See
+RESULTS.md, "Hand-written facts on real-tools".
+
+`user-facts`: hand-written facts in the source (SWAT's annotations module; the tasks' `.yml` ask
+for `--user-facts`, `build.sh` copies the module's sources into `common/`). SAFE/VIOLATION pairs:
+`irrelevant-method` (`@Irrelevant` on a logging method) and `irrelevant-region`
+(`Swat.beginIrrelevant/endIrrelevant` around a logging loop), 3^12 paths whose irrelevance SWAT's
+relevance analysis cannot see (the assert reads library state); `summary` (a hand-written summary of
+a quadratic sum, which SWAT's affine summaries cannot merge); `target` (`@Target` on a shell sink in
+a program without assertions). Compare with `--no-user-facts`.
 
 `real-tools` (`scripts/tools.py`, harnesses in `scripts/tools/`): harnesses around unmodified
 GNU java-getopt 1.0.13 (`getopt-minitar`, a tar-like CLI) and opencsv 2.3's `CSVParser`

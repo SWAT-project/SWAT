@@ -6,6 +6,10 @@ set -euo pipefail
 JAVA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../java" && pwd)"
 JAVAC_FLAGS="--release 8 -g:source,lines -nowarn -Xlint:-options"
 
+# The annotations module's sources (hand-written facts, suite user-facts), kept in step with SWAT's
+ANNOTATIONS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)/annotations/src/main/java/de/uzl/its/swat/annotations"
+mkdir -p "$JAVA_DIR/common/de/uzl/its/swat/annotations"
+cp "$ANNOTATIONS_SRC"/*.java "$JAVA_DIR/common/de/uzl/its/swat/annotations/"
 javac $JAVAC_FLAGS -d "$JAVA_DIR/common" $(find "$JAVA_DIR/common" -name '*.java')
 
 if [ $# -eq 0 ]; then

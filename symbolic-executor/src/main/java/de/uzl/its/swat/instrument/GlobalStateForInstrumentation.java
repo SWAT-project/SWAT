@@ -48,6 +48,16 @@ public class GlobalStateForInstrumentation {
         pendingKey = key;
     }
 
+    private String pendingFact = null;
+
+    /**
+     * The hand-written irrelevance fact covering the instruction being instrumented, or null (see
+     * {@link de.uzl.its.swat.facts.UserFacts}); registered with the next iid, like the key.
+     */
+    public void setPendingFact(String fact) {
+        pendingFact = fact;
+    }
+
     /** Increment iid and get the complete id */
     public long incAndGetId() {
         iid++;
@@ -56,6 +66,10 @@ public class GlobalStateForInstrumentation {
         if (pendingKey != null) {
             BranchKeys.register(id, pendingKey);
             pendingKey = null;
+        }
+        if (pendingFact != null) {
+            de.uzl.its.swat.facts.UserFacts.register(id, pendingFact);
+            pendingFact = null;
         }
         InstrCoverage.numInstructions += 1;
         return id;

@@ -118,7 +118,123 @@ data-flow facts; off with `--no-sa-slicing` (explorer and harness). Results and 
   slice is context-insensitive (fix: a "return value relevant / not" variant per method, chosen
   per call site and looked up by the walk's stack).
 
-**Loop summaries** (executor `symbolic/summary`): diamonds (an int `if` whose sides are
+**Loop facts** (since 2026-11-04): *where* the loop heads are, which locals they hold, and which
+diamonds and counting loops can be summarized is static analysis and lives in cfg-extraction
+(`de.uzl.its.cfg.loops`: `LoopHeads`, `LoopSummaries`, `BodyAnalysis`, `TaintCheck`). The extractor
+writes the facts of every class on the classpath to `loop_facts.json` in the log directory, first
+thing; the driver passes it as `-DloopFacts`. When `InstructionClassAdapter` instruments a method,
+`instrument/loopfacts/LoopFactsSource` takes its facts from the file if the method's code hash
+matches, else computes them with the same library, which the executor bundles (`cfgLoopsJar`
+builds `cfg-extractor-loops.jar` from `../cfg-extraction`, `-PcfgExtractionDir`, or a clone of
+`cfg-extraction.ref`; the shadow jar relocates it). What stays in the executor is what runs: the
+probes (`LoopHeadProbes`, `SummaryProbes`), `Merger` and `LoopStateMatcher`. In the file, jumps are
+named by ordinal and labels by the number of real instructions before them (`Positions`).
+
+- **The facts are in the prepared classes themselves** (since 2026-11-11): the driver passes the
+  prepared directories as `--annotate-loop-facts`, the extractor annotates each method with its facts
+  (cfg-extraction `LoopFactsAnnotations`), and `LoopFactsSource` takes a method's facts from its
+  annotation, else from `-DloopFacts`, else computes them, always only for a matching hash. The
+  executor logs the split at exit (`[LOOP FACTS] n from annotations, ...`, with the debug log on).
+  This is the carrier for later SA facts (section 5 of `/home/niklas/SWAT/BRIEF-sa-annotations.md`).
+- **The facts are computed on prepared classes** (class preparation, below): the extractor sees
+  the code after SWAT's rewrites, as the executor does, so the facts file applies to every method
+  with facts (7753 of 7753 over the task classpaths of sv-benchmarks and swat-benchmarks,
+  2026-11-11; on the classes on disk it was 2697: the rewrites renumber locals and insert code).
+  Without preparation (`--no-prepare-classes`, or when it fails) the executor computes the facts of
+  rewritten methods itself, so results are the same either way; facts that only a whole-program
+  analysis (or a person) can provide reach every method only through preparation.
+- **Tests:** `./gradlew test --tests 'de.uzl.its.cfg.loops.*'` in cfg-extraction (`LoopFactsSpec`:
+  the round trip, and that the facts do not depend on how the class was read).
+
+**Class preparation** (since 2026-11-11, `svcomp/ClassPreparation.py`, executor `prepare/Prepare` and
+`instrument/rewrite/`): SWAT's semantic rewrites (no-cache, reference equality, SV-COMP; the
+transformers that change *what* runs, before the instrumentation) are applied once, ahead of time,
+so that the static analysis and the executor see the same code.
+
+- **One implementation, two places:** `Rewrites.steps()` is the chain (same order as the agent
+  always ran it). `Prepare` runs it over the task's classpath (about 0.2 s): each directory entry
+  `i` is copied to `<logdir>/prepared/<i>`, with every class the chain changes replaced by its
+  rewritten version; jars stay as they are. At load time, `RewriteTransformer` runs the same chain
+  on every class that is not prepared (jars, classes generated at run time, other classpaths).
+- **Marker:** a prepared class carries an invisible class annotation `Lde/uzl/its/swat/Prepared;`
+  with `version` (`Rewrites.FORMAT_VERSION`) and `config` (`Rewrites.configHash()`: transformer
+  type, include/exclude packages, `useStringInterning`). The agent passes a matching class on
+  without rewriting; a mismatching one is an error (a class must never be rewritten twice). Bump
+  `FORMAT_VERSION` when a rewrite changes.
+- **The invariant:** a prepared class is byte for byte what the agent's load-time chain makes of
+  the original. `scripts/check-prepare.py <bench dirs>` checks it per task classpath (the agent
+  dumps its output with `-Dswat.dumpRewritten`, `prepare/LoadClasses` loads every class), and that
+  the agent rewrites nothing on a prepared classpath. So the rewrites must be deterministic: nondet
+  call ids are derived from the call site (`NondetIds`: class, method, descriptor, ordinal), not
+  from a load-order counter.
+- **Who gets what:** the extractor and the executor get the prepared classpath; the property
+  pre-check keeps the original classes (it models the SV-COMP `Verifier` and a JDK whitelist, and
+  its proof is about the original program). Witnesses use the original source directories.
+- **Fallback:** if preparation fails or times out, the run uses the original classpath, as
+  before; `stats.json` has `class_preparation` (status, counts, duration). Off with
+  `--no-prepare-classes` (explorer and harness).
+
+**Hand-written facts** (user facts, since 2026-11-12; `annotations/` module, executor `facts/`):
+facts a person (or an LLM) writes into the program's source, for real applications whose loops
+and libraries the SA cannot handle. Off unless asked for: executor `-DuserFacts=true`, explorer and
+harness `--user-facts`; a swat-benchmarks task asks for it with `options: swat-user-facts: true` in
+its `.yml` (harness `--no-user-facts` overrides). Never for SV-COMP, which measures SWAT itself.
+
+- **The facts** (package `de.uzl.its.swat.annotations`):
+  - `@Irrelevant` on a class, method or constructor, and `Swat.beginIrrelevant()` /
+    `Swat.endIrrelevant()` around statements or a loop (the code between the two calls in bytecode
+    order): their branches, and those of everything they call, cannot affect a target. The
+    instrumentation registers the covered instructions, branches and call sites (`UserFacts.register`,
+    by iid like the branch keys). At run time a frame entered from a covered call site carries the
+    fact (`Frame.userFact`, set in `ShadowContext.pushFrame`), so a branch is covered if its own
+    instruction is or any frame below it is (`ShadowContext.irrelevantFact`): callees,
+    constructors, virtual calls and recursion, but only below the irrelevant code. The trace flags
+    covered branches `merged` with `userFact`, and `dfs` treats them as no decision. Library code
+    calling back into the application is not tracked symbolically at all (context loss), so facts
+    do not help there.
+  - `if (Swat.summary()) { closed form } else { loop }`: a loop summary in plain Java (javac picks
+    the locals; any Java expression works). `Swat.summary()` returns false; with user facts the
+    rewrite `UserFactsTransformer` turns it into `UserFacts.summary("<id>")`, which returns true.
+  - `@Target` on a method: reaching it is a violation. `UserFactsTransformer` starts the method with
+    `UserFacts.target("@Target reached: ...")`, which throws an AssertionError (a violation for the
+    executor); the method keeps its code.
+  - `@NotCalledBack` on a method (2026-11-13): library code never calls it, although it overrides a
+    library method or is a lambda target (see "Callbacks" below).
+  - Library facts (2026-11-13): a stub file `swat-library-facts.txt` at the root of a classpath
+    directory, one library method per line (`java.util.HashMap.get(java.lang.Object) reads=HashMap`;
+    `reads=`/`writes=` families of library state, `nocallback`, `pure`, `arrays`; format in
+    cfg-extraction's `facts/LibraryFacts`).
+- **Where:** `UserFactsTransformer` is the first of SWAT's rewrites (`Rewrites.steps`), so prepared
+  classes have it; the config hash covers `userFacts`. The extractor reads the facts itself
+  (`--user-facts`, cfg-extraction `facts/UserFacts`, also on unprepared classes), and so does the
+  property pre-check for `@Target` (a reachable `@Target` method is not assertion-free). So both
+  run on the original classes too, and a failed preparation no longer switches anything off.
+- **What the graph does with them** (since 2026-11-13; cfg-extraction "Hand-written facts"):
+  `@Target`: the method's entry is an assertion point. `@Irrelevant` and regions: their nodes carry
+  `userFact` (a region line that also holds code outside the region only `userFactNear`); the
+  relevance analysis (`Relevance._user_facts`) refutes a fact whose nodes (near ones included)
+  contain a target point, may end the program or call code that may reach a target, and `dfs`
+  then ignores the executor's flag for it; otherwise it computes relevance a second time with the
+  fact's own branches taken as irrelevant (`SANode.irrelevant_assuming`; never its callees', which
+  may also run from a callback, a lambda or a static initializer), which slices branches outside
+  the fact that only feed it. `Swat.summary()`: the branch's loop side is a
+  dead end (`deadSide`). Library facts: a call with facts reads and writes only `g:lib:<family>`,
+  every other library call all of `g:lib` and every family (`DataflowFacts`); `nocallback` and
+  `@NotCalledBack` relax the callback rule (`CallbackTargets`: a library call that cannot call back
+  is no assertion point, a method that is not called back is no callback).
+- **Trust and checks:** a wrong `@Irrelevant`, summary or library fact can hide a violation. `dfs`
+  records a fact as relied on (`Tree.relied_facts`) only where the relevance analysis did not slice
+  the branch by itself, and for a branch sliced only assuming the facts; the graph's own facts
+  (library facts used, `@NotCalledBack`) always count once the graph is used. The explorer logs
+  `[USER FACTS] SAFE assuming n user fact(s): ...` and records them in `stats.json` (`user_facts`,
+  with the irrelevance facts checked and refuted). `@NotCalledBack` is also checked at run time: a
+  callback into such a method refutes it (`UserFacts.calledBack`, reported as `REFUTED ...` among the
+  trace's facts), and the verdict cannot be SAFE.
+- **Results:** swat-benchmarks `user-facts` and `extractor-facts` (RESULTS.md, "Hand-written
+  facts", "Hand-written facts in the extractor"); agent test `UserFactsAgentSpec`; explorer
+  `tests.test_relevance` (`UserFactsTest`).
+
+**Loop summaries** (applied by executor `symbolic/summary`): diamonds (an int `if` whose sides are
 straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting loops
 (`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged `merged` and
 `dfs` treats them as no decision, like sliced ones. A counting loop whose body does other things
@@ -129,8 +245,8 @@ re-entries). `TaintCheck` drops a summary whose merged values could reach a call
 store, an array index or size, or a return, since a dropped constraint must not be needed where the
 executor concretizes (13 false SAFE before, via `Verifier.assume`). Ignoring a `merged` flag is
 always sound. Config `loopSummaries` (on in `sv-comp.cfg`), `--no-loop-summaries`. Results, limits,
-next steps: swat-benchmarks/RESULTS.md, "Loop summarization". Pre-pass tests: `./gradlew
-:symbolic-executor:test --tests 'de.uzl.its.swat.symbolic.summary.*'`.
+next steps: swat-benchmarks/RESULTS.md, "Loop summarization". The analysis' tests are in
+cfg-extraction (see loop facts above).
 
 **Other exploration features:**
 
@@ -146,7 +262,8 @@ next steps: swat-benchmarks/RESULTS.md, "Loop summarization". Pre-pass tests: `.
   (`JavaRemainder`) is exact where the quotient is at most 1 in magnitude. Both are declared
   approximate, so a branch over them is a precision loss and rules out SAFE. Before 2026-11-03
   `%` had no formula at all and silently gave false SAFE (PieSegment).
-- **Loop-head state matching** (`loopStateMatching`, executor `LoopStateMatcher`; explorer
+- **Loop-head state matching** (`loopStateMatching`, executor `LoopStateMatcher`, heads from the
+  loop facts; explorer
   `--no-loop-state-matching`): a branch below a state already reached at a smaller position is not
   flipped. It is what makes nondet-guarded loops with a repeating concrete state SAFE (28 tasks of
   sv-benchmarks valid-assert, 27 of them in `float_unboundedloop`, +56 points, with dfs and
@@ -154,6 +271,23 @@ next steps: swat-benchmarks/RESULTS.md, "Loop summarization". Pre-pass tests: `.
   into untracked code other than a whitelist (`isPureCall`): from 2026-10-19 to 2026-11-03
   `Class.desiredAssertionStatus`, which every class with an `assert` calls, was missing, and the
   feature did nothing in any valid-assert task.
+- **Only live locals are hashed** (since 2026-11-11, cfg-extraction `LoopHeads`, loop facts
+  version 2): a local dead at the head (written again before any read, exception edges included)
+  is neither hashed nor required to be concrete. It changed no verdict on sv-benchmarks or
+  swat-benchmarks valid-assert (`run_20261111_193209`, `_194711`); swat-benchmarks `loop-liveness`
+  shows where it does (a symbolic input in a local that is dead at the head) and has the
+  soundness pairs (RESULTS.md, "Loop-state matching with live locals only").
+- **Heads in callees** (since 2026-11-13, loop facts version 3): the head's method no longer has to
+  be the only application frame. cfg-extraction's `LoopHeads.callSites` lists the call sites whose
+  operand stack holds only the call's arguments, with the locals live after the call; a `LOOP_CALL`
+  probe before each (to application code) records those locals on the caller's shadow frame
+  (`Frame.loopCall`, with the iid of the call's INVOKE). At a head in a callee every frame below
+  must have such a record for the call that pushed the frame above it, the application frames must
+  be contiguous (no library frame between them: a callback) and the shadow stack must hold exactly
+  them; the hash adds each caller's call site and live locals (only those must be concrete). A head
+  in the entry method hashes as before. Lambdas still stop all states (`invokedynamic`), threads
+  are still excluded. swat-benchmarks `loop-frames` (RESULTS.md, "Loop-state matching across
+  frames").
 - **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.

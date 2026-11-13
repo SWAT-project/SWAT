@@ -22,17 +22,10 @@ import lombok.Setter;
 import static java.lang.Thread.currentThread;
 @SuppressWarnings("removal")
 public class Verifier {
-    private static long nextId = 0;
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
     private static final Config config;
     static {
         config = Config.instance();
-    }
-
-    public static long getNextId() {
-        long id = nextId;
-        nextId++;
-        return id;
     }
 
     @Getter @Setter private static HashMap<String, Queue<String>> inputs = new HashMap<>();

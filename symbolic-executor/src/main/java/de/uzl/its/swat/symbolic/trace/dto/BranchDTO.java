@@ -55,6 +55,16 @@ public class BranchDTO {
         return this;
     }
 
+    // See BranchElement: the hand-written irrelevance fact covering the branch.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String userFact;
+
+    public BranchDTO userFact(String userFact) {
+        this.userFact = userFact;
+        return this;
+    }
+
     // See BranchElement: merged only if the explorer finds the loop's other effects irrelevant.
     @SuppressWarnings("unused")
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)

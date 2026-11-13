@@ -59,6 +59,9 @@ def extract_testcases(path: Path) -> list[VerificationTask]:
                     'command': None,
                     'result': None,
                     'benchmark_root': root,
+                    # swat-benchmarks tasks whose labels assume their hand-written facts
+                    # (options: swat-user-facts: true; see the explorer's --user-facts)
+                    'user_facts': bool((data.get('options') or {}).get('swat-user-facts', False)),
                 }
                 ver_tasks.append(ver_task)
 

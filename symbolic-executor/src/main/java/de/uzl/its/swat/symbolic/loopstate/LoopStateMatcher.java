@@ -27,16 +27,22 @@ import java.util.Map;
  * Hashes the program state at a loop head.
  *
  * <p>The state is everything the rest of the execution depends on, apart from the inputs still to
- * be read: the loop head, the locals defined there, the static fields of the initialized
- * application classes, the set of those classes, and the heap reachable from all of these. The
- * hash is only computed when the state is fully known and fully concrete; otherwise there is none:
+ * be read: the loop head, the locals live there, the application frames below the head's (each
+ * frame's call site, where it continues after the call returns, and its locals live after that
+ * call), the static fields of the initialized application classes, the set of those classes, and
+ * the heap reachable from all of these. The hash is only computed when the state is fully known and
+ * fully concrete; otherwise there is none:
  *
  * <ul>
- *   <li>the head's method is the only application frame on the stack (the frames below it run no
- *       application code after it returns) and the target runs no other thread;
- *   <li>no shadow value of the head's locals, of another shadow frame, of a static field or of the
- *       shadow heap is symbolic. A concrete state is then the same on every execution that takes
- *       the same branches up to the head, whatever its inputs;
+ *   <li>the application frames on the stack are contiguous (no library frame between two of them:
+ *       library code would continue with state that is not hashed), each frame below the head's
+ *       was entered through a call site with loop facts (its LOOP_CALL probe recorded the caller's
+ *       live locals; a call site with values on the operand stack below its arguments has none),
+ *       and the target runs no other thread. The frames below the lowest application frame run no
+ *       application code after it returns;
+ *   <li>no shadow value of the head's locals, of the callers' live locals, of the other shadow
+ *       frames, of a static field or of the shadow heap is symbolic. A concrete state is then the
+ *       same on every execution that takes the same branches up to the head, whatever its inputs;
  *   <li>the reachable heap consists of application objects, enum constants of application enums,
  *       arrays and plain {@code Object}s only. Strings, boxed values and library objects are not
  *       hashed, since part of their identity (interning, caches) or content lies outside the
@@ -80,6 +86,29 @@ public final class LoopStateMatcher {
 
     private LoopStateMatcher() {}
 
+    /**
+     * The state of a caller at a call site with loop facts, recorded on its shadow frame by the
+     * site's LOOP_CALL probe.
+     *
+     * @param site the call site
+     * @param invoke the iid of the call's INVOKE: the call site of the frame the call pushed
+     * @param locals the values of the site's live locals, in the order of its slots
+     */
+    public record PendingCall(LoopHeadProbes.Call site, long invoke, Object[] locals) {}
+
+    /**
+     * Records the caller's state at a call site with loop facts on the caller's shadow frame, which
+     * is still the active one (the probe comes before the call's INVOKE).
+     */
+    public static void enterCall(de.uzl.its.swat.symbolic.instruction.LOOP_CALL inst, ShadowContext shadow) {
+        if (stopped || shadow.getFrameStack().isEmpty()) {
+            return;
+        }
+        LoopHeadProbes.Call site = LoopHeadProbes.getCall(inst.site);
+        shadow.getActiveFrame().setLoopCall(site == null || inst.locals.length != site.slots().length
+                ? null : new PendingCall(site, inst.invoke, inst.locals));
+    }
+
     /** Thrown when the state cannot be hashed. */
     private static final class Unhashable extends Exception {
         Unhashable() {
@@ -110,16 +139,21 @@ public final class LoopStateMatcher {
         if (stopped) {
             return null;
         }
-        LoopHeads.Head head = LoopHeads.get(inst.head);
+        LoopHeadProbes.Head head = LoopHeadProbes.get(inst.head);
         if (head == null || threads != 1 || inst.locals.length != head.slots().length) {
             logger.debug("[LOOP STATE] Not hashed: unknown head or several threads");
             return null;
         }
         long start = System.nanoTime();
         try {
-            checkStack(head);
-            checkShadow(head, shadow, shadowStatics);
-            String h = hash(head, inst.locals);
+            List<StackWalker.StackFrame> app = applicationFrames();
+            List<PendingCall> callers = app.size() == 1 ? List.of() : callers(head, app, shadow);
+            if (!app.get(0).getClassName().replace('.', '/').equals(head.owner())
+                    || !app.get(0).getMethodName().equals(head.method())) {
+                throw unhashable("other application frames on the stack");
+            }
+            checkShadow(head, shadow, shadowStatics, callers);
+            String h = hash(head, inst.locals, callers);
             logger.debug("[LOOP STATE] {}: {}", inst.head, h);
             if (!seen.add(h)) {
                 // The explorer leaves out everything after a repeat on this path anyway
@@ -189,20 +223,68 @@ public final class LoopStateMatcher {
         }
     }
 
-    /** The head's method must be the only application frame on the stack. */
-    private static void checkStack(LoopHeads.Head head) throws Unhashable {
-        List<String> app = StackWalker.getInstance().walk(s -> s
-                .map(f -> f.getClassName().replace('.', '/'))
-                .filter(LoopStateMatcher::isApplicationClassName)
-                .limit(2)
-                .toList());
-        if (app.size() != 1 || !app.get(0).equals(head.owner())) {
-            throw unhashable("other application frames on the stack");
+    /**
+     * The application frames on the stack, the head's first. They must be contiguous: a library
+     * frame between two of them (a callback) continues with state that is not hashed. SWAT's own
+     * frames (the probe's) are skipped; hidden frames (lambda forms) are not shown.
+     */
+    private static List<StackWalker.StackFrame> applicationFrames() throws Unhashable {
+        List<StackWalker.StackFrame> frames = StackWalker.getInstance().walk(s -> s.toList());
+        List<StackWalker.StackFrame> app = new java.util.ArrayList<>();
+        boolean ended = false;
+        for (StackWalker.StackFrame f : frames) {
+            String name = f.getClassName().replace('.', '/');
+            if (name.startsWith(SWAT_PACKAGE)) {
+                continue;
+            }
+            if (isApplicationClassName(name)) {
+                if (ended) {
+                    throw unhashable("library frame between application frames");
+                }
+                app.add(f);
+            } else if (!app.isEmpty()) {
+                ended = true;
+            }
         }
+        if (app.isEmpty()) {
+            throw unhashable("no application frame");
+        }
+        return app;
     }
 
-    private static void checkShadow(LoopHeads.Head head, ShadowContext shadow,
-            Map<String, Value<?, ?>[]> shadowStatics) throws Unhashable {
+    /**
+     * The callers' states of a head reached in a callee, from the head's caller down: one per
+     * application frame below the head's. The shadow stack must hold exactly the application
+     * frames (the lowest one is the initial frame when it is the entry method), and each frame below
+     * the top must have recorded, at the call site that pushed the frame above it, its live locals.
+     */
+    private static List<PendingCall> callers(LoopHeadProbes.Head head, List<StackWalker.StackFrame> app,
+            ShadowContext shadow) throws Unhashable {
+        List<Frame> stack = shadow.getFrameStack();
+        int n = app.size();
+        if (stack.size() != n) {
+            throw unhashable("shadow stack out of step with the application frames");
+        }
+        List<PendingCall> callers = new java.util.ArrayList<>(n - 1);
+        for (int k = 1; k < n; k++) {
+            Frame above = stack.get(n - k);
+            Frame frame = stack.get(n - k - 1);
+            StackWalker.StackFrame real = app.get(k);
+            PendingCall call = frame.getLoopCall();
+            String owner = real.getClassName().replace('.', '/');
+            boolean entry = k == n - 1 && frame.getClassName().equals(ShadowContext.getINITIAL_FRAME_NAME());
+            if (call == null || call.invoke() != above.getCallSite() || above.getCallSite() < 0
+                    || !call.site().owner().equals(owner) || !call.site().method().equals(real.getMethodName())
+                    || !(entry || (owner.equals(frame.getClassName()) && real.getMethodName().equals(frame.getMethodName())))) {
+                throw unhashable("caller without a recorded call site");
+            }
+            callers.add(call);
+        }
+        return callers;
+    }
+
+    private static void checkShadow(LoopHeadProbes.Head head, ShadowContext shadow,
+            Map<String, Value<?, ?>[]> shadowStatics, List<PendingCall> callers) throws Unhashable {
         Frame active = shadow.getActiveFrame();
         // The entry method runs in the initial frame
         boolean entry = active.getClassName().equals(ShadowContext.getINITIAL_FRAME_NAME())
@@ -217,11 +299,22 @@ public final class LoopStateMatcher {
                 requireConcrete(locals.get(slot));
             }
         }
-        for (Frame frame : shadow.getFrameStack()) {
-            if (frame != active) {
-                requireConcrete(frame.getLocals());
-                requireConcrete(frame.getOperandStack());
+        List<Frame> stack = shadow.getFrameStack();
+        for (int k = 0; k < callers.size(); k++) {
+            // A caller's dead locals cannot influence the rest of the execution
+            Frame frame = stack.get(stack.size() - 2 - k);
+            List<Value<?, ?>> callerLocals = frame.getLocals();
+            for (int slot : callers.get(k).site().slots()) {
+                if (slot < callerLocals.size()) {
+                    requireConcrete(callerLocals.get(slot));
+                }
             }
+            requireConcrete(frame.getOperandStack());
+        }
+        for (int k = 0; k < stack.size() - 1 - callers.size(); k++) {
+            Frame frame = stack.get(k);
+            requireConcrete(frame.getLocals());
+            requireConcrete(frame.getOperandStack());
         }
         for (Map.Entry<String, Value<?, ?>[]> e : shadowStatics.entrySet()) {
             if (e.getKey() != null && !e.getKey().startsWith(SWAT_PACKAGE)) {
@@ -260,7 +353,7 @@ public final class LoopStateMatcher {
         return c.getClassLoader() != null && !c.isHidden() && isApplicationClassName(c.getName().replace('.', '/'));
     }
 
-    private static String hash(LoopHeads.Head head, Object[] locals) throws Unhashable {
+    private static String hash(LoopHeadProbes.Head head, Object[] locals, List<PendingCall> callers) throws Unhashable {
         MessageDigest md;
         try {
             md = MessageDigest.getInstance("SHA-256");
@@ -273,6 +366,15 @@ public final class LoopStateMatcher {
             for (int k = 0; k < locals.length; k++) {
                 out.writeInt(head.slots()[k]);
                 enc.local(head.kinds()[k], locals[k]);
+            }
+            // Where each caller continues and what it still reads (none for a head in the entry
+            // method, whose hash is as before)
+            for (PendingCall call : callers) {
+                out.writeUTF(call.site().name());
+                for (int k = 0; k < call.locals().length; k++) {
+                    out.writeInt(call.site().slots()[k]);
+                    enc.local(call.site().kinds()[k], call.locals()[k]);
+                }
             }
             String[] classes = ClassInits.snapshot();
             out.writeInt(classes.length);
@@ -332,10 +434,10 @@ public final class LoopStateMatcher {
 
         void local(char kind, Object value) throws IOException, Unhashable, IllegalAccessException {
             switch (kind) {
-                case LoopHeads.INT -> out.writeInt((Integer) value);
-                case LoopHeads.LONG -> out.writeLong((Long) value);
-                case LoopHeads.FLOAT -> out.writeInt(Float.floatToRawIntBits((Float) value));
-                case LoopHeads.DOUBLE -> out.writeLong(Double.doubleToRawLongBits((Double) value));
+                case LoopHeadProbes.INT -> out.writeInt((Integer) value);
+                case LoopHeadProbes.LONG -> out.writeLong((Long) value);
+                case LoopHeadProbes.FLOAT -> out.writeInt(Float.floatToRawIntBits((Float) value));
+                case LoopHeadProbes.DOUBLE -> out.writeLong(Double.doubleToRawLongBits((Double) value));
                 default -> ref(value);
             }
         }

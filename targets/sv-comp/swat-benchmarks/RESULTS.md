@@ -808,3 +808,276 @@ VIOLATION, so it needs its own soundness review.
   need one round per iteration, and plain DFS starves the branches behind them: it keeps flipping
   the loop's exit one iteration further (`body-branch`, `heap-in-loop`, `body-*-relevant`: 130+
   rounds, UNKNOWN). `--search-order coverage` addresses that independently.
+
+## Loop-state matching with live locals only, 2026-11-12
+
+cfg-extraction `LoopHeads` (`2930f8c`) leaves locals that are dead at a loop head out of the
+state the executor hashes there (and out of what must be concrete). On sv-benchmarks and
+swat-benchmarks valid-assert it changed no verdict (`run_20261111_193209`, `_194711`), so the
+suite `loop-liveness` shows where it matters (300 s, coverage):
+
+| task | without liveness (`run_20261112_111222`) | with (`run_20261112_111606`) |
+|---|---|---|
+| `dead-input_true` | UNKNOWN (284 rounds) | SAFE (5 rounds, 3 loop-state prunes) |
+| `dead-input-nested_true` | UNKNOWN (282 rounds) | SAFE (17 rounds, 15 prunes) |
+| `dead-input_false` | VIOLATION | VIOLATION |
+| `live-after-loop_false` | VIOLATION | VIOLATION |
+| `handler-reads_false` | VIOLATION | VIOLATION |
+
+The two soundness tasks catch a wrong liveness (checked by mutation, 120 s): ignoring exception
+edges turns `handler-reads_false` into a false SAFE (`run_20261112_111508`), treating every local
+as dead turns both into false SAFE (`run_20261112_111540`).
+
+## Loop-state matching across frames, 2026-11-13
+
+Loop-state matching (`LoopStateMatcher`) used to hash a state only when the head's method was the
+only application frame on the stack, i.e. in practice only in `main`. Now each frame below the
+head's contributes its call site and its locals live after the call (cfg-extraction
+`LoopHeads.callSites`, loop facts version 3; a `LOOP_CALL` probe records them at the call). The
+application frames must be contiguous (no callback), and only the callers' live locals must be
+concrete. Suite `loop-frames` (300 s, coverage; one frame only: the same code with heads in
+callees left unhashed, `run_20261113_122917`, 120 s; across frames `run_20261113_123557`):
+
+| task | one frame | across frames |
+|---|---|---|
+| `callee-loop_true` | UNKNOWN (~60 rounds) | SAFE (5 rounds, 3 loop-state prunes) |
+| `nested-callee_true` | UNKNOWN | SAFE (6, 3) |
+| `instance-callee_true` | UNKNOWN | SAFE (8, 3) |
+| `dead-caller-input_true` | UNKNOWN | SAFE (5, 4) |
+| `two-sites_false` | VIOLATION | VIOLATION |
+| `caller-local_false` | VIOLATION | VIOLATION |
+
+Checked by mutation (120 s): leaving the call site out of the hash turns `two-sites_false` into a
+false SAFE (`run_20261113_123002`), leaving the callers' locals out turns `caller-local_false` into
+one (`run_20261113_123012`), and requiring every caller local to be concrete (no liveness in the
+callers) makes `dead-caller-input_true` UNKNOWN again (`run_20261113_123024`).
+
+Regressions (300 s, 32 workers, coverage), task by task: swat-benchmarks valid-assert
+`run_20261113_123557` 739 points (729 before; identical on every older task, the 6 new ones
+correct), sv-benchmarks valid-assert `run_20261113_124144` 1100, identical (loop-state prunes 48
+as before: no sv-benchmarks task loops in a callee with a repeating concrete state);
+no-runtime-exception (`--sa-no-runtime-exception`) `run_20261113_125659` 1302, identical (6 loop-state
+prunes in callees, none before, without a verdict change). No SA desync. The probes cost about 1% of the rounds of the runs
+that use their whole time.
+
+## Hand-written facts (`user-facts`), 2026-11-12
+
+Facts written into the source with SWAT's annotations module (`@Irrelevant`, `@Target`,
+`Swat.beginIrrelevant/endIrrelevant`, `Swat.summary()`; see SWAT's CLAUDE.md, "Hand-written
+facts"). 300 s, coverage; with facts `run_20261112_121835`, `--no-user-facts`
+`run_20261112_121848`:
+
+| task | without facts | with facts | fact assumed |
+|---|---|---|---|
+| `irrelevant-method_true` | UNKNOWN (188 rounds) | SAFE (2 rounds) | `@Irrelevant Main.record(I)V` |
+| `irrelevant-method_false` | VIOLATION (4) | VIOLATION (2) | same |
+| `irrelevant-region_true` | UNKNOWN (182) | SAFE (2) | the region in `main` |
+| `irrelevant-region_false` | VIOLATION (4) | VIOLATION (2) | same |
+| `summary_true` | UNKNOWN (193) | SAFE (2) | the `Swat.summary()` |
+| `summary_false` | VIOLATION (103) | VIOLATION (3) | same |
+| `target_false` | SAFE (pre-check: no assertion), wrong | VIOLATION (5) | (a target, not an assumption) |
+| `target_true` | SAFE | SAFE (6) | |
+
+- **Irrelevance:** the logging branches (3^12 paths) cannot be sliced by SWAT's relevance
+  analysis, because the assertion reads a `HashMap` and all library state is one location (`g:lib`).
+  With the fact they are no decisions (the walk shows 37 merged branches), and one path is left.
+- **Summary:** without it every `n` up to 2000 is its own path (the sum is quadratic, so SWAT's
+  affine loop summaries do not apply); with it one path covers all, with `s = n(n-1)/2` as a
+  formula, and the solver finds `n = 101` for the violation.
+- **Target:** without the fact the program has no target at all and SAFE is the only answer; with
+  it, the prepared classes throw at the start of `exec`, the pre-check (on the prepared classes) is
+  not proven, and the search reaches it.
+- **Trust:** the facts are not checked. A wrong one can hide a violation; the explorer logs
+  `[USER FACTS] SAFE assuming 1 user fact(s): ...` and `stats.json` lists them (`user_facts`).
+  No SA desync in any of the runs.
+
+Regressions with the change (user facts only where a task asks for them; 300 s, 32 workers,
+coverage), task by task against the runs before it: swat-benchmarks valid-assert
+`run_20261112_123007` 717 points (698 before, identical on every older task; the 13 new
+`loop-liveness` and `user-facts` tasks all correct); sv-benchmarks valid-assert
+`run_20261112_123611` 1100, identical; no-runtime-exception (`--sa-no-runtime-exception`)
+`run_20261112_125129` 1302 vs 1300 (`objects06` SAFE instead of UNKNOWN: the baseline ran out of
+CPU time after 224 rounds, this run finished its search at 240). No false SAFE, no SA desync.
+
+### `@Irrelevant` over callees (2026-11-12)
+
+A fact now covers everything called from the irrelevant code: the executor marks a frame entered
+from a covered call site and treats every branch above it as covered (SWAT's CLAUDE.md, "Hand-written
+facts"). New pairs, 300 s; with facts `run_20261112_140159`, `--no-user-facts` `run_20261112_140215`
+(and `run_20261112_135537` for the older tasks):
+
+| task | without facts | with facts |
+|---|---|---|
+| `irrelevant-callee_true` (constructor, `format`, `pad` below `record`) | UNKNOWN (173 rounds) | SAFE (2) |
+| `irrelevant-dispatch_true` (interface call, recursion) | UNKNOWN (195) | SAFE (2) |
+| `irrelevant-region-callee_true` (helper called from a region) | UNKNOWN (188) | SAFE (2) |
+| `irrelevant-shared_true` (helper also called from `main`) | UNKNOWN (206) | SAFE (3) |
+| their `_false` twins | VIOLATION (4, 4, 4, 82) | VIOLATION (2 each) |
+
+`irrelevant-shared_false` is the soundness check: the helper's branch decides the violation when
+`main` calls it. A fact that outlives the irrelevant frame (checked by mutation: the frame count
+never decremented) makes it a false SAFE (`run_20261112_140553`); the real code finds it.
+
+Not covered: application code that a library calls back (e.g. a consumer passed to
+`ArrayList.forEach`). The executor does not track symbolic values through library code; such
+callbacks are symbolic context loss with or without a fact. The same task with a lambda instead
+of an anonymous class hit an executor bug ("Addresses must match" in the value fetch of the
+lambda's frame): the executor took the `forEach` call's frame for the lambda body's. Fixed on
+2026-11-13 (branch `niklas/executor-fixes`): such a lambda is now a callback like the anonymous
+class.
+
+Regressions (300 s, 32 workers, coverage): swat-benchmarks valid-assert `run_20261112_141433`
+729 points (identical on every older task; the 8 new tasks correct), sv-benchmarks valid-assert
+`run_20261112_142056` 1100, identical. No false SAFE, no SA desync.
+
+## Hand-written facts in the extractor (`extractor-facts`), 2026-11-13
+
+The extractor now reads the hand-written facts itself (`--user-facts`, cfg-extraction
+`facts/UserFacts`; see SWAT's CLAUDE.md, "Hand-written facts"): `@Target` natively (also in the
+pre-check, so neither needs prepared classes any more), `@Irrelevant` and regions on the graph's
+nodes, `Swat.summary()`'s dead loop side, and two new kinds of fact: library facts (a stub file
+with the families of library state each method touches, and `nocallback`) and `@NotCalledBack`.
+120 s, coverage; with facts `run_20261113_134625`, `--no-user-facts` `run_20261113_134651`, facts
+without the second relevance pass `run_20261113_134736`:
+
+| task | without facts | with facts | assumed |
+|---|---|---|---|
+| `library-effects_true` | UNKNOWN (56 rounds) | SAFE (2) | 4 library facts |
+| `library-effects_false` | VIOLATION (28) | VIOLATION (28) | |
+| `not-called-back_true` | UNKNOWN (57) | SAFE (1) | `@NotCalledBack` |
+| `not-called-back-refuted_false` | VIOLATION (2) | VIOLATION (2), the fact refuted at run time | |
+| `irrelevant-checked_true` | SAFE (2) | SAFE (2) | none: relevance confirms it |
+| `irrelevant-refuted_false` | VIOLATION (2) | VIOLATION (2), the fact refuted | none |
+| `irrelevant-caller_true` | UNKNOWN (55) | SAFE (2); UNKNOWN without the second pass | `@Irrelevant` |
+
+- **Library facts:** `library-effects_true` is `user-facts/irrelevant-method_true` without
+  `@Irrelevant`: with the StringBuilder and HashMap families, the relevance analysis slices the
+  logging by itself. Its pair, where the assertion reads the log, stays a VIOLATION.
+- **`@NotCalledBack`:** `Main.toString()` asserts and overrides a library method, so without the
+  fact every library call is a target point and no logging branch can be sliced. In sv-benchmarks
+  that rule fires in 113 of 978 valid-assert graphs (10 of them UNKNOWN), where no facts may be
+  used. A wrong fact on a method that the first run calls back is refuted by the executor (stats:
+  `user_facts.refuted_at_run_time`), which rules out SAFE; on a path that is pruned before the
+  callback happens it is not, so the fact stays an assumption.
+- **`@Irrelevant` checked:** the relevance analysis refutes a fact whose code holds a target; before
+  `dfs` also ignored the executor's `merged` flag for it, `irrelevant-refuted_false` came out a
+  false SAFE (`run_20261113_130828`). Where the analysis slices the branch anyway the fact is not
+  counted (`irrelevant-checked_true`: "assumed 0"). A second pass assuming the facts slices the 12
+  branches in `main` that only feed `log()` in `irrelevant-caller_true`; the executor's fact alone
+  covers only `log()`'s own branch.
+- **`@Target`, `Swat.summary()`:** `user-facts` unchanged with the new rewrite
+  (`run_20261113_131113`: 16/16); the extractor marks the target and the dead side on unprepared
+  classes too.
+
+Regressions (300 s, 32 workers, coverage), task by task against the loop-frames runs:
+swat-benchmarks valid-assert `run_20261113_131347` 750 points (739; every older task identical,
+the 7 new ones correct), sv-benchmarks valid-assert `run_20261113_131933` 1100, identical,
+no-runtime-exception `run_20261113_133458` 1302, identical. No SA desync.
+
+**Not done** (ideas in the request, with the reason):
+
+- *Aliasing* (`@Unique`, `@NotAliased`): data-flow locations have no object identity (fields by
+  name and type, no points-to analysis), so a non-aliasing fact has nothing to refine. It needs
+  allocation-site locations first.
+- *Dispatch* (`@Calls`, `@OnlyImplementations`): unresolved dispatch marks 22 of 514 swat-benchmarks
+  and 23 of 978 sv-benchmarks graphs incomplete (reflection 6 and 4); that only loses the walk
+  there, soundly. Not attempted for lack of a task where it decides the verdict.
+- *Exceptions* (`@NoThrow`): a call site's runtime-exception point also covers a null receiver,
+  which a library fact cannot speak to, and the pre-check's closed world must stay checked; a
+  checked version needs the pre-check's nullness and a run-time check of the fact.
+- *Hidden code paths* (`@EntryPoint`, `@AsyncEntry`, `@ReflectiveTarget`): for threads, declared
+  entry points do not make the lockstep walk valid (interleavings); reflective targets are rare (see
+  dispatch).
+- *Input domains* (`@Range`): an assumption about the environment for the executor and explorer
+  (like `Verifier.assume`), not a fact for the extractor; it is the only kind that could make the
+  real-tools SAFE tasks reachable, and stays open.
+- *Loop invariants* (`Swat.invariant`): need an inductive check (a solver query per loop).
+
+Found on the way, and fixed (branch `niklas/more-fixes`, on `niklas/executor-fixes`, merged here):
+
+- **`Class.desiredAssertionStatus()` read and wrote all library state** (cfg-extraction
+  `e81bd99`). javac calls it in the static initializer of every class with an `assert`. An earlier
+  fix (cfg-extraction `1bef88d`, 2026-10-26) stopped counting it as reflection (which read and
+  wrote *everything*, location `*`, and made every branch of MinePump and securibench relevant);
+  from then on it fell through to the generic library heap call: it read and wrote `g:lib` and
+  every array kind, and could call back. A statement that may run such an initializer gets those
+  effects, and the assertion reads the `$assertionsDisabled` field the initializer writes, so all
+  library state and all arrays were relevant wherever an assertion sits outside the entry class. (A
+  third, unrelated fix, SWAT `41f4072`, 2026-11-03, was about loop-state matching, which stopped
+  reporting states at this call.) Now it is pure. New `relevance` family `assert-in-class` (a loop
+  that only appends to a StringBuilder, the assertion in a nested class), 300 s: before
+  (`run_20261113_150434`) SAFE/VIOLATION after 12/4 (n = 10) and 102/19 rounds (n = 100), UNKNOWN
+  for n = 1000; after (`run_20261113_143137`) all six in 2 rounds. It changed no relevance result in
+  sv-benchmarks (978 graphs, 1380 irrelevant branches before and after): there the assertions sit
+  in the entry class, or nothing around them touches library state.
+- **The executor failed on `StringBuilder.append(Object)` with an application `toString()`**
+  (SWAT `294187d`): a library model is applied only when the call's next instruction is its own end;
+  a callback runs first, so no model was applied and the builder's shadow kept its old chars as if
+  known ("Concrete value of the StringBuilder does not match the value in the stack"). Now such a
+  call makes a StringBuilder receiver's chars unknown if the method may change them (read
+  concretely next time), always with context loss (what the callback contributed is untracked);
+  a modelled container whose call runs application code is context loss when its contents or the
+  arguments are symbolic (its model is not applied either). Agent test `JdkContainerAgentSpec`
+  (`appendCallback`, fails without the fix). The callback's own branches stay untracked, as for
+  every library callback.
+
+Regressions with both fixes (300 s, 32 workers, coverage), task by task against the runs above:
+swat-benchmarks valid-assert `run_20261113_143137` 759 (750; every older task identical, the 6
+new ones correct), sv-benchmarks valid-assert `run_20261113_143723` 1100, identical,
+no-runtime-exception `run_20261113_145251` 1302, identical. No SA desync.
+
+## Hand-written facts on `real-tools`, 2026-11-12
+
+Can hand-written facts give new verdicts, or faster ones, on the two real tools (GNU getopt,
+opencsv's `CSVParser`)? `scripts/real_tools_facts.py` generates the variants (facts in the harness,
+or in a copy of the tool's source). 300 s, 16 workers, coverage; facts `run_20261112_231142`,
+unchanged tasks `run_20261112_230441`:
+
+| task | facts | verdict | rounds | queries | context loss |
+|---|---|---|---|---|---|
+| `getopt-minitar_false` | none | UNKNOWN | 97 | 293 | no |
+| `getopt-harness_false` | 4× `@Irrelevant` (usage, version, doCreate, doList) | UNKNOWN | 97 | 293 | no |
+| `getopt-minitar_true` | none | UNKNOWN | 97 | 293 | no |
+| `getopt-harness_true` | same 4 | UNKNOWN | 97 | 293 | no |
+| `getopt-wrong_false` | **wrong**: irrelevant region around the option loop | **SAFE (false)** | 1 | 0 | no |
+| `opencsv-import_false` | none | VIOLATION | 23 | 38 | yes |
+| `opencsv-region_false` | region around the embedded-quote block | VIOLATION | 22 | 36 | yes |
+| `opencsv-toarray_false` | `Swat.summary()` for `List.toArray` | VIOLATION | 23 | 38 | **no** |
+| `opencsv-import_true` | none | UNKNOWN | 183 | 353 | yes |
+| `opencsv-both_true` | both | UNKNOWN | 184 | 325 | yes |
+
+**Answer: no new verdict and no real speed-up from correct facts; the fewest facts that change a
+verdict is one, and it is wrong.**
+
+- **getopt:** the only correct facts are on the harness's exit-code code, and SA reachability
+  pruning already drops those paths (the runs are identical; 2 of the 4 facts are ever reached).
+  Every branch inside getopt decides the option it returns or `optind`, which the assertion depends
+  on, so nothing there is irrelevant. The one fact that "works", marking the option loop irrelevant,
+  is wrong: it turns the VIOLATION task into a false SAFE in one round. What limits getopt is String
+  solving (about half the time in Z3, single queries up to 52 s) and the unbounded argv strings.
+- **opencsv:** two correct facts. The embedded-quote block only shapes a field's characters (one
+  round fewer). The `toArray` summary is the same code, element by element, and removes the context
+  loss from the VIOLATION task (a VIOLATION is not downgraded by context loss, so it changes no
+  verdict). The SAFE task still had context loss (`ArrayList.get` of a token lost it on some paths,
+  even through the concrete type) and, more fundamentally, the input line is unbounded: the search
+  keeps trying lines of 7 to 25 characters until the CPU limit, so no path enumeration ends.
+- **Why the `user-facts` tasks work and these do not:** facts help where there are decisions that
+  the property does not depend on (logging, formatting) or loops with a closed form. A parser's
+  branches are exactly what decides the parsed result the property reads. What would help here are
+  facts of another kind: an input domain (a bounded line or argv, which changes the property, so an
+  assumption rather than a fact about the code), or a summary of the whole parse loop with an
+  invariant (e.g. "the number of fields is at most the number of separators plus one"), which needs
+  a checked, not a trusted, summary to be worth it. And two executor gaps: modelling
+  `List.toArray`, and the context loss of `ArrayList.get` on tokens built by `StringBuilder`.
+
+**Executor gaps closed (2026-11-13, branch `niklas/executor-fixes`):** `List.toArray(T[])` is
+modelled, and a list built by appending keeps its element shadows in order, so `get(i)` and
+`toArray` no longer lose the empty fields (StringBuilder.toString() returns one shared `""`
+object for every empty field: one object, several shadows, which the lookup by address could not
+tell apart). The facts above are no longer needed for that: unmodified `real-tools`
+(`run_20261113_113351`) has no context loss left in either opencsv task. `opencsv-import_true` is
+still UNKNOWN (CPU limit after 183 rounds): the unbounded line remains. Regressions with the fixes (on `niklas/annotations`, 300 s, coverage), task by task:
+swat-benchmarks valid-assert `run_20261113_113642` 729, sv-benchmarks valid-assert
+`run_20261113_114227` 1100, no-runtime-exception `run_20261113_115750` 1302, all identical; no SA
+desync; tasks with context loss 12 -> 10 in swat-benchmarks (the two opencsv tasks), unchanged
+(54, 36) in sv-benchmarks.

@@ -35,6 +35,8 @@ logger = log.get_logger()
 EXTRACTOR_TIMEOUT_S = 120
 # The extractor's fat jar in a cfg-extraction checkout (--sa-path); --sa-jar names the jar itself.
 EXTRACTOR_JAR = os.path.join("build", "libs", "cfg-extractor-1.0-SNAPSHOT-all.jar")
+# The extractor writes this file first, into the log directory (cfg-extraction's Main.LOOP_FACTS_FILE).
+LOOP_FACTS_FILE = "loop_facts.json"
 # The class the SV-COMP executor runs (SVCompDriver.build_command): the graph's entry without --target.
 SVCOMP_MAIN_CLASS = "Main"
 
@@ -58,6 +60,14 @@ class SAStatus(Enum):
 
 class StaticPreAnalysis:
     def __init__(self, args: argparse.Namespace) -> None:
+        # The classpath to analyse: the prepared one once class preparation succeeded (ClassPreparation)
+        self.classpath: list[str] | None = None
+        # Directories whose class files the extractor writes the loop facts into (the prepared
+        # copies, never the task's own classes): the executor reads them from there
+        self.annotate_dirs: list[str] = []
+        # Set when the driver turns the pre-analysis off for this run (e.g. user facts without
+        # prepared classes: the graph would lack the @Target assertion points)
+        self.disabled_reason: str | None = None
         self.args = args
         # -Xmx (MiB) for the extractor, and whether the budget is too small to run it at all. Set by
         # set_budget() from the resource budget; until then no explicit heap is passed (as in tests).
@@ -91,7 +101,8 @@ class StaticPreAnalysis:
 
     @property
     def enabled(self) -> bool:
-        return self.requested and self.property_supported and not self._sa_disabled_by_budget
+        return self.requested and self.property_supported and not self._sa_disabled_by_budget \
+            and self.disabled_reason is None
 
     def set_budget(self, sa_heap_mib: int | None) -> None:
         """Sets the extractor's heap from the resource budget. None means the budget is too small to
@@ -126,13 +137,22 @@ class StaticPreAnalysis:
         return os.path.join(self.args.logdir, f"{entry_class.rsplit('.', 1)[-1]}_{entry_method}_interprocedural.json")
 
     @property
+    def loop_facts_file(self) -> str:
+        """Where the extractor writes the loop facts (cfg-extraction's Main.LOOP_FACTS_FILE): the loop
+        heads and summaries of every class on the classpath, which the executor reads instead of
+        computing them (it computes those of any method the file lacks, so the file is optional)."""
+        return os.path.join(self.args.logdir, LOOP_FACTS_FILE)
+
+    @property
     def targets(self) -> str | None:
         """The graph's metadata field with the target points of the property, or None."""
         return SA_TARGETS.get(os.path.basename(getattr(self.args, "property", None) or ""))
 
     def start(self) -> None:
         if not self.enabled:
-            if self._sa_disabled_by_budget:
+            if self.disabled_reason is not None:
+                logger.info(f'[EXPLORER] Static pre-analysis is disabled: {self.disabled_reason}')
+            elif self._sa_disabled_by_budget:
                 logger.info(f'[EXPLORER] Static pre-analysis is disabled: the memory budget is too small '
                             f'for the extractor (needs about {SA_MIN_HEAP_MIB} MiB of heap).')
             elif self.requested:
@@ -245,9 +265,11 @@ class StaticPreAnalysis:
                # to the budget by set_budget(); absent only when no budget was set (e.g. tests).
                *([f"-Xmx{self._sa_heap_mib}m"] if self._sa_heap_mib is not None else []),
                "-jar", self.extractor_jar,
-               ':'.join(os.path.abspath(p) for p in self.args.classpath if not self._is_swat_library(p)),
+               ':'.join(os.path.abspath(p) for p in (self.classpath or self.args.classpath) if not self._is_swat_library(p)),
                self.args.logdir, *self.entry, "inter"] \
-              + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else [])
+              + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else []) \
+              + (["--annotate-loop-facts", ':'.join(self.annotate_dirs)] if self.annotate_dirs else []) \
+              + (["--user-facts"] if getattr(self.args, "user_facts", False) else [])
         with self._lock:
             if self._cancelled.is_set():
                 self.status = SAStatus.CANCELLED
@@ -283,6 +305,7 @@ class StaticPreAnalysis:
             'timed_out': self.status == SAStatus.TIMEOUT,
             'cancelled': self.status == SAStatus.CANCELLED,
             'rejected_reason': self.rejected_reason,
+            'disabled_reason': self.disabled_reason,
             'duration_s': self.duration,
             # Round whose branch selection first used the graph; None if it never was.
             'adopted_at_round': adopted_at_round,
