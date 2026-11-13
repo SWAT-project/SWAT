@@ -60,6 +60,14 @@ hash (UNKNOWN before). `dead-input_false` is the sanity pair; `live-after-loop_f
 read after the loop) and `handler-reads_false` (read only by a catch handler, through an exception
 edge) are VIOLATION tasks that a too-eager liveness turns into false SAFE.
 
+`loop-frames`: loop-state matching at heads in callees (2026-11-13). `callee-loop_true`,
+`nested-callee_true` (two frames deep), `instance-callee_true` (the receiver's field) and
+`dead-caller-input_true` (a symbolic input in a caller local that is dead after the call) are SAFE
+only if a state can span frames (UNKNOWN before). `two-sites_false` (the same loop from two call
+sites) and `caller-local_false` (the same call site with different live caller locals) are
+VIOLATION tasks that a hash without the call site or without the callers' locals turns into false
+SAFE.
+
 `real-tools-facts` (generated, gitignored, not for regular runs): `scripts/real_tools_facts.py`
 writes the `real-tools` tasks with hand-written facts, one of them deliberately wrong. See
 RESULTS.md, "Hand-written facts on real-tools".

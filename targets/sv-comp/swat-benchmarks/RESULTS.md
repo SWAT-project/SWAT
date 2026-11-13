@@ -828,6 +828,38 @@ The two soundness tasks catch a wrong liveness (checked by mutation, 120 s): ign
 edges turns `handler-reads_false` into a false SAFE (`run_20261112_111508`), treating every local
 as dead turns both into false SAFE (`run_20261112_111540`).
 
+## Loop-state matching across frames, 2026-11-13
+
+Loop-state matching (`LoopStateMatcher`) used to hash a state only when the head's method was the
+only application frame on the stack, i.e. in practice only in `main`. Now each frame below the
+head's contributes its call site and its locals live after the call (cfg-extraction
+`LoopHeads.callSites`, loop facts version 3; a `LOOP_CALL` probe records them at the call). The
+application frames must be contiguous (no callback), and only the callers' live locals must be
+concrete. Suite `loop-frames` (300 s, coverage; one frame only: the same code with heads in
+callees left unhashed, `run_20261113_122917`, 120 s; across frames `run_20261113_123557`):
+
+| task | one frame | across frames |
+|---|---|---|
+| `callee-loop_true` | UNKNOWN (~60 rounds) | SAFE (5 rounds, 3 loop-state prunes) |
+| `nested-callee_true` | UNKNOWN | SAFE (6, 3) |
+| `instance-callee_true` | UNKNOWN | SAFE (8, 3) |
+| `dead-caller-input_true` | UNKNOWN | SAFE (5, 4) |
+| `two-sites_false` | VIOLATION | VIOLATION |
+| `caller-local_false` | VIOLATION | VIOLATION |
+
+Checked by mutation (120 s): leaving the call site out of the hash turns `two-sites_false` into a
+false SAFE (`run_20261113_123002`), leaving the callers' locals out turns `caller-local_false` into
+one (`run_20261113_123012`), and requiring every caller local to be concrete (no liveness in the
+callers) makes `dead-caller-input_true` UNKNOWN again (`run_20261113_123024`).
+
+Regressions (300 s, 32 workers, coverage), task by task: swat-benchmarks valid-assert
+`run_20261113_123557` 739 points (729 before; identical on every older task, the 6 new ones
+correct), sv-benchmarks valid-assert `run_20261113_124144` 1100, identical (loop-state prunes 48
+as before: no sv-benchmarks task loops in a callee with a repeating concrete state);
+no-runtime-exception (`--sa-no-runtime-exception`) `run_20261113_125659` 1302, identical (6 loop-state
+prunes in callees, none before, without a verdict change). No SA desync. The probes cost about 1% of the rounds of the runs
+that use their whole time.
+
 ## Hand-written facts (`user-facts`), 2026-11-12
 
 Facts written into the source with SWAT's annotations module (`@Irrelevant`, `@Target`,
