@@ -59,7 +59,7 @@ class JdkContainerAgentSpec extends Specification {
         run(scenario).symbolicContextLoss
 
         where:
-        scenario << ["contains", "symbolicKey", "heldByUnmodelled", "lambdaCallback"]
+        scenario << ["contains", "symbolicKey", "heldByUnmodelled", "lambdaCallback", "appendCallback"]
     }
 
     def "a lambda that library code calls back runs without an executor error"() {
@@ -70,6 +70,16 @@ class JdkContainerAgentSpec extends Specification {
         !out.contains("Addresses must match")
         !out.contains("SWAT Exception")
         out.contains("long")
+    }
+
+    def "a StringBuilder whose append calls application code back is read concretely afterwards"() {
+        when:
+        String out = runOutput("appendCallback")
+
+        then:
+        !out.contains("does not match the value in the stack")
+        !out.contains("SWAT Exception")
+        out.contains("appended")
     }
 
     private Map run(String scenario) {

@@ -12,6 +12,14 @@ import org.sosy_lab.sv_benchmarks.Verifier;
  * each one ends in a branch on the symbolic string, after the string went through a container.
  */
 public class Main {
+  /** An application object whose toString() library code calls back. */
+  static class Item {
+    @Override
+    public String toString() {
+      return "item";
+    }
+  }
+
   static void branch(Object o) {
     if (((String) o).startsWith("x")) {
       System.out.println("x");
@@ -72,6 +80,14 @@ public class Main {
           String[] a = l.toArray(new String[l.size()]);
           branch(a[2]);
         }
+        break;
+      }
+      case "appendCallback": {
+        // StringBuilder.append(Object) calls Item.toString() back: no model applies, so the
+        // builder's chars become unknown (its symbolic prefix is lost), and are read concretely
+        StringBuilder b = new StringBuilder(s);
+        b.append(new Item());
+        if (b.toString().endsWith("item")) System.out.println("appended");
         break;
       }
       case "lambdaCallback": {

@@ -2490,6 +2490,40 @@ public class SymbolicInstructionVisitor implements IVisitor {
      * As {@link #recordThrowingCall}, unless the call threw at an index check of a String or
      * StringBuilder method (see {@link #recordStringCallBranches}), which the trace then explains.
      */
+    /**
+     * An instance call whose next instruction is neither its end nor its exception runs
+     * instrumented code first: the callee itself, or application code a library method calls back
+     * (StringBuilder.append(Object) calling toString()). No model is applied then, so a library
+     * object with modelled state that the call may change must not keep the state from before:
+     * a StringBuilder receiver's chars become unknown (taken from the concrete value when it is
+     * next read). Its symbolic chars, or symbolic arguments, are lost with it: context loss.
+     */
+    private void callRunsApplicationCode(String name, String desc) throws NoThreadContextException {
+        ObjectValue<?, ?> instance;
+        Value<?, ?>[] arguments;
+        try {
+            instance = stack.getInstance();
+            arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), true);
+        } catch (Exception e) {
+            return; // the callee is instrumented code with its own frame
+        }
+        if (!(instance instanceof de.uzl.its.swat.symbolic.value.reference.StringBuilderValue sbv)) {
+            return;
+        }
+        boolean symbolic = sbv.isSymbolicContent();
+        for (Value<?, ?> argument : arguments) {
+            try {
+                symbolic |= argument != null && argument.isSymbolic();
+            } catch (Exception e) {
+                symbolic = true;
+            }
+        }
+        if (sbv.unmodelledChange(name) && symbolic) {
+            logger.warn("StringBuilder.{} ran application code: its symbolic chars are lost, causes context loss", name);
+            symbolicTraceHandler.recordSymbolicContextLoss();
+        }
+    }
+
     private void recordThrowingInstanceCall(long iid, String owner, String name, String desc, long invokeId) throws NoThreadContextException {
         boolean explained;
         try {
@@ -2562,6 +2596,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
                 recordThrowingInstanceCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
+            } else {
+                callRunsApplicationCode(inst.name, inst.desc);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2599,6 +2635,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
                 recordThrowingInstanceCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
+            } else {
+                callRunsApplicationCode(inst.name, inst.desc);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2721,6 +2759,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
                 recordThrowingInstanceCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
+            } else {
+                callRunsApplicationCode(inst.name, inst.desc);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
