@@ -268,7 +268,8 @@ class StaticPreAnalysis:
                ':'.join(os.path.abspath(p) for p in (self.classpath or self.args.classpath) if not self._is_swat_library(p)),
                self.args.logdir, *self.entry, "inter"] \
               + (["--no-callback-targets"] if getattr(self.args, "sa_no_callback_targets", False) else []) \
-              + (["--annotate-loop-facts", ':'.join(self.annotate_dirs)] if self.annotate_dirs else [])
+              + (["--annotate-loop-facts", ':'.join(self.annotate_dirs)] if self.annotate_dirs else []) \
+              + (["--user-facts"] if getattr(self.args, "user_facts", False) else [])
         with self._lock:
             if self._cancelled.is_set():
                 self.status = SAStatus.CANCELLED

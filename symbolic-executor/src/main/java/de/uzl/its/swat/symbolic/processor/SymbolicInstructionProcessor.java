@@ -301,6 +301,7 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
                     // application class implementing the frame's library type was called by the
                     // application itself through that type, e.g. Runnable.run(): the graph has it.)
                     visitor.getStack().markActiveFrameCallback();
+                    de.uzl.its.swat.facts.UserFacts.calledBack(Util.formatClassName(actualClassNameFull), actualMethodIdentifier);
                 }
 
                 // Track when we enter delegation context

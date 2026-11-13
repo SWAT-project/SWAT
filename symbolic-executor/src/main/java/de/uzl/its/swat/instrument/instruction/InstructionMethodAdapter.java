@@ -96,6 +96,10 @@ public class InstructionMethodAdapter extends MethodVisitor implements Opcodes {
         if (config.isUserFacts() && de.uzl.its.swat.facts.UserFacts.IRRELEVANT.equals(adesc)) {
             methodFact = "@Irrelevant " + owner + "." + methodName + desc;
         }
+        if (config.isUserFacts() && de.uzl.its.swat.facts.UserFacts.NOT_CALLED_BACK.equals(adesc)) {
+            de.uzl.its.swat.facts.UserFacts.registerNotCalledBack(de.uzl.its.swat.common.Util.formatClassName(owner),
+                    de.uzl.its.swat.common.Util.formatMethodName(owner, methodName, desc));
+        }
         return super.visitAnnotation(adesc, visible);
     }
 

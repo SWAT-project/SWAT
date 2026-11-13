@@ -1,0 +1,9 @@
+# Hand-written library facts (SWAT user facts, read by the extractor): the state each method
+# touches, by family. Methods without facts touch all library state.
+java.lang.StringBuilder.<init>()                           writes=StringBuilder nocallback
+java.lang.StringBuilder.append(char)                       reads=StringBuilder writes=StringBuilder nocallback
+java.lang.StringBuilder.length()                           reads=StringBuilder nocallback
+java.lang.StringBuilder.charAt(int)                        reads=StringBuilder nocallback
+java.util.HashMap.<init>()                                 writes=HashMap nocallback
+java.util.HashMap.put(java.lang.Object,java.lang.Object)   reads=HashMap writes=HashMap
+java.util.HashMap.get(java.lang.Object)                    reads=HashMap

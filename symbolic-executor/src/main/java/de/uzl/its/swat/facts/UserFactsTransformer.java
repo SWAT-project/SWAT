@@ -20,8 +20,10 @@ import org.objectweb.asm.Opcodes;
  * its result in the prepared classes:
  *
  * <ul>
- *   <li>a method annotated {@code @Target} starts with {@code throw new AssertionError("@Target
- *       reached: ...")}: an assertion point for the analysis, a violation for the executor;
+ *   <li>a method annotated {@code @Target} starts with {@code UserFacts.target("@Target reached:
+ *       ...")}, which throws an AssertionError: a violation for the executor. The static analysis
+ *       reads the annotation itself (cfg-extraction's UserFacts), so the method keeps its code
+ *       for it, and a graph of unprepared classes has the target too;
  *   <li>{@code Swat.summary()} becomes {@code UserFacts.summary("<id>")}, which returns true.
  * </ul>
  *
@@ -87,12 +89,9 @@ public class UserFactsTransformer implements ClassFileTransformer {
                 public void visitCode() {
                     super.visitCode();
                     if (target != null) {
-                        super.visitTypeInsn(Opcodes.NEW, "java/lang/AssertionError");
-                        super.visitInsn(Opcodes.DUP);
                         super.visitLdcInsn(target);
-                        super.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/AssertionError", "<init>",
-                                "(Ljava/lang/Object;)V", false);
-                        super.visitInsn(Opcodes.ATHROW);
+                        super.visitMethodInsn(Opcodes.INVOKESTATIC, "de/uzl/its/".concat("swat/facts/UserFacts"),
+                                "target", "(Ljava/lang/String;)V", false);
                     }
                 }
 

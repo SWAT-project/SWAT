@@ -35,8 +35,9 @@ public final class Swat {
      *
      * Returns false, so the program runs the loop. With user facts on, SWAT makes it return true,
      * so the executor runs the summary instead: one path with the closed form, instead of one path
-     * per number of iterations. The summary is trusted: if it does not compute what the loop does,
-     * SWAT's verdict can be wrong. A SAFE verdict that relied on it says so.
+     * per number of iterations, and SWAT's static analysis treats the loop's side as dead. The
+     * summary is trusted: if it does not compute what the loop does, SWAT's verdict can be wrong. A
+     * SAFE verdict that relied on it says so.
      */
     public static boolean summary() {
         return false;

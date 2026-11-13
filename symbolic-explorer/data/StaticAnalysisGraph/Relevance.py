@@ -71,11 +71,20 @@ class RelevanceStats:
     no_postdominator: int = 0
     all_relevant: bool = False
     iterations: int = 0
+    # Hand-written irrelevance facts (user facts): those used, those refuted (see _user_facts),
+    # and the branches irrelevant only if the facts hold
+    user_facts: list[str] | None = None
+    refuted_facts: list[str] | None = None
+    irrelevant_assuming: int = 0
 
     def as_dict(self) -> dict[str, Any]:
-        return dict(branches=self.branches, irrelevant=self.irrelevant,
-                    no_postdominator=self.no_postdominator, all_relevant=self.all_relevant,
-                    iterations=self.iterations)
+        d = dict(branches=self.branches, irrelevant=self.irrelevant,
+                 no_postdominator=self.no_postdominator, all_relevant=self.all_relevant,
+                 iterations=self.iterations)
+        if self.user_facts is not None:
+            d.update(user_facts=self.user_facts, refuted_facts=self.refuted_facts,
+                     irrelevant_assuming=self.irrelevant_assuming)
+        return d
 
 
 class Relevance:
@@ -235,7 +244,111 @@ class Relevance:
     # --- the analysis ---------------------------------------------------------------------------
 
     def compute(self) -> RelevanceStats:
+        """Sets irrelevant, summary_ok and region on every branch; with hand-written irrelevance
+        facts in the graph (user facts), also checks them and sets irrelevant_assuming (see
+        _user_facts)."""
+        facts = self._user_facts()
+        if facts:
+            assuming = self._compute(frozenset(facts))
+        result = self._compute(frozenset())
+        for b, (irrelevant, region, summary_ok) in result.items():
+            b.irrelevant, b.region, b.summary_ok = irrelevant, region, summary_ok
+            b.irrelevant_assuming = False
+            if facts and not irrelevant and assuming[b][0] and b not in facts:
+                # Irrelevant only if the facts hold: dfs may slice it, and counts the facts
+                b.irrelevant_assuming = True
+                b.region = assuming[b][1]
+        self.stats.irrelevant = sum(1 for b in result if b.irrelevant)
+        self.stats.irrelevant_assuming = sum(1 for b in result if b.irrelevant_assuming)
+        return self.stats
+
+    def _user_facts(self) -> dict[SANode, str]:
+        """
+        The branches covered by a hand-written irrelevance fact (user facts: @Irrelevant, a
+        Swat.beginIrrelevant region; the extractor's userFact), by the fact. A fact covers the nodes
+        the extractor marked, and every method all of whose call sites it covers (callees included;
+        the executor applies a fact to everything called from its code, so a method that is also
+        called from elsewhere only in that context, which this context-insensitive analysis cannot
+        tell apart).
+
+        A fact is refuted, and not used, if its code contains a target point, may end the program,
+        or calls code that may reach a target point: whether such code runs, which its branches
+        decide, matters. Refuted facts go to self.refuted_facts (dfs ignores them where the executor
+        applied them), the others to self.user_facts.
+        """
+        by_fact: dict[str, set[SANode]] = {}
+        for n in self.nodes:
+            if n.user_fact is not None:
+                by_fact.setdefault(n.user_fact, set()).add(n)
+        self.user_facts: set[str] = set()
+        self.refuted_facts: set[str] = set()
+        if not by_fact:
+            return {}
+        entries: dict[Method, list[SANode]] = {}
+        call_sites_into: dict[Method, list[SANode]] = {}
+        for cs in self.call_sites:
+            for e in cs.callees:
+                call_sites_into.setdefault(e.method, []).append(cs)
+        covered_branches: dict[SANode, str] = {}
+        for fact, marked in by_fact.items():
+            covered = set(marked)
+            methods: set[Method] = set()
+            changed = True
+            while changed:
+                changed = False
+                for m, sites in call_sites_into.items():
+                    if m not in methods and m in self.by_method and sites and all(s in covered for s in sites):
+                        methods.add(m)
+                        covered |= set(self.by_method[m])
+                        changed = True
+            refuted = False
+            for n in covered:
+                if n.isTarget or n.isIncomplete or n.terminates or self._method_terminates_at(n):
+                    refuted = True
+                    break
+                if n.is_call_site() and any(e.method not in methods and e.reachesTargetSameLevel for e in n.callees):
+                    refuted = True
+                    break
+            if refuted:
+                self.refuted_facts.add(fact)
+                continue
+            self.user_facts.add(fact)
+            for n in covered:
+                if n.is_branch():
+                    covered_branches.setdefault(n, fact)
+        self.stats.user_facts = sorted(self.user_facts)
+        self.stats.refuted_facts = sorted(self.refuted_facts)
+        return covered_branches
+
+    def _method_terminates_at(self, n: SANode) -> bool:
+        """A call site whose callees may end the program."""
+        return n.is_call_site() and any(self._terminating_method(e.method) for e in n.callees)
+
+    def _terminating_method(self, m: Method) -> bool:
+        if not hasattr(self, "_terminating"):
+            callees_of: dict[Method, set[Method]] = {}
+            for cs in self.call_sites:
+                for e in cs.callees:
+                    callees_of.setdefault(cs.method, set()).add(e.method)
+            term = {mm: any(x.terminates for x in ns) for mm, ns in self.by_method.items()}
+            changed = True
+            while changed:
+                changed = False
+                for caller, called in callees_of.items():
+                    if not term.get(caller) and any(term.get(c) for c in called):
+                        term[caller] = True
+                        changed = True
+            self._terminating = term
+        return bool(self._terminating.get(m))
+
+    def _compute(self, forced: frozenset[SANode]) -> dict[SANode, tuple[bool, frozenset[SANode] | None, bool]]:
+        """
+        The relevance analysis proper: (irrelevant, region, summary_ok) per branch. The branches in
+        `forced` are taken to be irrelevant (they never become relevant, so what they read does
+        not become relevant through them).
+        """
         nodes = self.nodes
+        self.stats = RelevanceStats(user_facts=self.stats.user_facts, refuted_facts=self.stats.refuted_facts)
         # Which methods may end the program, and which global locations they may write, callees
         # included (least fixpoints over the call graph).
         callees_of: dict[Method, set[Method]] = {m: set() for m in self.by_method}
@@ -401,9 +514,10 @@ class Relevance:
                 read |= self.scoped(n.method, n.call.get("base", []))
             return read
 
-        relevant = set(no_ipdom)
+        relevant = set(b for b in no_ipdom if b not in forced)
         for b in no_ipdom:
-            add(reads_of(b))
+            if b not in forced:
+                add(reads_of(b))
         candidates = [b for b in branches + throwers if b in regions]
         callers_of: dict[Method, set[Method]] = {}
         for caller, called in callees_of.items():
@@ -428,7 +542,7 @@ class Relevance:
             changed = False
             relevant_methods = methods_running(relevant)
             for b in candidates:
-                if b in relevant:
+                if b in relevant or b in forced:
                     continue
                 r = regions[b]
                 if (r.reaches_target or r.terminates
@@ -447,11 +561,11 @@ class Relevance:
         # other things, which must not matter (see dfs and the executor's LoopSummaries).
         relevant_methods = methods_running(relevant)
 
+        result: dict[SANode, tuple[bool, frozenset[SANode] | None, bool]] = {}
         for b in branches:
             irrelevant = not everything and b not in relevant and b in regions
-            b.irrelevant = irrelevant
-            b.region = regions[b].nodes if irrelevant else None
-            b.summary_ok = False
+            region = regions[b].nodes if irrelevant else None
+            result[b] = (irrelevant, region, False)
             if everything or b not in regions:
                 continue
             r = regions[b]
@@ -460,10 +574,8 @@ class Relevance:
                     or any(x in relevant and x is not b for x in r.nodes)
                     or not r.callee_methods.isdisjoint(relevant_methods)):
                 continue
-            b.summary_ok = True
-            b.region = r.nodes
-        self.stats.irrelevant = sum(1 for b in branches if b.irrelevant)
-        return self.stats
+            result[b] = (irrelevant, r.nodes, True)
+        return result
 
 
 def in_region(region_owner: SANode, owner_stack: CallStack, node: SANode, stack: CallStack) -> bool:

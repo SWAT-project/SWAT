@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>{@code Swat.summary()}: the class preparation ({@link UserFactsTransformer}) replaces the
  *       call by one to {@link #summary(String)}, which returns true, so the hand-written summary
  *       runs instead of the loop.
- *   <li>{@code @Target}: the class preparation throws an AssertionError at the start of the method.
+ *   <li>{@code @Target}: the class preparation calls {@link #target} at the start of the method.
  * </ul>
  *
  * The facts a run relied on ({@link #used}) go into its trace, so that the explorer can say that a
@@ -30,10 +30,15 @@ public final class UserFacts {
     public static final String PACKAGE = "de/uzl/its/".concat("swat/annotations/");
     public static final String IRRELEVANT = "L" + PACKAGE + "Irrelevant;";
     public static final String TARGET = "L" + PACKAGE + "Target;";
+    public static final String NOT_CALLED_BACK = "L" + PACKAGE + "NotCalledBack;";
+    /** The prefix of a fact a run refuted, among the facts it reports (see {@link #refute}). */
+    public static final String REFUTED = "REFUTED ";
     public static final String SWAT = PACKAGE + "Swat";
 
     private static final Map<Long, String> irrelevant = new ConcurrentHashMap<>();
     private static final Set<String> used = ConcurrentHashMap.newKeySet();
+    /** The methods annotated {@code @NotCalledBack}, by class and method (as the class depot names them). */
+    private static final Set<String> notCalledBack = ConcurrentHashMap.newKeySet();
 
     private UserFacts() {}
 
@@ -47,6 +52,26 @@ public final class UserFacts {
         return irrelevant.get(GlobalStateForInstrumentation.baseIid(iid));
     }
 
+    /** A method annotated {@code @NotCalledBack} (class and method as the class depot formats them). */
+    public static void registerNotCalledBack(String cname, String method) {
+        notCalledBack.add(cname + "#" + method);
+    }
+
+    /**
+     * Library code called back into a method: if it is annotated {@code @NotCalledBack}, the fact
+     * is refuted, and the run reports it (the explorer then never says SAFE).
+     */
+    public static void calledBack(String cname, String method) {
+        if (!notCalledBack.isEmpty() && notCalledBack.contains(cname + "#" + method)) {
+            refute("@NotCalledBack " + cname + "." + method);
+        }
+    }
+
+    /** Records that a run showed a fact to be wrong. */
+    public static void refute(String fact) {
+        used.add(REFUTED + fact);
+    }
+
     /** Records that this run relied on a fact. */
     public static void use(String fact) {
         used.add(fact);
@@ -55,6 +80,11 @@ public final class UserFacts {
     /** The facts this run relied on, sorted. */
     public static List<String> used() {
         return used.stream().sorted().toList();
+    }
+
+    /** Called at the start of a method annotated {@code @Target}: reaching it is a violation. */
+    public static void target(String description) {
+        throw new AssertionError(description);
     }
 
     /**

@@ -44,6 +44,8 @@ class Tree:
         self.approximate_traces: set[str] = set()
         # The hand-written facts any execution relied on (user facts): a SAFE verdict assumes them.
         self.user_facts: set[str] = set()
+        # The hand-written facts a walk relied on (see DFS._classify): a SAFE verdict assumes them.
+        self.relied_facts: set[str] = set()
         # Traces whose execution had a StackOverflowError reach the target's code: their outcome
         # depends on the JVM's stack size, so a violation they show is not a verdict.
         self.stack_overflow_traces: set[str] = set()

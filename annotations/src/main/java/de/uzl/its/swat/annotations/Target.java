@@ -9,10 +9,11 @@ import java.lang.annotation.RetentionPolicy;
  * statement would be. Use it for sinks that should not be reachable with the inputs SWAT
  * controls (a shell command, an SQL statement, a privileged operation).
  *
- * <p>With user facts on ({@code -DuserFacts=true}, explorer {@code --user-facts}), SWAT's class
- * preparation puts {@code throw new AssertionError("@Target ...")} at the start of the method, so
- * the static analysis treats it as an assertion point and the executor reports reaching it as a
- * violation. Not for constructors (the throw would have to come after the super call).
+ * <p>With user facts on ({@code -DuserFacts=true}, explorer {@code --user-facts}), SWAT's rewrite
+ * starts the method with a call that throws {@code AssertionError("@Target ...")}, so the executor
+ * reports reaching it as a violation; the static analysis (the extractor and the property
+ * pre-check) reads the annotation itself and treats the method's entry as an assertion point. Not
+ * for constructors (the call would have to come after the super call).
  */
 @Retention(RetentionPolicy.CLASS)
 @java.lang.annotation.Target({ElementType.METHOD})

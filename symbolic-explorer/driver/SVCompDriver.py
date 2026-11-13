@@ -407,16 +407,8 @@ class SVCompDriver:
             cp = prepared
             self.sa.classpath = prepared
             self.sa.annotate_dirs = self.preparation.prepared_dirs
-            if getattr(self.args, 'user_facts', False):
-                # Only the prepared classes have the @Target throws (see ClassPreparation)
-                self.precheck.classpath = prepared
-        elif getattr(self.args, 'user_facts', False):
-            # Without prepared classes, the pre-check and the graph would not see the @Target
-            # assertion points: a proof or pruning could hide a violation
-            logger.warning('[USER FACTS] Class preparation failed: no property pre-check and no static pre-analysis')
-            self.precheck.enabled = False
-            self.precheck.status = 'disabled_user_facts_unprepared'
-            self.sa.disabled_reason = 'user facts without prepared classes'
+        # With user facts, the pre-check and the extractor read @Target themselves (as an assertion
+        # point), so both work on the original classes too: no special case if preparation failed.
 
         # Static property pre-check (on the original classes): if it proves the property, round 0
         # only cross-checks it.
@@ -906,6 +898,14 @@ class SVCompDriver:
             logger.warning(f'[SVCOMP] Found reference semantic change (reference comparison decided by symbolic values SWAT does not encode) - downgrading {verdict.name} to UNKNOWN')
             verdict = Verdict.UNKNOWN
 
+        refuted = sorted(f[len('REFUTED '):] for f in Database.instance().get_tree(ENDPOINT_ID).user_facts
+                         if f.startswith('REFUTED '))
+        if refuted and verdict in (Verdict.SAFE, Verdict.NO_SYMBOLIC_VARS):
+            # A run showed a hand-written fact to be wrong (user facts; e.g. a callback into a
+            # @NotCalledBack method): the pruning that relied on it may have hidden a violation
+            logger.warning(f'[USER FACTS] Refuted at run time: {"; ".join(refuted)} - downgrading {verdict.name} to UNKNOWN')
+            verdict = Verdict.UNKNOWN
+
         if verdict == Verdict.NO_SYMBOLIC_VARS:
             verdict = Verdict.SAFE
         with self.verdict_lock:
@@ -913,7 +913,7 @@ class SVCompDriver:
                 return
             self.verdict_reported = True
             verdict_logger.info(f'[VERDICT {self.verification_category.value}] {verdict.value}')
-        facts = sorted(Database.instance().get_tree(ENDPOINT_ID).user_facts)
+        facts = self.assumed_user_facts()
         if facts:
             # Hand-written facts are trusted: say which ones a verdict relied on
             logger.warning(f'[USER FACTS] {verdict.name} assuming {len(facts)} user fact(s): {"; ".join(facts)}')
@@ -960,8 +960,32 @@ class SVCompDriver:
 
     def user_facts_stats(self) -> dict[str, Any]:
         """Whether hand-written facts were read, and which ones the verdict relied on."""
-        facts = sorted(Database.instance().get_tree(ENDPOINT_ID).user_facts)
-        return {'enabled': bool(getattr(self.args, 'user_facts', False)), 'assumed': len(facts), 'facts': facts}
+        facts = self.assumed_user_facts()
+        stats: dict[str, Any] = {'enabled': bool(getattr(self.args, 'user_facts', False)), 'assumed': len(facts),
+                                 'facts': facts}
+        index = self.sa_graph.entry_node.graph_index if self.sa_graph.entry_node is not None else None
+        if index is not None and (index.user_facts or index.refuted_facts):
+            stats['irrelevance_facts_checked'] = sorted(index.user_facts)
+            stats['irrelevance_facts_refuted'] = sorted(index.refuted_facts)
+        return stats
+
+    def assumed_user_facts(self) -> list[str]:
+        """
+        The hand-written facts (user facts) a verdict assumes: the summaries the executor ran, the
+        irrelevance facts a walk relied on (where the relevance analysis did not slice the branch
+        anyway; DFS._classify), and the facts the graph was built with (SAGraph.assumed_facts).
+        """
+        tree = Database.instance().get_tree(ENDPOINT_ID)
+        facts = {f for f in tree.user_facts if not self.is_irrelevance_fact(f) and not f.startswith('REFUTED ')} \
+            | tree.relied_facts
+        if self.sa_graph.entry_node is not None:
+            facts |= set(self.sa_graph.assumed_facts())
+        return sorted(facts)
+
+    @staticmethod
+    def is_irrelevance_fact(fact: str) -> bool:
+        """An @Irrelevant or Swat.beginIrrelevant fact as the executor names it (see UserFacts)."""
+        return fact.startswith('@Irrelevant ') or fact.startswith('Swat.beginIrrelevant ')
 
     def end_run_now(self, why: str):
         """Called by the resource budget's monitor when the run must end at once: reports UNKNOWN
