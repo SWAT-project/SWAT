@@ -46,8 +46,7 @@ public class ArrayArrayValue<TE extends Formula>
         }
         this.dims = dims;
         this.desc = desc;
-        Value.symbol = Value.symbol + Value.inc;
-        this.formula = amgr.makeArray("A_" + (Value.symbol - Value.inc), formulaType);
+        this.formula = makeBaseArray(amgr, "A", formulaType);
         this.parentRefIdx = parentRefIdx;
         this.parentRef = parentRef;
         initSymbolicArray();

@@ -1,6 +1,8 @@
 package de.uzl.its.swat.instrument.svcomp;
 
 import de.uzl.its.swat.common.Util;
+import java.util.HashMap;
+import java.util.Map;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -16,6 +18,15 @@ public class SVCompClassAdapter extends ClassVisitor {
     private final String cname;
 
     /**
+     * Number of nondet calls seen so far per source line of this class. Shared by all method
+     * adapters so that the witness can tell apart several nondet calls on one line.
+     */
+    private final Map<Integer, Integer> nondetCallsPerLine = new HashMap<>();
+
+    /** The source file name of the class (SourceFile attribute), empty if unknown. */
+    private String sourceFile = "";
+
+    /**
      * Constructor that calls the super from the default ClassVisitor
      *
      * @param cv Parent ClassVisitor
@@ -23,6 +34,14 @@ public class SVCompClassAdapter extends ClassVisitor {
     public SVCompClassAdapter(ClassVisitor cv, String cname) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
+    }
+
+    @Override
+    public void visitSource(String source, String debug) {
+        if (source != null) {
+            sourceFile = source;
+        }
+        super.visitSource(source, debug);
     }
 
     /**
@@ -55,7 +74,8 @@ public class SVCompClassAdapter extends ClassVisitor {
 
         if (!cname.equals("org/sosy_lab/sv_benchmarks/Verifier")) {
             SVCompTransformer.getPrintBox().addMsg("Method: " + name);
-            return new SVCompMethodAdapter(access, mv, cname, name, desc);
+            return new SVCompMethodAdapter(
+                    access, mv, cname, name, desc, sourceFile, nondetCallsPerLine);
         }
         return mv;
     }

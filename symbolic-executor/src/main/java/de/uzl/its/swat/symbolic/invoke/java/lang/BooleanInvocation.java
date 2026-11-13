@@ -2,7 +2,7 @@ package de.uzl.its.swat.symbolic.invoke.java.lang;
 
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
-import de.uzl.its.swat.symbolic.UFs.EqualsIgnoreCaseUF;
+import de.uzl.its.swat.symbolic.value.reference.lang.CaseMapping;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue;
@@ -229,47 +229,21 @@ public class BooleanInvocation {
     }
 
     /**
-     * Symbolic wrapper for Boolean.parseBoolean(String s).
-     * Returns true if the string argument equals "true" (case-insensitive).
-     * Implemented using EqualsIgnoreCaseUF.
+     * Symbolic wrapper for Boolean.parseBoolean(String s): "true".equalsIgnoreCase(s), i.e. s
+     * matches "true" char by char ignoring case.
      *
      * @param s The string to parse
      * @return BooleanValue representing the parsed boolean
      */
     private static BooleanValue parseBoolean(StringValue s) {
         SolverContext ctx = s.context;
-        StringFormulaManager sfm = ctx.getFormulaManager().getStringFormulaManager();
-
-        // Fast path: both concrete
+        boolean result = Boolean.parseBoolean(s.concrete);
         if (!s.isSymbolic()) {
-            return new BooleanValue(ctx, Boolean.parseBoolean(s.concrete));
+            return new BooleanValue(ctx, result);
         }
-
-        try {
-            // Boolean.parseBoolean returns "true".equalsIgnoreCase(s)
-            StringFormula trueStr = sfm.makeString("true");
-
-            EqualsIgnoreCaseUF uf = ThreadHandler.getUFHandler(currentThread().getId()).getEqualsIgnoreCaseUF();
-
-            // The symbolic boolean result
-            BooleanFormula ufCall = uf.getUFCall(trueStr, s.formula);
-
-            // Create and add constraints that define the UF behavior
-            BooleanFormula constraints = uf.createEqualsIgnoreCaseConstraints(
-                    trueStr, s.formula,
-                    "true", s.concrete,
-                    false, s.isSymbolic()  // "true" is not symbolic, s may be
-            );
-            ThreadHandler.getSymbolicTraceHandler(currentThread().getId()).addConstraint(constraints);
-
-            // Return with concrete result for concolic steering
-            boolean concreteResult = Boolean.parseBoolean(s.concrete);
-            return new BooleanValue(ctx, concreteResult, ufCall);
-
-        } catch (Exception e) {
-            // Fallback to concrete-only if UF setup fails
-            return new BooleanValue(ctx, Boolean.parseBoolean(s.concrete));
-        }
+        StringFormulaManager smgr = ctx.getFormulaManager().getStringFormulaManager();
+        return new BooleanValue(ctx, result,
+                smgr.in(s.formula, new CaseMapping(ctx.getFormulaManager()).equalIgnoringCase("true")));
     }
 
     /**

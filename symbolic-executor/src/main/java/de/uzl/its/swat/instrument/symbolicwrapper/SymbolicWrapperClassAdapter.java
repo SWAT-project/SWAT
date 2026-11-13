@@ -5,6 +5,7 @@ import de.uzl.its.swat.common.Util;
 import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.instrument.springendpoint.SpringEndpointTransformer;
 import java.util.regex.Pattern;
+import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -18,16 +19,48 @@ import org.objectweb.asm.commons.TryCatchBlockSorter;
  */
 public class SymbolicWrapperClassAdapter extends ClassVisitor {
 
+    static final String ENTRY_METHOD_NAME = "main";
+    static final String ENTRY_METHOD_DESC = "([Ljava/lang/String;)V";
+
     private String cname;
     private final Config config = Config.instance();
+    private final boolean declaresEntryMethod;
+
     /**
      * Constructor that calls the super from the default ClassVisitor
      *
      * @param cv Parent ClassVisitor
+     * @param declaresEntryMethod whether the class declares a static main(String[]) method
      */
-    public SymbolicWrapperClassAdapter(ClassVisitor cv, String cname) {
+    public SymbolicWrapperClassAdapter(ClassVisitor cv, String cname, boolean declaresEntryMethod) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
+        this.declaresEntryMethod = declaresEntryMethod;
+    }
+
+    /**
+     * Checks whether a class declares a static main(String[]) method.
+     *
+     * @param cr The reader of the class
+     * @return true if the class declares the method
+     */
+    public static boolean declaresEntryMethod(ClassReader cr) {
+        boolean[] found = {false};
+        cr.accept(
+                new ClassVisitor(Opcodes.ASM9) {
+                    @Override
+                    public MethodVisitor visitMethod(
+                            int access, String name, String desc, String signature, String[] exceptions) {
+                        if ((access & Opcodes.ACC_STATIC) != 0
+                                && name.equals(ENTRY_METHOD_NAME)
+                                && desc.equals(ENTRY_METHOD_DESC)) {
+                            found[0] = true;
+                        }
+                        return null;
+                    }
+                },
+                ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+        return found[0];
     }
 
     /**
@@ -62,6 +95,11 @@ public class SymbolicWrapperClassAdapter extends ClassVisitor {
         if (mv != null) {
             switch (config.getInstrumentationTransformer()) {
                 case SV_COMP -> {
+                    if (name.equals("<clinit>") && declaresEntryMethod) {
+                        SymbolicWrapperTransformer.getPrintBox().addMsg("Method: " + name);
+                        return new StaticInitializerEntryMethodAdapter(
+                                mv, cname + "/" + ENTRY_METHOD_NAME + ENTRY_METHOD_DESC);
+                    }
                     if (!name.equals("main")) {
                         return mv;
                     }

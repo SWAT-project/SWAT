@@ -1,0 +1,247 @@
+<!--
+This file is part of JavaSMT,
+an API wrapper for a collection of SMT solvers:
+https://github.com/sosy-lab/java-smt
+
+SPDX-FileCopyrightText: 2020 Dirk Beyer <https://www.sosy-lab.org>
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>org.sosy-lab</groupId>
+    <artifactId>java-smt</artifactId>
+    <packaging>jar</packaging>
+    <version>6.0.0-1-g1493c4018</version>
+    <name>java-smt</name>
+    <description>Unified acccess layer to SMT solvers</description>
+    <url>https://github.com/sosy-lab/java-smt</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+        </license>
+    </licenses>
+
+    <organization>
+        <name>Software Systems Lab</name>
+        <url>https://www.sosy-lab.org/</url>
+    </organization>
+
+    <scm>
+        <url>https://github.com/sosy-lab/java-smt/</url>
+        <connection>scm:git:git://github.com/sosy-lab/java-smt.git</connection>
+        <developerConnection>scm:git:git@github.com:sosy-lab/java-smt.git</developerConnection>
+    </scm>
+
+    <developers>
+        <developer>
+            <name>Karlheinz Friedberger</name>
+            <email>kfriedberger@gmail.com</email>
+            <organization>Software Systems Lab</organization>
+            <url>https://www.sosy-lab.org/people/friedberger/</url>
+            <roles>
+                <role>project maintainer</role>
+            </roles>
+        </developer>
+        <developer>
+            <name>Dirk Beyer</name>
+            <email>dirk.beyer@sosy-lab.org</email>
+            <url>https://www.sosy-lab.org/people/beyer/</url>
+            <organization>Software Systems Lab</organization>
+            <organizationUrl>http://www.sosy-lab.org/</organizationUrl>
+            <roles>
+                <role>project manager</role>
+            </roles>
+        </developer>
+    </developers>
+
+    <!-- Dependencies are automatically inserted after this line. Do not change! -->
+
+    <dependencies>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>common</artifactId>
+            <version>0.3000-609-g90a352c</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>33.4.8-jre</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava-testlib</artifactId>
+            <version>33.4.8-jre</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.google.auto.value</groupId>
+            <artifactId>auto-value-annotations</artifactId>
+            <version>1.11.0</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.checkerframework</groupId>
+            <artifactId>checker-qual</artifactId>
+            <version>3.49.5</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.google.truth</groupId>
+            <artifactId>truth</artifactId>
+            <version>1.4.5</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.google.truth.extensions</groupId>
+            <artifactId>truth-java8-extension</artifactId>
+            <version>1.4.5</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.google.errorprone</groupId>
+            <artifactId>error_prone_annotations</artifactId>
+            <version>2.41.0</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>com.github.spotbugs</groupId>
+            <artifactId>spotbugs-annotations</artifactId>
+            <version>4.9.4</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.code.findbugs</groupId>
+            <artifactId>jsr305</artifactId>
+            <version>3.0.2</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>de.uni-freiburg.informatik.ultimate</groupId>
+            <artifactId>smtinterpol</artifactId>
+            <version>2.5-1242-g5c50fb6d</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.github.uuverifiers</groupId>
+            <artifactId>princess_2.13</artifactId>
+            <version>2025-11-17</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.github.uuverifiers</groupId>
+            <artifactId>ostrich_2.13</artifactId>
+            <version>2.0</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.github.uuverifiers</groupId>
+            <artifactId>princess_2.13</artifactId>
+            <version>2025-11-17</version>
+            <optional>true</optional>
+            <exclusions>
+                <exclusion>
+                    <groupId>net.sf.squirrel-sql.thirdparty-non-maven</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>io.github.uuverifiers</groupId>
+            <artifactId>ostrich_2.13</artifactId>
+            <version>2.0</version>
+            <optional>true</optional>
+            <exclusions>
+                <exclusion>
+                    <groupId>net.sf.squirrel-sql.thirdparty-non-maven</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>edu.tum.cs</groupId>
+            <artifactId>java-cup</artifactId>
+            <version>11b-20160615</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-solver-mathsat</artifactId>
+            <version>5.6.15</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-solver-z3</artifactId>
+            <version>4.15.4</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-solver-opensmt</artifactId>
+            <version>2.9.0-gef441e1c</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-solver-optimathsat</artifactId>
+            <version>1.7.3-sosy1</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-solver-cvc4</artifactId>
+            <version>1.8-prerelease-2020-06-24-g7825d8f28</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-solver-cvc5</artifactId>
+            <version>2026-02-26-d22638a</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-solver-boolector</artifactId>
+            <version>3.2.2-g1a89c229</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-solver-bitwuzla</artifactId>
+            <version>0.8.2-339-g550ed911</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-solver-z3-legacy</artifactId>
+            <version>4.5.0-gd57a2a6dc</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.sosy-lab</groupId>
+            <artifactId>javasmt-yices2</artifactId>
+            <version>5.0.1-1258-gdad634a69</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>animal-sniffer-annotations</artifactId>
+            <version>1.18</version>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
+</project>

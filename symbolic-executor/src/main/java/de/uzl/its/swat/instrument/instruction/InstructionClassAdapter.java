@@ -8,6 +8,12 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.commons.JSRInlinerAdapter;
 import org.objectweb.asm.commons.TryCatchBlockSorter;
+import de.uzl.its.swat.config.Config;
+import de.uzl.its.cfg.loops.LoopFacts.MethodFacts;
+import de.uzl.its.swat.instrument.loopfacts.LoopFactsSource;
+import de.uzl.its.swat.symbolic.summary.SummaryProbes;
+import org.objectweb.asm.tree.MethodNode;
+import de.uzl.its.swat.symbolic.loopstate.LoopHeadProbes;
 
 /**
  * A visitor to visit a Java class. The methods of this class must be called in the following order:
@@ -17,6 +23,10 @@ import org.objectweb.asm.commons.TryCatchBlockSorter;
  */
 public class InstructionClassAdapter extends ClassVisitor {
     private final String cname;
+    /** Whether the class has a static initializer (see visitEnd). */
+    private boolean hasClinit = false;
+    /** The class's @Irrelevant fact (user facts), or null; class annotations come before the methods. */
+    private String classFact = null;
     /**
      * Constructor that calls the super from the default ClassVisitor
      *
@@ -25,6 +35,14 @@ public class InstructionClassAdapter extends ClassVisitor {
     public InstructionClassAdapter(ClassVisitor cv, String cname) {
         super(Opcodes.ASM9, cv);
         this.cname = cname;
+    }
+
+    @Override
+    public org.objectweb.asm.AnnotationVisitor visitAnnotation(String desc, boolean visible) {
+        if (Config.instance().isUserFacts() && de.uzl.its.swat.facts.UserFacts.IRRELEVANT.equals(desc)) {
+            classFact = "@Irrelevant " + cname;
+        }
+        return super.visitAnnotation(desc, visible);
     }
 
     @Override
@@ -61,6 +79,9 @@ public class InstructionClassAdapter extends ClassVisitor {
     public MethodVisitor visitMethod(
             int access, String name, String desc, String signature, String[] exceptions) {
         MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
+        if (name.equals("<clinit>")) {
+            hasClinit = true;
+        }
         if (cname.equals("de/uzl/its/swat/instrument/svcomp/Verifier") && !name.equals("assume")) {
             return mv;
         }
@@ -82,9 +103,51 @@ public class InstructionClassAdapter extends ClassVisitor {
                             name,
                             desc,
                             cname);
+            ima.setClassFact(classFact);
+            boolean loopHeads = Config.instance().isLoopStateMatching();
+            boolean summaries = Config.instance().isLoopSummaries();
+            if ((loopHeads || summaries) && !cname.startsWith("de/uzl/its/swat/")) {
+                // Collect the method to get its loop heads and loop summaries (its loop facts), then hand it on.
+                // This is the code after SWAT's own rewrites (SV-COMP, no-cache, reference equality),
+                // which renumber locals: facts of the class on disk only apply where the code hash matches.
+                return new MethodNode(Opcodes.ASM9, access, name, desc, signature, exceptions) {
+                    @Override
+                    public void visitEnd() {
+                        super.visitEnd();
+                        MethodFacts facts = LoopFactsSource.of(cname, this);
+                        if (loopHeads) {
+                            ima.setLoopHeads(LoopHeadProbes.bind(cname, this, facts.heads()));
+                            ima.setLoopCalls(LoopHeadProbes.bindCalls(cname, this, facts.calls()));
+                        }
+                        if (summaries) {
+                            ima.setLoopSummaries(facts.plans().byJump(), SummaryProbes.joins(this, facts.plans()));
+                        }
+                        accept(ima);
+                    }
+                };
+            }
             return ima;
         }
 
         return null;
+    }
+
+    /**
+     * With loop-state matching, gives a class without a static initializer one that records its
+     * initialization (see ClassInits), as the existing ones do.
+     */
+    @Override
+    public void visitEnd() {
+        if (Config.instance().isLoopStateMatching() && !hasClinit && !cname.startsWith("de/uzl/its/swat/")) {
+            MethodVisitor mv = cv.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+            if (mv != null) {
+                mv.visitCode();
+                LoopHeadProbes.emitClassInit(mv, cname);
+                mv.visitInsn(Opcodes.RETURN);
+                mv.visitMaxs(1, 0);
+                mv.visitEnd();
+            }
+        }
+        super.visitEnd();
     }
 }

@@ -49,7 +49,7 @@ public class ClassSavingTransformer implements ClassFileTransformer {
         try {
             // ToDo (Flo): checking for classBeingRedefined != null probably does not make sense
             if (!Transformer.isInstrumented(cname)) {
-                return cbuf;
+                return null;
             }
 
             ClassReader cr = new ClassReader(cbuf);
@@ -90,7 +90,7 @@ public class ClassSavingTransformer implements ClassFileTransformer {
             // The ErrorHandler has to be here as this method transfers control to ASM
             new ErrorHandler().handleException("Error while instrumenting class: " + cname, e);
         }
-        return cbuf;
+        return null;
     }
 
     public void saveClass(byte[] transformedClass, String cname) throws IOException {

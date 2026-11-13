@@ -68,6 +68,7 @@ class PerformanceAnalysis:
             logger.info(f"\n{i}. {name}")
             logger.info(f"   Total time: {total_time:.2f}s")
             logger.info(f"   Breakdown:")
+            logger.info(f"     - Static Pre-Analysis: {breakdown.get('static_pre_analysis', 0):.2f}s")
             logger.info(f"     - Symbolic Executor:   {breakdown.get('symbolic_executor', 0):.2f}s")
             logger.info(f"     - SMT Solver:          {breakdown.get('smt_solver', 0):.2f}s")
             logger.info(f"     - Symbolic Explorer:   {breakdown.get('symbolic_explorer', 0):.2f}s")

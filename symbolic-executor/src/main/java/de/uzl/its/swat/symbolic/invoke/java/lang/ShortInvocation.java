@@ -97,19 +97,8 @@ public class ShortInvocation {
     private static IntValue compareUnsigned(ShortValue x, ShortValue y) {
         SolverContext ctx = x.context;
         BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
-        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
-
-        BitvectorFormula zero = bvmgr.makeBitvector(32, 0);
-        BitvectorFormula one = bvmgr.makeBitvector(32, 1);
-        BitvectorFormula negOne = bvmgr.makeBitvector(32, -1);
-
-        // Use unsigned comparison on the 16-bit values
-        BooleanFormula isEqual = bvmgr.equal(x.formula, y.formula);
-        BooleanFormula isLess = bvmgr.lessThan(x.formula, y.formula, false);  // false = unsigned
-
-        BitvectorFormula result = bmgr.ifThenElse(isEqual, zero,
-                bmgr.ifThenElse(isLess, negOne, one));
-
+        // Short.toUnsignedInt(x) - Short.toUnsignedInt(y), as in the JDK (not -1/0/1)
+        BitvectorFormula result = bvmgr.subtract(bvmgr.extend(x.formula, 16, false), bvmgr.extend(y.formula, 16, false));
         return new IntValue(ctx, Short.compareUnsigned(x.concrete, y.concrete), result);
     }
 
@@ -171,26 +160,10 @@ public class ShortInvocation {
             throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 || args.length == 2
                 : "[SWAT] Expected 1 or 2 argument(s), got " + args.length;
-        if (args.length == 1 && args[0] instanceof StringValue sv) {
-            return parseShort(sv);
+        if (args[0] instanceof StringValue sv) {
+            return NumberParsing.parseShort(sv, args);
         }
-        // parseShort with radix not yet supported
         return PlaceHolder.instance;
-    }
-
-    /**
-     * Symbolic wrapper for Short.parseShort(String s)
-     * Parses the string argument as a signed decimal short.
-     *
-     * @param s The String containing the short representation to be parsed
-     * @return The short value represented by the argument
-     */
-    private static ShortValue parseShort(StringValue s) {
-        SolverContext ctx = s.context;
-        StringFormulaManager sfm = ctx.getFormulaManager().getStringFormulaManager();
-        BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
-        return new ShortValue(ctx, Short.parseShort(s.concrete),
-                bvmgr.makeBitvector(16, sfm.toIntegerFormula(s.formula)));
     }
 
     /**
@@ -355,11 +328,14 @@ public class ShortInvocation {
      *     type, likely a missing implementation
      */
     private static Value<?, ?> invokeValueOf(Value<?, ?>[] args)
-            throws IndexOutOfBoundsException, ValueConversionException {
+            throws IndexOutOfBoundsException, ValueConversionException, NotImplementedException {
         assert args.length == 1 || args.length == 2
                 : "Expected 1 or 2 argument(s), got " + args.length;
         if (args.length == 1 && args[0] instanceof ShortValue val) {
             return valueOf(val);
+        }
+        if (args[0] instanceof StringValue sv) {
+            return valueOf(NumberParsing.parseShort(sv, args));
         }
         return PlaceHolder.instance;
     }

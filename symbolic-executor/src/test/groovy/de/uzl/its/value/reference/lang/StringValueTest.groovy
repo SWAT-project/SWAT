@@ -1,5 +1,6 @@
 package de.uzl.its.value.reference.lang
 
+import de.uzl.its.swat.symbolic.invoke.java.lang.StringCallBranches
 import de.uzl.its.swat.symbolic.value.Value
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue
@@ -8,7 +9,7 @@ import org.objectweb.asm.Type
 import org.sosy_lab.java_smt.api.*
 import spock.lang.Specification
 import spock.lang.Unroll
-
+import spock.lang.Tag
 
 import static java.lang.Thread.currentThread
 
@@ -26,7 +27,6 @@ class StringValueTest extends Specification {
     private static final Type[] STRING_DESC = [Type.getType("Ljava/lang/String")] as Type[]
 
     def setup() {
-        ThreadHandler.init()
         if (ThreadHandler.hasThreadContext(currentThread().id)) {
             ThreadHandler.removeThreadContext(currentThread().id)
         }
@@ -157,6 +157,7 @@ class StringValueTest extends Specification {
         "Case"   | "case"   | true
     }
 
+    @Tag("slow")
     @Unroll
     def "equalsIgnoreCase(String anotherString) - Two symbolic strings" (String s1, String s2, boolean expected) {
         setup:
@@ -193,7 +194,7 @@ class StringValueTest extends Specification {
     }
 
     @Unroll
-    def "equalsIgnoreCase(String anotherString) - Two symbolic strings - enforced length" (String s1, String s2, boolean expected) {
+    def "equalsIgnoreCase(String anotherString) - Two symbolic strings - other strings of the pinned length" (String s1, String s2, boolean expected) {
         setup:
         prover.push()
         def lhs  = new StringValue(context, s1, smgr.makeVariable("s1"), -1)
@@ -203,20 +204,24 @@ class StringValueTest extends Specification {
         when:
         def result = (BooleanValue) lhs.invokeMethod("equalsIgnoreCase", STRING_DESC, args)
         addUFConstraintsFromTrace()
+        // The call's branches as they hold here: lengths, pinned length, ASCII strings
+        StringCallBranches.of(lhs, "equalsIgnoreCase", "(Ljava/lang/String;)Z", args).each {
+            prover.addConstraint(it.holds() ? it.condition() : bmgr.not(it.condition()))
+        }
+        // Other strings than the concrete ones, with the opposite result
+        prover.addConstraint(bmgr.not(smgr.equal(lhs.formula, smgr.makeString(s1))))
         forceMismatch(result.formula, expected)
-        // |s1| = 10
-        prover.addConstraint(imgr.equal(smgr.length(lhs.formula), imgr.makeNumber(10)))
 
         then:
-        !prover.isUnsat()
         result.concrete == expected
         noExceptionThrown()
 
         and:
+        // Strings with the other result exist (of the same length), and the model gives it them
+        !prover.isUnsat()
         def (s1Model, s2Model) = evaluateModel(lhs.formula, rhs.formula)
-        assert s1Model != null
-        assert s1Model.length() == 10
-        assert (s1Model.equalsIgnoreCase(s2Model)) != expected
+        s1Model.length() == s1.length()
+        s1Model.equalsIgnoreCase(s2Model) != expected
 
         cleanup:
         prover.pop()
@@ -224,6 +229,6 @@ class StringValueTest extends Specification {
         where:
         s1      | s2      | expected
         "hello" | "HELLO" | true
-        "Hello" | "bar"   | false
+        "Hello" | "World" | false
     }
 }

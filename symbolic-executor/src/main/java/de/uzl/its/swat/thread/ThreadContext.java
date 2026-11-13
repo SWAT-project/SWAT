@@ -8,7 +8,6 @@ import de.uzl.its.swat.common.exceptions.SWATAssert;
 import de.uzl.its.swat.common.exceptions.ThreadAlreadyDisabledException;
 import de.uzl.its.swat.common.exceptions.ThreadAlreadyEnabledException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
-import de.uzl.its.swat.common.logging.records.ErrorRecord;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.common.logging.LoggerUtils;
 import de.uzl.its.swat.common.logging.StatsStorage;
@@ -23,9 +22,6 @@ import de.uzl.its.swat.symbolic.trace.CoverageTraceHandler;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -35,7 +31,6 @@ import org.sosy_lab.common.ShutdownManager;
 import org.sosy_lab.common.configuration.Configuration;
 import org.sosy_lab.common.configuration.ConfigurationBuilder;
 import org.sosy_lab.common.configuration.InvalidConfigurationException;
-import org.sosy_lab.common.log.BasicLogManager;
 import org.sosy_lab.common.log.LogManager;
 import org.sosy_lab.java_smt.SolverContextFactory;
 import org.sosy_lab.java_smt.api.SolverContext;
@@ -53,7 +48,6 @@ public class ThreadContext {
     @Getter @Setter private Instruction current;
     @Getter @Setter private Long instCnt = 0L;
     @Getter private Instruction next;
-    @Getter private PrintStream statsStream;
     @Getter private boolean disabled;
     @Getter private boolean aborted;
     Config config = Config.instance();
@@ -69,6 +63,14 @@ public class ThreadContext {
 
     @Setter @Getter private int endpointID;
     @Setter @Getter private String endpointName;
+
+    // Number of endpoints entered while this context was already running, e.g. a harness main
+    // that calls another main. Their init/terminate calls only adjust this count.
+    @Getter @Setter private int nestedEndpoints = 0;
+
+    // Set while the execution was started by the entry class's static initializer and the
+    // endpoint itself has not been entered yet.
+    @Getter @Setter private boolean startedBeforeEndpoint = false;
 
     // Tracks if liftValue is called multiple times with the same index.
     @Getter private final HashMap<String, Integer> symbolicIdxOccurrence = new java.util.HashMap<>();
@@ -121,7 +123,9 @@ public class ThreadContext {
 
         logger.info(SMTConfig.asPropertiesString());
 
-        LogManager logger = BasicLogManager.create(SMTConfig);
+        // java-smt's own log is not read; a BasicLogManager would also register a JMX bean, which
+        // loads the JMX classes in every run
+        LogManager logger = LogManager.createNullLogManager();
         ShutdownManager shutdown = ShutdownManager.create();
 
         // SolverContext is a class wrapping a solver context.
@@ -136,17 +140,6 @@ public class ThreadContext {
 
 
         this.coverageTraceHandler = new CoverageTraceHandler();
-
-        try {
-
-            this.statsStream =
-                    new PrintStream(
-                            new FileOutputStream(
-                                    config.getLoggingDirectory() + "/stats_" + id + ".json",
-                                    true));
-        } catch (FileNotFoundException e) {
-            this.statsStream = System.out;
-        }
     }
 
     void checkAbortTimerExpiration() {
@@ -207,6 +200,15 @@ public class ThreadContext {
         statics.get(cIdx)[fIdx] = value;
     }
 
+    /** The shadow values of the static fields accessed so far, keyed by class name. */
+    public java.util.Map<String, Value<?, ?>[]> getStaticFields() {
+        java.util.Map<String, Value<?, ?>[]> byName = new java.util.HashMap<>();
+        for (java.util.Map.Entry<Integer, Value<?, ?>[]> e : statics.entrySet()) {
+            byName.put(classDepot.getClassName(e.getKey()), e.getValue());
+        }
+        return byName;
+    }
+
     public Value<?, ?> getStaticField(int classIndex, int runtimeFieldIndex)
             throws ThreadAlreadyEnabledException, ThreadAlreadyDisabledException, NoThreadContextException, ClassNotFoundException {
         SWATAssert.check(runtimeFieldIndex >= 0, "Field ID must be non-negative");
@@ -236,6 +238,10 @@ public class ThreadContext {
         statsStorage.getInvocations().merge(entry, 1, Integer::sum);
     }
 
+    public void recordContextLossInvocation(InvocationEntry entry) {
+        statsStorage.recordContextLossInvocation(entry);
+    }
+
 
     public long getNextSubUid(String symbolicVar) {
         long next = SubUid.getOrDefault(symbolicVar, 0L);
@@ -244,13 +250,4 @@ public class ThreadContext {
         return next;
     }
 
-    /**
-     * Records an exception that occurred during the execution of the symbolic execution. This includes swallowed
-     * assertions.
-     *
-     * @param record The error record
-     */
-    public void recordException(ErrorRecord record) {
-        statsStorage.getErrors().add(record);
-    }
 }

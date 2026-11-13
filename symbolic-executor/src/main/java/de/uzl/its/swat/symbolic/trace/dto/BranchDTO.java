@@ -5,6 +5,7 @@ public class BranchDTO {
     private final long iid;
 
     @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private String constraint;
 
     @SuppressWarnings("unused")
@@ -14,12 +15,93 @@ public class BranchDTO {
     private final String type;
 
     @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     private String inst;
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private boolean concreteOnly;
+    // See BranchElement: the branch's key and the frame stack change since the previous branch.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String key;
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private int pops;
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+    private java.util.List<String> pushes;
+
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private boolean callback;
+
+    // See BranchElement: a branch the executor adds that the static pre-analysis graph does not have.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private boolean choice;
+
+    public BranchDTO choice(boolean choice) {
+        this.choice = choice;
+        return this;
+    }
+
+    // See BranchElement: merged by a loop summary.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private boolean merged;
+
+    public BranchDTO merged(boolean merged) {
+        this.merged = merged;
+        return this;
+    }
+
+    // See BranchElement: the hand-written irrelevance fact covering the branch.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String userFact;
+
+    public BranchDTO userFact(String userFact) {
+        this.userFact = userFact;
+        return this;
+    }
+
+    // See BranchElement: merged only if the explorer finds the loop's other effects irrelevant.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_DEFAULT)
+    private boolean mergedConditional;
+
+    public BranchDTO mergedConditional(boolean mergedConditional) {
+        this.mergedConditional = mergedConditional;
+        return this;
+    }
+
+    // See BranchElement: the loop-head states reached since the previous branch.
+    @SuppressWarnings("unused")
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+    private java.util.List<String> loopStates;
+
+    public BranchDTO loopStates(java.util.List<String> loopStates) {
+        this.loopStates = loopStates;
+        return this;
+    }
+
+    public BranchDTO place(String key, int pops, java.util.List<String> pushes, boolean callback) {
+        this.key = key;
+        this.pops = pops;
+        this.pushes = pushes;
+        this.callback = callback;
+        return this;
+    }
 
     public BranchDTO(long iid, String constraint, boolean branched) {
+        this(iid, constraint, branched, false);
+    }
+
+    public BranchDTO(long iid, String constraint, boolean branched, boolean concreteOnly) {
         this.iid = iid;
         this.constraint = constraint;
         this.branched = branched;
+        this.concreteOnly = concreteOnly;
         this.type = "Branch";
     }
 

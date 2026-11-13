@@ -16,6 +16,23 @@ logger = logging.getLogger(__name__)
 SCRIPT_DIR = Path(__file__).resolve().parent.parent.parent
 
 
+# Display names for the timing stages. Derived names are wrong for initialisms
+# (`'smt_solver'.title()` gives "Smt Solver"), so spell them out here.
+STAGE_LABELS = {
+    'static_pre_analysis': 'Static Pre-Analysis',
+    'symbolic_executor': 'Symbolic Executor',
+    'smt_solver': 'SMT Solver',
+    'symbolic_explorer': 'Symbolic Explorer',
+    'witness_generation': 'Witness Generation',
+    'witness_validation': 'Witness Validation',
+}
+
+
+def stage_label(stage: str) -> str:
+    """Human-readable name for a timing stage."""
+    return STAGE_LABELS.get(stage, stage.replace('_', ' ').title())
+
+
 class TimingAnalysis:
     """Aggregate and analyze timing data from all testcases."""
 
@@ -58,6 +75,7 @@ class TimingAnalysis:
 
         # Aggregate timing data
         total_timing = {
+            'static_pre_analysis': 0.0,
             'symbolic_executor': 0.0,
             'smt_solver': 0.0,
             'symbolic_explorer': 0.0,
@@ -133,14 +151,14 @@ class TimingAnalysis:
         total_avg = sum(avg_timing.values())
         for stage, time_val in avg_timing.items():
             percent = (time_val / total_avg * 100) if total_avg > 0 else 0
-            stage_name = stage.replace('_', ' ').title()
+            stage_name = stage_label(stage)
             logger.info(f"  {stage_name:<24} {time_val:>8.2f}s ({percent:>5.1f}%)")
         logger.info(f"  {'Total per testcase:':<24}{total_avg:>8.2f}s")
 
         logger.info("")
         logger.info("Min/Max time per testcase (seconds):")
         for stage in avg_timing.keys():
-            stage_name = stage.replace('_', ' ').title()
+            stage_name = stage_label(stage)
             logger.info(f"  {stage_name:<24} min={min_timing[stage]:>7.2f}s, max={max_timing[stage]:>7.2f}s")
 
         logger.info("")
@@ -148,7 +166,7 @@ class TimingAnalysis:
         grand_total = sum(total_timing.values())
         for stage, time_val in total_timing.items():
             percent = (time_val / grand_total * 100) if grand_total > 0 else 0
-            stage_name = stage.replace('_', ' ').title()
+            stage_name = stage_label(stage)
             logger.info(f"  {stage_name:<24} {time_val:>8.2f}s ({percent:>5.1f}%)")
         logger.info(f"  {'Grand total:':<24}{grand_total:>8.2f}s")
         logger.info("="*70)

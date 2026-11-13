@@ -1,13 +1,19 @@
-from data.BinaryExecutionTree.Leaf import Leaf
-import logging as log
-import json
-from typing import List, Optional
+from __future__ import annotations
 
+from typing import Literal, Union
+
+from data.BinaryExecutionTree.Leaf import Leaf
+from data.trace.Branch import Branch, PositionedState
 from data.trace.Input import Input
-from data.trace.Special import Special
+from data.trace.Special import Special, CLINIT, CLINIT_END
 from data.trace.UF import UF
 
 GLOBAL_IID = 0  # Global unique identifier for nodes
+
+# How dfs names a branch in a candidate's identity: its key, or ('id', iid) if it has none.
+BranchName = Union[str, tuple[str, int]]
+# A candidate's identity (see dfs): the sig of the relevant decisions above it, and its name.
+Ident = tuple[int, BranchName]
 
 class Node:
     """
@@ -28,62 +34,109 @@ class Node:
         id (any): The ID of the branch.
         trace_id (any): The trace ID of the branch.
         kind (str): The type of the node, either 'Special' or 'Branch'.
+        inst (str): For 'Special' nodes, the instruction that produced the marker
+            (e.g. '...instruction.CLINIT'); None for 'Branch' nodes.
 
     Raises:
-        ValueError: If the trace argument is None or empty, indicating that the node cannot be created.
+        ValueError: If no trace element is given, indicating that the node cannot be created.
     """
 
-    def __init__(self, parent: Optional['Node'], trace: list, inputs: List[Input], ufs: List[UF]):
+    # Defaults of the per-node flags, also for nodes built with Node.__new__ (tests).
+    kind: Literal["Branch", "Special"] = "Branch"
+    inst: str | None = None  # only for 'Special' nodes: the marker's instruction (e.g. CLINIT)
+    concrete_only: bool = False  # recorded only to keep the SA walk in step, see Branch
+    # For 'Branch' nodes, from the trace (the same on every trace through the node, since its path
+    # is the same): its key, the frame stack change since the previous branch, and the loop-head
+    # states reached since then with their positions (Tree.register_loop_states).
+    key: str | None = None
+    pops: int = 0
+    pushes: tuple[str | None, ...] = ()
+    loop_states: tuple[PositionedState, ...] = ()
+    # In a callback from library code, or in SWAT's own helper code: no counterpart in the SA graph
+    callback: bool = False
+    choice: bool = False  # added by the executor to enumerate an operand's values: not in the SA graph
+    merged: bool = False  # merged by a loop summary on every trace through it: not a decision
+    merged_conditional: bool = False  # ... only if the loop's other effects are irrelevant (see dfs)
+    user_fact: str | None = None  # a hand-written irrelevance fact covers it: not a decision
+    # Whether some trace threw an exception the SA graph does not model right before this node
+    # (an UNMODELLED_EXCEPTION marker, which is not a node of its own, see Tree.structural).
+    unmodelled_exception: bool = False
+    # Set by dfs (see there): whether the last walk took this branch for no decision (sliced or
+    # merged), whether a sliced branch turned out relevant for good, and the candidate identity
+    # (the sig of the relevant decisions above it, and its key).
+    sliced: bool = False
+    poisoned: bool = False
+    ident: Ident | None = None
+    # Whether a run below this node ended with an uncaught exception (Database.mark_last_leaf_abnormal)
+    abnormal_below: bool = False
+    # Set by StrategyService.collect_query: whether the query for this branch left out the
+    # constraints of sliced branches.
+    sliced_query: bool = False
+    # The number of branches above this node on its path, once StrategyService.depth computed it
+    depth_cache: int | None = None
+
+    def __init__(self, parent: Node | None, branch: Branch | Special, inputs: list[Input], ufs: list[UF]) -> None:
         """
-        Initializes a new instance of the Node class.
+        Initializes a new instance of the Node class for one trace element. Its children are left
+        unset; Tree links the nodes of a trace into a path.
 
         Args:
             parent (Node): The parent node of this node.
-            trace (list): A list of trace elements defining the execution path.
+            branch (Branch | Special): The trace element this node stands for.
             inputs (any): The inputs associated with this node.
             ufs (any): The UFs associated with this node.
         """
         global GLOBAL_IID
-        self.parent = parent
-        self.branched = None
-        self.skipped = None
-        self.inputs = inputs
-        self.ufs = ufs
-        self.gid = GLOBAL_IID  # Assign a unique global identifier
-        GLOBAL_IID += 1
-        self.constraint = {}
-
-        # Validate trace argument
-        if trace is None or len(trace) == 0:
+        if branch is None:
             raise ValueError(f'Cannot create Node with no branch!')
+        self.parent: Node | None = parent
+        # The subtrees after the branch was taken and not taken; None: that side is unexplored.
+        self.branched: Node | Leaf | None = None
+        self.skipped: Node | Leaf | None = None
+        self.inputs: list[Input] = inputs
+        self.ufs: list[UF] = ufs
+        self.gid: int = GLOBAL_IID  # Assign a unique global identifier
+        GLOBAL_IID += 1
+        # The branch's constraint (SMT-LIB) per trace id that went through it
+        self.constraint: dict[str, str] = {}
+        self.id: int = branch.id
+        self.trace_id: str = branch.trace_id
 
-        # Process the first element of the trace to determine the branch
-        branch = trace.pop(0)
-
-        # Create a child node based on remaining trace elements
-        if len(trace) == 0:
-            child = Leaf(parent=self, inputs=inputs, ufs=ufs)
-        else:
-            child = Node(parent=self, trace=trace, inputs=inputs, ufs=ufs)
-
-        # Assign branch details to the node
-        self.id = branch.id
-        self.trace_id = branch.trace_id
-
-        # Check if the branch is of type Special and set properties accordingly
         if isinstance(branch, Special):
             self.kind = "Special"
-            self.branched = child
+            self.inst = branch.inst
         else:
-            self.kind = "Branch"
+            self.concrete_only = branch.concrete_only
+            self.key = branch.key
+            self.pops = branch.pops
+            self.pushes = branch.pushes
+            self.callback = branch.callback
+            self.choice = branch.choice
+            self.merged = branch.merged
+            self.merged_conditional = branch.merged_conditional
+            self.user_fact = branch.user_fact
+            self.loop_states = branch.positioned_loop_states
             self.constraint[branch.trace_id] = branch.constraint
-            # Determine whether the branch was taken or skipped and assign child
-            if branch.has_branched:
-                self.branched = child
-            else:
-                self.skipped = child
 
-    def __str__(self):
+    def is_clinit_start(self) -> bool:
+        """
+        Checks whether this node marks the beginning of a static initializer (<clinit>).
+
+        Returns:
+            bool: True if this is the CLINIT marker of a static initializer.
+        """
+        return self.kind == "Special" and self.inst == CLINIT
+
+    def is_clinit_end(self) -> bool:
+        """
+        Checks whether this node marks the end of a static initializer (<clinit>).
+
+        Returns:
+            bool: True if this is the INVOKECLINIT_END marker of a static initializer.
+        """
+        return self.kind == "Special" and self.inst == CLINIT_END
+
+    def __str__(self) -> str:
         """
         Returns a string representation of the node.
 

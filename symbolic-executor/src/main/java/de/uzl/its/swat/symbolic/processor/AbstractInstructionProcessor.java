@@ -766,6 +766,18 @@ public abstract class AbstractInstructionProcessor implements InstructionProcess
         processInstruction(new LOOP_BEGIN(iid));
     }
 
+    public void SUMMARY_JOIN(long iid, int join) {
+        processInstruction(new SUMMARY_JOIN(iid, join));
+    }
+
+    public void LOOP_HEAD(long iid, String head, Object[] locals) {
+        processInstruction(new LOOP_HEAD(iid, head, locals));
+    }
+
+    public void LOOP_CALL(long iid, String site, long invoke, Object[] locals) {
+        processInstruction(new LOOP_CALL(iid, site, invoke, locals));
+    }
+
     public void LOOP_END(long iid) {
         processInstruction(new LOOP_END(iid));
     }

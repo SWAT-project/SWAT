@@ -1,3 +1,10 @@
+# Where a trace reached a loop-head state (see Tree.register_loop_states): (d, k, m), the number of
+# branches before it, their outcomes read as a binary number, and the number of states before it.
+Position = tuple[int, int, int]
+# A loop-head state (the executor's hash of it) with its position.
+PositionedState = tuple[str, Position]
+
+
 class Branch:
     """
     Represents a branch in an execution trace, capturing the details of a decision point.
@@ -13,7 +20,10 @@ class Branch:
         constraint (any): The constraint or condition associated with the branch.
     """
 
-    def __init__(self, id: int, trace_id: str, has_branched: bool, constraint: str):
+    def __init__(self, id: int, trace_id: str, has_branched: bool, constraint: str, concrete_only: bool = False,
+                 key: str | None = None, pops: int = 0, pushes: tuple[str | None, ...] = (), callback: bool = False,
+                 choice: bool = False, loop_states: tuple[str, ...] = (), merged: bool = False,
+                 merged_conditional: bool = False, user_fact: str | None = None) -> None:
         """
         Initializes a new instance of the Branch class.
 
@@ -27,6 +37,27 @@ class Branch:
         self.trace_id = trace_id
         self.has_branched = has_branched
         self.constraint = constraint
+        # Recorded only to keep the SA walk in step (e.g. the bounds check of an untracked array):
+        # it has no symbolic constraint and is never worth solving.
+        self.concrete_only = concrete_only
+        # Where the branch is, to check the SA walk against (see TraceItem).
+        self.key = key
+        self.pops = pops
+        self.pushes = pushes
+        # In application code that library code called back, which the SA graph does not have.
+        self.callback = callback
+        # Added by the executor to enumerate the values of a symbolic operand; not in the SA graph.
+        self.choice = choice
+        # Merged by a loop summary: not a decision (see TraceItem).
+        self.merged = merged
+        # ... only if the loop's other effects cannot matter (see dfs)
+        self.merged_conditional = merged_conditional
+        # The hand-written irrelevance fact covering the branch, if any: no decision (see dfs)
+        self.user_fact = user_fact
+        # The loop-head states reached since the previous branch (see Tree.register_loop_states).
+        self.loop_states = loop_states
+        # The same with their positions, set by Tree.register_loop_states.
+        self.positioned_loop_states: tuple[PositionedState, ...] = ()
         
-    def __str__(self):
+    def __str__(self) -> str:
         return f'[(B) - {self.id} - ({"T" if self.has_branched else "F"})]'

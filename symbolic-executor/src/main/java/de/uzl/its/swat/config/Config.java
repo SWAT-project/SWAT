@@ -229,6 +229,29 @@ public class Config {
     // Fontus options
     // ------------------------------------
     @Getter private boolean useStringInterning;
+    /** Probe loop heads and report their concrete states with the trace (see symbolic/loopstate). */
+    @Getter private boolean loopStateMatching;
+    private static final boolean DEFAULT_LOOP_STATE_MATCHING = false;
+    /** End a run whose application threads are deadlocked (see thread/DeadlockWatchdog). */
+    @Getter private boolean deadlockWatchdog;
+    private static final boolean DEFAULT_DEADLOCK_WATCHDOG = false;
+    /** Merge diamonds and counting loops into formulas (see symbolic/summary). */
+    @Getter private boolean loopSummaries;
+    private static final boolean DEFAULT_LOOP_SUMMARIES = false;
+
+    /**
+     * Hand-written facts in the program's source (de.uzl.its.swat.annotations: @Irrelevant,
+     * @Target, Swat.beginIrrelevant/endIrrelevant/summary). Off by default and for SV-COMP, which
+     * measures SWAT's own ability: they are trusted, and a wrong one can make a verdict wrong.
+     */
+    @Getter private boolean userFacts;
+    private static final boolean DEFAULT_USER_FACTS = false;
+    /**
+     * The loop facts file the static analysis wrote (cfg-extraction's loop_facts.json), or empty:
+     * the loop heads and summaries of the methods it has; the others are computed when their
+     * class is instrumented (see instrument/instruction/LoopFactsSource).
+     */
+    @Getter private String loopFacts;
     private static final boolean DEFAULT_STRING_INTERNING = true;
     @Getter private String stringProxy;
     private static final String DEFAULT_STRING_PROXY = "Ljava/lang/String;";
@@ -446,6 +469,11 @@ public class Config {
         // Fontus options
         // ------------------------------------
         useStringInterning = readBoolean("useStringInterning", DEFAULT_STRING_INTERNING);
+        loopStateMatching = readBoolean("loopStateMatching", DEFAULT_LOOP_STATE_MATCHING);
+        loopSummaries = readBoolean("loopSummaries", DEFAULT_LOOP_SUMMARIES);
+        userFacts = readBoolean("userFacts", DEFAULT_USER_FACTS);
+        loopFacts = readString("loopFacts", "");
+        deadlockWatchdog = readBoolean("deadlockWatchdog", DEFAULT_DEADLOCK_WATCHDOG);
         stringProxy = readString("stringProxy", DEFAULT_STRING_PROXY);
     }
 

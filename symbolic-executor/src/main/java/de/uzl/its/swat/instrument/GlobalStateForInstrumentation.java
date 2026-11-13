@@ -36,11 +36,41 @@ public class GlobalStateForInstrumentation {
     private static final int MAX_SWITCH_CASES = (1 << SWITCH_BITS) - 1;
     private static final int MAX_FOR_ITERATIONS = (1 << FOR_BITS) - 1;
 
+    /** The key for the next iid, see {@link BranchKeys}. */
+    private String pendingKey = null;
+
+    /**
+     * Names the instruction being instrumented: the next iid handed out gets {@code key} (see
+     * {@link BranchKeys}). That is the instruction's own iid, since each instruction's
+     * instrumentation allocates it first.
+     */
+    public void setPendingKey(String key) {
+        pendingKey = key;
+    }
+
+    private String pendingFact = null;
+
+    /**
+     * The hand-written irrelevance fact covering the instruction being instrumented, or null (see
+     * {@link de.uzl.its.swat.facts.UserFacts}); registered with the next iid, like the key.
+     */
+    public void setPendingFact(String fact) {
+        pendingFact = fact;
+    }
+
     /** Increment iid and get the complete id */
     public long incAndGetId() {
         iid++;
         long id = getId();
         registerInstructionId(id);
+        if (pendingKey != null) {
+            BranchKeys.register(id, pendingKey);
+            pendingKey = null;
+        }
+        if (pendingFact != null) {
+            de.uzl.its.swat.facts.UserFacts.register(id, pendingFact);
+            pendingFact = null;
+        }
         InstrCoverage.numInstructions += 1;
         return id;
     }
@@ -76,6 +106,11 @@ public class GlobalStateForInstrumentation {
                 + iid;
     }
 
+
+    /** {@code iid} without the loop counter and switch case bits, as the instruction was given it. */
+    public static long baseIid(long iid) {
+        return iid & ((1L << (BIT_LEN_LONG - FOR_BITS - SWITCH_BITS)) - 1);
+    }
 
     public static long extractCid(long iid) {
         long mask = (1L << CBITS) - 1;

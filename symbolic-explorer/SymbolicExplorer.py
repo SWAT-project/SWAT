@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import threading
 from urllib.request import Request
@@ -23,7 +24,7 @@ from driver.HTTPDriver import HTTPDriver
 from driver.SimpleDriver import SimpleDriver
 
 sys.setrecursionlimit(10000000)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 class SymbolicExplorer:
 
@@ -59,7 +60,17 @@ class SymbolicExplorer:
 
     def run_sv_comp(self):
         driver = SVCompDriver(args)
-        driver.run()
+        try:
+            driver.run()
+        except BaseException:
+            # The driver reports UNKNOWN for a failed exploration itself; this catches what fails
+            # around it. Without it the HTTP server would keep the process alive until the time limit.
+            log.get_logger().exception('[SVCOMP] The SV-COMP driver failed')
+            if not driver.verdict_reported:
+                log.get_verdict_logger().info(f'[VERDICT {driver.verification_category.value}] == DONT-KNOW')
+            for handler in log.get_logger().handlers:
+                handler.flush()
+            os._exit(1)
 
     def run_http(self):
         driver = HTTPDriver(self.args)
@@ -117,7 +128,7 @@ class SymbolicExplorer:
 def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-m", "--mode", choices=['passive', 'annotation', 'args', 'sv-comp', 'http', 'simple'], default='annotation',
                              help="Choose the desired mode")
-    parser.add_argument("-t", "--target", help="Full path to the target JAR file")
+    parser.add_argument("-t", "--target", help="Full path to the target JAR or class name")
     parser.add_argument("-prp", "--property", help="Which property to verify")
     parser.add_argument("-s", "--symbolicvars", nargs='+', help="The types and amount of the symbolic "
                                                                      "variables")
@@ -130,13 +141,58 @@ def init_args(parser: argparse.ArgumentParser):
     parser.add_argument("-p", "--port", help="The port to use for the server", default=8078)
     parser.add_argument("-i", "--ip_addr", help="IP address to Listen on", default="127.0.0.1")
     parser.add_argument("--optimize", action="store_true", help="Enable Z3 optimizer to minimize variable values (slower but may produce simpler solutions)", default=False)
+    parser.add_argument("--no-fp-tactic", action="store_true", help="Solve queries with floating-point terms with Z3's default solver only, instead of its qffp tactic (eager bit-blasting of floating point) first", default=False)
     parser.add_argument("--log-smt-formulas", action="store_true", help="Log SMT formulas and models to disk for debugging", default=False)
+    parser.add_argument("--sa-file", help="Path to a file with static pre-analysis results for informing branch exploration (optional)")
+    parser.add_argument("--sa-path", help="Path to the static pre-analysis tool for informing branch exploration (optional): a cfg-extraction checkout, whose build/libs/cfg-extractor-1.0-SNAPSHOT-all.jar is run")
+    parser.add_argument("--sa-jar", help="The static pre-analysis tool's jar itself (cfg-extraction's fat jar, as in the SV-COMP archive), instead of --sa-path (optional; sv-comp and http mode)")
+    parser.add_argument("--sa-no-callback-targets", action="store_true", help="Do not count library calls as possible asserts when application code that library code may call back (overrides of library methods, lambdas) can reach an assert. Unsound: an assert reached only through such a callback can then give a false SAFE", default=False)
+    parser.add_argument("--console-log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO", help="Lowest level of the explorer's log lines on the console (explorer.log and verdict.log always get DEBUG and up)")
+    parser.add_argument("--prefer-short-strings", action="store_true", default=False, help="Shrink each string input of a solution to the shortest length the query allows")
+    parser.add_argument("--search-order", choices=["dfs", "shallow", "coverage", "coverage-dfs", "generational"], default="coverage", help="Order in which the open branches are tried (default: coverage): dfs (pre-order of the execution tree), shallow (closest to the root first), coverage (sides no trace took yet first, then shallow), coverage-dfs (the same, then dfs), generational (coverage, then the branches of the traces that covered the most first)")
+    parser.add_argument("--sa-rank-distance", action="store_true", help="Try branches closest to an assert (by static pre-analysis graph distance) first, instead of in plain DFS order", default=False)
+    parser.add_argument("--no-executor-cds", action="store_true", help="Do not share the classes the executor JVMs load through a class data sharing (AppCDS) archive dumped during the run (sv-comp mode)", default=False)
+    parser.add_argument("--no-prefer-small-models", action="store_true", help="Use a solver's solution as it is, also if it has extreme integral inputs (by default such a solution is re-solved with the inputs bounded first)", default=False)
+    parser.add_argument("--no-loop-summaries", action="store_true", help="Do not let the executor merge diamonds and counting loops into formulas (loop summaries; sets -DloopSummaries=false)", default=False)
+    parser.add_argument("--no-sa-slicing", action="store_true", help="Do not use the static pre-analysis' relevance analysis: flip branches that cannot affect a target too, and keep their constraints in every query", default=False)
+    parser.add_argument("--no-loop-state-matching", action="store_true", help="Flip branches below a loop-head state that was already reached at a smaller position too (the executor reports loop-head states if its config sets loopStateMatching)", default=False)
+    parser.add_argument("--solver-rlimit", type=int, default=0, help="Z3 resource limit (rlimit) for the first query of each branch in sv-comp mode; a branch that runs out is retried later with a growing limit. 0 (default): unlimited")
+    parser.add_argument("--precheck-jar", default=None, help="cfg-extraction's cfg-extractor-precheck.jar for the property pre-check (default: next to symbolic-explorer in the SV-COMP archive, else ../cfg-extraction/build/libs/)")
+    parser.add_argument("--user-facts", action="store_true", help="Use the hand-written facts in the program's source (de.uzl.its.swat.annotations: @Irrelevant, @Target, Swat.beginIrrelevant/endIrrelevant/summary). They are trusted; a SAFE verdict that relied on them says so in the log and stats.json (user_facts). Never for SV-COMP", default=False)
+    parser.add_argument("--no-prepare-classes", action="store_true", help="Do not apply SWAT's semantic rewrites to the classpath ahead of time (sv-comp mode); the static analysis then sees the classes on disk and the agent rewrites every class at load time", default=False)
+    parser.add_argument("--no-property-precheck", action="store_true", help="Do not run the static property pre-check (sv-comp mode), which can prove no-runtime-exception (no uncaught RuntimeException is possible) or valid-assert (no AssertionError is ever created) for the whole program", default=False)
+    parser.add_argument("--divergence-retries", type=int, default=3, help="How often a branch is re-solved (with the failed solutions excluded) when the run of its solution does not reach it, before it is given up on, which rules out SAFE (sv-comp mode)")
+    parser.add_argument("--approximate-rlimit", type=int, default=250_000_000, help="Z3 resource limit for a query over an approximate Math model in sv-comp mode (about one to one and a half minutes); one that runs out is given up on, which rules out SAFE as the model does anyway. 0: no limit beyond --solver-rlimit")
+    parser.add_argument("--parallel-sa", action="store_true", help="Run the static pre-analysis in the background and use it once it is ready (sv-comp mode). By default exploration waits for it: running it in parallel makes runs nondeterministic", default=False)
+
+    # SV-COMP resource budget, shared by the explorer and all executor JVMs (sv-comp mode). The
+    # defaults are the competition's limits (bench-defs swat.xml); a lower cgroup memory limit wins.
+    parser.add_argument("--memory-limit", type=int, default=15000,
+                        help="Memory limit of the whole run in MB (10^6 bytes); the executor heap is derived from it")
+    parser.add_argument("--cpu-limit", type=float, default=900,
+                        help="CPU time limit of the whole run in seconds; exploration stops with UNKNOWN shortly before it")
+    parser.add_argument("--cpu-used", type=float, default=0.0,
+                        help="CPU seconds the run used before the explorer started (e.g. compiling the task)")
+
+    # SV-COMP witness arguments: the explorer writes the violation witness from the trace of the
+    # violating execution (needs the task's input files and property file as given to the verifier)
+    parser.add_argument("--witness-dir", default="witness",
+                        help="Directory for witness.yml/witness.graphml, relative to the working directory (sv-comp mode)")
+    parser.add_argument("--witness-input", nargs='+', default=[],
+                        help="The task's input files/directories exactly as given to the verifier")
+    parser.add_argument("--witness-property", help="Path to the property file of the task")
+    parser.add_argument("--witness-base-dir",
+                        help="Directory relative witness input paths are resolved against (default: the working directory)")
+    parser.add_argument("--producer-version", default="unknown", help="Producer version recorded in the witness")
 
     # HTTP-specific arguments
     parser.add_argument("--host", help="HTTP target host", default="localhost")  
     parser.add_argument("--http-port", help="HTTP target port", type=int, default=8080)
     parser.add_argument("-u", "--url-template", help="URL template with symbolic variables (e.g., /api/path/<int_0>?x=<float_1>)")
     parser.add_argument("--http-method", choices=['GET', 'POST', 'PUT', 'DELETE'], default='GET', help="HTTP method")
+    parser.add_argument("--sa-entry", help="The method the static pre-analysis graph starts at, as pkg.Class#method (http mode: the endpoint method; default: main of --target)")
+    parser.add_argument("--time-limit", type=float, default=0, help="Wall-clock limit in seconds for the exploration (http mode); 0: none")
+    parser.add_argument("--stop-on-violation", action="store_true", default=False, help="End the exploration at the first violation (http mode)")
 
 
 if __name__ == '__main__':
@@ -147,12 +203,19 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     # Initialize loggers
-    log.initialize_loggers(args.logdir)
+    log.initialize_loggers(args.logdir, console_level=getattr(logging, args.console_log_level))
+    if args.mode == 'sv-comp':
+        # The module loggers' DEBUG/INFO lines on stdout (several per branch and query) were 500 MB
+        # in 900 s on MinePump: CPU time, and memory in a BenchExec container. The explorer's own
+        # log (explorer.log) is not affected.
+        logging.getLogger().setLevel(logging.WARNING)
 
     # Set configuration flags in Database
     from data.Database import Database
     Database.instance().optimize_solutions = args.optimize
     Database.instance().log_smt_formulas = args.log_smt_formulas
+    Database.instance().fp_tactic = not args.no_fp_tactic
+    Database.instance().prefer_short_strings = args.prefer_short_strings
     Database.instance().args = args  # Store args for access to logdir
 
     s = SymbolicExplorer(args)

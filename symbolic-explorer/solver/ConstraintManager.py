@@ -202,21 +202,24 @@ class ConstraintManager:
             Set of variable names
         """
         variables = set()
-
-        def traverse(e):
-            """Recursively traverse the AST."""
+        # Iterative, and each shared subterm once: an expression is a DAG that can be deeper than
+        # the recursion limit, and exponentially larger as a tree.
+        seen = set()
+        work = [expr]
+        while work:
+            e = work.pop()
+            key = e.get_id()
+            if key in seen:
+                continue
+            seen.add(key)
             if is_const(e) and e.decl().kind() == Z3_OP_UNINTERPRETED:
                 # This is a variable (uninterpreted constant)
                 variables.add(str(e))
             elif is_app(e):
-                # Traverse all arguments
-                for i in range(e.num_args()):
-                    traverse(e.arg(i))
+                work.extend(e.arg(i) for i in range(e.num_args()))
             elif is_quantifier(e):
-                # Traverse quantifier body
-                traverse(e.body())
+                work.append(e.body())
 
-        traverse(expr)
         return variables
 
     def _classify_constraint(self, expr: ExprRef) -> str:

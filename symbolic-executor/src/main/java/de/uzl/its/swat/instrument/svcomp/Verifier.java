@@ -1,5 +1,6 @@
 package de.uzl.its.swat.instrument.svcomp;
 
+import de.uzl.its.swat.common.Profile;
 import ch.qos.logback.classic.Logger;
 import de.uzl.its.swat.common.ErrorHandler;
 import de.uzl.its.swat.common.PrintBox;
@@ -21,17 +22,10 @@ import lombok.Setter;
 import static java.lang.Thread.currentThread;
 @SuppressWarnings("removal")
 public class Verifier {
-    private static long nextId = 0;
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
     private static final Config config;
     static {
         config = Config.instance();
-    }
-
-    public static long getNextId() {
-        long id = nextId;
-        nextId++;
-        return id;
     }
 
     @Getter @Setter private static HashMap<String, Queue<String>> inputs = new HashMap<>();
@@ -69,6 +63,7 @@ public class Verifier {
                         .toString());
         if (!condition) {
             Intrinsics.terminate();
+            Profile.dump("assume.halt");
             Runtime.getRuntime().halt(0);
         }
     }
@@ -300,8 +295,10 @@ public class Verifier {
             printBox.addMsg("Requested ID: " + newId);
             if (inputs.containsKey(prefix + newId) && !inputs.get(prefix + newId).isEmpty()) {
                 printBox.addMsg("Predetermined value available!");
-                // Parse as unsigned to handle values from SMT solver bitvector representation
-                long l = Long.parseUnsignedLong(inputs.get(prefix + newId).remove());
+                // The explorer sends solver values signed (negative longs with a minus sign); an
+                // unsigned form is accepted too.
+                String encoded = inputs.get(prefix + newId).remove();
+                long l = encoded.startsWith("-") ? Long.parseLong(encoded) : Long.parseUnsignedLong(encoded);
                 printBox.addMsg("Returning: " + l);
                 logger.info(printBox.toString());
                 return l;
@@ -399,6 +396,28 @@ public class Verifier {
         }
     }
 
+    /**
+     * Undoes the explorer's escaping of String inputs (escape_java_string in SVCompDriver): a
+     * backslash comes as two, and any character outside printable ASCII as backslash-u and four
+     * hex digits.
+     */
+    static String unescape(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length() && s.charAt(i + 1) == '\\') {
+                sb.append('\\');
+                i++;
+            } else if (c == '\\' && i + 5 < s.length() && s.charAt(i + 1) == 'u') {
+                sb.append((char) Integer.parseInt(s.substring(i + 2, i + 6), 16));
+                i += 5;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
     public static String nondetString(long id) {
         try{
             PrintBox printBox = new PrintBox(60, "SV-Comp Verifier: nondetString");
@@ -414,7 +433,9 @@ public class Verifier {
             printBox.addMsg("Requested ID: " + newId);
             if (inputs.containsKey(prefix + newId) && !inputs.get(prefix + newId).isEmpty()) {
                 printBox.addMsg("Predetermined value available!");
-                var val = inputs.get(prefix + newId).peek();
+                // A fresh object: SWAT tracks Strings by identity, and unescape("") is the interned
+                // "", so two empty inputs would otherwise be one object and share one variable.
+                var val = new String(unescape(inputs.get(prefix + newId).peek()));
                 printBox.addMsg("Returning: " + val);
                 logger.info(printBox.toString());
                 return val;

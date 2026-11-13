@@ -2,16 +2,21 @@ package de.uzl.its.swat.symbolic.invoke.java.lang;
 
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.exceptions.SWATAssert;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.common.exceptions.ValueConversionException;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.BitvectorEncoding;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.LongValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.DoubleObjectValue;
 import org.objectweb.asm.Type;
+import org.sosy_lab.java_smt.api.BitvectorFormula;
+import org.sosy_lab.java_smt.api.BitvectorFormulaManager;
 import org.sosy_lab.java_smt.api.BooleanFormula;
 import org.sosy_lab.java_smt.api.BooleanFormulaManager;
 import org.sosy_lab.java_smt.api.FloatingPointFormulaManager;
@@ -27,10 +32,15 @@ public class DoubleInvocation {
             SymbolicTraceHandler symbolicTraceHandler) throws NotImplementedException, ValueConversionException {
         return switch (name) {
             case "compare" -> invokeCompare(args);
+            case "doubleToLongBits" -> invokeDoubleToLongBits(args);
+            case "doubleToRawLongBits" -> invokeDoubleToRawLongBits(args, symbolicTraceHandler);
             case "isFinite" -> invokeIsFinite(args);
             case "isInfinite" -> invokeIsInfinite(args);
             case "isNaN" -> invokeIsNaN(args);
-            case "valueOf" -> invokeValueOf(args);
+            case "parseDouble" -> args[0] instanceof StringValue sv ? NumberParsing.parseDouble(sv, symbolicTraceHandler) : PlaceHolder.instance;
+            case "valueOf" -> args[0] instanceof StringValue sv
+                    ? new DoubleObjectValue(sv.context, NumberParsing.parseDouble(sv, symbolicTraceHandler), ObjectValue.ADDRESS_UNKNOWN)
+                    : invokeValueOf(args);
 
             default -> PlaceHolder.instance;
         };
@@ -56,33 +66,46 @@ public class DoubleInvocation {
      */
     private static IntValue compare(DoubleValue d1, DoubleValue d2) {
         SolverContext ctx = d1.context;
-        FloatingPointFormulaManager fpmgr = ctx.getFormulaManager().getFloatingPointFormulaManager();
-        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
-        IntegerFormulaManager imgr = ctx.getFormulaManager().getIntegerFormulaManager();
-
-        // Check for NaN cases first
-        BooleanFormula d1IsNaN = fpmgr.isNaN(d1.formula);
-        BooleanFormula d2IsNaN = fpmgr.isNaN(d2.formula);
-
-        // Regular comparisons (when neither is NaN)
-        BooleanFormula isEqual = fpmgr.equalWithFPSemantics(d1.formula, d2.formula);
-        BooleanFormula isLess = fpmgr.lessThan(d1.formula, d2.formula);
-
-        // Build the result:
-        // - If both are NaN: return 0
-        // - If only d1 is NaN: return 1 (NaN > anything)
-        // - If only d2 is NaN: return -1 (anything < NaN)
-        // - If equal: return 0
-        // - If d1 < d2: return -1
-        // - Otherwise: return 1
-        NumeralFormula.IntegerFormula normalResult = bmgr.ifThenElse(isEqual, imgr.makeNumber(0),
-                bmgr.ifThenElse(isLess, imgr.makeNumber(-1), imgr.makeNumber(1)));
-
-        NumeralFormula.IntegerFormula result = bmgr.ifThenElse(bmgr.and(d1IsNaN, d2IsNaN), imgr.makeNumber(0),
-                bmgr.ifThenElse(d1IsNaN, imgr.makeNumber(1),
-                        bmgr.ifThenElse(d2IsNaN, imgr.makeNumber(-1), normalResult)));
-
+        BitvectorFormula result = BitvectorEncoding.javaCompare(ctx.getFormulaManager(), d1.formula, d2.formula);
         return new IntValue(ctx, Double.compare(d1.concrete, d2.concrete), result);
+    }
+
+    /**
+     * Invocation handler for Double.doubleToLongBits(double).
+     */
+    private static Value<?, ?> invokeDoubleToLongBits(Value<?, ?>[] args)
+            throws ValueConversionException, NotImplementedException {
+        SWATAssert.enforce(args.length == 1, "Expected 1 argument for doubleToLongBits(), got " + args.length);
+        return doubleToLongBits(args[0].asDoubleValue());
+    }
+
+    /**
+     * Symbolic wrapper for Double.doubleToLongBits(double value): the IEEE 754 bit layout, with every
+     * NaN collapsed to the canonical 0x7ff8000000000000L as in the JDK (the bit-vector of a NaN is
+     * unspecified in SMT-LIB).
+     */
+    private static LongValue doubleToLongBits(DoubleValue d) {
+        SolverContext ctx = d.context;
+        FloatingPointFormulaManager fpmgr = ctx.getFormulaManager().getFloatingPointFormulaManager();
+        BitvectorFormulaManager bvmgr = ctx.getFormulaManager().getBitvectorFormulaManager();
+        BooleanFormulaManager bmgr = ctx.getFormulaManager().getBooleanFormulaManager();
+        BitvectorFormula bits = bmgr.ifThenElse(fpmgr.isNaN(d.formula),
+                bvmgr.makeBitvector(64, 0x7ff8000000000000L), fpmgr.toIeeeBitvector(d.formula));
+        return new LongValue(ctx, Double.doubleToLongBits(d.concrete), bits);
+    }
+
+    /**
+     * Invocation handler for Double.doubleToRawLongBits(double). The model is that of
+     * doubleToLongBits: SMT floating point has a single NaN, so the payload of a NaN is not
+     * represented and a symbolic argument records precision loss.
+     */
+    private static Value<?, ?> invokeDoubleToRawLongBits(Value<?, ?>[] args, SymbolicTraceHandler symbolicTraceHandler)
+            throws ValueConversionException, NotImplementedException {
+        SWATAssert.enforce(args.length == 1, "Expected 1 argument for doubleToRawLongBits(), got " + args.length);
+        DoubleValue d = args[0].asDoubleValue();
+        LongValue bits = doubleToLongBits(d);
+        if (symbolicTraceHandler != null && d.isSymbolic()) symbolicTraceHandler.recordSymbolicPrecisionLoss();
+        return new LongValue(d.context, Double.doubleToRawLongBits(d.concrete), bits.formula);
     }
 
     /**
