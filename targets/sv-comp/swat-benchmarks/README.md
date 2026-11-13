@@ -68,6 +68,16 @@ sites) and `caller-local_false` (the same call site with different live caller l
 VIOLATION tasks that a hash without the call site or without the callers' locals turns into false
 SAFE.
 
+`extractor-facts`: hand-written facts the extractor and the relevance analysis use (2026-11-13; all
+with `swat-user-facts: true`). `library-effects_true` is `user-facts/irrelevant-method_true`
+without `@Irrelevant` but with library facts (`swat-library-facts.txt` next to the class: the
+StringBuilder and HashMap families), `library-effects_false` its soundness pair (the assertion
+reads the log). `not-called-back_true` needs `@NotCalledBack` against the callback rule;
+`not-called-back-refuted_false` has a wrong one that the first run refutes. `irrelevant-checked_true`
+has an `@Irrelevant` the relevance analysis confirms (no fact assumed), `irrelevant-refuted_false`
+one it refutes (the method holds the assertion), and `irrelevant-caller_true` one that also slices
+the branches in `main` that only feed it.
+
 `real-tools-facts` (generated, gitignored, not for regular runs): `scripts/real_tools_facts.py`
 writes the `real-tools` tasks with hand-written facts, one of them deliberately wrong. See
 RESULTS.md, "Hand-written facts on real-tools".

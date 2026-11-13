@@ -930,6 +930,77 @@ Regressions (300 s, 32 workers, coverage): swat-benchmarks valid-assert `run_202
 729 points (identical on every older task; the 8 new tasks correct), sv-benchmarks valid-assert
 `run_20261112_142056` 1100, identical. No false SAFE, no SA desync.
 
+## Hand-written facts in the extractor (`extractor-facts`), 2026-11-13
+
+The extractor now reads the hand-written facts itself (`--user-facts`, cfg-extraction
+`facts/UserFacts`; see SWAT's CLAUDE.md, "Hand-written facts"): `@Target` natively (also in the
+pre-check, so neither needs prepared classes any more), `@Irrelevant` and regions on the graph's
+nodes, `Swat.summary()`'s dead loop side, and two new kinds of fact: library facts (a stub file
+with the families of library state each method touches, and `nocallback`) and `@NotCalledBack`.
+120 s, coverage; with facts `run_20261113_134625`, `--no-user-facts` `run_20261113_134651`, facts
+without the second relevance pass `run_20261113_134736`:
+
+| task | without facts | with facts | assumed |
+|---|---|---|---|
+| `library-effects_true` | UNKNOWN (56 rounds) | SAFE (2) | 4 library facts |
+| `library-effects_false` | VIOLATION (28) | VIOLATION (28) | |
+| `not-called-back_true` | UNKNOWN (57) | SAFE (1) | `@NotCalledBack` |
+| `not-called-back-refuted_false` | VIOLATION (2) | VIOLATION (2), the fact refuted at run time | |
+| `irrelevant-checked_true` | SAFE (2) | SAFE (2) | none: relevance confirms it |
+| `irrelevant-refuted_false` | VIOLATION (2) | VIOLATION (2), the fact refuted | none |
+| `irrelevant-caller_true` | UNKNOWN (55) | SAFE (2); UNKNOWN without the second pass | `@Irrelevant` |
+
+- **Library facts:** `library-effects_true` is `user-facts/irrelevant-method_true` without
+  `@Irrelevant`: with the StringBuilder and HashMap families, the relevance analysis slices the
+  logging by itself. Its pair, where the assertion reads the log, stays a VIOLATION.
+- **`@NotCalledBack`:** `Main.toString()` asserts and overrides a library method, so without the
+  fact every library call is a target point and no logging branch can be sliced. In sv-benchmarks
+  that rule fires in 113 of 978 valid-assert graphs (10 of them UNKNOWN), where no facts may be
+  used. A wrong fact on a method that the first run calls back is refuted by the executor (stats:
+  `user_facts.refuted_at_run_time`), which rules out SAFE; on a path that is pruned before the
+  callback happens it is not, so the fact stays an assumption.
+- **`@Irrelevant` checked:** the relevance analysis refutes a fact whose code holds a target; before
+  `dfs` also ignored the executor's `merged` flag for it, `irrelevant-refuted_false` came out a
+  false SAFE (`run_20261113_130828`). Where the analysis slices the branch anyway the fact is not
+  counted (`irrelevant-checked_true`: "assumed 0"). A second pass assuming the facts slices the 12
+  branches in `main` that only feed `log()` in `irrelevant-caller_true`; the executor's fact alone
+  covers only `log()`'s own branch.
+- **`@Target`, `Swat.summary()`:** `user-facts` unchanged with the new rewrite
+  (`run_20261113_131113`: 16/16); the extractor marks the target and the dead side on unprepared
+  classes too.
+
+Regressions (300 s, 32 workers, coverage), task by task against the loop-frames runs:
+swat-benchmarks valid-assert `run_20261113_131347` 750 points (739; every older task identical,
+the 7 new ones correct), sv-benchmarks valid-assert `run_20261113_131933` 1100, identical,
+no-runtime-exception `run_20261113_133458` 1302, identical. No SA desync.
+
+**Not done** (ideas in the request, with the reason):
+
+- *Aliasing* (`@Unique`, `@NotAliased`): data-flow locations have no object identity (fields by
+  name and type, no points-to analysis), so a non-aliasing fact has nothing to refine. It needs
+  allocation-site locations first.
+- *Dispatch* (`@Calls`, `@OnlyImplementations`): unresolved dispatch marks 22 of 514 swat-benchmarks
+  and 23 of 978 sv-benchmarks graphs incomplete (reflection 6 and 4); that only loses the walk
+  there, soundly. Not attempted for lack of a task where it decides the verdict.
+- *Exceptions* (`@NoThrow`): a call site's runtime-exception point also covers a null receiver,
+  which a library fact cannot speak to, and the pre-check's closed world must stay checked; a
+  checked version needs the pre-check's nullness and a run-time check of the fact.
+- *Hidden code paths* (`@EntryPoint`, `@AsyncEntry`, `@ReflectiveTarget`): for threads, declared
+  entry points do not make the lockstep walk valid (interleavings); reflective targets are rare (see
+  dispatch).
+- *Input domains* (`@Range`): an assumption about the environment for the executor and explorer
+  (like `Verifier.assume`), not a fact for the extractor; it is the only kind that could make the
+  real-tools SAFE tasks reachable, and stays open.
+- *Loop invariants* (`Swat.invariant`): need an inductive check (a solver query per loop).
+
+Findings on the way: `Class.desiredAssertionStatus()` (in the static initializer of every class
+with an `assert`) counts as a heap library call in `DataflowFacts`, so an assertion outside the
+entry class reads all library state and little around it can be sliced (a library fact
+`java.lang.Class.desiredAssertionStatus() pure` fixes it per task; a built-in fix would change
+SV-COMP graphs and is not done). The executor fails on `StringBuilder.append(Object)` with an
+application `toString()` ("Concrete value of the StringBuilder does not match the value in the
+stack").
+
 ## Hand-written facts on `real-tools`, 2026-11-12
 
 Can hand-written facts give new verdicts, or faster ones, on the two real tools (GNU getopt,

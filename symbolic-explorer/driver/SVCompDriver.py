@@ -963,6 +963,10 @@ class SVCompDriver:
         facts = self.assumed_user_facts()
         stats: dict[str, Any] = {'enabled': bool(getattr(self.args, 'user_facts', False)), 'assumed': len(facts),
                                  'facts': facts}
+        refuted = sorted(f[len('REFUTED '):] for f in Database.instance().get_tree(ENDPOINT_ID).user_facts
+                         if f.startswith('REFUTED '))
+        if refuted:
+            stats['refuted_at_run_time'] = refuted
         index = self.sa_graph.entry_node.graph_index if self.sa_graph.entry_node is not None else None
         if index is not None and (index.user_facts or index.refuted_facts):
             stats['irrelevance_facts_checked'] = sorted(index.user_facts)

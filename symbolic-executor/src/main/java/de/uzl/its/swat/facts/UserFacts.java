@@ -63,7 +63,7 @@ public final class UserFacts {
      */
     public static void calledBack(String cname, String method) {
         if (!notCalledBack.isEmpty() && notCalledBack.contains(cname + "#" + method)) {
-            refute("@NotCalledBack " + cname + "." + method);
+            refute("@NotCalledBack " + method); // the method names its class
         }
     }
 
