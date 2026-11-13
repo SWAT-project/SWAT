@@ -313,9 +313,10 @@ def _classify(node: Node, verified: SANode | None, tree: Tree, index: GraphIndex
         tree.relied_facts.add(node.user_fact)
         return MERGED
     # (The executor flags a branch a fact covers as merged too: a refuted fact's branch is not.)
-    if node.merged and not node.merged_conditional and not refuted:
+    merged = node.merged and not refuted
+    if merged and not node.merged_conditional:
         return MERGED
-    if sliceable and (verified.irrelevant or (node.merged and verified.summary_ok)):
+    if sliceable and (verified.irrelevant or (merged and verified.summary_ok)):
         return SLICED
     if sliceable and verified.irrelevant_assuming:
         tree.relied_facts.update(index.user_facts if index is not None else ())

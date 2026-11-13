@@ -139,6 +139,7 @@ class SANode:
     # node (the extractor's userFact); for a branch, whether it is irrelevant only if the graph's
     # irrelevance facts hold (Relevance; dfs then counts them for the verdict).
     user_fact: str | None = None
+    user_fact_near: str | None = None  # a region fact that shares this node's line (checked, never applied)
     irrelevant_assuming: bool = False
 
     def is_branch(self) -> bool:
@@ -658,7 +659,8 @@ class SAGraph:
                           control=tuple(json_node.get("control", ())),
                           terminates=json_node.get("terminates", False) is True,
                           call=json_node.get("call"),
-                          user_fact=json_node.get("userFact"))
+                          user_fact=json_node.get("userFact"),
+                          user_fact_near=json_node.get("userFactNear"))
             self.nodes[node.id] = node
         for exit_id in self.json_graph.get("exitNodeIds", []):
             self.nodes[exit_id].isExit = True

@@ -278,6 +278,28 @@ class UserFactsTest(unittest.TestCase):
         self.assertEqual(g.entry_node.graph_index.user_facts, frozenset())
         self.assertFalse(any(n.irrelevant_assuming for n in g.nodes.values()))
 
+    def test_a_target_on_a_line_near_a_region_refutes_it(self):
+        # The extractor could not tell by line whether the assertion is in the region: it is near
+        g = facts_example(fact_on=('b',))
+        for n in g.nodes:
+            if n['id'] in ('a', 'ae'):
+                n['userFactNear'] = 'F'
+        g = g.load()
+        self.assertEqual(g.entry_node.graph_index.refuted_facts, frozenset({'F'}))
+
+    def test_a_refuted_facts_merged_flag_does_not_honor_a_loop_summary(self):
+        g = keyed(facts_example(fact_on=('a', 'ae')).load())
+        g.nodes['a'].summary_ok = True  # as if the graph allowed a conditional loop summary here
+        a = branch_node('a', branched=leaf(), key='a')
+        a.user_fact = 'F'
+        a.merged = True  # set by the executor for the (refuted) fact, not by a summary
+        b = branch_node('b', branched=a, key='b')
+        c = branch_node('c', branched=b, key='c')
+        link(c, b)
+        link(b, a)
+        found = dfs(Tree(), c, set(), set(), g.entry_node)
+        self.assertIn('a', [n.id for n in found])
+
     def test_dfs_slices_assuming_the_fact_and_counts_it(self):
         # One path: c not taken, b (covered by F, applied by the executor) not taken, then a.
         g = keyed(facts_example().load())

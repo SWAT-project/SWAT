@@ -177,6 +177,11 @@ public final class CollectionInvocation {
         return null;
     }
 
+    /** Whether calls on this object are modelled as a JDK container's (see {@link #invoke}). */
+    public static boolean isContainer(ObjectValue<?, ?> instance) {
+        return instance.getContents() != null || kindOf(instance) != null;
+    }
+
     private static Kind kindOf(ObjectValue<?, ?> instance) {
         if (instance.className == null || instance instanceof AbstractArrayValue<?, ?, ?, ?, ?>) {
             return null;

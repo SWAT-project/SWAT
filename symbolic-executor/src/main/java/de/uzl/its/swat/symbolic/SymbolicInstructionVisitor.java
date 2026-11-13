@@ -2487,16 +2487,19 @@ public class SymbolicInstructionVisitor implements IVisitor {
     }
 
     /**
-     * As {@link #recordThrowingCall}, unless the call threw at an index check of a String or
-     * StringBuilder method (see {@link #recordStringCallBranches}), which the trace then explains.
-     */
-    /**
      * An instance call whose next instruction is neither its end nor its exception runs
      * instrumented code first: the callee itself, or application code a library method calls back
-     * (StringBuilder.append(Object) calling toString()). No model is applied then, so a library
-     * object with modelled state that the call may change must not keep the state from before:
-     * a StringBuilder receiver's chars become unknown (taken from the concrete value when it is
-     * next read). Its symbolic chars, or symbolic arguments, are lost with it: context loss.
+     * (StringBuilder.append(Object) calling toString(), HashMap.put calling hashCode()). No model
+     * is applied then, so a library object with modelled state must not keep the state from before
+     * as if it were still exact:
+     *
+     * <ul>
+     *   <li>a StringBuilder receiver's chars become unknown if the method may change them (taken
+     *       from the concrete value when next read); what the callback contributed to them is not
+     *       tracked, so this is context loss;
+     *   <li>a modelled container misses what the call stored or returned: context loss if its
+     *       contents or the arguments are symbolic.
+     * </ul>
      */
     private void callRunsApplicationCode(String name, String desc) throws NoThreadContextException {
         ObjectValue<?, ?> instance;
@@ -2507,23 +2510,35 @@ public class SymbolicInstructionVisitor implements IVisitor {
         } catch (Exception e) {
             return; // the callee is instrumented code with its own frame
         }
-        if (!(instance instanceof de.uzl.its.swat.symbolic.value.reference.StringBuilderValue sbv)) {
+        if (instance instanceof de.uzl.its.swat.symbolic.value.reference.StringBuilderValue sbv) {
+            if (sbv.unmodelledChange(name)) {
+                logger.warn("StringBuilder.{} ran application code: its chars are not tracked, causes context loss", name);
+                symbolicTraceHandler.recordSymbolicContextLoss();
+            }
             return;
         }
-        boolean symbolic = sbv.isSymbolicContent();
-        for (Value<?, ?> argument : arguments) {
-            try {
-                symbolic |= argument != null && argument.isSymbolic();
-            } catch (Exception e) {
-                symbolic = true;
-            }
+        if (instance == null || !de.uzl.its.swat.symbolic.invoke.java.util.CollectionInvocation.isContainer(instance)) {
+            return;
         }
-        if (sbv.unmodelledChange(name) && symbolic) {
-            logger.warn("StringBuilder.{} ran application code: its symbolic chars are lost, causes context loss", name);
+        boolean symbolic;
+        try {
+            symbolic = instance.getContents() != null && instance.getContents().isSymbolic(new java.util.HashSet<>());
+            for (Value<?, ?> argument : arguments) {
+                symbolic |= argument != null && argument.isSymbolic();
+            }
+        } catch (Exception e) {
+            symbolic = true;
+        }
+        if (symbolic) {
+            logger.warn("Container call {} ran application code: no model applied, causes context loss", name);
             symbolicTraceHandler.recordSymbolicContextLoss();
         }
     }
 
+    /**
+     * As {@link #recordThrowingCall}, unless the call threw at an index check of a String or
+     * StringBuilder method (see {@link #recordStringCallBranches}), which the trace then explains.
+     */
     private void recordThrowingInstanceCall(long iid, String owner, String name, String desc, long invokeId) throws NoThreadContextException {
         boolean explained;
         try {

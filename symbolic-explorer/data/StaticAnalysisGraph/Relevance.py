@@ -265,55 +265,39 @@ class Relevance:
     def _user_facts(self) -> dict[SANode, str]:
         """
         The branches covered by a hand-written irrelevance fact (user facts: @Irrelevant, a
-        Swat.beginIrrelevant region; the extractor's userFact), by the fact. A fact covers the nodes
-        the extractor marked, and every method all of whose call sites it covers (callees included;
-        the executor applies a fact to everything called from its code, so a method that is also
-        called from elsewhere only in that context, which this context-insensitive analysis cannot
-        tell apart).
+        Swat.beginIrrelevant region; the extractor's userFact), by the fact. Only the nodes the
+        extractor marked: the executor also applies a fact to everything called from its code, but
+        a callee may also run from elsewhere, in ways the graph has no call site for (a callback, a
+        lambda, a static initializer), so the graph never assumes the fact for a callee.
 
-        A fact is refuted, and not used, if its code contains a target point, may end the program,
-        or calls code that may reach a target point: whether such code runs, which its branches
-        decide, matters. Refuted facts go to self.refuted_facts (dfs ignores them where the executor
-        applied them), the others to self.user_facts.
+        A fact is refuted, and not used, if its code (the marked nodes and those the extractor
+        found near it, userFactNear) contains a target point, may end the program, or calls code
+        that may reach a target point: whether such code runs, which its branches decide, matters.
+        Refuted facts go to self.refuted_facts (dfs ignores them where the executor applied them),
+        the others to self.user_facts.
         """
-        by_fact: dict[str, set[SANode]] = {}
+        marked: dict[str, set[SANode]] = {}
+        near: dict[str, set[SANode]] = {}
         for n in self.nodes:
             if n.user_fact is not None:
-                by_fact.setdefault(n.user_fact, set()).add(n)
+                marked.setdefault(n.user_fact, set()).add(n)
+            if n.user_fact_near is not None:
+                near.setdefault(n.user_fact_near, set()).add(n)
         self.user_facts: set[str] = set()
         self.refuted_facts: set[str] = set()
-        if not by_fact:
+        if not marked and not near:
             return {}
-        entries: dict[Method, list[SANode]] = {}
-        call_sites_into: dict[Method, list[SANode]] = {}
-        for cs in self.call_sites:
-            for e in cs.callees:
-                call_sites_into.setdefault(e.method, []).append(cs)
         covered_branches: dict[SANode, str] = {}
-        for fact, marked in by_fact.items():
-            covered = set(marked)
-            methods: set[Method] = set()
-            changed = True
-            while changed:
-                changed = False
-                for m, sites in call_sites_into.items():
-                    if m not in methods and m in self.by_method and sites and all(s in covered for s in sites):
-                        methods.add(m)
-                        covered |= set(self.by_method[m])
-                        changed = True
-            refuted = False
-            for n in covered:
-                if n.isTarget or n.isIncomplete or n.terminates or self._method_terminates_at(n):
-                    refuted = True
-                    break
-                if n.is_call_site() and any(e.method not in methods and e.reachesTargetSameLevel for e in n.callees):
-                    refuted = True
-                    break
+        for fact in set(marked) | set(near):
+            checked = marked.get(fact, set()) | near.get(fact, set())
+            refuted = any(n.isTarget or n.isIncomplete or n.terminates or self._method_terminates_at(n)
+                          or (n.is_call_site() and any(e.reachesTargetSameLevel for e in n.callees))
+                          for n in checked)
             if refuted:
                 self.refuted_facts.add(fact)
                 continue
             self.user_facts.add(fact)
-            for n in covered:
+            for n in marked.get(fact, ()):
                 if n.is_branch():
                     covered_branches.setdefault(n, fact)
         self.stats.user_facts = sorted(self.user_facts)

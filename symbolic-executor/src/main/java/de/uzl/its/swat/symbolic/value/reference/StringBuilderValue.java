@@ -94,11 +94,6 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         return unknown;
     }
 
-    /** Whether the known chars are symbolic. */
-    public boolean isSymbolicContent() {
-        return !unknown && stringValue != null && stringValue.isSymbolic();
-    }
-
     /**
      * A call that runs instrumented code before it returns (a callback from the library), so its
      * model is not applied: if the method may change the builder, its chars become unknown.

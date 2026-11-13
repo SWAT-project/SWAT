@@ -38,3 +38,4 @@ targets/sv-comp/wit4java/
 libs/cfg-extractor/cfg-extractor-1.0-SNAPSHOT.jar
 # Default output of targets/sv-comp/scripts/plot_timing_comparison.py
 timing_comparison.png
+**/.venv
