@@ -251,6 +251,17 @@ cfg-extraction (see loop facts above).
   swat-benchmarks valid-assert (`run_20261111_193209`, `_194711`); swat-benchmarks `loop-liveness`
   shows where it does (a symbolic input in a local that is dead at the head) and has the
   soundness pairs (RESULTS.md, "Loop-state matching with live locals only").
+- **Heads in callees** (since 2026-11-13, loop facts version 3): the head's method no longer has to
+  be the only application frame. cfg-extraction's `LoopHeads.callSites` lists the call sites whose
+  operand stack holds only the call's arguments, with the locals live after the call; a `LOOP_CALL`
+  probe before each (to application code) records those locals on the caller's shadow frame
+  (`Frame.loopCall`, with the iid of the call's INVOKE). At a head in a callee every frame below
+  must have such a record for the call that pushed the frame above it, the application frames must
+  be contiguous (no library frame between them: a callback) and the shadow stack must hold exactly
+  them; the hash adds each caller's call site and live locals (only those must be concrete). A head
+  in the entry method hashes as before. Lambdas still stop all states (`invokedynamic`), threads
+  are still excluded. swat-benchmarks `loop-frames` (RESULTS.md, "Loop-state matching across
+  frames").
 - **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.
