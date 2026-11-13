@@ -94,6 +94,26 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
         return unknown;
     }
 
+    /** Whether the known chars are symbolic. */
+    public boolean isSymbolicContent() {
+        return !unknown && stringValue != null && stringValue.isSymbolic();
+    }
+
+    /**
+     * A call that runs instrumented code before it returns (a callback from the library), so its
+     * model is not applied: if the method may change the builder, its chars become unknown.
+     *
+     * @return whether they did
+     */
+    public boolean unmodelledChange(String name) {
+        if (MUTATORS.contains(name)) {
+            unknown = true;
+            capacity = null;
+            return true;
+        }
+        return false;
+    }
+
     /**
      * Takes the concrete chars of the builder, e.g. when it is recovered from the heap after a
      * change SWAT does not model. A symbolic content was lost at that change already (with a
