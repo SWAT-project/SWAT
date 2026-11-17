@@ -344,6 +344,18 @@ Map<Short, Integer> m = new HashMap<>();
 m.put((short) 7, 1);""",
          'm.containsKey(x)',
          'm.containsKey(x) && x != 7')
+    pair('hash-unknown-shadow',
+         'A Short key built by a constructor SWAT does not model (from a String): its shadow keeps\n'
+         'the default 0, so it must not be compared (comparing it puts x == 0 on the path instead of\n'
+         'x == 7, and the VIOLATION task becomes a false SAFE). Must stay UNKNOWN. The all-zero run\n'
+         'ends early.',
+         'short:7', """
+short x = Verifier.nondetShort();
+if (x == 0) return;
+Map<Short, Integer> m = new HashMap<>();
+m.put(new Short("7"), 1);""",
+         'm.containsKey(x)',
+         'm.containsKey(x) && x != 7')
     pair('hash-boolean-key',
          'Boolean and Byte keys from constants, looked up with symbolic values. SAFE: only true and\n'
          '(byte) -3 are keys.',
