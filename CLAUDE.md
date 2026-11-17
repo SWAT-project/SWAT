@@ -288,6 +288,59 @@ cfg-extraction (see loop facts above).
   in the entry method hashes as before. Lambdas still stop all states (`invokedynamic`), threads
   are still excluded. swat-benchmarks `loop-frames` (RESULTS.md, "Loop-state matching across
   frames").
+- **Hash containers with symbolic keys** (since 2026-11-17, executor `CollectionInvocation.hashCall`,
+  `HashEntries`): a HashMap, LinkedHashMap, ConcurrentHashMap (modelled like a HashMap since then,
+  also with concrete keys), HashSet or LinkedHashSet that SWAT saw created keeps
+  its exact entries (key shadows in insertion order, value shadows). A call by key (get,
+  getOrDefault, containsKey, put, putIfAbsent, remove, the copy constructors, putAll; add, contains,
+  remove, addAll on sets; size, isEmpty, clear) with String, Integer, Long, Short, Byte, Character,
+  Boolean or null keys is recorded as the equality chain `key.equals(k_j)` over the stored keys:
+  library branches like those of the String models (`checkAndSetLibraryBranch`, masked in the SA
+  walk), so the path fixes which entry matched and the solver reaches the others. Before, any
+  symbolic key was a context loss.
+  - **Anything else gives the record up** (`CollectionInvocation.forget`): a call outside the
+    tables, a key of another class (Double, Float, classes with their own equals), a call that
+    ran application code or threw, the container or a view of it passed to code that is not
+    modelled, a change through a view or an iterator, more than 64 entries. With a symbolic key
+    in the container that is a context loss, as is every later call by key.
+  - **Iteration order:** a plain hash container iterates by hash code, which is not modelled: with
+    two or more entries and a symbolic key stored since it was last cleared, `next()` and
+    `toArray` are a context loss (sizes and `hasNext` are exact). A list copied from one is marked
+    (`ContainerContents.hashOrdered`): reading an element of it by position is the context loss,
+    its size is not. Linked containers iterate in the recorded order.
+  - **Checked against the JVM:** what the record says a call returns is compared with what it
+    returned (`checkPrimitive`, `resolveExact`); a difference gives the record up, with context
+    loss if a symbolic comparison was involved.
+  - **Only keys whose shadow value is known** (`ObjectValue.valueUnknown`): a String or boxed
+    shadow made by NEW has a default value until a constructor model sets it. Comparing a shadow
+    left at its default put `c == 0` on the path instead of `c == 'a'` (a false SAFE in
+    `hash-char-literal_false` before the check). `GETVALUE_Object` also marks a String or boxed
+    shadow whose value differs from the object it is fetched for.
+  - **Boxed constants** (fixed with this, 2026-11-17): the models of `Character/Short/Byte/Boolean.<init>`
+    took only a shadow of their own primitive type, but a constant or an int-typed expression is
+    passed as an int (BIPUSH, ICONST): the box kept the default 0 or false, whatever the object
+    held (`Boolean flag = true` read back as false, a context loss at the first unboxing, e.g.
+    in KeywordSearchJobSettings). They now convert as I2C, I2S and I2B do.
+  - **Empty immutable containers** (`Collections.emptyMap/emptySet/emptyList`): get, containsKey,
+    containsValue and contains return null or false whatever the argument is, so they are no
+    context loss either.
+  - **Lists with exactly known elements** (built by appending, `ContainerContents.exactOrdered`):
+    `equals` of two of them (ArrayList, LinkedList, Vector, Stack; also through `Objects.equals`) is
+    false for different sizes, else the same kind of chain over the element pairs up to the
+    first that differ (`CollectionInvocation.listEquals`); a HashSet can be built from one, and
+    from a map's key set. Any call on the list that is not modelled ends that.
+  - **SWAT's own helpers do not end a record:** the reference comparison `map == null` is rewritten
+    to `RefIdentity.same`, which is passed the container; neither it nor the ignored sinks
+    (`InvocationHandler.IGNORED_INVOCATIONS`) count as code that may change it.
+  - **Results** (2026-11-17, 3 GB, 1 core, 900 s): of the 124 round-2 runs that were UNKNOWN by
+    context loss, 33 become correct (31 SAFE, 2 VIOLATION), none wrong; 244 other runs of tasks
+    with hash containers keep their verdicts. Left in cluster A: MessagePdu (the arrays behind
+    `Arrays.asList` have no address when copied), the `_exceptionprone` runs (uncaught-exception
+    downgrade), PasswordSlotManager and ViewHierarchyEncoder (file I/O).
+  - **Tests:** swat-benchmarks `model-soundness`, `hash-*`, `hashset-*`, `emptymap-*`, `list-equals*`
+    (`scripts/model_soundness_hash.py`; its README lists which tasks must stay UNKNOWN), and the
+    executor's `HashContainerModelTest` (`./gradlew :symbolic-executor:test --tests
+    'de.uzl.its.value.reference.HashContainerModelTest'`).
 - **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.

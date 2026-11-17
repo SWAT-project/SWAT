@@ -41,6 +41,13 @@ public class ObjectValue<T, K> extends Value<T, K> {
     // For uninstrumented JDK containers: the shadow of what modelled calls stored in them.
     @Setter @Getter private ContainerContents contents;
     @Getter private IntValue nFields;
+    /**
+     * For a String or boxed value: whether its shadow value is not known to be that of the object
+     * (created by NEW with a default value, and no model of a constructor has set it since; or a
+     * modelled result that differs from the object the JVM returned). Such a shadow is no key for
+     * the exact model of hash containers (HashEntries), which compares keys by their shadows.
+     */
+    public boolean valueUnknown = false;
 
     private BooleanFormulaManager bfm;
 

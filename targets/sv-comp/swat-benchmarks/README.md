@@ -119,6 +119,30 @@ relevance analysis cannot see (the assert reads library state); `summary` (a han
 a quadratic sum, which SWAT's affine summaries cannot merge); `target` (`@Target` on a shell sink in
 a program without assertions). Compare with `--no-user-facts`.
 
+`model-soundness`, `hash-*`, `hashset-*`, `emptymap-*` and `list-equals*`
+(`scripts/model_soundness_hash.py`): SAFE/VIOLATION pairs for the executor's exact model of hash
+containers with symbolic keys (HashMap, LinkedHashMap, ConcurrentHashMap, HashSet, LinkedHashSet;
+String and boxed integral keys; lookups as equality chains over the stored keys). Exact cases, SAFE
+only with the model: two symbolic keys that may be equal (`hash-collide`), put over an equal key,
+remove then size, containsKey of a missing key, Integer against Long and String keys, the null key,
+putIfAbsent/getOrDefault with null values, copies and putAll, clear, a map of maps, the identity of
+the value that put, get and remove return (`hash-identity-*`: `==` is decided on the objects, so the
+path must say which entry matched), LinkedHashMap/LinkedHashSet iteration, the set calls (also
+`addAll` of a map's key set, `hashset-keyset-copy`), lookups in `Collections.emptyMap()`
+(`emptymap-get`), and `equals` of two lists with exactly known elements (`list-equals`,
+`list-equals-size`). Controls that must not become SAFE on the `_false` task (the header says "must
+stay UNKNOWN"): the iteration order of a plain hash container with a symbolic key (`hash-iterate*`,
+`hashset-iterate-copy`, `hash-linked-copy-order`; `hash-iterate-order_false` and
+`hash-concurrent-iterate_false` are the ones a search that ignores the order reports SAFE), keys
+with their own equals (`hash-user-key*`), Double keys, changes through a view, an iterator or
+library code (`hash-view-remove*`, `hash-iterator-remove`, `hash-escape`, `hashset-list-changed`), a
+set copied from a source the model does not read (`hashset-aslist`), a list that library code
+reordered before `equals` (`list-equals-changed`), and a key whose shadow value SWAT does not know
+(`hash-unknown-shadow`, a Short from a String; `hash-new-string`). `hash-char-literal`,
+`hash-short-literal` and `hash-boolean-key` have keys boxed from constants: their shadow was the
+default 0 until the constructor models took int-typed arguments, and a model that compares such a
+shadow makes the VIOLATION task a false SAFE.
+
 `real-tools` (`scripts/tools.py`, harnesses in `scripts/tools/`): harnesses around unmodified
 GNU java-getopt 1.0.13 (`getopt-minitar`, a tar-like CLI) and opencsv 2.3's `CSVParser`
 (`opencsv-import`). The tools are not in the repository: `scripts/fetch_tools.sh` downloads their
