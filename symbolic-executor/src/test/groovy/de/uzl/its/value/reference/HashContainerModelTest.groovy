@@ -85,7 +85,6 @@ class HashContainerModelTest extends Specification {
 
     def "a boxed value built from an int-typed constant has the constant's value"() {
         given:
-        def types = [] as org.objectweb.asm.Type[]
         def character = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(0, "java/lang/Character")
         def bool = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(0, "java/lang/Boolean")
         def small = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(0, "java/lang/Short")
@@ -96,10 +95,10 @@ class HashContainerModelTest extends Specification {
         !HashEntries.supported(character)
 
         when:
-        character.invokeMethod("<init>", types, [new IntValue(context, 97)] as Value[])
-        bool.invokeMethod("<init>", types, [new IntValue(context, 1)] as Value[])
-        small.invokeMethod("<init>", types, [new IntValue(context, -7)] as Value[])
-        tiny.invokeMethod("<init>", types, [new IntValue(context, -3)] as Value[])
+        character.invokeMethod("<init>", [org.objectweb.asm.Type.CHAR_TYPE] as org.objectweb.asm.Type[], [new IntValue(context, 97)] as Value[])
+        bool.invokeMethod("<init>", [org.objectweb.asm.Type.BOOLEAN_TYPE] as org.objectweb.asm.Type[], [new IntValue(context, 1)] as Value[])
+        small.invokeMethod("<init>", [org.objectweb.asm.Type.SHORT_TYPE] as org.objectweb.asm.Type[], [new IntValue(context, -7)] as Value[])
+        tiny.invokeMethod("<init>", [org.objectweb.asm.Type.BYTE_TYPE] as org.objectweb.asm.Type[], [new IntValue(context, -3)] as Value[])
 
         then:
         character.val.concrete == ('a' as char)
