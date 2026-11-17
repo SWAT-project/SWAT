@@ -332,6 +332,11 @@ cfg-extraction (see loop facts above).
   - **SWAT's own helpers do not end a record:** the reference comparison `map == null` is rewritten
     to `RefIdentity.same`, which is passed the container; neither it nor the ignored sinks
     (`InvocationHandler.IGNORED_INVOCATIONS`) count as code that may change it.
+  - **Results** (2026-11-17, 3 GB, 1 core, 900 s): of the 124 round-2 runs that were UNKNOWN by
+    context loss, 33 become correct (31 SAFE, 2 VIOLATION), none wrong; 244 other runs of tasks
+    with hash containers keep their verdicts. Left in cluster A: MessagePdu (the arrays behind
+    `Arrays.asList` have no address when copied), the `_exceptionprone` runs (uncaught-exception
+    downgrade), PasswordSlotManager and ViewHierarchyEncoder (file I/O).
   - **Tests:** swat-benchmarks `model-soundness`, `hash-*`, `hashset-*`, `emptymap-*`, `list-equals*`
     (`scripts/model_soundness_hash.py`; its README lists which tasks must stay UNKNOWN), and the
     executor's `HashContainerModelTest` (`./gradlew :symbolic-executor:test --tests
