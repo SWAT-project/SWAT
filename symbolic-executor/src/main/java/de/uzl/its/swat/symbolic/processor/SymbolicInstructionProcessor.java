@@ -18,6 +18,7 @@ import de.uzl.its.swat.symbolic.instruction.*;
 import de.uzl.its.swat.symbolic.shadow.Frame;
 import de.uzl.its.swat.symbolic.shadow.ShadowContext;
 import de.uzl.its.swat.symbolic.value.Value;
+import de.uzl.its.swat.symbolic.value.reference.CapturingLambdaValue;
 import de.uzl.its.swat.thread.ThreadHandler;
 
 import java.util.*;
@@ -393,8 +394,9 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
      * body would not match it and be skipped. For a lambda that captures nothing (a static
      * {@code lambda$...} method taking exactly the interface method's arguments) the generated
      * class only forwards the arguments, so the frame is replaced by one for the body with the
-     * same arguments. Capturing lambdas are left alone: their captured values are not on the
-     * frame.
+     * same arguments. A lambda with captured arguments is adopted only through the shadow its
+     * INVOKEDYNAMIC created, which holds them (see adoptCapturingLambdaFrame); otherwise it is
+     * left alone: its captured values are not on the frame.
      *
      * @return whether the frame was replaced
      */
@@ -409,11 +411,15 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
         }
         String name = parts[1];
         String desc = parts[2];
+        Frame expected = stack.getActiveFrame();
+        List<Value<?, ?>> locals = expected.getLocals();
+        if (!locals.isEmpty() && locals.get(0) instanceof CapturingLambdaValue lambda) {
+            return adoptCapturingLambdaFrame(stack, lambda, expected, expectedClassFull, actualClassFull,
+                    actualMethodIdentifier, name, desc, logger);
+        }
         if (!isStaticMethod(actualClassFull, name, desc)) {
             return false;
         }
-        Frame expected = stack.getActiveFrame();
-        List<Value<?, ?>> locals = expected.getLocals();
         int argSlots = 0;
         for (org.objectweb.asm.Type t : org.objectweb.asm.Type.getArgumentTypes(desc)) {
             argSlots += t.getSize();
@@ -439,6 +445,51 @@ public class SymbolicInstructionProcessor extends AbstractInstructionProcessor {
         stack.pushFrame(body);
         logger.info("Running lambda body {} as {}:{}", actualMethodIdentifier, expectedClassFull,
                 expected.getMethodName());
+        return true;
+    }
+
+    /**
+     * Lets the body of a lambda with captured arguments run as the interface method called on it.
+     * The receiver's shadow was created by the lambda's INVOKEDYNAMIC and names the
+     * implementation method; the body is adopted only if it is that method, called through that
+     * interface method, with the captured types followed by the interface arguments as its exact
+     * parameters (for an instance method, the receiver is the first captured value). Its frame
+     * then holds the captured values followed by the call's arguments, as LambdaMetafactory passes
+     * them. Anything else stays untracked (a context loss).
+     */
+    private boolean adoptCapturingLambdaFrame(ShadowContext stack, CapturingLambdaValue lambda, Frame expected,
+            String expectedClassFull, String actualClassFull, String actualMethodIdentifier, String name,
+            String desc, Logger logger) {
+        if (!lambda.runsExactly(expected.getMethodName(), actualClassFull, name, desc)) {
+            logger.info("Not running {} as {}:{}: the call does not match its lambda {}", actualMethodIdentifier,
+                    expectedClassFull, expected.getMethodName(), lambda);
+            return false;
+        }
+        List<Value<?, ?>> locals = expected.getLocals();
+        int argSlots = 0;
+        for (org.objectweb.asm.Type t : lambda.instantiatedType.getArgumentTypes()) {
+            argSlots += t.getSize();
+        }
+        if (locals.size() - 1 != argSlots
+                || lambda.instantiatedType.getReturnType().getSize() != expected.nReturnWords) {
+            return false;
+        }
+        Frame body = new Frame(actualClassFull, name, expected.nReturnWords);
+        body.setCallSite(expected.getCallSite());
+        for (int i = 0; i < lambda.captured.length; i++) {
+            if (lambda.capturedTypes[i].getSize() == 2) {
+                body.addLocal2(lambda.captured[i]);
+            } else {
+                body.addLocal(lambda.captured[i]);
+            }
+        }
+        for (Value<?, ?> local : locals.subList(1, locals.size())) {
+            body.addLocal(local);
+        }
+        stack.popFrame();
+        stack.pushFrame(body);
+        logger.info("Running lambda body {} with {} captured value(s) as {}:{}", actualMethodIdentifier,
+                lambda.captured.length, expectedClassFull, expected.getMethodName());
         return true;
     }
 

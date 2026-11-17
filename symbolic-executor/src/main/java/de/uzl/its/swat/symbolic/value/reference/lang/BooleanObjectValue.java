@@ -97,6 +97,13 @@ public class BooleanObjectValue extends BoxedValue<BooleanValue> {
             this.val = new BooleanValue(context, bv.concrete, bv.formula);
             return VoidValue.instance;
         }
+        // Boolean(boolean) with the argument loaded as an int (ILOAD of a boolean local): as
+        // Boolean.valueOf(boolean), the int is 0 or 1
+        if (desc.length == 1 && desc[0].equals(Type.BOOLEAN_TYPE) && args[0] instanceof IntValue iv
+                && (iv.concrete == 0 || iv.concrete == 1)) {
+            this.val = iv.asBooleanValue();
+            return VoidValue.instance;
+        }
         return PlaceHolder.instance;
     }
 
