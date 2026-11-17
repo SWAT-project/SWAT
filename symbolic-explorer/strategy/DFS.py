@@ -98,8 +98,15 @@ def dfs(tree: Tree | None, root: Node | Leaf | None, solved_branches: AbstractSe
     index: GraphIndex | None = sa_entry.graph_index if sa_entry is not None else None
     # The candidates with their open side (see side below), in the walk's order.
     possible_nodes: list[tuple[Node, tuple[Ident, bool]]] = []
-    # The (candidate identity, side) pairs explored, solved or found infeasible on some path.
+    # The (candidate identity, side) pairs some path explored, or found infeasible: what the
+    # walk records as covered (tree.covered), which forgives a given-up branch and tells that a
+    # sliced query's run reached its branch (SVCompDriver). Only a real traversal or an UNSAT
+    # proof counts there.
     covered: set[tuple[Ident, bool]] = set()
+    # The pairs a solution was found for (to be run, or run already: solutions are kept), or
+    # given up on (retired): they keep other candidates with the same identity out, but claim
+    # nothing about that side. Counted as covered, a branch's own marker forgave it (false SAFE).
+    claimed: set[tuple[Ident, bool]] = set()
 
     # A pre-order over the tree: a node, then the subtree of its skipped side, then that of its
     # branched side. It keeps its own stack, since paths can be longer than the interpreter's
@@ -190,8 +197,10 @@ def dfs(tree: Tree | None, root: Node | Leaf | None, solved_branches: AbstractSe
                 covered.add((ident, False))
             if node.branched is not None:
                 covered.add((ident, True))
-            if node.gid in solved_branches or node.gid in unsat_branch_ids:
+            if node.gid in unsat_branch_ids:
                 covered.add((ident, node.branched is None))  # its open side
+            elif node.gid in solved_branches:
+                claimed.add((ident, node.branched is None))
         else:
             counts[role] += 1
             sig_skipped = sig_branched = sig
@@ -238,13 +247,13 @@ def dfs(tree: Tree | None, root: Node | Leaf | None, solved_branches: AbstractSe
             work.append(_At(child, sa_child, sa_stack, trace_stack, clinit_depth, child_sig, open_regions,
                             child_walk_only))
 
-    # Candidates whose side a path with the same relevant decisions has covered already, and
-    # repeats of the same candidate, are left out.
+    # Candidates whose side a path with the same relevant decisions has covered or claimed
+    # already, and repeats of the same candidate, are left out.
     tree.covered = covered
     kept: list[Node] = []
     seen: set[tuple[Ident, bool]] = set()
     for n, side in possible_nodes:
-        if side in covered or side in seen:
+        if side in covered or side in claimed or side in seen:
             counts['covered'] += 1
             if distances is not None:
                 distances.pop(n, None)

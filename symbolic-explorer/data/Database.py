@@ -246,7 +246,8 @@ class Database:
 
     def projected_covered(self, endpoint_id: Union[str, int], ident: Ident, branched: bool) -> bool:
         """Whether the last walk found the side of the branch `ident` (a candidate's sig and key,
-        see dfs) explored by some path with the same relevant decisions."""
+        see dfs) explored by some path with the same relevant decisions, or proven infeasible. A
+        solution found for it, run or not, or giving up on it does not count (dfs: claimed)."""
         endpoint_id = str(endpoint_id)
         with lock:
             return (ident, branched) in self.tree[endpoint_id].covered
