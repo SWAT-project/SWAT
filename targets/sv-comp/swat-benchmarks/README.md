@@ -80,6 +80,14 @@ has an `@Irrelevant` the relevance analysis confirms (no fact assumed), `irrelev
 one it refutes (the method holds the assertion), and `irrelevant-caller_true` one that also slices
 the branches in `main` that only feed it.
 
+`model-soundness`: SAFE/VIOLATION pairs for the executor's library models; every model PR adds its
+own. `arrays-*`, `sb-equals-*`, `logger-*` (`scripts/model_soundness_arrays.py`): Arrays.equals and
+Arrays.hashCode/Objects.hash (one differing element, Integer vs Long elements, hash overflow, the
+Long/Boolean element hashes), StringBuilder/StringBuffer.equals as identity, and controls that must
+not become SAFE: a symbolic array length and a String element in a hash (both must stay UNKNOWN on
+the `_true` task), a custom Logger Handler and a StreamHandler over a buffer that assert on the
+logged message (a Logger call must not be ignored as a plain sink).
+
 `real-tools-facts` (generated, gitignored, not for regular runs): `scripts/real_tools_facts.py`
 writes the `real-tools` tasks with hand-written facts, one of them deliberately wrong. See
 RESULTS.md, "Hand-written facts on real-tools".

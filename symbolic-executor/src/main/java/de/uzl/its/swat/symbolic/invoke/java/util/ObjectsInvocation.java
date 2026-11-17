@@ -20,6 +20,9 @@ public class ObjectsInvocation {
             SymbolicTraceHandler symbolicStateHandler) throws NotImplementedException, ValueConversionException, NoThreadContextException {
         return switch (name) {
             case "equals" -> invokeEquals(args, desc);
+            // Objects.hash(Object... values) is Arrays.hashCode(values)
+            case "hash" -> desc.length == 1 && desc[0].getDescriptor().equals("[Ljava/lang/Object;")
+                    ? ArraysInvocation.invokeStaticMethod("hashCode", args, desc) : PlaceHolder.instance;
             default -> PlaceHolder.instance;
         };
     }
