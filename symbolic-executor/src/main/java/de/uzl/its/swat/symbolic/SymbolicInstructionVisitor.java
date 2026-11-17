@@ -1431,6 +1431,16 @@ public class SymbolicInstructionVisitor implements IVisitor {
     public void visitGETVALUE_Object(GETVALUE_Object<?> inst) throws SymbolicInstructionException {
         try {
             Value<?, ?> peek = stack.peekOperand();
+            if (inst.val != null && (peek instanceof StringValue || peek instanceof BoxedValue<?>)) {
+                // A String or boxed shadow whose value is not the object's is no key the exact
+                // model of hash containers compares (see HashEntries.supported)
+                boolean same = peek instanceof StringValue string
+                        ? inst.val instanceof String s && s.equals(string.concrete)
+                        : ((BoxedValue<?>) peek).getVal() != null && inst.val.equals(((BoxedValue<?>) peek).getVal().concrete);
+                if (!same) {
+                    ((ObjectValue<?, ?>) peek).valueUnknown = true;
+                }
+            }
             Value<?, ?> tmp;
             boolean isSymbolic = false;
 
@@ -1536,11 +1546,6 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         }
 
                     } else {
-                        if (peek instanceof BoxedValue<?> boxed && (boxed.getVal() == null
-                                || boxed.getVal().concrete == null || !inst.val.equals(boxed.getVal().concrete))) {
-                            // The shadow differs from the object: not a key hash containers compare
-                            boxed.valueUnknown = true;
-                        }
                         (peek.asObjectValue()).setAddress(inst.address);
                         stack.putToHeap(inst.address, peek);
                     }

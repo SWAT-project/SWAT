@@ -315,7 +315,8 @@ cfg-extraction (see loop facts above).
     shadow made by NEW has a default value until a constructor model sets it, and the models of
     `Character/Short/Byte/Boolean.<init>` do not for int-typed constants. Comparing such a shadow
     put `c == 0` on the path instead of `c == 'a'` (a false SAFE in `hash-char-literal_false`
-    before the check).
+    before the check). `GETVALUE_Object` also marks a String or boxed shadow whose value differs
+    from the object it is fetched for.
   - **Empty immutable containers** (`Collections.emptyMap/emptySet/emptyList`): get, containsKey,
     containsValue and contains return null or false whatever the argument is, so they are no
     context loss either.
