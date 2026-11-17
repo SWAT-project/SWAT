@@ -289,7 +289,8 @@ cfg-extraction (see loop facts above).
   are still excluded. swat-benchmarks `loop-frames` (RESULTS.md, "Loop-state matching across
   frames").
 - **Hash containers with symbolic keys** (since 2026-11-17, executor `CollectionInvocation.hashCall`,
-  `HashEntries`): a HashMap, LinkedHashMap, HashSet or LinkedHashSet that SWAT saw created keeps
+  `HashEntries`): a HashMap, LinkedHashMap, ConcurrentHashMap (modelled like a HashMap since then,
+  also with concrete keys), HashSet or LinkedHashSet that SWAT saw created keeps
   its exact entries (key shadows in insertion order, value shadows). A call by key (get,
   getOrDefault, containsKey, put, putIfAbsent, remove, the copy constructors, putAll; add, contains,
   remove, addAll on sets; size, isEmpty, clear) with String, Integer, Long, Short, Byte, Character,

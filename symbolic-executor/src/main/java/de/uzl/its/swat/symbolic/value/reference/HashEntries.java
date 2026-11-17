@@ -23,8 +23,8 @@ import org.sosy_lab.java_smt.api.SolverContext;
 import org.sosy_lab.java_smt.api.StringFormula;
 
 /**
- * The exact entries of a {@code HashMap}, {@code LinkedHashMap}, {@code HashSet} or {@code
- * LinkedHashSet} that SWAT saw created and has modelled every call on since: the key shadows
+ * The exact entries of a {@code HashMap}, {@code LinkedHashMap}, {@code ConcurrentHashMap}, {@code
+ * HashSet} or {@code LinkedHashSet} that SWAT saw created and has modelled every call on since: the key shadows
  * (symbolic or concrete) in insertion order, each with the shadow of its value (maps).
  *
  * <p>A lookup is an equality chain: the key is compared with the stored keys in order, as {@code

@@ -47,8 +47,8 @@ import java.util.Set;
  * arguments must be concrete too. Anything else falls back to the generic handling of a missing
  * invocation.
  *
- * <p><b>Exact hash containers.</b> A {@code HashMap}, {@code LinkedHashMap}, {@code HashSet} or
- * {@code LinkedHashSet} whose creation and every call since were modelled has an exact record of
+ * <p><b>Exact hash containers.</b> A {@code HashMap}, {@code LinkedHashMap}, {@code
+ * ConcurrentHashMap}, {@code HashSet} or {@code LinkedHashSet} whose creation and every call since were modelled has an exact record of
  * its entries ({@link HashEntries}). With it, calls by key are modelled for symbolic String and
  * boxed integral keys too ({@link #hashCall}): the lookup is recorded as the equality chain {@code
  * key.equals(k_j)} over the stored keys, library branches as those of the String models ({@link
@@ -81,11 +81,15 @@ public final class CollectionInvocation {
         for (String c : List.of("HashSet", "LinkedHashSet")) {
             KIND_BY_CLASS.put("java/util/" + c, Kind.SET);
         }
+        // By key it behaves like a HashMap, except that a null key or value throws (and a call
+        // that throws is never modelled)
+        KIND_BY_CLASS.put("java/util/concurrent/ConcurrentHashMap", Kind.MAP);
     }
 
-    /** The classes with an exact record of their entries (not Hashtable: it rejects null). */
+    /** The classes with an exact record of their entries. */
     private static final Set<String> HASH_CLASSES = Set.of(
-            "java/util/HashMap", "java/util/LinkedHashMap", "java/util/HashSet", "java/util/LinkedHashSet");
+            "java/util/HashMap", "java/util/LinkedHashMap", "java/util/HashSet", "java/util/LinkedHashSet",
+            "java/util/concurrent/ConcurrentHashMap");
 
     /** The calls modelled on the exact entries of a hash container. */
     private enum HashOp {

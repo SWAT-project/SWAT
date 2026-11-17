@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Writes the model-soundness tasks for the exact model of hash containers with symbolic keys
-(java/model-soundness/hash-*, hashset-*): HashMap, LinkedHashMap, HashSet, LinkedHashSet with
+(java/model-soundness/hash-*, hashset-*, emptymap-*): HashMap, LinkedHashMap, ConcurrentHashMap,
+HashSet, LinkedHashSet with
 String and boxed integral keys, lookups as equality chains over the stored keys.
 
 SAFE/VIOLATION pairs: a wrong or too-eager model turns a VIOLATION task into a false SAFE. A `_true`
@@ -372,6 +373,51 @@ Map<String, String> m = Collections.emptyMap();
 Set<String> e = Collections.emptySet();""",
          'm.get(s) == null && !e.contains(s) && s.equals("k")',
          'm.get(s) != null || m.containsKey(s) || e.contains(s)')
+    pair('hash-concurrent',
+         'A ConcurrentHashMap with symbolic String keys: put, putIfAbsent, get, getOrDefault and\n'
+         'remove by key as in a HashMap. SAFE: "v1" stays only under a (putIfAbsent of an equal b\n'
+         'changes nothing, and remove(b) then removes it).',
+         'string:k string:k', """
+String a = Verifier.nondetString();
+String b = Verifier.nondetString();
+Map<String, String> m = new java.util.concurrent.ConcurrentHashMap<>();
+m.put(a, "v1");
+String old = m.putIfAbsent(b, "v2");
+String got = m.getOrDefault(b, "none");
+m.remove(b);""",
+         'old != null && got.equals("v1") && m.isEmpty() && a.equals("k")',
+         'old != null && (!got.equals("v1") || !m.isEmpty() || !a.equals(b))')
+    pair('hash-concurrent-iterate',
+         'As hash-iterate-order, for a ConcurrentHashMap: its iteration order is the hash order too.\n'
+         'Must stay UNKNOWN.',
+         'string:p', """
+String a = Verifier.nondetString();
+Map<String, Integer> m = new java.util.concurrent.ConcurrentHashMap<>();
+m.put("b", 1);
+m.put(a, 2);
+int first = m.values().iterator().next();""",
+         "first == 2 && a.length() == 1 && a.charAt(0) > 'b'",
+         "first == 2 && a.length() == 1 && a.charAt(0) > 'b' && a.charAt(0) < 'p'")
+    pair('hash-linked-copy-order',
+         'A LinkedHashMap copied from a HashMap with a symbolic key iterates in the HashMap\'s hash\n'
+         'order, not in the order the keys were put (see hash-iterate-order). Must stay UNKNOWN.',
+         'string:p', """
+String a = Verifier.nondetString();
+Map<String, Integer> m = new HashMap<>();
+m.put("b", 1);
+m.put(a, 2);
+Map<String, Integer> l = new LinkedHashMap<>(m);
+int first = l.values().iterator().next();""",
+         "first == 2 && a.length() == 1 && a.charAt(0) > 'b'",
+         "first == 2 && a.length() == 1 && a.charAt(0) > 'b' && a.charAt(0) < 'p'")
+    pair('hashset-aslist',
+         'A HashSet built from Arrays.asList, a source the model does not copy from: the set is not\n'
+         'modelled. Must stay UNKNOWN.',
+         'string:z', """
+String a = Verifier.nondetString();
+Set<String> s = new HashSet<>(Arrays.asList(a, "z"));""",
+         's.size() == 1',
+         's.size() == 1 && !a.equals("z")')
     pair('hashset-add',
          'HashSet.add of a symbolic element returns whether it was new; contains of another symbolic\n'
          'one. SAFE: if a was not new, the set is {"x"} and holds b only for b == "x".',
