@@ -344,6 +344,49 @@ Map<Short, Integer> m = new HashMap<>();
 m.put((short) 7, 1);""",
          'm.containsKey(x)',
          'm.containsKey(x) && x != 7')
+    pair('hash-identity-put',
+         'The identity of what put returns: the previous value of the entry the key equals, v0 iff\n'
+         'the two symbolic keys are equal. Reference comparisons are decided on the objects, so the\n'
+         'path must say which entry matched. SAFE: put returns v0 only for equal keys.',
+         'string:k string:k', """
+String a = Verifier.nondetString();
+String b = Verifier.nondetString();
+Object v0 = new Object();
+Object v1 = new Object();
+Map<String, Object> m = new HashMap<>();
+m.put(a, v0);
+Object previous = m.put(b, v1);""",
+         'previous == v0 && a.equals("k")',
+         '(previous == v0 && !a.equals(b)) || (previous != v0 && previous != null)')
+    pair('hash-identity-get',
+         'The identity of what get returns, with possibly equal symbolic keys: the lookup key b\n'
+         'finds v1 iff it equals a (which may itself have replaced the entry of "x"). SAFE: get\n'
+         'returns v1 only for b equal to a, and v0 only for "x".',
+         'string:q string:q', """
+String a = Verifier.nondetString();
+String b = Verifier.nondetString();
+Object v0 = new Object();
+Object v1 = new Object();
+Map<String, Object> m = new HashMap<>();
+m.put("x", v0);
+m.put(a, v1);
+Object got = m.get(b);""",
+         'got == v1 && b.equals("q")',
+         '(got == v1 && !b.equals(a)) || (got == v0 && (!b.equals("x") || a.equals("x"))) || (got != v0 && got != v1 && got != null)')
+    pair('hash-identity-remove',
+         'The identity of what remove returns and of the values left, with possibly equal symbolic\n'
+         'Integer keys. SAFE: remove(y) returns v1 iff y == x or x == 1 and y == 1.',
+         'int:5 int:5', """
+int x = Verifier.nondetInt();
+int y = Verifier.nondetInt();
+Object v0 = new Object();
+Object v1 = new Object();
+Map<Integer, Object> m = new HashMap<>();
+m.put(1, v0);
+m.put(x, v1);
+Object removed = m.remove(y);""",
+         'removed == v1 && m.get(1) == v0 && x == 5',
+         '(removed == v1 && y != x) || (removed == v0 && (y != 1 || x == 1)) || (removed == null && (y == x || y == 1))')
     pair('hash-unknown-shadow',
          'A Short key built by a constructor SWAT does not model (from a String): its shadow keeps\n'
          'the default 0, so it must not be compared (comparing it puts x == 0 on the path instead of\n'
