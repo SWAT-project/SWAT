@@ -39,6 +39,8 @@ public class ContainerPlaceHolder extends PlaceHolder {
     public final Object expected;
     /** Whether an exact result was decided by comparing symbolic keys (branches on the path). */
     public final boolean symbolic;
+    /** Whether a returned view is the key set of the map {@link #contents} ({@code Map.keySet()}). */
+    public boolean keySet = false;
 
     public ContainerPlaceHolder(
             Result result,

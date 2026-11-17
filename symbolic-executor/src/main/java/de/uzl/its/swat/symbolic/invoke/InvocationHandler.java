@@ -96,15 +96,16 @@ public class InvocationHandler {
         if (containerResult != null) {
             return containerResult;
         }
-        // A call the container models do not cover may change the containers it is given
-        if (!READS_ITS_ARGUMENTS.contains(owner)) {
+        boolean ignored = IGNORED_INVOCATIONS.contains(owner + "/" + name)
+                || IGNORED_INVOCATIONS.contains(owner);
+
+        // A call the container models do not cover may change the containers it is given (not
+        // SWAT's own helpers, e.g. the reference comparison RefIdentity.same, nor the ignored sinks)
+        if (!ignored && !owner.startsWith("de/uzl/its/swat/") && !READS_ITS_ARGUMENTS.contains(owner)) {
             for (Value<?, ?> argument : arguments) {
                 CollectionInvocation.escaped(argument, owner, name, desc, invokeId);
             }
         }
-
-        boolean ignored = IGNORED_INVOCATIONS.contains(owner + "/" + name)
-                || IGNORED_INVOCATIONS.contains(owner);
 
         // We do that first to include the pointer in instance invocation cases. Ignored
         // invocations are never recorded, so their arguments need no (possibly deep) scan.

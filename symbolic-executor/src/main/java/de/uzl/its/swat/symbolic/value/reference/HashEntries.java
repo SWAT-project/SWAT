@@ -63,6 +63,13 @@ public final class HashEntries {
     /** For a linked container: whether {@link #entries} is in iteration order. */
     private boolean orderKnown = true;
 
+    /**
+     * Whether a symbolic key was stored since the container was last empty by {@code clear()}.
+     * It may have shaped the table (which bin a key is in, a bin's order once it is a tree) for
+     * the keys that came after it, also when it is removed again.
+     */
+    private boolean symbolicSinceClear = false;
+
     private final List<Entry> entries = new ArrayList<>();
 
     public HashEntries(boolean linked) {
@@ -80,10 +87,12 @@ public final class HashEntries {
     public void clear() {
         entries.clear();
         orderKnown = true;
+        symbolicSinceClear = false;
     }
 
-    public void append(Value<?, ?> key, Value<?, ?> value) {
+    public void append(Value<?, ?> key, Value<?, ?> value) throws NotImplementedException {
         entries.add(new Entry(key, value));
+        symbolicSinceClear |= key.isSymbolic();
     }
 
     public Entry remove(int index) {
@@ -95,20 +104,18 @@ public final class HashEntries {
         orderKnown = false;
     }
 
-    public boolean anyKeySymbolic() throws NotImplementedException {
-        for (Entry e : entries) {
-            if (e.key.isSymbolic()) return true;
-        }
-        return false;
+    /** The entries were added in an order that may depend on a symbolic key (a copy in hash order). */
+    public void taintOrder() {
+        symbolicSinceClear = true;
     }
 
     /**
      * Whether the iteration order may depend on a symbolic key in a way the path does not fix:
-     * two or more entries, one with a symbolic key, in a container that does not iterate in the
-     * order recorded here.
+     * two or more entries in a container that does not iterate in the order recorded here and
+     * that has held a symbolic key since it was last cleared.
      */
-    public boolean orderUnknown() throws NotImplementedException {
-        return entries.size() >= 2 && (!linked || !orderKnown) && anyKeySymbolic();
+    public boolean orderUnknown() {
+        return entries.size() >= 2 && (!linked || !orderKnown) && symbolicSinceClear;
     }
 
     /** Whether {@link #entries} is the iteration order whatever the keys are. */

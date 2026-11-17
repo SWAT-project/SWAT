@@ -2712,6 +2712,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         new ArrayList<>(Arrays.asList(arguments)),
                         false,
                         null);
+                recordCallBranches(inst.iid, inst.name, CollectionInvocation.takeBranches(), true);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
                 recordThrowingStaticCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);

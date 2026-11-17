@@ -304,8 +304,10 @@ cfg-extraction (see loop facts above).
     modelled, a change through a view or an iterator, more than 64 entries. With a symbolic key
     in the container that is a context loss, as is every later call by key.
   - **Iteration order:** a plain hash container iterates by hash code, which is not modelled: with
-    two or more entries and a symbolic key, `next()`, `toArray` and copies are a context loss
-    (sizes and `hasNext` are exact). Linked containers iterate in the recorded order.
+    two or more entries and a symbolic key stored since it was last cleared, `next()` and
+    `toArray` are a context loss (sizes and `hasNext` are exact). A list copied from one is marked
+    (`ContainerContents.hashOrdered`): reading an element of it by position is the context loss,
+    its size is not. Linked containers iterate in the recorded order.
   - **Checked against the JVM:** what the record says a call returns is compared with what it
     returned (`checkPrimitive`, `resolveExact`); a difference gives the record up, with context
     loss if a symbolic comparison was involved.
@@ -317,7 +319,15 @@ cfg-extraction (see loop facts above).
   - **Empty immutable containers** (`Collections.emptyMap/emptySet/emptyList`): get, containsKey,
     containsValue and contains return null or false whatever the argument is, so they are no
     context loss either.
-  - **Tests:** swat-benchmarks `model-soundness`, `hash-*`, `hashset-*` and `emptymap-*`
+  - **Lists with exactly known elements** (built by appending, `ContainerContents.exactOrdered`):
+    `equals` of two of them (ArrayList, LinkedList, Vector, Stack; also through `Objects.equals`) is
+    false for different sizes, else the same kind of chain over the element pairs up to the
+    first that differ (`CollectionInvocation.listEquals`); a HashSet can be built from one, and
+    from a map's key set. Any call on the list that is not modelled ends that.
+  - **SWAT's own helpers do not end a record:** the reference comparison `map == null` is rewritten
+    to `RefIdentity.same`, which is passed the container; neither it nor the ignored sinks
+    (`InvocationHandler.IGNORED_INVOCATIONS`) count as code that may change it.
+  - **Tests:** swat-benchmarks `model-soundness`, `hash-*`, `hashset-*`, `emptymap-*`, `list-equals*`
     (`scripts/model_soundness_hash.py`; its README lists which tasks must stay UNKNOWN), and the
     executor's `HashContainerModelTest` (`./gradlew :symbolic-executor:test --tests
     'de.uzl.its.value.reference.HashContainerModelTest'`).

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Writes the model-soundness tasks for the exact model of hash containers with symbolic keys
-(java/model-soundness/hash-*, hashset-*, emptymap-*): HashMap, LinkedHashMap, ConcurrentHashMap,
+(java/model-soundness/hash-*, hashset-*, emptymap-*, list-equals*): HashMap, LinkedHashMap, ConcurrentHashMap,
 HashSet, LinkedHashSet with
 String and boxed integral keys, lookups as equality chains over the stored keys.
 
@@ -418,6 +418,61 @@ String a = Verifier.nondetString();
 Set<String> s = new HashSet<>(Arrays.asList(a, "z"));""",
          's.size() == 1',
          's.size() == 1 && !a.equals("z")')
+    pair('hashset-keyset-copy',
+         'addAll of a map\'s key set (with a symbolic key) into a set. SAFE: two elements are left\n'
+         'only if a is "j" or "k".',
+         'string:j', """
+String a = Verifier.nondetString();
+Map<String, Integer> m = new HashMap<>();
+m.put(a, 1);
+m.put("k", 2);
+Set<String> s = new HashSet<>();
+s.add("j");
+s.addAll(m.keySet());""",
+         's.size() == 2 && a.equals("j")',
+         's.size() == 2 && !a.equals("j") && !a.equals("k")')
+    pair('list-equals',
+         'ArrayList.equals of two lists with symbolic String elements: equal iff the elements are,\n'
+         'pair by pair. SAFE: only a == "k" and b == "m" make them equal.',
+         'string:k string:m', """
+String a = Verifier.nondetString();
+String b = Verifier.nondetString();
+List<String> x = new ArrayList<>();
+x.add(a);
+x.add("m");
+List<String> y = new ArrayList<>();
+y.add("k");
+y.add(b);""",
+         'x.equals(y) && a.length() == 1',
+         'x.equals(y) && (!a.equals("k") || !b.equals("m"))')
+    pair('list-equals-size',
+         'Objects.equals of two lists of different sizes: never equal, whatever the elements are.\n'
+         'SAFE: the lists differ.',
+         'string:q string:q', """
+String a = Verifier.nondetString();
+String b = Verifier.nondetString();
+List<String> x = new ArrayList<>();
+x.add(a);
+List<String> y = new ArrayList<>();
+y.add(a);
+y.add(b);""",
+         '!Objects.equals(x, y) && a.equals("q") && x.equals(x)',
+         'Objects.equals(x, y) || !x.equals(x)')
+    pair('list-equals-changed',
+         'equals of a list that library code SWAT does not model has changed (Collections.reverse):\n'
+         'its elements are not known in order any more, and comparing the recorded ones puts\n'
+         'a == "k" on the path instead of a == "z". Must stay UNKNOWN.',
+         'string:z', """
+String a = Verifier.nondetString();
+List<String> x = new ArrayList<>();
+x.add(a);
+x.add("k");
+Collections.reverse(x);
+List<String> y = new ArrayList<>();
+y.add("k");
+y.add("z");""",
+         'x.equals(y)',
+         'x.equals(y) && !a.equals("z")')
     pair('hashset-add',
          'HashSet.add of a symbolic element returns whether it was new; contains of another symbolic\n'
          'one. SAFE: if a was not new, the set is {"x"} and holds b only for b == "x".',

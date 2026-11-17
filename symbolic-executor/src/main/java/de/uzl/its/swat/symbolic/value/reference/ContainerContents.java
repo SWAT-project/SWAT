@@ -86,6 +86,14 @@ public class ContainerContents {
      * it is a context loss.
      */
     private boolean symbolicKeys = false;
+    /**
+     * Whether the container was filled from a hash container whose iteration order was unknown
+     * then (a list copied from a HashSet with symbolic elements): the order of its own elements
+     * is unknown for good.
+     */
+    private boolean hashOrdered = false;
+    /** For a view: the map whose key set it is ({@code Map.keySet()}), see {@link #keySetOf()}. */
+    private ContainerContents keySetOf;
 
     public ContainerContents(Kind kind) {
         this(kind, false);
@@ -194,13 +202,30 @@ public class ContainerContents {
         if (!seen.add(this)) {
             return false;
         }
-        if (symbolicKeys && (hash == null || hash.orderUnknown())) {
+        if (hashOrdered || (symbolicKeys && (hash == null || hash.orderUnknown()))) {
             return true;
         }
         for (Object s : sources) {
             if (s instanceof ContainerContents c && c.hashOrderUnknown(seen)) return true;
         }
         return false;
+    }
+
+    /**
+     * For the contents of a view: the map it is the key set of, if it shows nothing else.
+     */
+    public ContainerContents keySetOf() {
+        return keySetOf != null && sources.size() == 1 && sources.get(0) == keySetOf ? keySetOf : null;
+    }
+
+    /** Marks a view of {@code map} (its only source) as the map's key set. */
+    public void setKeySetOf(ContainerContents map) {
+        keySetOf = map;
+    }
+
+    /** Records that the elements were copied in an iteration order that is unknown (see {@link #hashOrdered}). */
+    public void markHashOrdered() {
+        hashOrdered = true;
     }
 
     /** Whether a container among the sources (transitively) ever stored a symbolic key. */

@@ -287,6 +287,13 @@ public final class CollectionInvocation {
                 }
                 contents = instance.getContents();
             }
+            if (kind == Kind.LIST && name.equals("equals") && desc.equals("(Ljava/lang/Object;)Z")) {
+                Value<?, ?> equal = listEquals(instance, args[0],
+                        new InvocationEntry(owner, name, desc, true, invokeId, true));
+                if (equal != null) {
+                    return equal;
+                }
+            }
             Model model = (switch (kind) {
                 case LIST -> LIST;
                 case MAP -> MAP;
@@ -313,7 +320,72 @@ public final class CollectionInvocation {
         if (owner.equals("java/util/Collections") || owner.equals("java/util/Arrays")) {
             return invokeStatic(owner, name, desc, args, invokeId);
         }
+        if (owner.equals("java/util/Objects") && name.equals("equals")
+                && desc.equals("(Ljava/lang/Object;Ljava/lang/Object;)Z")
+                && args[0] instanceof ObjectValue<?, ?> first && !first.isNullValue()
+                && first.getContents() != null && first.getContents().kind == Kind.LIST) {
+            // Objects.equals(a, b) with a list a: a.equals(b)
+            return listEquals(first, args[1], new InvocationEntry(owner, name, desc, false, invokeId, true));
+        }
         return null;
+    }
+
+    /** The list classes whose equals compares the elements in order (AbstractList's contract). */
+    private static final Set<String> LISTS_EQUAL_BY_ELEMENTS = Set.of(
+            "java/util/ArrayList", "java/util/LinkedList", "java/util/Vector", "java/util/Stack");
+
+    /**
+     * {@code list.equals(other)} for two lists whose elements are known exactly, in order, and
+     * are all values the exact model compares (null, Strings, boxed integral values, see {@link
+     * HashEntries#equal}): lists of different sizes differ; else the elements are compared pair by
+     * pair up to the first that differ, each comparison a branch of the call (see {@link
+     * #takeBranches}).
+     *
+     * @return the result, or {@code null} if the call is not modelled
+     */
+    private static Value<?, ?> listEquals(ObjectValue<?, ?> list, Value<?, ?> other, InvocationEntry call)
+            throws NotImplementedException {
+        if (!(other instanceof ObjectValue<?, ?> o) || !isListEqualByElements(list)) {
+            return null;
+        }
+        ContainerContents contents = list.getContents();
+        if (o == list) {
+            return ContainerPlaceHolder.exactPrimitive(contents, true, false, call);
+        }
+        if (o.isNullValue()) {
+            return ContainerPlaceHolder.exactPrimitive(contents, false, false, call);
+        }
+        if (!isListEqualByElements(o)) {
+            return null; // another kind of list, or not a list: its elements (or class) are not known
+        }
+        List<Value<?, ?>> xs = contents.exactOrdered();
+        List<Value<?, ?>> ys = o.getContents().exactOrdered();
+        if (xs.size() != ys.size()) {
+            // (Flagged symbolic so that a result that differs, from lists that are not what the
+            // records say, is a context loss if they hold symbolic elements.)
+            boolean symbolic = contents.isSymbolic(new HashSet<>()) || o.getContents().isSymbolic(new HashSet<>());
+            return ContainerPlaceHolder.exactPrimitive(contents, false, symbolic, call);
+        }
+        List<Branch> branches = new ArrayList<>();
+        boolean equal = true;
+        for (int i = 0; i < xs.size() && equal; i++) {
+            Branch eq = HashEntries.equal(xs.get(i), ys.get(i));
+            if (eq == null) {
+                return null;
+            }
+            branches.add(eq);
+            equal = eq.holds();
+        }
+        BRANCHES.get().addAll(branches);
+        logger.debug("Modelled {}.{}{} of two lists: {}", call.owner(), call.name(), call.desc(), equal);
+        return ContainerPlaceHolder.exactPrimitive(contents, equal, true, call);
+    }
+
+    /** Whether the object is a list with the elementwise equals whose elements are known exactly. */
+    private static boolean isListEqualByElements(ObjectValue<?, ?> list) {
+        return list.className != null && LISTS_EQUAL_BY_ELEMENTS.contains(list.className.replace('.', '/'))
+                && list.getContents() != null && list.getContents().kind == Kind.LIST
+                && list.getContents().exactOrdered() != null && list.getContents().exactOrdered().size() <= HashEntries.MAX_ENTRIES;
     }
 
     /**
@@ -484,6 +556,14 @@ public final class CollectionInvocation {
             }
             distinct = true;
             inOrder = source.hash().iteratesInOrder();
+        } else if (kind == Kind.SET && source.keySetOf() != null && source.keySetOf().hash() != null) {
+            // The key set of a map with exact entries
+            for (HashEntries.Entry e : source.keySetOf().hash().entries()) {
+                keys.add(e.key);
+                values.add(null);
+            }
+            distinct = true;
+            inOrder = source.keySetOf().hash().iteratesInOrder();
         } else if (kind == Kind.SET && source.kind == Kind.LIST && source.exactOrdered() != null) {
             for (Value<?, ?> element : source.exactOrdered()) {
                 keys.add(element);
@@ -529,6 +609,9 @@ public final class CollectionInvocation {
         }
         if (added >= 2 && !inOrder) {
             entries.forgetOrder(); // a linked container got them in the source's (hash) order
+        }
+        if (added >= 2 && source.hashOrderUnknown()) {
+            entries.taintOrder(); // and that order depends on a symbolic key
         }
         return added > 0;
     }
@@ -683,6 +766,11 @@ public final class CollectionInvocation {
             if (source == null) {
                 return null;
             }
+            if (source.hashOrderUnknown()) {
+                // The copy gets the elements in the source's hash order, whatever the source
+                // holds later: reading an element of the copy by position is a context loss
+                contents.markHashOrdered();
+            }
             contents.addSource(source);
         }
         if (model.op() == Op.STORE || model.op() == Op.STORE_ELEMENT) {
@@ -697,11 +785,11 @@ public final class CollectionInvocation {
         }
         instance.setContents(contents);
         InvocationEntry call = new InvocationEntry(owner, name, desc, true, invokeId, true);
-        if (model.op() != Op.PLAIN && model.op() != Op.VIEW && model.op() != Op.INIT && model.op() != Op.STORE
-                && contents.hashOrderUnknown()) {
+        boolean readsByPosition = model.op() == Op.ELEMENT || model.op() == Op.STORE_ELEMENT || model.op() == Op.ARRAY;
+        if (readsByPosition && contents.hashOrderUnknown()) {
             // Which element a view, an iterator or a copy of a hash container yields next depends
             // on the hash codes of its symbolic keys, which the path does not fix. (How many it
-            // yields does not: sizes and hasNext are exact.)
+            // yields does not: sizes and hasNext are exact, and so is copying all of them.)
             contextLoss(call, "depends on the iteration order of a hash container with symbolic keys");
         }
         logger.debug("Modelled container call {}.{}{} on {}", owner, name, desc, instance);
@@ -719,8 +807,12 @@ public final class CollectionInvocation {
                 }
                 yield new ContainerPlaceHolder(Result.ELEMENT, contents, false, candidates, call);
             }
-            case VIEW -> new ContainerPlaceHolder(
-                    Result.VIEW, contents, name.equals("entrySet") || contents.yieldsEntries, List.of(), call);
+            case VIEW -> {
+                ContainerPlaceHolder view = new ContainerPlaceHolder(
+                        Result.VIEW, contents, name.equals("entrySet") || contents.yieldsEntries, List.of(), call);
+                view.keySet = kind == Kind.MAP && name.equals("keySet");
+                yield view;
+            }
             case ARRAY -> new ContainerPlaceHolder(Result.ARRAY, contents, false,
                     contents.ordered() == null ? List.of() : List.copyOf(contents.ordered()), call);
         };
@@ -879,7 +971,11 @@ public final class CollectionInvocation {
                         && !(ov instanceof AbstractArrayValue<?, ?, ?, ?, ?>)
                         && !(ov instanceof ObjectArrayValue)) {
                     if (ov.getContents() == null) {
-                        ov.setContents(ContainerContents.viewOf(ph.contents, ph.yieldsEntries));
+                        ContainerContents view = ContainerContents.viewOf(ph.contents, ph.yieldsEntries);
+                        if (ph.keySet) {
+                            view.setKeySetOf(ph.contents);
+                        }
+                        ov.setContents(view);
                     } else {
                         ov.getContents().addSource(ph.contents);
                     }

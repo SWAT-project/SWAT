@@ -267,6 +267,69 @@ class HashContainerModelTest extends Specification {
         second.contents == null
     }
 
+    def "equals of two lists with exact elements compares them pair by pair"() {
+        given:
+        def x = container("java/util/ArrayList")
+        def y = container("java/util/ArrayList")
+        call(x, "add", HAS, string("k"))
+        call(x, "add", HAS, string("m", true))
+        call(x, "add", HAS, string("n"))
+        call(y, "add", HAS, string("k"))
+        call(y, "add", HAS, string("z"))
+
+        expect: "different sizes: no comparison"
+        call(x, "equals", HAS, y).expected == false
+        CollectionInvocation.takeBranches().isEmpty()
+        call(x, "equals", HAS, x).expected == true
+        call(x, "equals", HAS, nullValue()).expected == false
+
+        when:
+        call(y, "add", HAS, string("n"))
+        def result = call(x, "equals", HAS, y)
+
+        then: "up to the first pair that differs"
+        result.expected == false
+        CollectionInvocation.takeBranches()*.holds() == [true, false]
+        CollectionInvocation.invoke("java/util/Objects", "equals", "(Ljava/lang/Object;Ljava/lang/Object;)Z",
+                [x, y] as Value[], false, null, 0L).expected == false
+
+        when: "a call that is not modelled got the list"
+        CollectionInvocation.escaped(x, "java/util/Collections", "reverse", "(Ljava/util/List;)V", 0L)
+
+        then:
+        call(x, "equals", HAS, y) == null
+    }
+
+    def "addAll of a map's key set compares its keys with the set's elements"() {
+        given:
+        def map = container("java/util/HashMap")
+        call(map, "put", PUT, string("j", true), string("v"))
+        call(map, "put", PUT, string("k"), string("w"))
+        def keys = new ObjectValue(context, 'java/util/HashMap$KeySet', new IntValue(context, 0), nextAddress++)
+        def view = ContainerContents.viewOf(map.contents, false)
+        view.setKeySetOf(map.contents)
+        keys.setContents(view)
+        def set = new ObjectValue(context, "java/util/HashSet", new IntValue(context, 0), nextAddress++)
+        call(set, "<init>", "()V")
+        call(set, "add", HAS, string("j"))
+
+        when:
+        def result = call(set, "addAll", "(Ljava/util/Collection;)Z", keys)
+
+        then: "the symbolic key equals the element, the other key is new (a comparison of constants)"
+        result.expected == true
+        CollectionInvocation.takeBranches()*.holds() == [true, false]
+        set.contents.hash().size() == 2
+
+        when: "a view that is not marked as the key set (values()) is no source"
+        def values = new ObjectValue(context, 'java/util/HashMap$Values', new IntValue(context, 0), nextAddress++)
+        values.setContents(ContainerContents.viewOf(map.contents, false))
+
+        then:
+        call(set, "addAll", "(Ljava/util/Collection;)Z", values) == null
+        set.contents.hash() == null
+    }
+
     def "a ConcurrentHashMap and the lookups of an empty immutable map are modelled, a Hashtable only by reference"() {
         given:
         def concurrent = container("java/util/concurrent/ConcurrentHashMap")
