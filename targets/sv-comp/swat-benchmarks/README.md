@@ -100,6 +100,13 @@ library code calling a capturing lambda back (`foreach-capture`, `sort-comparato
 `thread-capture`) and a method reference that needs an unboxing adaptation
 (`methodref-unboxing`), which must stay context losses (UNKNOWN expected for `_true`).
 
+More `model-soundness` pairs: `arrays-*`, `sb-equals-*`, `logger-*`
+(`scripts/model_soundness_arrays.py`): Arrays.equals and Arrays.hashCode/Objects.hash (one differing element, Integer vs Long elements, hash overflow, the
+Long/Boolean element hashes), StringBuilder/StringBuffer.equals as identity, and controls that must
+not become SAFE: a symbolic array length and a String element in a hash (both must stay UNKNOWN on
+the `_true` task), a custom Logger Handler and a StreamHandler over a buffer that assert on the
+logged message (a Logger call must not be ignored as a plain sink).
+
 `real-tools-facts` (generated, gitignored, not for regular runs): `scripts/real_tools_facts.py`
 writes the `real-tools` tasks with hand-written facts, one of them deliberately wrong. See
 RESULTS.md, "Hand-written facts on real-tools".

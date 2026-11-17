@@ -7,6 +7,7 @@ import de.uzl.its.swat.config.Config;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
 import de.uzl.its.swat.symbolic.value.VoidValue;
+import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.BooleanValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.CharValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.array.CharArrayValue;
@@ -132,6 +133,11 @@ public final class StringBuilderValue extends ObjectValue<Object, Object> {
      */
     @Override
     public Value<?, ?> invokeMethod(String name, Type[] desc, Value<?, ?>[] args) throws NotImplementedException, ValueConversionException {
+        if (name.equals("equals") && args.length == 1 && args[0] instanceof ObjectValue<?, ?> other) {
+            // StringBuilder and StringBuffer (final) do not override Object.equals: identity,
+            // whatever the chars. References are concrete; a diverging shadow shows at GETVALUE.
+            return new BooleanValue(context, this == other);
+        }
         if ((unknown || stringValue == null) && !name.equals("<init>")) return PlaceHolder.instance;
         Value<?, ?> result;
         try {
