@@ -317,8 +317,10 @@ cfg-extraction (see loop facts above).
   - **Empty immutable containers** (`Collections.emptyMap/emptySet/emptyList`): get, containsKey,
     containsValue and contains return null or false whatever the argument is, so they are no
     context loss either.
-  - **Tests:** swat-benchmarks `model-soundness`, `hash-*` and `hashset-*`
-    (`scripts/model_soundness_hash.py`).
+  - **Tests:** swat-benchmarks `model-soundness`, `hash-*`, `hashset-*` and `emptymap-*`
+    (`scripts/model_soundness_hash.py`; its README lists which tasks must stay UNKNOWN), and the
+    executor's `HashContainerModelTest` (`./gradlew :symbolic-executor:test --tests
+    'de.uzl.its.value.reference.HashContainerModelTest'`).
 - **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.
