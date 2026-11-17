@@ -33,6 +33,7 @@ import de.uzl.its.swat.symbolic.value.ValueType;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.DoubleValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.floatingpoint.FloatValue;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.*;
+import de.uzl.its.swat.symbolic.value.reference.CapturingLambdaValue;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue;
 import de.uzl.its.swat.symbolic.value.reference.array.*;
@@ -1434,6 +1435,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
             Value<?, ?> tmp;
             boolean isSymbolic = false;
 
+            if (peek instanceof CapturingLambdaValue lambda && lambda.className == null && inst.val != null) {
+                // Created by INVOKEDYNAMIC before the JVM named the generated class
+                lambda.className = Util.formatClassName(inst.val.getClass().getName());
+            }
+
             if (peek == PlaceHolder.symbolicInstance) {
                 isSymbolic = true;
                 peek = PlaceHolder.instance;
@@ -2799,16 +2805,29 @@ public class SymbolicInstructionVisitor implements IVisitor {
 
             if (stack.getNextInst() instanceof INVOKEMETHOD_END) {
                 Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(inst.desc), false);
-                Value<?, ?> retVal = InvocationHandler.invoke(
-                        symbolicTraceHandler,
-                        inst.desc,
-                        inst.owner,
-                        inst.name,
-                        inst.invokeId,
-                        new ArrayList<>(Arrays.asList(arguments)),
-                        false,
-                        null);
-                stack.setReturnValue(retVal);
+                // A lambda capturing arguments for instrumented code: the capture itself only
+                // stores them (see CapturingLambdaValue), the body runs when the lambda is called.
+                CapturingLambdaValue lambda = inst.owner.equals("java/lang/invoke/LambdaMetafactory")
+                        ? CapturingLambdaValue.create(
+                                ThreadHandler.getSolverContext(currentThread().getId()),
+                                ValueFactory.createNumericalValue(ValueType.intValue, arguments.length).asIntValue(),
+                                inst.name, inst.desc, inst.lambda, arguments)
+                        : null;
+                if (lambda != null) {
+                    logger.debug("[INVOKEDYNAMIC] Lambda capturing {} argument(s): {}", arguments.length, lambda);
+                    stack.setReturnValue(lambda);
+                } else {
+                    Value<?, ?> retVal = InvocationHandler.invoke(
+                            symbolicTraceHandler,
+                            inst.desc,
+                            inst.owner,
+                            inst.name,
+                            inst.invokeId,
+                            new ArrayList<>(Arrays.asList(arguments)),
+                            false,
+                            null);
+                    stack.setReturnValue(retVal);
+                }
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
                 recordThrowingCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId, false);
             }

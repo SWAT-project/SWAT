@@ -80,6 +80,17 @@ has an `@Irrelevant` the relevance analysis confirms (no fact assumed), `irrelev
 one it refutes (the method holds the assertion), and `irrelevant-caller_true` one that also slices
 the branches in `main` that only feed it.
 
+`model-soundness`: hand-written SAFE/VIOLATION pairs for the executor's models of library
+behaviour; no `_true` task may come out SAFE through a wrong model, and no `_false` task SAFE at
+all. Same assert shape as `sa-soundness`. The `lambda-*` tasks (lambdas with captured arguments,
+2026-11-17) are a captured input used in a lambda run by an Executor (`executor-capture`), a
+value computed from two captured inputs (`capture-outcome`), an instance-capturing lambda
+(`instance-capture`), a capturing lambda that is never called (`unused-capture`), long and double
+captures (`wide-capture`) and a boxing Function (`boxing`), which SWAT models (SAFE expected), and
+library code calling a capturing lambda back (`foreach-capture`, `sort-comparator`,
+`thread-capture`) and a method reference that needs an unboxing adaptation
+(`methodref-unboxing`), which must stay context losses (UNKNOWN expected for `_true`).
+
 `real-tools-facts` (generated, gitignored, not for regular runs): `scripts/real_tools_facts.py`
 writes the `real-tools` tasks with hand-written facts, one of them deliberately wrong. See
 RESULTS.md, "Hand-written facts on real-tools".
