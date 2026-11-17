@@ -83,6 +83,31 @@ class HashContainerModelTest extends Specification {
         !HashEntries.supported(new ObjectValue(context, "Foo", new IntValue(context, 0), 6))
     }
 
+    def "a boxed value built from an int-typed constant has the constant's value"() {
+        given:
+        def types = [] as org.objectweb.asm.Type[]
+        def character = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(0, "java/lang/Character")
+        def bool = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(0, "java/lang/Boolean")
+        def small = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(0, "java/lang/Short")
+        def tiny = de.uzl.its.swat.symbolic.value.ValueFactory.createObjectValue(0, "java/lang/Byte")
+
+        expect: "the shadow NEW makes has a default value, which is no key"
+        character.valueUnknown
+        !HashEntries.supported(character)
+
+        when:
+        character.invokeMethod("<init>", types, [new IntValue(context, 97)] as Value[])
+        bool.invokeMethod("<init>", types, [new IntValue(context, 1)] as Value[])
+        small.invokeMethod("<init>", types, [new IntValue(context, -7)] as Value[])
+        tiny.invokeMethod("<init>", types, [new IntValue(context, -3)] as Value[])
+
+        then:
+        character.val.concrete == ('a' as char)
+        bool.val.concrete == true
+        small.val.concrete == (short) -7
+        tiny.val.concrete == (byte) -3
+    }
+
     def "keys of different classes are never equal, and null equals only null"() {
         given:
         def five = integer(5, true)

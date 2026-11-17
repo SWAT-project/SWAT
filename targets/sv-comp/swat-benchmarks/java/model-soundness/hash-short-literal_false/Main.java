@@ -1,5 +1,6 @@
 // Expected verdict: VIOLATION. Violating inputs (nondet call order): short:7
-// As hash-char-literal, with a Short key from a constant. The all-zero run ends early.
+// As hash-char-literal, with a Short key from a constant. SAFE: only 7 is a key. The
+// all-zero run ends early.
 import org.sosy_lab.sv_benchmarks.Verifier;
 import java.util.*;
 

@@ -312,11 +312,15 @@ cfg-extraction (see loop facts above).
     returned (`checkPrimitive`, `resolveExact`); a difference gives the record up, with context
     loss if a symbolic comparison was involved.
   - **Only keys whose shadow value is known** (`ObjectValue.valueUnknown`): a String or boxed
-    shadow made by NEW has a default value until a constructor model sets it, and the models of
-    `Character/Short/Byte/Boolean.<init>` do not for int-typed constants. Comparing such a shadow
-    put `c == 0` on the path instead of `c == 'a'` (a false SAFE in `hash-char-literal_false`
-    before the check). `GETVALUE_Object` also marks a String or boxed shadow whose value differs
-    from the object it is fetched for.
+    shadow made by NEW has a default value until a constructor model sets it. Comparing a shadow
+    left at its default put `c == 0` on the path instead of `c == 'a'` (a false SAFE in
+    `hash-char-literal_false` before the check). `GETVALUE_Object` also marks a String or boxed
+    shadow whose value differs from the object it is fetched for.
+  - **Boxed constants** (fixed with this, 2026-11-17): the models of `Character/Short/Byte/Boolean.<init>`
+    took only a shadow of their own primitive type, but a constant or an int-typed expression is
+    passed as an int (BIPUSH, ICONST): the box kept the default 0 or false, whatever the object
+    held (`Boolean flag = true` read back as false, a context loss at the first unboxing, e.g.
+    in KeywordSearchJobSettings). They now convert as I2C, I2S and I2B do.
   - **Empty immutable containers** (`Collections.emptyMap/emptySet/emptyList`): get, containsKey,
     containsValue and contains return null or false whatever the argument is, so they are no
     context loss either.

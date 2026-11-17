@@ -97,6 +97,12 @@ public class BooleanObjectValue extends BoxedValue<BooleanValue> {
             this.val = new BooleanValue(context, bv.concrete, bv.formula);
             return VoidValue.instance;
         }
+        // A constant or an int-typed expression: the JVM passes it as an int (BIPUSH, ICONST, ...).
+        // Without this the shadow kept its default value, whatever the object holds.
+        if (args[0] instanceof IntValue iv && (iv.concrete == 0 || iv.concrete == 1)) {
+            this.val = iv.asBooleanValue();
+            return VoidValue.instance;
+        }
         return PlaceHolder.instance;
     }
 

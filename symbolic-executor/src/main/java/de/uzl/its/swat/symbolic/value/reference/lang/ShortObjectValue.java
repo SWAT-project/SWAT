@@ -110,6 +110,12 @@ public final class ShortObjectValue extends BoxedValue<ShortValue> {
             this.val = new ShortValue(context, sv.concrete, sv.formula);
             return VoidValue.instance;
         }
+        // A constant or an int-typed expression: the JVM passes it as an int (BIPUSH, ICONST, ...).
+        // Without this the shadow kept its default value, whatever the object holds.
+        if (args[0] instanceof IntValue iv) {
+            this.val = iv.I2S();
+            return VoidValue.instance;
+        }
         return PlaceHolder.instance;
     }
 

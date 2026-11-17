@@ -108,10 +108,11 @@ container with a symbolic key (`hash-iterate*`, `hashset-iterate-copy`, `hash-li
 the order reports SAFE), keys with their own equals (`hash-user-key*`), Double keys, changes through
 a view, an iterator or library code (`hash-view-remove*`, `hash-iterator-remove`, `hash-escape`,
 `hashset-list-changed`), a set copied from a source the model does not read (`hashset-aslist`), a
-list that library code reordered before `equals` (`list-equals-changed`), and keys whose shadow
-value SWAT does not know (`hash-char-literal`, `hash-short-literal`, `hash-new-string`: the shadow
-of a boxed char or short constant is the default 0, and a model that compares it makes the VIOLATION
-task a false SAFE).
+list that library code reordered before `equals` (`list-equals-changed`), and a key whose shadow
+value SWAT does not know (`hash-new-string`). `hash-char-literal`, `hash-short-literal` and
+`hash-boolean-key` have keys boxed from constants: their shadow was the default 0 until the
+constructor models took int-typed arguments, and a model that compares such a shadow makes the
+VIOLATION task a false SAFE.
 
 `real-tools` (`scripts/tools.py`, harnesses in `scripts/tools/`): harnesses around unmodified
 GNU java-getopt 1.0.13 (`getopt-minitar`, a tar-like CLI) and opencsv 2.3's `CSVParser`

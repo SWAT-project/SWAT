@@ -322,10 +322,11 @@ Integer v = m.get(c);""",
          'v != null && v == 2',
          "v != null && v == 2 && c != 'b'")
     pair('hash-char-literal',
-         'A Character key from a char constant, looked up with a symbolic char that is not 0. (SWAT\'s\n'
-         'shadow of the boxed constant was the default \'\\0\' when this was written: a model that\n'
-         'compares such a shadow puts c == 0 on the path instead of c == \'a\', and the VIOLATION task\n'
-         'becomes a false SAFE.) Must stay UNKNOWN unless the shadow is right. The all-zero run ends early.',
+         'A Character key from a char constant, looked up with a symbolic char that is not 0. The\n'
+         'shadow of the boxed constant must be \'a\': with the default \'\\0\' (as before the\n'
+         'constructor models took int-typed constants) a model that compares it puts c == 0 on the\n'
+         'path instead of c == \'a\', and the VIOLATION task becomes a false SAFE. SAFE: only \'a\' is\n'
+         'a key. The all-zero run ends early.',
          'char:a', """
 char c = Verifier.nondetChar();
 if (c == 0) return;
@@ -334,7 +335,8 @@ m.put('a', 1);""",
          'm.containsKey(c)',
          "m.containsKey(c) && c != 'a'")
     pair('hash-short-literal',
-         'As hash-char-literal, with a Short key from a constant. The all-zero run ends early.',
+         'As hash-char-literal, with a Short key from a constant. SAFE: only 7 is a key. The\n'
+         'all-zero run ends early.',
          'short:7', """
 short x = Verifier.nondetShort();
 if (x == 0) return;
@@ -342,6 +344,17 @@ Map<Short, Integer> m = new HashMap<>();
 m.put((short) 7, 1);""",
          'm.containsKey(x)',
          'm.containsKey(x) && x != 7')
+    pair('hash-boolean-key',
+         'Boolean and Byte keys from constants, looked up with symbolic values. SAFE: only true and\n'
+         '(byte) -3 are keys.',
+         'boolean:true byte:-3', """
+boolean b = Verifier.nondetBoolean();
+byte y = Verifier.nondetByte();
+Map<Object, Integer> m = new HashMap<>();
+m.put(true, 1);
+m.put((byte) -3, 2);""",
+         'm.containsKey(b) && m.containsKey(y)',
+         'm.size() != 2 || (m.containsKey(b) && !b) || (m.containsKey(y) && y != -3)')
     pair('hash-new-string',
          'A String key built by a constructor SWAT may not model (from bytes): its shadow must not\n'
          'be compared unless it is the string. SAFE or UNKNOWN on the SAFE task. The all-zero run ends\n'
