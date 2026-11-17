@@ -34,7 +34,8 @@ the graph and the executor can disagree (arrays from JDK calls, implicit and ung
 across frames, static initializers, String/enum switch, try/finally, object `==`, lambdas,
 streams, reflection, recursion, default methods, anonymous/inner classes, `synchronized`), plus
 narrowing tasks added after the first runs (`*-noarg`, `library-throw-catch`, `cce-catch-up1`,
-`explicit-throw-generic-catch`, `clinit-unconditional`) and executor reproducers (`exec-*`). In
+`explicit-throw-generic-catch`, `clinit-unconditional`), executor reproducers (`exec-*`) and
+explorer reproducers (`explore-*`). In
 every pair the assert is `if (x > 1000 && x < HI) assert false;` with HI = 100000 (VIOLATION) or
 1001 (SAFE), and it is only reached after flipping an input-dependent branch that the risky
 construct sits on. Each task's comment says what it tests.

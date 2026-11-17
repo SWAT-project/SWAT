@@ -264,6 +264,14 @@ and by `dispatcher/switch_n32` and `instance_n32` and `virtual-dispatch/local_n3
 switches). The two reproducers added last (`exec-equal-string-inputs`,
 `exec-indexof-negative-from`) were not checked against the code before their fixes.
 
+`explore-given-up-tochararray-len` and `-contains` (2026-11-17): `toCharArray()` pins the length
+of a String input, and every run of a solution for the pin's other side diverges, so the explorer
+gives the pin up. A given-up branch rules out SAFE unless some run reaches its side, but the walk
+counted the branch's own solved (retired) marker as covering that side: false SAFE on both
+`_false` tasks (and the same marker made every run of a sliced query count as reaching its
+branch). Since `fix/given-up-self-coverage` only explored sides and UNSAT proofs count
+(`DFS.dfs`: covered vs. claimed); all four tasks are UNKNOWN (no run reaches the pin's other side).
+
 ### Results after the fixes
 
 swat-benchmarks (300 tasks; the 2026-10-14 runs had 266, without the narrowing tasks and real

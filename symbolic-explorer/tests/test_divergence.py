@@ -24,6 +24,10 @@ from driver import SVCompDriver as svcomp
 from svcomp.ResourceBudget import ResourceBudget
 from solver.SolverHandler import SATResult, Z3Handler
 from strategy.StrategyService import StrategyService
+from data.BinaryExecutionTree.Tree import Tree
+from strategy.DFS import dfs
+from tests.test_relevance import example, link
+from tests.test_sa_walk import branch_node, keyed, leaf
 
 
 def trace_branch(id, has_branched):
@@ -195,6 +199,93 @@ class CheckDivergenceTest(DivergenceTestBase):
         self.assertEqual(self.driver.unreached_given_up_branches(), [target])
         target.skipped = object()
         self.assertEqual(self.driver.unreached_given_up_branches(), [])
+
+
+class GivenUpCoverageTest(DivergenceTestBase):
+    """What forgives a given-up branch, or tells that a sliced query's run reached its branch on
+    another path with the same relevant decisions: only a side some path explored, or an UNSAT
+    proof, as the walk records them (tree.covered). A side merely solved (solutions are kept after
+    their run) or given up on (retired) only keeps other candidates with the same identity out."""
+
+    def setUp(self):
+        super().setUp()
+        self.driver.projected_reached = 0
+        self.driver.pending_projected = None
+        self.g = keyed(example().load())
+        # Two paths that differ only in the irrelevant b (print in the loop or not), each reaching
+        # the assert's branch a with its skipped side open: a1 and a2 have the same identity.
+        h1, self.a1 = self.tail('1')
+        h2, self.a2 = self.tail('2')
+        b = branch_node('b0', skipped=h1, branched=h2, key='b')
+        self.root = branch_node('h0', skipped=b, key='h')
+        link(self.root, b)
+        self.walk_tree = Tree()
+        svcomp.Database.instance().projected_covered = \
+            lambda endpoint_id, ident, branched: (ident, branched) in self.walk_tree.covered
+        self.walk(set(), set())  # gives a1 and a2 their identity
+        self.assertEqual(self.a1.ident, self.a2.ident)
+
+    @staticmethod
+    def tail(name):
+        a = branch_node(f'a{name}', branched=leaf(), key='a')
+        a.sliced_query = False
+        h = branch_node(f'hx{name}', branched=a, key='h')
+        link(h, a)
+        return h, a
+
+    def walk(self, solved, unsat):
+        """A walk as select_branch makes it (Database.visit_tree: the retired gids among the solved)."""
+        return [n.id for n in dfs(self.walk_tree, self.root, solved | self.retired, unsat, self.g.entry_node)]
+
+    def give_up(self, target):
+        with self.assertLogs(svcomp.logger, level='INFO'):
+            self.driver.give_up_branch(target, False, 'Branch unexpectedly taken/skipped.')
+
+    def reach_skipped_side(self, node):
+        node.skipped = leaf()
+        node.skipped.parent = node
+
+    def test_a_given_up_branch_does_not_forgive_itself(self):
+        self.give_up(self.a1)
+        # a2 is left out as before (same identity), but a1's own marker covers nothing.
+        self.assertEqual(self.walk(set(), set()), [])
+        self.assertEqual(self.driver.unreached_given_up_branches(), [self.a1])
+        # A run takes that side on the other path: forgiven.
+        self.reach_skipped_side(self.a2)
+        self.walk(set(), set())
+        self.assertEqual(self.driver.unreached_given_up_branches(), [])
+
+    def test_a_solution_for_the_same_side_does_not_forgive(self):
+        self.give_up(self.a1)
+        self.assertEqual(self.walk({'a2'}, set()), [])
+        self.assertEqual(self.driver.unreached_given_up_branches(), [self.a1])
+
+    def test_an_unsat_proof_forgives(self):
+        self.give_up(self.a1)
+        self.walk(set(), {'a2'})
+        self.assertEqual(self.driver.unreached_given_up_branches(), [])
+
+    def test_a_sliced_run_that_reached_nothing_is_a_divergence(self):
+        # a1 was solved with a sliced query; its run took a1's branched side again. Its solution
+        # is kept (Database.solutions), so its gid is among the solved in the next walk.
+        self.a1.sliced_query = True
+        self.driver.pending_projected = (self.a1, {}, False, 'Branch unexpectedly taken/skipped.')
+        self.walk({'a1'}, set())
+        with self.assertLogs(svcomp.logger, level='INFO') as logs:
+            self.assertTrue(self.driver.check_projected_divergence())
+        self.assertIn('not reached with the same relevant decisions either', '\n'.join(logs.output))
+        self.assertEqual(self.dropped, ['a1'])
+        self.assertEqual(self.driver.projected_reached, 0)
+
+    def test_a_sliced_run_that_reached_the_side_on_another_path_is_none(self):
+        self.a1.sliced_query = True
+        self.driver.pending_projected = (self.a1, {}, False, 'Branch unexpectedly taken/skipped.')
+        self.reach_skipped_side(self.a2)
+        self.walk({'a1'}, set())
+        with self.assertLogs(svcomp.logger, level='INFO'):
+            self.assertFalse(self.driver.check_projected_divergence())
+        self.assertEqual(self.dropped, [])
+        self.assertEqual(self.driver.projected_reached, 1)
 
 
 class SolveRetryTest(DivergenceTestBase):

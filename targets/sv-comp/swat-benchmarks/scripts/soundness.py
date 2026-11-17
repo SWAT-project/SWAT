@@ -1245,6 +1245,44 @@ public class Main {
 """
 
 
+@task('explore-given-up-tochararray-len', witness=[('string', 'abcdefg'), ('int', 1001)])
+def _():
+    """IMPORT
+// toCharArray() pins the length of s (the array's length is concrete), and every run of a
+// solution for the pin's other side diverges, so the explorer gives the pin up. A given-up branch
+// rules out SAFE unless some run reaches its side; the branch's own solved marker counted as that
+// (false SAFE before fix/given-up-self-coverage).
+public class Main {
+    public static void main(String[] args) {
+        String s = Verifier.nondetString();
+        int a = Verifier.nondetInt();
+        char[] c = s.toCharArray();
+        if (c.length == 7) {
+            if (@HIT(a)@) assert false;
+        }
+    }
+}
+"""
+
+
+@task('explore-given-up-tochararray-contains', witness=[('string', '<bad/>'), ('int', 1001)])
+def _():
+    """IMPORT
+// As explore-given-up-tochararray-len, but the length pin is only implied: s.contains() needs
+// six chars or more, a length the pinned runs never have.
+public class Main {
+    public static void main(String[] args) {
+        String s = Verifier.nondetString();
+        int a = Verifier.nondetInt();
+        char[] c = s.toCharArray();
+        if (s.contains("<bad/>")) {
+            if (@HIT(a)@) assert false;
+        }
+    }
+}
+"""
+
+
 @task('npe-in-callee-branch')
 def _():
     """IMPORT
