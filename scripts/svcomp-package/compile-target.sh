@@ -32,4 +32,10 @@ java_files=$(find "$target_directory" -name "*.java")
 
 echo "javac  -source 1.8 -target 1.8 -cp \"$classpath\" -d \"$build_directory\" $java_files"
 # Compile all the found .java files
-javac  -source 1.8 -target 1.8 -cp "$classpath" -d "$build_directory" $java_files
+if ! javac  -source 1.8 -target 1.8 -cp "$classpath" -d "$build_directory" $java_files; then
+    # From JDK 25 on, every compilation unit imports java.lang.IO (JEP 512), which makes a
+    # wildcard-imported class named IO ambiguous (juliet's testcasesupport.IO: "reference to IO is
+    # ambiguous"). --release 8 compiles against the Java 8 API, which has no java.lang.IO.
+    echo "javac  --release 8 -cp \"$classpath\" -d \"$build_directory\" $java_files"
+    javac  --release 8 -cp "$classpath" -d "$build_directory" $java_files
+fi
