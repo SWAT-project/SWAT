@@ -98,11 +98,21 @@ public class SymbolicTraceHandler {
      * walk of the graph holds its place, as for application code a library calls back.
      */
     public void checkAndSetLibraryBranch(boolean result, BooleanFormula constraint, long iid, String suffix) throws NoThreadContextException {
+        checkAndSetLibraryBranch(result, constraint, iid, suffix, null);
+    }
+
+    /**
+     * A library branch (see above) that a model's result depends on: it matters only where a
+     * branch constraint mentions the model's function {@code model} (null: always), see
+     * BranchElement.
+     */
+    public void checkAndSetLibraryBranch(boolean result, BooleanFormula constraint, long iid, String suffix, String model) throws NoThreadContextException {
         BooleanFormulaManager bmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId())
                 .getFormulaManager().getBooleanFormulaManager();
         BranchElement branch = new BranchElement(result, result ? constraint : bmgr.not(constraint), iid);
         place(branch, iid, suffix);
         branch.setCallback(true);
+        branch.setModel(model);
         takeLoopStates(branch);
         symbolicTrace.addTraceElement(branch);
     }

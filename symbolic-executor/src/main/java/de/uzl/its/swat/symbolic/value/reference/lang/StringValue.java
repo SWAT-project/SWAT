@@ -40,6 +40,38 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     @Getter
     private boolean userDeInterned = false;
 
+    /**
+     * The result of toLowerCase/toUpperCase of a string with the root rules (see invokeCaseMapping):
+     * the string and which case. Comparisons with a concrete string are then modelled over the
+     * string itself (CaseMapping.preimage), exactly for strings of any length. Null otherwise.
+     */
+    private record CaseOf(StringValue base, boolean lower) {}
+
+    private CaseOf caseOf;
+
+    /**
+     * equals/contains/startsWith/endsWith of this case mapping result with a concrete string t,
+     * as a regular expression over the mapped string (see CaseMapping.byPreimage), or null if
+     * not modelled that way.
+     */
+    private BooleanFormula byPreimage(StringValue other, String op) {
+        if (caseOf == null || other == null || other.isSymbolic()) return null;
+        String t = other.concrete;
+        if (!CaseMapping.byPreimage(t, caseOf.lower())) return null;
+        RegexFormula p = new CaseMapping(context.getFormulaManager()).preimage(t, caseOf.lower());
+        // Any string: SWAT's strings are UTF-16 chars (see literal and getBounds). (Not smgr.all():
+        // java-smt cannot visit re.all, e.g. to extract the variables.)
+        RegexFormula any = smgr.closure(smgr.range('\u0000', '\uffff'));
+        RegexFormula regex = switch (op) {
+            case "equals" -> p;
+            case "contains" -> smgr.concat(smgr.concat(any, p), any);
+            case "startsWith" -> smgr.concat(p, any);
+            case "endsWith" -> smgr.concat(any, p);
+            default -> null;
+        };
+        return regex == null ? null : smgr.in(caseOf.base().formula, regex);
+    }
+
     public StringValue(SolverContext context, String concrete, int address) {
         super(context, address);
         this.smgr = context.getFormulaManager().getStringFormulaManager();
@@ -541,18 +573,67 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     /**
-     * toLowerCase()/toLowerCase(Locale) and toUpperCase()/toUpperCase(Locale) of a concrete string.
-     * Of a symbolic one they are not modelled: unrolled over a pinned length, the search reached
-     * hardly any other length, and unrolled up to a bound Z3 took seconds per query (see
-     * CaseMapping for the chars beyond ASCII).
+     * toLowerCase()/toLowerCase(Locale) and toUpperCase()/toUpperCase(Locale).
+     *
+     * <p>Of a concrete string: its concrete result. Of a symbolic string s, the result is a
+     * function of s, named for the call (CaseMapping.newFunction):
+     *
+     * <ul>
+     *   <li>Exact, if the call's library branches were recorded (StringCallBranches: no or a
+     *       concrete locale with the root rules, length n at most CaseMapping.MAX_PINNED, n
+     *       pinned, ASCII strings split from the others) and s is ASCII: the function is defined
+     *       as Java's case mapping of ASCII strings of length n, char by char (CaseMapping
+     *       .asciiCase), which is exact on the branches' side. Unrolled over a pinned length, as
+     *       the solver decides the char codes of a string of unknown length badly (it does not
+     *       decide queries over str.replace_all, seq.map or an unrolling up to a bound).
+     *   <li>Approximate otherwise (non-ASCII chars, whose case mappings may change the length,
+     *       e.g. "\u0130".toLowerCase() has two chars; a longer string; another locale): the
+     *       function is the concrete result at s and unconstrained elsewhere, and declared
+     *       approximate, so a branch over it is a precision loss and rules out SAFE (DTOBuilder).
+     * </ul>
+     *
+     * The pins matter only for branches over the result: where no branch constraint mentions the
+     * function, DTOBuilder flags them merged (no decision, see BranchElement.model). A result
+     * that is never branched on (e.g. only printed) thus neither loses the context nor makes the
+     * search try every length. With the root rules, the result also remembers the string it maps
+     * (caseOf): its comparisons with a concrete string are then regular expressions over that
+     * string (byPreimage), exact for any length, and do not mention the function.
      */
     private Value<?, ?> invokeCaseMapping(boolean lower, Value<?, ?>[] args) {
         if (args.length > 1) return PlaceHolder.instance;
-        java.util.Locale locale = caseMappingLocale(args);
+        java.util.Locale locale = args.length == 0 ? java.util.Locale.getDefault() : localeOf(args[0]);
         if (locale == null) return PlaceHolder.instance;
         String result = lower ? concrete.toLowerCase(locale) : concrete.toUpperCase(locale);
-        if (isSymbolic()) return PlaceHolder.instance;
-        return new StringValue(context, result, new Utf16(context.getFormulaManager()).chars(result), -1);
+        StringFormula resultChars = literal(smgr, imgr, result);
+        if (!isSymbolic()) return new StringValue(context, result, resultChars, -1);
+        CaseMapping.Call call = CaseMapping.takePending(this);
+        FormulaManager fmgr = context.getFormulaManager();
+        BooleanFormulaManager bmgr = fmgr.getBooleanFormulaManager();
+        boolean exact = call != null && call.exact() && call.n() == concrete.length()
+                && caseMappingLocale(args) != null && asciiStrings(this);
+        String name = call != null && call.exact() == exact ? call.function() : CaseMapping.newFunction(lower, exact);
+        SymbolRegistry.Kind kind = exact ? SymbolRegistry.Kind.MODEL_FUNCTION : SymbolRegistry.Kind.APPROXIMATE_MODEL_FUNCTION;
+        FunctionDeclaration<StringFormula> function = fmgr.getUFManager().declareUF(name, FormulaType.StringType, FormulaType.StringType);
+        FunctionDeclaration<StringFormula> rest = fmgr.getUFManager().declareUF(name + "_rest", FormulaType.StringType, FormulaType.StringType);
+        SymbolRegistry.declare(name, kind);
+        SymbolRegistry.declare(name + "_rest", kind);
+        StringFormula application = fmgr.getUFManager().callUF(function, formula);
+        StringFormula elsewhere = fmgr.getUFManager().callUF(rest, formula);
+        BooleanFormula definition;
+        if (exact) {
+            // Java's case mapping where the pins hold, unconstrained elsewhere
+            CaseMapping cases = new CaseMapping(fmgr);
+            int n = concrete.length();
+            BooleanFormula pinned = bmgr.and(imgr.equal(smgr.length(formula), imgr.makeNumber(n)), cases.isAscii(formula));
+            definition = smgr.equal(application, bmgr.ifThenElse(pinned, cases.asciiCase(formula, n, lower), elsewhere));
+        } else {
+            // The concrete result at this string, unconstrained elsewhere
+            definition = smgr.equal(application, bmgr.ifThenElse(smgr.equal(formula, literal(smgr, imgr, concrete)), resultChars, elsewhere));
+        }
+        addDefinition(definition);
+        StringValue mapped = new StringValue(context, result, application, -1);
+        if (caseMappingLocale(args) != null) mapped.caseOf = new CaseOf(this, lower);
+        return mapped;
     }
 
     /**
@@ -591,6 +672,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         StringValue s = args.length == 1 ? charsOf(args[0]) : null;
         if (s != null) {
             boolean result = concrete.contains(s.concrete);
+            BooleanFormula pre = byPreimage(s, "contains");
+            if (pre != null) return new BooleanValue(context, result, pre);
             return new BooleanValue(context, result, smgr.contains(formula, s.formula));
         } else {
             return PlaceHolder.instance;
@@ -644,6 +727,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
         if (args.length == 1) {
             StringValue suffix = args[0].asStringValue();
             boolean result = concrete.endsWith(suffix.concrete);
+            BooleanFormula pre = byPreimage(suffix, "endsWith");
+            if (pre != null) return new BooleanValue(context, result, pre);
             return new BooleanValue(context, result, smgr.suffix(suffix.formula, formula));
         } else {
             return PlaceHolder.instance;
@@ -666,6 +751,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
             // Only a String is equal to a String (not, e.g., a StringBuilder with the same chars).
             if (args[0] instanceof StringValue str) {
                 boolean result = concrete.equals(str.concrete);
+                BooleanFormula pre = byPreimage(str, "equals");
+                if (pre != null) return new BooleanValue(context, result, pre);
                 return new BooleanValue(context, result, smgr.equal(formula, str.formula));
             } else if (args[0] instanceof ObjectValue<?, ?> obj && obj.getAddress() == ObjectValue.ADDRESS_NULL) {
                 return new BooleanValue(context, false);
@@ -1341,6 +1428,8 @@ public class StringValue extends ObjectValue<StringFormula, String> {
     }
 
     private Value<?, ?> invokeStartsWith(StringValue prefix) {
+        BooleanFormula pre = byPreimage(prefix, "startsWith");
+        if (pre != null) return new BooleanValue(context, concrete.startsWith(prefix.concrete), pre);
         return new BooleanValue(
                 context,
                 concrete.startsWith(prefix.concrete),

@@ -49,6 +49,11 @@ public final class BranchElement extends Element {
     // The hand-written irrelevance fact that covers the branch (user facts, see
     // de.uzl.its.swat.facts.UserFacts), null if none; such a branch is also flagged merged.
     @lombok.Setter private String userFact;
+    // A library branch a model's result depends on (e.g. the pinned length of a case mapping, see
+    // StringCallBranches): it matters only if a branch constraint of the trace mentions the
+    // model's function, the result. Otherwise no branch depends on the result, the branch is
+    // irrelevant to the path, and DTOBuilder flags it merged. Null: an ordinary branch.
+    @lombok.Setter private String model;
 
     /**
      * Constructs a branch element.

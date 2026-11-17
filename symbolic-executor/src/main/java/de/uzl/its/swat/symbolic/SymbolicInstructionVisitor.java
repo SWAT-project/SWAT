@@ -2480,7 +2480,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         for (int i = 0; i <= last; i++) {
             StringCallBranches.Branch branch = branches.get(i);
             if (!fmgr.extractVariables(branch.condition()).isEmpty()) {
-                symbolicTraceHandler.checkAndSetLibraryBranch(branch.holds(), branch.condition(), determineIid(iid), "#" + name);
+                symbolicTraceHandler.checkAndSetLibraryBranch(branch.holds(), branch.condition(), determineIid(iid), "#" + name, branch.model());
             }
         }
         return !returned;
@@ -2710,7 +2710,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
         FormulaManager fmgr = ThreadHandler.getSolverContext(Thread.currentThread().getId()).getFormulaManager();
         for (StringCallBranches.Branch branch : NumberParsing.returnBranches(owner, name, desc, arguments)) {
             if (!fmgr.extractVariables(branch.condition()).isEmpty()) {
-                symbolicTraceHandler.checkAndSetLibraryBranch(branch.holds(), branch.condition(), determineIid(iid), "#" + name);
+                symbolicTraceHandler.checkAndSetLibraryBranch(branch.holds(), branch.condition(), determineIid(iid), "#" + name, branch.model());
             }
         }
     }

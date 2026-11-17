@@ -112,6 +112,7 @@ class DTOBuilder {
         // A constraint over an approximate model function, or over a symbol no model declared,
         // means the encoding may be imprecise (see SymbolRegistry).
         boolean symbolicPrecisionLoss = symbolicTrace.isSymbolicPrecisionLoss();
+        Set<String> mentioned = mentionedFunctions(fmgr, symbolicTrace);
         for (Element el : symbolicTrace.getTrace()) {
             if (el instanceof BranchElement be) {
                 String constraint;
@@ -133,7 +134,9 @@ class DTOBuilder {
                 trace.add(new BranchDTO(be.getIid(), constraint, be.isBranched(), be.isConcreteOnly())
                         .place(be.getKey(), be.getPops(), be.getPushes(), be.isCallback())
                         .choice(be.isChoice())
-                        .merged(be.isMerged())
+                        // A library branch a model's result depends on, where no branch depends
+                        // on the result: irrelevant to the path (BranchElement.model)
+                        .merged(be.isMerged() || (be.getModel() != null && mentioned != null && !mentioned.contains(be.getModel())))
                         .mergedConditional(be.isMergedConditional())
                         .userFact(be.getUserFact())
                         .loopStates(be.getLoopStates()));
@@ -150,6 +153,48 @@ class DTOBuilder {
         return new TraceDTO(inputs, trace, ufs, buildMissingInvocations(statsStorage), Witness.getNondetReturns(), Witness.getViolation(), symbolicTrace.isSymbolicContextLoss() || stackOverflow, symbolicPrecisionLoss, symbolicTrace.isReferenceSemanticChange(),
                 symbolicTrace.isSymbolicPrecisionLoss(), StackOverflowGuard.targetOverflowed)
                 .userFacts(de.uzl.its.swat.facts.UserFacts.used());
+    }
+
+    /**
+     * The functions (UFs) the branch constraints of the trace mention, directly or through the
+     * definitions of mentioned functions (a definition may relate one function to another). A
+     * model's result that is none of them is not branched on in this trace. Null if a formula
+     * cannot be inspected (then every function counts as mentioned).
+     */
+    static Set<String> mentionedFunctions(FormulaManager fmgr, SymbolicTrace symbolicTrace) {
+        Set<String> mentioned = new HashSet<>();
+        if (symbolicTrace.getTrace().stream().noneMatch(el -> el instanceof BranchElement be && be.getModel() != null)) {
+            return mentioned; // no branch asks
+        }
+        try {
+            return mentionedFunctions(fmgr, symbolicTrace, mentioned);
+        } catch (RuntimeException | AssertionError e) {
+            logger.warn("Cannot inspect the trace's constraints for model functions; keeping every model's branches", e);
+            return null;
+        }
+    }
+
+    private static Set<String> mentionedFunctions(FormulaManager fmgr, SymbolicTrace symbolicTrace, Set<String> mentioned) {
+        for (Element el : symbolicTrace.getTrace()) {
+            if (el instanceof BranchElement be) mentioned.addAll(functionsOf(fmgr, be.getConstraint()));
+        }
+        List<Set<String>> definitions = new ArrayList<>();
+        for (BooleanFormula definition : symbolicTrace.getConstraints()) definitions.add(functionsOf(fmgr, definition));
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (Set<String> functions : definitions) {
+                if (!java.util.Collections.disjoint(functions, mentioned) && mentioned.addAll(functions)) changed = true;
+            }
+        }
+        return mentioned;
+    }
+
+    /** The names of the functions (not the variables) a formula mentions. */
+    private static Set<String> functionsOf(FormulaManager fmgr, Formula f) {
+        Set<String> functions = new HashSet<>(fmgr.extractVariablesAndUFs(f).keySet());
+        functions.removeAll(fmgr.extractVariables(f).keySet());
+        return functions;
     }
 
     /** Symbols already reported as undeclared, so each is logged once. */

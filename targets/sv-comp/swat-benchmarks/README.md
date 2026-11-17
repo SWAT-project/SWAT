@@ -39,6 +39,16 @@ every pair the assert is `if (x > 1000 && x < HI) assert false;` with HI = 10000
 1001 (SAFE), and it is only reached after flipping an input-dependent branch that the risky
 construct sits on. Each task's comment says what it tests.
 
+`model-soundness` (`scripts/modelsoundness.py`): SAFE/VIOLATION pairs for the executor's models of
+library calls, one group per model; a VIOLATION task that comes out SAFE means a model hid a
+reachable path. `case-*` (2026-11-17): `String.toLowerCase`/`toUpperCase` on a symbolic string,
+exact for ASCII strings (length pinned, ASCII split), approximate beyond; comparisons of the
+result with a concrete string are regular expressions over the original string, for any length.
+The VIOLATION variant must never be SAFE, in particular where only a char beyond ASCII or a mapping
+that changes the length reaches the assert (`case-kelvin`, `case-length-*`, `case-dotted-i`,
+`case-sharp-s`, `case-turkish`). A SAFE variant whose result's length or chars are branched on may
+stay UNKNOWN (the search tries every length); `case-unused` and `case-sink` must come out SAFE.
+
 `relevance` and `relevance-soundness` (`scripts/relevance.py`): tasks for the relevance analysis
 (slicing). `relevance` has the design example verbatim (`example`, `example-long`) and families over
 the loop length n in {10, 100, 1000} whose input-dependent branches cannot affect the assert
