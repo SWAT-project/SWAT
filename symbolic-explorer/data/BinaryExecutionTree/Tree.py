@@ -66,8 +66,8 @@ class Tree:
         # executed path reached it (see register_loop_states).
         self.loop_state_first: dict[str, Position] = {}
         # Relevance (see dfs): the interned sigs of sequences of relevant decisions, the sides the
-        # last walk found covered (explored, solved or infeasible) per (sig, branch key), and how
-        # often a walk made a sliced branch relevant again (poisoned it).
+        # last walk found covered (explored or infeasible, not just solved or given up) per (sig,
+        # branch key), and how often a walk made a sliced branch relevant again (poisoned it).
         self.sig_ids: dict[tuple[Ident, bool], int] = {}
         self.covered: set[tuple[Ident, bool]] = set()
         self.poisoned_total = 0
