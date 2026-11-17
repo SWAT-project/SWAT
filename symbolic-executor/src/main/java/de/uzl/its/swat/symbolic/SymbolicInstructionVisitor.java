@@ -37,6 +37,8 @@ import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue;
 import de.uzl.its.swat.symbolic.value.reference.array.*;
 import de.uzl.its.swat.symbolic.value.reference.lang.*;
+import de.uzl.its.swat.symbolic.value.reference.regex.MatcherValue;
+import de.uzl.its.swat.symbolic.value.reference.regex.PatternValue;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
 import de.uzl.its.swat.thread.ThreadHandler;
 
@@ -1461,6 +1463,12 @@ public class SymbolicInstructionVisitor implements IVisitor {
                 stack.popOperand();
                 // try to get object
                 tmp = stack.getFromHeap(inst.address);
+                if ((tmp instanceof PatternValue pv && !pv.shadows(inst.val))
+                        || (tmp instanceof MatcherValue mv && !mv.shadows(inst.val))) {
+                    // A different object with the same identity hash: the regex shadows hold
+                    // exact concrete state, never reuse one for another object.
+                    tmp = null;
+                }
                 // check if the object was created earlier and then reuse it
                 if (tmp != null) {
                     if (isSymbolic) {
@@ -1536,6 +1544,9 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         }
 
                     } else {
+                        if (peek instanceof MatcherValue mv) {
+                            mv.bind(inst.val);
+                        }
                         (peek.asObjectValue()).setAddress(inst.address);
                         stack.putToHeap(inst.address, peek);
                     }
