@@ -288,6 +288,19 @@ cfg-extraction (see loop facts above).
   in the entry method hashes as before. Lambdas still stop all states (`invokedynamic`), threads
   are still excluded. swat-benchmarks `loop-frames` (RESULTS.md, "Loop-state matching across
   frames").
+- **Case mappings** (`String.toLowerCase`/`toUpperCase` on a symbolic string, since 2026-11-17,
+  `StringValue.invokeCaseMapping`): the result is a function of the string per call. With no or a
+  root-rules locale (not tr/az/lt) and at most `CaseMapping.MAX_PINNED` chars, the library branches
+  pin the length and split off ASCII strings, where the function is Java's mapping char by char
+  (exact); otherwise it is approximate (`math_case_*`: a branch over it is precision loss). The
+  pins carry the function's name (`BranchElement.model`); where no branch constraint of the trace
+  mentions it, `DTOBuilder` flags them merged, so a result that is not branched on costs neither
+  context loss nor a search over every length. `equals`/`contains`/`startsWith`/`endsWith` of the
+  result with a concrete t are modelled over the original string as a regular expression of the
+  chars that map to t's chars (`CaseMapping.preimage`, tabulated from the JVM), exact for strings
+  of any length unless t has a char of a mapping that is not one char to one char (`byPreimage`:
+  "\u0130" to "i\u0307", sharp s to "SS", sigma, supplementary chars); that is what makes the
+  securibench sinks (`s.contains("<bad/>")`) SAFE. Tests: swat-benchmarks `model-soundness/case-*`.
 - **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.

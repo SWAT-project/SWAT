@@ -43,7 +43,11 @@ public final class StringCallBranches {
      * A branch: its condition and whether it held in this run, and whether it is a check the call
      * throws at if it fails (else the model only distinguishes the cases, and both sides return).
      */
-    public record Branch(BooleanFormula condition, boolean holds, boolean check) {}
+    public record Branch(BooleanFormula condition, boolean holds, boolean check, String model) {
+        public Branch(BooleanFormula condition, boolean holds, boolean check) {
+            this(condition, holds, check, null);
+        }
+    }
 
     /** An int the checks are about, as a formula over the integers and concretely. */
     private record Int(IntegerFormula f, long c, boolean symbolic) {}
@@ -53,6 +57,11 @@ public final class StringCallBranches {
     private final IntegerFormulaManager imgr;
     private final StringFormulaManager smgr;
     private final List<Branch> branches = new ArrayList<>();
+    /**
+     * The function a model builds its result from, if the branches added now matter only where a
+     * branch constraint mentions it (see {@link #caseMapping}), else null.
+     */
+    private String model;
 
     private StringCallBranches(SolverContext context) {
         this.context = context;
@@ -148,6 +157,9 @@ public final class StringCallBranches {
                     }
                 }
             }
+            case "toLowerCase()Ljava/lang/String;", "toLowerCase(Ljava/util/Locale;)Ljava/lang/String;",
+                    "toUpperCase()Ljava/lang/String;", "toUpperCase(Ljava/util/Locale;)Ljava/lang/String;" ->
+                caseMapping(s, name.equals("toLowerCase"), args);
             case "compareToIgnoreCase(Ljava/lang/String;)I" -> {
                 if (args[0] instanceof StringValue other) {
                     pin(length(s));
@@ -255,6 +267,27 @@ public final class StringCallBranches {
         return holds;
     }
 
+    /**
+     * toLowerCase/toUpperCase of a symbolic string, with no or a concrete locale with the root
+     * rules (see CaseMapping), of length at most CaseMapping.MAX_PINNED: the length pinned, then
+     * the split between ASCII strings, whose case mapping StringValue models exactly char by
+     * char, and the others, whose result is approximate. The result is a function of the string
+     * named for the call: a branch constraint that mentions it depends on the pins, else they
+     * are irrelevant to the path (the result is not branched on) and DTOBuilder flags them merged.
+     */
+    private void caseMapping(StringValue s, boolean lower, Value<?, ?>[] args) {
+        CaseMapping.setPending(null);
+        int n = s.concrete.length();
+        if (!s.isSymbolic() || StringValue.caseMappingLocale(args) == null || n > CaseMapping.MAX_PINNED) return;
+        boolean exact = StringValue.asciiStrings(s);
+        String function = CaseMapping.newFunction(lower, exact);
+        model = function;
+        pin(length(s));
+        ascii(s);
+        model = null;
+        CaseMapping.setPending(new CaseMapping.Call(s, function, n, exact));
+    }
+
     /** codePointBefore(int index): 0 <= index - 1 < length of s */
     private void codePointBefore(StringValue s, Value<?, ?> indexArg) throws Exception {
         Int i = num(indexArg);
@@ -320,11 +353,11 @@ public final class StringCallBranches {
 
     /** A check: the call throws if it fails. */
     private void add(BooleanFormula condition, boolean holds) {
-        branches.add(new Branch(condition, holds, true));
+        branches.add(new Branch(condition, holds, true, model));
     }
 
     /** A branch between the cases of a model, which both return. */
     private void split(BooleanFormula condition, boolean holds) {
-        branches.add(new Branch(condition, holds, false));
+        branches.add(new Branch(condition, holds, false, model));
     }
 }
