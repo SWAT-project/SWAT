@@ -180,27 +180,35 @@ public class ValueFactory {
         if (className.equals(Util.formatClassName(Boolean.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(Boolean.class.getName()))) {
             ret = new BooleanObjectValue(context, new BooleanValue(context, false), ObjectValue.ADDRESS_UNKNOWN);
+            ret.valueUnknown = true; // until the constructor's model sets the value
         } else if (className.equals(Util.formatClassName(Byte.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(Byte.class.getName()))) {
             ret = new ByteObjectValue(context, new ByteValue(context, (byte) 0), ObjectValue.ADDRESS_UNKNOWN);
+            ret.valueUnknown = true; // until the constructor's model sets the value
         } else if (className.equals(Util.formatClassName(Integer.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(Integer.class.getName()))) {
             ret = new IntegerObjectValue(context, new IntValue(context, 0), ObjectValue.ADDRESS_UNKNOWN);
+            ret.valueUnknown = true; // until the constructor's model sets the value
         } else if (className.equals(Util.formatClassName(Short.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(Short.class.getName()))) {
             ret = new ShortObjectValue(context, new ShortValue(context, (short) 0), ObjectValue.ADDRESS_UNKNOWN);
+            ret.valueUnknown = true; // until the constructor's model sets the value
         } else if (className.equals(Util.formatClassName(Long.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(Long.class.getName()))) {
             ret = new LongObjectValue(context, new LongValue(context, 0L), ObjectValue.ADDRESS_UNKNOWN);
+            ret.valueUnknown = true; // until the constructor's model sets the value
         } else if (className.equals(Util.formatClassName(Double.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(Double.class.getName()))) {
             ret = new DoubleObjectValue(context, new DoubleValue(context, 0.0d), ObjectValue.ADDRESS_UNKNOWN);
+            ret.valueUnknown = true; // until the constructor's model sets the value
         } else if (className.equals(Util.formatClassName(Float.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(Float.class.getName()))) {
             ret = new FloatObjectValue(context, new FloatValue(context, 0.0f), ObjectValue.ADDRESS_UNKNOWN);
+            ret.valueUnknown = true; // until the constructor's model sets the value
         } else if (className.equals(Util.formatClassName(Character.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(Character.class.getName()))) {
             ret = new CharacterObjectValue(context, new CharValue(context, '\u0000'), ObjectValue.ADDRESS_UNKNOWN);
+            ret.valueUnknown = true; // until the constructor's model sets the value
         } else if (className.equals(Util.formatClassName(StringBuilder.class.getName()))
                 || className.equals(Util.formatClassName(StringBuffer.class.getName()))) {
             // The chars are set by the constructor, which is the next call.
@@ -208,6 +216,7 @@ public class ValueFactory {
         } else if (className.equals(Util.formatClassName(String.class.getName()))
                 || classInterfacesAndParents.contains(Util.formatClassName(String.class.getName()))) {
             ret = new StringValue(context, "", ObjectValue.ADDRESS_UNKNOWN); // This is not correct but _normally_ the next call should be the <init> function
+            ret.valueUnknown = true;
         } else {
             ret =
                     new ObjectValue<>(

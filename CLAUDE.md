@@ -288,6 +288,36 @@ cfg-extraction (see loop facts above).
   in the entry method hashes as before. Lambdas still stop all states (`invokedynamic`), threads
   are still excluded. swat-benchmarks `loop-frames` (RESULTS.md, "Loop-state matching across
   frames").
+- **Hash containers with symbolic keys** (since 2026-11-17, executor `CollectionInvocation.hashCall`,
+  `HashEntries`): a HashMap, LinkedHashMap, HashSet or LinkedHashSet that SWAT saw created keeps
+  its exact entries (key shadows in insertion order, value shadows). A call by key (get,
+  getOrDefault, containsKey, put, putIfAbsent, remove, the copy constructors, putAll; add, contains,
+  remove, addAll on sets; size, isEmpty, clear) with String, Integer, Long, Short, Byte, Character,
+  Boolean or null keys is recorded as the equality chain `key.equals(k_j)` over the stored keys:
+  library branches like those of the String models (`checkAndSetLibraryBranch`, masked in the SA
+  walk), so the path fixes which entry matched and the solver reaches the others. Before, any
+  symbolic key was a context loss.
+  - **Anything else gives the record up** (`CollectionInvocation.forget`): a call outside the
+    tables, a key of another class (Double, Float, classes with their own equals), a call that
+    ran application code or threw, the container or a view of it passed to code that is not
+    modelled, a change through a view or an iterator, more than 64 entries. With a symbolic key
+    in the container that is a context loss, as is every later call by key.
+  - **Iteration order:** a plain hash container iterates by hash code, which is not modelled: with
+    two or more entries and a symbolic key, `next()`, `toArray` and copies are a context loss
+    (sizes and `hasNext` are exact). Linked containers iterate in the recorded order.
+  - **Checked against the JVM:** what the record says a call returns is compared with what it
+    returned (`checkPrimitive`, `resolveExact`); a difference gives the record up, with context
+    loss if a symbolic comparison was involved.
+  - **Only keys whose shadow value is known** (`ObjectValue.valueUnknown`): a String or boxed
+    shadow made by NEW has a default value until a constructor model sets it, and the models of
+    `Character/Short/Byte/Boolean.<init>` do not for int-typed constants. Comparing such a shadow
+    put `c == 0` on the path instead of `c == 'a'` (a false SAFE in `hash-char-literal_false`
+    before the check).
+  - **Empty immutable containers** (`Collections.emptyMap/emptySet/emptyList`): get, containsKey,
+    containsValue and contains return null or false whatever the argument is, so they are no
+    context loss either.
+  - **Tests:** swat-benchmarks `model-soundness`, `hash-*` and `hashset-*`
+    (`scripts/model_soundness_hash.py`).
 - **Hangs**: the executor's `DeadlockWatchdog` (config `deadlockWatchdog`) ends a run whose
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.

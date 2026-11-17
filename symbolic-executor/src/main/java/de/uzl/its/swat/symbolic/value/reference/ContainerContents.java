@@ -40,6 +40,8 @@ public class ContainerContents {
         LIST,
         /** A hash map: the keys are hashed and compared, the values are only stored and returned. */
         MAP,
+        /** A hash set, modelled only while its exact elements are known ({@link HashEntries}). */
+        SET,
         /** A view, iterator, enumeration or map entry, or an immutable container: only read. */
         VIEW
     }
@@ -70,6 +72,20 @@ public class ContainerContents {
      * anything else changed the list (see CollectionInvocation).
      */
     private List<Value<?, ?>> ordered;
+    /** Whether {@link #ordered} is exact: no call that is not modelled got the list since. */
+    private boolean orderExact = true;
+
+    /**
+     * For a hash map or set: its exact entries, or null if they are not known (the container was
+     * not seen created, or a call on it was not modelled exactly, see CollectionInvocation).
+     */
+    private HashEntries hash;
+    /**
+     * Whether a symbolic String or boxed key was stored (maps), or a symbolic element (sets). Such
+     * a container is modelled only through its exact entries; once those are lost, every call on
+     * it is a context loss.
+     */
+    private boolean symbolicKeys = false;
 
     public ContainerContents(Kind kind) {
         this(kind, false);
@@ -97,12 +113,105 @@ public class ContainerContents {
     public void clearOrdered() {
         if (kind == Kind.LIST) {
             ordered = new ArrayList<>();
+            orderExact = true;
         }
+    }
+
+    /**
+     * The elements of the list in order, if they are known exactly: as {@link #ordered}, but null
+     * also once a call that is not modelled may have changed the list.
+     */
+    public List<Value<?, ?>> exactOrdered() {
+        return orderExact ? ordered : null;
     }
 
     /** The list changed in a way not tracked in order: positions are unknown from now on. */
     public void forgetOrder() {
         ordered = null;
+    }
+
+    /** The exact entries of a hash container, or null if they are not known. */
+    public HashEntries hash() {
+        return hash;
+    }
+
+    public void setHash(HashEntries hash) {
+        this.hash = hash;
+    }
+
+    /** Whether a symbolic key or set element was ever stored in this container itself. */
+    public boolean hasSymbolicKeys() {
+        return symbolicKeys;
+    }
+
+    /** Records an element added to a hash set: a value of the container that is compared like a key. */
+    public void addElement(Value<?, ?> element) throws NotImplementedException {
+        if (element == null) {
+            return;
+        }
+        addValue(element);
+        if (element.isSymbolic()) {
+            symbolicKeys = true;
+        }
+    }
+
+    /**
+     * Gives up the exact entries of this container, and of the containers a view shows (a call
+     * that is not modelled may have changed them through the view).
+     *
+     * @return whether one of them holds (or held) a symbolic key: then nothing constrains what the
+     *     container holds any more, which is a context loss
+     */
+    public boolean forgetHash() {
+        return forgetHash(Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private boolean forgetHash(Set<Object> seen) {
+        if (!seen.add(this)) {
+            return false;
+        }
+        boolean symbolic = hash != null && symbolicKeys;
+        hash = null;
+        orderExact = false;
+        if (kind == Kind.VIEW) {
+            for (Object s : sources) {
+                if (s instanceof ContainerContents c) symbolic |= c.forgetHash(seen);
+            }
+        }
+        return symbolic;
+    }
+
+    /**
+     * Whether the order in which this container, or one it shows or was copied from, iterates may
+     * depend on a symbolic key (see {@link HashEntries#orderUnknown}), or its exact entries were
+     * lost while it held one.
+     */
+    public boolean hashOrderUnknown() throws NotImplementedException {
+        return hashOrderUnknown(Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private boolean hashOrderUnknown(Set<Object> seen) throws NotImplementedException {
+        if (!seen.add(this)) {
+            return false;
+        }
+        if (symbolicKeys && (hash == null || hash.orderUnknown())) {
+            return true;
+        }
+        for (Object s : sources) {
+            if (s instanceof ContainerContents c && c.hashOrderUnknown(seen)) return true;
+        }
+        return false;
+    }
+
+    /** Whether a container among the sources (transitively) ever stored a symbolic key. */
+    private boolean sourceHasSymbolicKeys(Set<Object> seen) {
+        if (!seen.add(this)) {
+            return false;
+        }
+        for (Object s : sources) {
+            if (s instanceof ContainerContents c && (c.symbolicKeys || c.sourceHasSymbolicKeys(seen))) return true;
+        }
+        return false;
     }
 
     /** A view of {@code source}: a read-only container that holds what the source holds. */
@@ -130,9 +239,13 @@ public class ContainerContents {
         if (key == null) {
             return;
         }
-        // A String or boxed key was concrete when stored and stays so; only mutable keys are rechecked
+        // A String or boxed key is concrete or symbolic for good; only mutable keys are rechecked.
+        // A symbolic one is stored only by the exact model of a hash map (HashEntries).
         if (!isValueTyped(key)) {
             keys.add(key);
+        } else if (key.isSymbolic()) {
+            symbolicKeys = true;
+            symbolicImmutable = true;
         }
         index(key);
     }
@@ -172,12 +285,19 @@ public class ContainerContents {
         return false;
     }
 
-    /** Whether a map key stored here (not in the sources) has become symbolic. */
+    /**
+     * Whether the map may hold a symbolic key that its exact entries do not account for: a mutable
+     * key stored here that has become symbolic, a symbolic String or boxed key when the exact
+     * entries are lost, or one in a map this one was copied from as a source.
+     */
     public boolean keysSymbolic(Set<Value<?, ?>> visited) throws NotImplementedException {
         for (Value<?, ?> k : keys) {
             if (k.isSymbolic(visited)) return true;
         }
-        return false;
+        if (symbolicKeys && hash == null) {
+            return true;
+        }
+        return kind == Kind.MAP && sourceHasSymbolicKeys(Collections.newSetFromMap(new IdentityHashMap<>()));
     }
 
     /**

@@ -38,6 +38,14 @@ public class InvocationHandler {
                             "java/io/InputStream",
                             "java/util/Scanner"));
 
+    /**
+     * Library classes whose methods only read the objects they are given: passing them a hash
+     * container does not end the exact record of its entries (see CollectionInvocation).
+     */
+    private static final java.util.Set<String> READS_ITS_ARGUMENTS = java.util.Set.of(
+            "java/util/Objects", "java/lang/String", "java/lang/StringBuilder", "java/lang/StringBuffer",
+            "java/io/PrintStream", "java/lang/System");
+
     // The concatenation keeps the ShadowJar relocation from rewriting the owner
     private static final String OBJECT_FACTORY = "org/".concat("sosy_lab/sv_benchmarks/ObjectFactory");
 
@@ -88,6 +96,12 @@ public class InvocationHandler {
         if (containerResult != null) {
             return containerResult;
         }
+        // A call the container models do not cover may change the containers it is given
+        if (!READS_ITS_ARGUMENTS.contains(owner)) {
+            for (Value<?, ?> argument : arguments) {
+                CollectionInvocation.escaped(argument, owner, name, desc, invokeId);
+            }
+        }
 
         boolean ignored = IGNORED_INVOCATIONS.contains(owner + "/" + name)
                 || IGNORED_INVOCATIONS.contains(owner);
@@ -106,6 +120,9 @@ public class InvocationHandler {
         if (isInstance) {
             containsSymbolicArgument = containsSymbolicArgument || (!ignored && instance.isSymbolic());
             retValue = instance.invokeMethod(name, types, arguments.toArray(new Value[0]));
+            if (instance.valueUnknown && name.equals("<init>") && !(retValue instanceof PlaceHolder)) {
+                instance.valueUnknown = false; // the constructor's model has set the shadow value
+            }
         } else {
             retValue =
                     StaticInvocation.invokeMethod(

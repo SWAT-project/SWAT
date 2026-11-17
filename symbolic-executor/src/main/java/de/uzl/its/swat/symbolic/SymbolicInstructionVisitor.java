@@ -1536,6 +1536,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         }
 
                     } else {
+                        if (peek instanceof BoxedValue<?> boxed && (boxed.getVal() == null
+                                || boxed.getVal().concrete == null || !inst.val.equals(boxed.getVal().concrete))) {
+                            // The shadow differs from the object: not a key hash containers compare
+                            boxed.valueUnknown = true;
+                        }
                         (peek.asObjectValue()).setAddress(inst.address);
                         stack.putToHeap(inst.address, peek);
                     }
@@ -2501,7 +2506,7 @@ public class SymbolicInstructionVisitor implements IVisitor {
      *       contents or the arguments are symbolic.
      * </ul>
      */
-    private void callRunsApplicationCode(String name, String desc) throws NoThreadContextException {
+    private void callRunsApplicationCode(String owner, String name, String desc, long invokeId) throws NoThreadContextException {
         ObjectValue<?, ?> instance;
         Value<?, ?>[] arguments;
         try {
@@ -2509,6 +2514,20 @@ public class SymbolicInstructionVisitor implements IVisitor {
             arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), true);
         } catch (Exception e) {
             return; // the callee is instrumented code with its own frame
+        }
+        if (instance != null && CollectionInvocation.isContainer(instance)) {
+            // No model is applied: the exact entries of a hash container are not known any more
+            CollectionInvocation.escaped(instance, owner, name, desc, invokeId);
+        }
+        boolean containerArgument = false;
+        for (Value<?, ?> argument : arguments) {
+            containerArgument |= argument instanceof ObjectValue<?, ?> ov && ov.getContents() != null;
+        }
+        if (containerArgument && !Util.shouldInstrument(Util.formatClassName(owner))) {
+            // Maybe a library method that calls back: it may change the containers it is given
+            for (Value<?, ?> argument : arguments) {
+                CollectionInvocation.escaped(argument, owner, name, desc, invokeId);
+            }
         }
         if (instance instanceof de.uzl.its.swat.symbolic.value.reference.StringBuilderValue sbv) {
             if (sbv.unmodelledChange(name)) {
@@ -2545,6 +2564,8 @@ public class SymbolicInstructionVisitor implements IVisitor {
             ObjectValue<?, ?> instance = stack.getInstance();
             Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), true);
             explained = recordStringCallBranches(iid, name, desc, instance, arguments, false);
+            // A container call that threw is not modelled: its exact entries are given up
+            CollectionInvocation.escaped(instance, owner, name, desc, invokeId);
         } catch (Exception e) {
             explained = false;
         }
@@ -2570,7 +2591,11 @@ public class SymbolicInstructionVisitor implements IVisitor {
         try {
             Value<?, ?>[] arguments = stack.fetchArgumentsFromLocals(Type.getArgumentTypes(desc), isInstance);
             symbolic = isInstance && stack.getInstance().isSymbolic();
-            for (Value<?, ?> argument : arguments) symbolic = symbolic || argument.isSymbolic();
+            for (Value<?, ?> argument : arguments) {
+                symbolic = symbolic || argument.isSymbolic();
+                // The call may have changed a container it was given before it threw
+                CollectionInvocation.escaped(argument, owner, name, desc, invokeId);
+            }
         } catch (Exception e) {
             symbolic = true; // cannot tell, so assume the worst
         }
@@ -2607,12 +2632,13 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         new ArrayList<>(Arrays.asList(arguments)),
                         true,
                         instance);
+                recordCallBranches(inst.iid, inst.name, CollectionInvocation.takeBranches(), true);
                 stack.setReturnValue(retVal);
 
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
                 recordThrowingInstanceCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
             } else {
-                callRunsApplicationCode(inst.name, inst.desc);
+                callRunsApplicationCode(inst.owner, inst.name, inst.desc, inst.invokeId);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2647,11 +2673,12 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         new ArrayList<>(Arrays.asList(arguments)),
                         true,
                         instance);
+                recordCallBranches(inst.iid, inst.name, CollectionInvocation.takeBranches(), true);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
                 recordThrowingInstanceCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
             } else {
-                callRunsApplicationCode(inst.name, inst.desc);
+                callRunsApplicationCode(inst.owner, inst.name, inst.desc, inst.invokeId);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -2771,11 +2798,12 @@ public class SymbolicInstructionVisitor implements IVisitor {
                         new ArrayList<>(Arrays.asList(arguments)),
                         true,
                         instance);
+                recordCallBranches(inst.iid, inst.name, CollectionInvocation.takeBranches(), true);
                 stack.setReturnValue(retVal);
             } else if (stack.getNextInst() instanceof INVOKEMETHOD_EXCEPTION) {
                 recordThrowingInstanceCall(inst.iid, inst.owner, inst.name, inst.desc, inst.invokeId);
             } else {
-                callRunsApplicationCode(inst.name, inst.desc);
+                callRunsApplicationCode(inst.owner, inst.name, inst.desc, inst.invokeId);
             }
 
             if (!inst.owner.equals("de/uzl/its/swat/Main")) {
@@ -4123,6 +4151,10 @@ public class SymbolicInstructionVisitor implements IVisitor {
                     stack.popWideOperand();
                 } else {
                     stack.popOperand();
+                }
+                if (placeHolder instanceof ContainerPlaceHolder containerPlaceHolder) {
+                    // What a hash container's exact entries say the call returned, against the JVM
+                    CollectionInvocation.checkPrimitive(containerPlaceHolder, inst.v);
                 }
                 Value<?, ?> v = ValueFactory.createNumericalValue(type, inst.v);
                 if (isSymbolic) {

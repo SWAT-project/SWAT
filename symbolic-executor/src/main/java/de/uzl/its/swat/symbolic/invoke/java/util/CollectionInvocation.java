@@ -5,6 +5,7 @@ import de.uzl.its.swat.common.exceptions.NoThreadContextException;
 import de.uzl.its.swat.common.exceptions.NotImplementedException;
 import de.uzl.its.swat.common.logging.GlobalLogger;
 import de.uzl.its.swat.common.logging.records.InvocationEntry;
+import de.uzl.its.swat.symbolic.invoke.java.lang.StringCallBranches.Branch;
 import de.uzl.its.swat.symbolic.shadow.ShadowContext;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.ContainerPlaceHolder;
@@ -15,12 +16,14 @@ import de.uzl.its.swat.symbolic.value.ValueFactory;
 import de.uzl.its.swat.symbolic.value.primitive.numeric.integral.IntValue;
 import de.uzl.its.swat.symbolic.value.reference.ContainerContents;
 import de.uzl.its.swat.symbolic.value.reference.ContainerContents.Kind;
+import de.uzl.its.swat.symbolic.value.reference.HashEntries;
 import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.array.AbstractArrayValue;
 import de.uzl.its.swat.symbolic.value.reference.array.ObjectArrayValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.BoxedValue;
 import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 import de.uzl.its.swat.thread.ThreadHandler;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -39,9 +42,28 @@ import java.util.Set;
  * {@code equals}, {@code hashCode}, {@code toString}, streams, ...) is not modelled: a container
  * holding a symbolic value counts as symbolic, so such a call records context loss as before.
  *
- * <p>Hashed parts are modelled only while they are concrete: a map key must not be symbolic, and a
- * map whose stored keys have become symbolic is not modelled any more. Index arguments must be
- * concrete too. Anything else falls back to the generic handling of a missing invocation.
+ * <p>Hashed parts are modelled by reference only while they are concrete: there a map key must
+ * not be symbolic, and a map whose stored keys have become symbolic is not modelled any more. Index
+ * arguments must be concrete too. Anything else falls back to the generic handling of a missing
+ * invocation.
+ *
+ * <p><b>Exact hash containers.</b> A {@code HashMap}, {@code LinkedHashMap}, {@code HashSet} or
+ * {@code LinkedHashSet} whose creation and every call since were modelled has an exact record of
+ * its entries ({@link HashEntries}). With it, calls by key are modelled for symbolic String and
+ * boxed integral keys too ({@link #hashCall}): the lookup is recorded as the equality chain {@code
+ * key.equals(k_j)} over the stored keys, library branches as those of the String models ({@link
+ * #takeBranches}), so the path fixes which entry matched and the solver reaches the others. What
+ * the call returns then follows from the record, and is checked against what the JVM returned
+ * ({@link #resolve}, {@link #checkPrimitive}).
+ *
+ * <p>The record is given up ({@link #forget}) by anything that is not modelled exactly: a call
+ * outside the tables, a key of another class (its equals is unknown), a call that ran application
+ * code or threw, the container (or a view of it) passed to code that is not modelled, a change
+ * through a view, a result that does not match. If the container held a symbolic key, giving up is
+ * a context loss, and every later call by key is one as well ({@link
+ * ContainerContents#keysSymbolic}). The iteration order of a plain hash container depends on the
+ * keys' hash codes: iterating (or copying) one with two or more entries and a symbolic key is a
+ * context loss, whereas a linked one iterates in the recorded order.
  */
 public final class CollectionInvocation {
     private static final Logger logger = GlobalLogger.getSymbolicExecutionLogger();
@@ -56,6 +78,76 @@ public final class CollectionInvocation {
         for (String c : List.of("HashMap", "LinkedHashMap", "Hashtable")) {
             KIND_BY_CLASS.put("java/util/" + c, Kind.MAP);
         }
+        for (String c : List.of("HashSet", "LinkedHashSet")) {
+            KIND_BY_CLASS.put("java/util/" + c, Kind.SET);
+        }
+    }
+
+    /** The classes with an exact record of their entries (not Hashtable: it rejects null). */
+    private static final Set<String> HASH_CLASSES = Set.of(
+            "java/util/HashMap", "java/util/LinkedHashMap", "java/util/HashSet", "java/util/LinkedHashSet");
+
+    /** The calls modelled on the exact entries of a hash container. */
+    private enum HashOp {
+        INIT, COPY_INIT, COPY, GET, GET_OR_DEFAULT, CONTAINS, PUT, PUT_IF_ABSENT, REMOVE, ADD, SIZE, IS_EMPTY, CLEAR
+    }
+
+    private static final Map<String, HashOp> HASH_MAP_OPS = Map.ofEntries(
+            Map.entry("<init>()V", HashOp.INIT),
+            Map.entry("<init>(I)V", HashOp.INIT),
+            Map.entry("<init>(IF)V", HashOp.INIT),
+            Map.entry("<init>(Ljava/util/Map;)V", HashOp.COPY_INIT),
+            Map.entry("putAll(Ljava/util/Map;)V", HashOp.COPY),
+            Map.entry("get(Ljava/lang/Object;)Ljava/lang/Object;", HashOp.GET),
+            Map.entry("getOrDefault(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", HashOp.GET_OR_DEFAULT),
+            Map.entry("containsKey(Ljava/lang/Object;)Z", HashOp.CONTAINS),
+            Map.entry("put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", HashOp.PUT),
+            Map.entry("putIfAbsent(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", HashOp.PUT_IF_ABSENT),
+            Map.entry("remove(Ljava/lang/Object;)Ljava/lang/Object;", HashOp.REMOVE),
+            Map.entry("size()I", HashOp.SIZE),
+            Map.entry("isEmpty()Z", HashOp.IS_EMPTY),
+            Map.entry("clear()V", HashOp.CLEAR));
+
+    private static final Map<String, HashOp> HASH_SET_OPS = Map.ofEntries(
+            Map.entry("<init>()V", HashOp.INIT),
+            Map.entry("<init>(I)V", HashOp.INIT),
+            Map.entry("<init>(IF)V", HashOp.INIT),
+            Map.entry("<init>(Ljava/util/Collection;)V", HashOp.COPY_INIT),
+            Map.entry("addAll(Ljava/util/Collection;)Z", HashOp.COPY),
+            Map.entry("add(Ljava/lang/Object;)Z", HashOp.ADD),
+            Map.entry("contains(Ljava/lang/Object;)Z", HashOp.CONTAINS),
+            Map.entry("remove(Ljava/lang/Object;)Z", HashOp.REMOVE),
+            Map.entry("size()I", HashOp.SIZE),
+            Map.entry("isEmpty()Z", HashOp.IS_EMPTY),
+            Map.entry("clear()V", HashOp.CLEAR));
+
+    /** The immutable empty containers of {@code Collections.emptyMap()}, {@code emptySet()}, {@code emptyList()}. */
+    private static final Set<String> EMPTY_CLASSES = Set.of(
+            "java/util/Collections$EmptyMap", "java/util/Collections$EmptySet", "java/util/Collections$EmptyList");
+
+    /** Lookups whose result in an empty container does not depend on the argument. */
+    private static final Set<String> EMPTY_LOOKUPS = Set.of(
+            "get(Ljava/lang/Object;)Ljava/lang/Object;", "containsKey(Ljava/lang/Object;)Z",
+            "containsValue(Ljava/lang/Object;)Z", "contains(Ljava/lang/Object;)Z");
+
+    /** Returned by {@link #hashCall} for a call that is left to the generic handling. */
+    private static final Value<?, ?> NOT_MODELLED = new PlaceHolder(false);
+
+    /** The branches of the last modelled call (the equality chain of a lookup by key). */
+    private static final ThreadLocal<List<Branch>> BRANCHES = ThreadLocal.withInitial(ArrayList::new);
+
+    /**
+     * The library branches the model of the last call relies on, for the visitor to record: on
+     * the path, they fix which entry of a hash container a lookup found.
+     */
+    public static List<Branch> takeBranches() {
+        List<Branch> pending = BRANCHES.get();
+        if (pending.isEmpty()) {
+            return List.of();
+        }
+        List<Branch> taken = List.copyOf(pending);
+        pending.clear();
+        return taken;
     }
 
     private enum Op {
@@ -80,6 +172,8 @@ public final class CollectionInvocation {
     private static final Map<String, Model> LIST = new HashMap<>();
     private static final Map<String, Model> MAP = new HashMap<>();
     private static final Map<String, Model> VIEW = new HashMap<>();
+    /** On a hash set with exact entries, next to the calls by element ({@link #HASH_SET_OPS}). */
+    private static final Map<String, Model> SET = new HashMap<>();
 
     private static void put(Map<String, Model> table, Op op, int arg, int key, String... sigs) {
         for (String sig : sigs) table.put(sig, new Model(op, arg, key, sig.startsWith("<init>")));
@@ -127,6 +221,9 @@ public final class CollectionInvocation {
                 "keys()Ljava/util/Enumeration;", "elements()Ljava/util/Enumeration;");
         put(MAP, Op.PLAIN, -1, -1, "size()I", "isEmpty()Z", "clear()V");
 
+        put(SET, Op.VIEW, -1, -1, "iterator()Ljava/util/Iterator;");
+        put(SET, Op.ARRAY, -1, -1, "toArray()[Ljava/lang/Object;", "toArray([Ljava/lang/Object;)[Ljava/lang/Object;");
+
         put(VIEW, Op.PLAIN, -1, -1,
                 "hasNext()Z", "hasMoreElements()Z", "hasPrevious()Z", "nextIndex()I", "previousIndex()I",
                 "size()I", "isEmpty()Z", "remove()V");
@@ -152,6 +249,7 @@ public final class CollectionInvocation {
             boolean isInstance,
             ObjectValue<?, ?> instance,
             long invokeId) throws NotImplementedException {
+        BRANCHES.get().clear();
         if (isInstance) {
             if (instance == null || instance.isNullValue()) {
                 return null;
@@ -159,22 +257,377 @@ public final class CollectionInvocation {
             ContainerContents contents = instance.getContents();
             Kind kind = contents != null ? contents.kind : kindOf(instance);
             if (kind == null) {
+                if (contents == null && instance.className != null
+                        && EMPTY_CLASSES.contains(instance.className.replace('.', '/'))
+                        && EMPTY_LOOKUPS.contains(name + desc)) {
+                    // Collections.emptyMap/emptySet/emptyList: nothing is a key or an element, so
+                    // the lookup returns null or false whatever its argument is (taken from the JVM)
+                    logger.debug("Modelled lookup {}.{}{} in an empty immutable container", owner, name, desc);
+                    return PlaceHolder.instance;
+                }
                 return null;
+            }
+            if (kind == Kind.MAP || kind == Kind.SET) {
+                Value<?, ?> result;
+                try {
+                    result = hashCall(kind, owner, name, desc, args, instance, invokeId);
+                } catch (RuntimeException e) {
+                    // The record may be half updated: give it up
+                    logger.warn("Exact model of {}.{}{} failed", owner, name, desc, e);
+                    BRANCHES.get().clear();
+                    forget(instance.getContents(), owner, name, desc, invokeId);
+                    result = kind == Kind.SET ? NOT_MODELLED : null;
+                }
+                if (result != null) {
+                    return result == NOT_MODELLED ? null : result;
+                }
+                contents = instance.getContents();
             }
             Model model = (switch (kind) {
                 case LIST -> LIST;
                 case MAP -> MAP;
+                case SET -> SET;
                 case VIEW -> VIEW;
             }).get(name + desc);
+            if (kind == Kind.SET && (contents == null || contents.hash() == null)) {
+                model = null; // a set is modelled only while its exact entries are known
+            }
             if (model == null) {
+                // Not modelled: the call may have changed the container (or the one behind a view)
+                forget(contents, owner, name, desc, invokeId);
                 return null;
             }
-            return apply(model, kind, owner, name, desc, args, instance, invokeId);
+            if (kind == Kind.VIEW && name.equals("remove")) {
+                forget(contents, owner, name, desc, invokeId); // Iterator.remove changes the container behind it
+            }
+            Value<?, ?> result = apply(model, kind, owner, name, desc, args, instance, invokeId);
+            if (result == null) {
+                forget(instance.getContents(), owner, name, desc, invokeId); // not modelled after all
+            }
+            return result;
         }
         if (owner.equals("java/util/Collections") || owner.equals("java/util/Arrays")) {
             return invokeStatic(owner, name, desc, args, invokeId);
         }
         return null;
+    }
+
+    /**
+     * A call on a hash map or set by key (or element), modelled on its exact entries.
+     *
+     * @return the result of the call; {@link #NOT_MODELLED} to leave the call to the generic
+     *     handling; {@code null} for a call the general model of {@link #apply} decides (a call
+     *     that is not by key, a map without exact entries, or a map call with concrete keys that
+     *     returns a reference, which is found by its address as before: the entries are updated)
+     */
+    private static Value<?, ?> hashCall(
+            Kind kind,
+            String owner,
+            String name,
+            String desc,
+            Value<?, ?>[] args,
+            ObjectValue<?, ?> instance,
+            long invokeId) throws NotImplementedException {
+        HashOp op = (kind == Kind.MAP ? HASH_MAP_OPS : HASH_SET_OPS).get(name + desc);
+        if (op == null) {
+            return null;
+        }
+        InvocationEntry call = new InvocationEntry(owner, name, desc, true, invokeId, true);
+        String className = instance.className == null ? "" : instance.className.replace('.', '/');
+        boolean linked = className.startsWith("java/util/Linked");
+        List<Branch> branches = new ArrayList<>();
+        if (op == HashOp.INIT || op == HashOp.COPY_INIT) {
+            if (!HASH_CLASSES.contains(className)) {
+                return kind == Kind.SET ? NOT_MODELLED : null;
+            }
+            if (op == HashOp.INIT && kind == Kind.MAP) {
+                return null; // apply creates the contents, with the entries
+            }
+            ContainerContents fresh = new ContainerContents(kind);
+            HashEntries entries = new HashEntries(linked);
+            fresh.setHash(entries);
+            if (op == HashOp.COPY_INIT && copyInto(kind, fresh, entries, args[0], branches) == null) {
+                // A source without exact entries: a map as before, a set is not modelled
+                return kind == Kind.SET ? NOT_MODELLED : null;
+            }
+            instance.setContents(fresh);
+            BRANCHES.get().addAll(branches);
+            logger.debug("Modelled hash container call {}.{}{} on {}", owner, name, desc, instance);
+            return PlaceHolder.instance;
+        }
+        ContainerContents contents = instance.getContents();
+        HashEntries entries = contents == null ? null : contents.hash();
+        if (entries == null) {
+            return kind == Kind.SET ? NOT_MODELLED : null;
+        }
+        switch (op) {
+            case SIZE -> {
+                return ContainerPlaceHolder.exactPrimitive(contents, entries.size(), contents.hasSymbolicKeys(), call);
+            }
+            case IS_EMPTY -> {
+                return ContainerPlaceHolder.exactPrimitive(contents, entries.size() == 0, contents.hasSymbolicKeys(), call);
+            }
+            case CLEAR -> {
+                entries.clear();
+                return PlaceHolder.instance;
+            }
+            case COPY -> {
+                Boolean changed = copyInto(kind, contents, entries, args[0], branches);
+                if (changed == null) {
+                    return lose(kind, contents, call);
+                }
+                BRANCHES.get().addAll(branches);
+                logger.debug("Modelled hash container call {}.{}{} on {}", owner, name, desc, instance);
+                return kind == Kind.SET
+                        ? ContainerPlaceHolder.exactPrimitive(contents, changed, !branches.isEmpty(), call)
+                        : PlaceHolder.instance;
+            }
+            default -> { }
+        }
+        // A call by key
+        Value<?, ?> key = args[0];
+        boolean symbolic = contents.hasSymbolicKeys() || key.isSymbolic();
+        if (!HashEntries.supported(key) || (symbolic && entries.size() > HashEntries.MAX_ENTRIES)) {
+            return lose(kind, contents, call);
+        }
+        int at = entries.find(key, entries.size(), branches);
+        if (at == -2) {
+            return lose(kind, contents, call);
+        }
+        HashEntries.Entry found = at >= 0 ? entries.entries().get(at) : null;
+        Value<?, ?> result = found == null ? null : found.value;
+        switch (op) {
+            case GET -> { }
+            case GET_OR_DEFAULT -> {
+                if (found == null) result = args[1];
+            }
+            case PUT -> {
+                if (found != null) {
+                    found.value = args[1];
+                } else {
+                    entries.append(key, args[1]);
+                    if (symbolic) contents.addKey(key);
+                }
+                if (symbolic) contents.addValue(args[1]);
+            }
+            case PUT_IF_ABSENT -> {
+                if (found == null) {
+                    entries.append(key, args[1]);
+                    if (symbolic) {
+                        contents.addKey(key);
+                        contents.addValue(args[1]);
+                    }
+                } else if (!(found.value instanceof ObjectValue<?, ?> old)) {
+                    return lose(kind, contents, call); // cannot tell whether the old value is null
+                } else if (old.isNullValue()) {
+                    found.value = args[1]; // a key mapped to null counts as absent
+                    if (symbolic) contents.addValue(args[1]);
+                }
+            }
+            case REMOVE -> {
+                if (found != null) entries.remove(at);
+            }
+            case ADD -> {
+                if (found == null) {
+                    entries.append(key, null);
+                    contents.addElement(key);
+                }
+            }
+            case CONTAINS -> { }
+            default -> throw new IllegalStateException("Not a call by key: " + op);
+        }
+        BRANCHES.get().addAll(branches);
+        logger.debug("Modelled hash container call {}.{}{} on {}: entry {}", owner, name, desc, instance, at);
+        if (op == HashOp.CONTAINS || (kind == Kind.SET && op == HashOp.REMOVE)) {
+            return ContainerPlaceHolder.exactPrimitive(contents, found != null, symbolic, call);
+        }
+        if (op == HashOp.ADD) {
+            return ContainerPlaceHolder.exactPrimitive(contents, found == null, symbolic, call);
+        }
+        if (!symbolic) {
+            return null; // concrete keys only: the reference returned is found by its address, as before
+        }
+        return ContainerPlaceHolder.exactElement(contents, result, call);
+    }
+
+    /**
+     * Adds what the container in {@code arg} holds to exact entries, as {@code putAll}, {@code
+     * addAll} and the copy constructors do: each key is looked up and stored like a single one.
+     * The source must have exact contents itself: a map or set with exact entries, or (into a
+     * set) a list whose order is known.
+     *
+     * @return whether an entry was added, or {@code null} if the copy cannot be modelled exactly
+     *     (the entries may then be half updated and must be given up)
+     */
+    private static Boolean copyInto(
+            Kind kind, ContainerContents contents, HashEntries entries, Value<?, ?> arg, List<Branch> branches)
+            throws NotImplementedException {
+        if (!(arg instanceof ObjectValue<?, ?> ov) || ov.isNullValue() || ov.getContents() == null) {
+            return null;
+        }
+        ContainerContents source = ov.getContents();
+        if (source == contents) {
+            return false;
+        }
+        List<Value<?, ?>> keys = new ArrayList<>();
+        List<Value<?, ?>> values = new ArrayList<>();
+        boolean distinct; // the keys are pairwise different, so each is new or equals an old entry
+        boolean inOrder; // the keys are listed in the order the source iterates
+        if (source.hash() != null && source.kind == kind) {
+            for (HashEntries.Entry e : source.hash().entries()) {
+                keys.add(e.key);
+                values.add(e.value);
+            }
+            distinct = true;
+            inOrder = source.hash().iteratesInOrder();
+        } else if (kind == Kind.SET && source.kind == Kind.LIST && source.exactOrdered() != null) {
+            for (Value<?, ?> element : source.exactOrdered()) {
+                keys.add(element);
+                values.add(null);
+            }
+            distinct = false;
+            inOrder = true;
+        } else {
+            return null;
+        }
+        boolean symbolic = contents.hasSymbolicKeys();
+        for (Value<?, ?> key : keys) {
+            if (key == null || !HashEntries.supported(key)) {
+                return null;
+            }
+            symbolic |= key.isSymbolic();
+        }
+        if (symbolic && entries.size() + keys.size() > HashEntries.MAX_ENTRIES) {
+            return null;
+        }
+        int before = entries.size();
+        int added = 0;
+        for (int i = 0; i < keys.size(); i++) {
+            Value<?, ?> key = keys.get(i);
+            int at = entries.find(key, distinct ? before : entries.size(), branches);
+            if (at == -2) {
+                return null;
+            }
+            if (at < 0) {
+                entries.append(key, values.get(i));
+                added++;
+                if (kind == Kind.MAP) {
+                    contents.addKey(key);
+                } else {
+                    contents.addElement(key);
+                }
+            } else if (kind == Kind.MAP) {
+                entries.entries().get(at).value = values.get(i);
+            }
+            if (kind == Kind.MAP) {
+                contents.addValue(values.get(i));
+            }
+        }
+        if (added >= 2 && !inOrder) {
+            entries.forgetOrder(); // a linked container got them in the source's (hash) order
+        }
+        return added > 0;
+    }
+
+    /** Gives up the exact entries at a call that is then handled without them. */
+    private static Value<?, ?> lose(Kind kind, ContainerContents contents, InvocationEntry call) {
+        forget(contents, call);
+        return kind == Kind.SET ? NOT_MODELLED : null;
+    }
+
+    private static void forget(ContainerContents contents, String owner, String name, String desc, long invokeId) {
+        if (contents != null) {
+            forget(contents, new InvocationEntry(owner, name, desc, true, invokeId, true));
+        }
+    }
+
+    /**
+     * Gives up the exact entries of a hash container (and of those behind a view), because {@code
+     * call} is not modelled exactly. If one held a symbolic key, nothing on the path says what it
+     * holds from here on: a context loss.
+     */
+    private static void forget(ContainerContents contents, InvocationEntry call) {
+        if (contents != null && contents.forgetHash()) {
+            contextLoss(call, "gives up the exact entries of a hash container with symbolic keys");
+        }
+    }
+
+    /**
+     * A call that is not modelled got {@code value}: if it is a hash container with exact entries
+     * (or a view of one), the call may have changed it, so the entries are given up.
+     */
+    public static void escaped(Value<?, ?> value, String owner, String name, String desc, long invokeId) {
+        if (value instanceof ObjectValue<?, ?> ov && !ov.isNullValue() && ov.getContents() != null) {
+            forget(ov.getContents(), new InvocationEntry(owner, name, desc, false, invokeId, true));
+        }
+    }
+
+    private static void contextLoss(InvocationEntry call, String why) {
+        logger.warn("{}.{}{} {}, causes context loss", call.owner(), call.name(), call.desc(), why);
+        try {
+            long threadId = Thread.currentThread().getId();
+            ThreadHandler.getSymbolicTraceHandler(threadId).recordSymbolicContextLoss();
+            ThreadHandler.recordMissingInvocation(threadId, call);
+            ThreadHandler.recordContextLossInvocation(threadId, call);
+        } catch (NoThreadContextException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Checks the boolean or int a call on exact entries returned against what the entries say. A
+     * difference means the record is not what the JVM holds: it is given up.
+     */
+    public static void checkPrimitive(ContainerPlaceHolder ph, Object concrete) {
+        if (!ph.exact || ph.result != Result.PRIMITIVE) {
+            return;
+        }
+        Object expected = ph.expected;
+        boolean same = expected instanceof Boolean b
+                ? (concrete instanceof Boolean c ? c.equals(b) : concrete instanceof Number n && (n.intValue() != 0) == b)
+                : concrete instanceof Number n && expected instanceof Integer i && n.intValue() == i;
+        if (!same) {
+            mismatch(ph, concrete);
+        }
+    }
+
+    private static void mismatch(ContainerPlaceHolder ph, Object concrete) {
+        logger.warn("Result of {}.{}{} is {}, the exact entries say {}",
+                ph.call.owner(), ph.call.name(), ph.call.desc(), concrete, ph.expected);
+        // Also if the entries were given up since: the call's branches and result relied on them
+        boolean symbolic = ph.symbolic || ph.contents.hasSymbolicKeys();
+        ph.contents.forgetHash();
+        if (symbolic) {
+            contextLoss(ph.call, "returned something else than its exact entries say");
+        }
+    }
+
+    /**
+     * The shadow of the element the exact entries say a call returned, if the concrete result is
+     * that element; {@code null} if it is not.
+     */
+    private static Value<?, ?> resolveExact(ContainerPlaceHolder ph, Object concrete, int address, ShadowContext stack)
+            throws Exception {
+        boolean isNull = address == ObjectValue.ADDRESS_NULL || concrete == null;
+        if (ph.expected == null || (ph.expected instanceof ObjectValue<?, ?> n && n.isNullValue())) {
+            return isNull ? ValueFactory.createNULLValue() : null;
+        }
+        if (isNull || !(ph.expected instanceof ObjectValue<?, ?> expected)) {
+            return null;
+        }
+        if (expected instanceof StringValue s) {
+            if (!(concrete instanceof String) || !concrete.equals(s.concrete)) return null;
+        } else if (expected instanceof BoxedValue<?> b) {
+            if (b.getVal() == null || b.getVal().concrete == null || !concrete.equals(b.getVal().concrete)) return null;
+        } else if ((expected.getAddress() != ObjectValue.ADDRESS_UNKNOWN && expected.getAddress() != address)
+                || !matches(expected, concrete)) {
+            return null;
+        }
+        if (expected.getAddress() == ObjectValue.ADDRESS_UNKNOWN) {
+            expected.setAddress(address);
+            stack.putToHeap(address, expected);
+        }
+        return expected;
     }
 
     /** Whether calls on this object are modelled as a JDK container's (see {@link #invoke}). */
@@ -211,6 +664,11 @@ public final class CollectionInvocation {
                 contents.forgetOrder(); // a list SWAT did not see created: its earlier elements are unknown
             }
         }
+        if (model.op() == Op.INIT && kind == Kind.MAP && instance.className != null
+                && HASH_CLASSES.contains(instance.className.replace('.', '/'))) {
+            // A new hash map: its exact entries are known (none), see hashCall
+            contents.setHash(new HashEntries(instance.className.replace('.', '/').startsWith("java/util/Linked")));
+        }
         trackOrder(model, name + desc, contents);
         if (kind == Kind.MAP && contents.keysSymbolic(new HashSet<>())) {
             return null;
@@ -235,6 +693,13 @@ public final class CollectionInvocation {
         }
         instance.setContents(contents);
         InvocationEntry call = new InvocationEntry(owner, name, desc, true, invokeId, true);
+        if (model.op() != Op.PLAIN && model.op() != Op.VIEW && model.op() != Op.INIT && model.op() != Op.STORE
+                && contents.hashOrderUnknown()) {
+            // Which element a view, an iterator or a copy of a hash container yields next depends
+            // on the hash codes of its symbolic keys, which the path does not fix. (How many it
+            // yields does not: sizes and hasNext are exact.)
+            contextLoss(call, "depends on the iteration order of a hash container with symbolic keys");
+        }
         logger.debug("Modelled container call {}.{}{} on {}", owner, name, desc, instance);
         return switch (model.op()) {
             case INIT, STORE, COPY, PLAIN -> PlaceHolder.instance;
@@ -373,6 +838,13 @@ public final class CollectionInvocation {
             int address,
             ShadowContext stack,
             SymbolicTraceHandler symbolicTraceHandler) throws Exception {
+        if (ph.exact && ph.result == Result.ELEMENT) {
+            Value<?, ?> element = resolveExact(ph, concrete, address, stack);
+            if (element != null) {
+                return element;
+            }
+            mismatch(ph, concrete);
+        }
         if (address == ObjectValue.ADDRESS_NULL || concrete == null) {
             return ValueFactory.createNULLValue();
         }
@@ -452,6 +924,7 @@ public final class CollectionInvocation {
                 stack.putToHeap(address, array);
                 return array;
             }
+            default -> { }
         }
         return recover(concrete, address, stack);
     }
