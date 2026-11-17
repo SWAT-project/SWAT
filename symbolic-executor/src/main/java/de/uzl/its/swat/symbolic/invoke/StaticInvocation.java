@@ -20,6 +20,7 @@ import de.uzl.its.swat.symbolic.invoke.java.util.ObjectsInvocation;
 import de.uzl.its.swat.symbolic.trace.SymbolicTraceHandler;
 import de.uzl.its.swat.symbolic.value.PlaceHolder;
 import de.uzl.its.swat.symbolic.value.Value;
+import de.uzl.its.swat.symbolic.value.reference.lang.StringValue;
 
 public final class StaticInvocation {
 
@@ -59,8 +60,22 @@ public final class StaticInvocation {
                             name, args, symbolicStateHandler);
                     case "java/util/Objects" -> ObjectsInvocation.invokeStaticMethod(
                             name, args, desc, symbolicStateHandler);
+                    case "java/util/regex/Pattern" -> invokePatternStatic(name, desc, args);
                     default -> PlaceHolder.instance;
                 };
         return ret;
+    }
+
+    /**
+     * Pattern.matches(regex, input) is, by its specification, input.matches(regex) for a String
+     * input: modelled as String.matches (a concrete regular expression JavaRegex translates).
+     */
+    private static Value<?, ?> invokePatternStatic(String name, Type[] desc, Value<?, ?>[] args)
+            throws NotImplementedException, ValueConversionException {
+        if (name.equals("matches") && args.length == 2
+                && args[0] instanceof StringValue regex && args[1] instanceof StringValue input) {
+            return input.invokeMethod("matches", new Type[] {desc[0]}, new Value<?, ?>[] {regex});
+        }
+        return PlaceHolder.instance;
     }
 }

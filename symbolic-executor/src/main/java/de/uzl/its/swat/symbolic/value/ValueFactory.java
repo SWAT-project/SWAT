@@ -16,6 +16,7 @@ import de.uzl.its.swat.symbolic.value.reference.ObjectValue;
 import de.uzl.its.swat.symbolic.value.reference.StringBuilderValue;
 import de.uzl.its.swat.symbolic.value.reference.array.*;
 import de.uzl.its.swat.symbolic.value.reference.lang.*;
+import de.uzl.its.swat.symbolic.value.reference.regex.PatternValue;
 import de.uzl.its.swat.thread.ThreadHandler;
 
 import java.util.*;
@@ -151,6 +152,9 @@ public class ValueFactory {
             return createFloatArrayValue(arr, address);
         } else if (concrete instanceof double[] arr) {
             return createDoubleArrayValue(arr, address);
+        } else if (concrete instanceof java.util.regex.Pattern pattern) {
+            // Immutable: its regular expression and flags are read from the concrete Pattern.
+            return new PatternValue(context, pattern, address);
         } else {
             Class<?> cls = concrete.getClass();
             String className = cls.getName();

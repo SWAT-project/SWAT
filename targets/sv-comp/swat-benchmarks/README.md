@@ -39,6 +39,15 @@ every pair the assert is `if (x > 1000 && x < HI) assert false;` with HI = 10000
 1001 (SAFE), and it is only reached after flipping an input-dependent branch that the risky
 construct sits on. Each task's comment says what it tests.
 
+`model-soundness` (`scripts/modelsoundness.py`): SAFE/VIOLATION pairs for the executor's models of
+library calls, one group per model; a VIOLATION task that comes out SAFE means a model hid a
+reachable path. `regex-*` (2026-11-17): `Pattern.compile(c).matcher(s).matches()` and
+`Pattern.matches(c, s)` on a symbolic string are modelled (`regex-matcher-*`,
+`regex-pattern-matches`: SAFE and VIOLATION expected); a regular expression JavaRegex does not
+translate, flags, `find()` and a matcher reused with `reset` are not (`regex-untranslatable`,
+`regex-flags`, `regex-find`, `regex-reset*`: the SAFE variant must stay UNKNOWN, the VIOLATION
+variant must not be SAFE).
+
 `relevance` and `relevance-soundness` (`scripts/relevance.py`): tasks for the relevance analysis
 (slicing). `relevance` has the design example verbatim (`example`, `example-long`) and families over
 the loop length n in {10, 100, 1000} whose input-dependent branches cannot affect the assert

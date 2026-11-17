@@ -16,12 +16,14 @@ from soundness import all_soundness_tasks
 from tools import all_tool_tasks
 from relevance import all_relevance_tasks
 from loopsummary import all_loop_summary_tasks
+from modelsoundness import all_model_soundness_tasks
 
 JAVA_DIR = Path(__file__).resolve().parent.parent / 'java'
 
 
 def main(suites):
-    tasks = [*all_family_tasks(), *all_soundness_tasks(), *all_tool_tasks(), *all_relevance_tasks(), *all_loop_summary_tasks()]
+    tasks = [*all_family_tasks(), *all_soundness_tasks(), *all_tool_tasks(), *all_relevance_tasks(), *all_loop_summary_tasks(),
+             *all_model_soundness_tasks()]
     if suites:
         tasks = [t for t in tasks if t.suite in suites]
     for suite in sorted({t.suite for t in tasks}):
