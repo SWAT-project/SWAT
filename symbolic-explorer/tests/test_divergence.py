@@ -12,6 +12,7 @@ Python lacks, so run it with the harness venv, from symbolic-explorer/:
 import copy
 import os
 import sys
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -153,6 +154,38 @@ class CheckDivergenceTest(DivergenceTestBase):
         self.assertEqual(self.retired, {70})
         self.assertEqual(self.driver.unreached_given_up_branches(), [self.target])
         self.assertEqual(len(self.driver.failed_solutions[70]), 3)
+
+    def test_endgame_takes_a_given_up_branch_back(self):
+        # Exhausted with a given-up branch and CPU time left: it becomes a candidate again, with its
+        # failed solutions kept (so the next one differs); missing again records nothing twice
+        self.driver.divergence_retries = 0
+        self.driver.budget = SimpleNamespace(cpu_exceeded=threading.Event())
+        unretired = []
+        svcomp.Database.instance().unretire_branch = unretired.append
+        self.aim(self.target, {'I_0': 1})
+        self.check([trace_branch(7, False)])
+        self.assertEqual(self.retired, {70})
+        self.assertTrue(self.driver.reopen_given_up())
+        self.assertEqual(unretired, [70])
+        self.assertEqual(self.dropped, [70])
+        self.assertFalse(self.driver.reopen_given_up())  # nothing left to take back until it misses again
+        self.aim(self.target, {'I_0': 2})
+        out = self.check([trace_branch(7, False)])
+        self.assertNotIn('SWAT Assertion failed', out)
+        self.assertEqual([e['kind'] for e in self.tree.execution_errors], ['unexpected_divergence'])
+        self.assertEqual(self.driver.unreached_given_up_branches(), [self.target])
+        self.assertEqual(len(self.driver.failed_solutions[70]), 2)
+        # Out of CPU time: the run ends instead
+        self.driver.budget.cpu_exceeded.set()
+        self.assertFalse(self.driver.reopen_given_up())
+
+    def test_endgame_can_be_turned_off(self):
+        self.driver.divergence_retries = 0
+        self.driver.args.no_endgame = True
+        self.driver.budget = SimpleNamespace(cpu_exceeded=threading.Event())
+        self.aim(self.target, {'I_0': 1})
+        self.check([trace_branch(7, False)])
+        self.assertFalse(self.driver.reopen_given_up())
 
     def test_no_retries(self):
         self.driver.divergence_retries = 0

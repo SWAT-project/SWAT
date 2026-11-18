@@ -159,6 +159,11 @@ class SVCompDriver:
         # (True: branched), unless the solutions were only guesses (see check_divergence)
         self.given_up: list[tuple[Node, bool]] = []
         self.divergence_retry_count = 0 # branches scheduled to be re-solved
+        # Branches (by gid) given up on after their solutions kept missing them, which the endgame
+        # tries again once the search is otherwise exhausted (see reopen_given_up)
+        self.reopenable: set[int] = set()
+        self.given_up_gids: set[int] = set()
+        self.endgame_reopens = 0  # how often the endgame took given-up branches back
         # Resource units the unbounded query of each branch (by gid) used, see bounded_rlimit
         self.query_cost: dict[int, int] = {}
         # A run whose solution left irrelevant constraints out (see check_divergence), to be
@@ -589,6 +594,8 @@ class SVCompDriver:
             self.divergence_retry_count += 1
             return
         self.give_up_branch(target, guess, reason)
+        # Not for good: the endgame tries it again with yet another solution (see reopen_given_up)
+        self.__dict__.setdefault('reopenable', set()).add(target.gid)
 
     def give_up_branch(self, target: Node, guess: bool, reason: str) -> None:
         """Takes a branch whose solutions kept missing it out of the search.
@@ -600,6 +607,12 @@ class SVCompDriver:
         """
         Database.instance().retire_branch(target.gid)
         tries = len(self.failed_solutions.get(target.gid, []))
+        given_up_gids = self.__dict__.setdefault('given_up_gids', set())  # (tests build drivers without __init__)
+        if target.gid in given_up_gids:
+            # Given up on before and taken back by the endgame (reopen_given_up): recorded already
+            logger.info(f'[SVCOMP] Branch {target.id} missed again in the endgame. {reason} ({tries} solutions so far)')
+            return
+        given_up_gids.add(target.gid)
         if guess:
             logger.info(f'[SVCOMP] Diverged from branch {target.id}: its solution relied on an approximate model (expected). {reason} Giving up after {tries} solutions.')
             return
@@ -609,6 +622,27 @@ class SVCompDriver:
         Database.instance().record_execution_error(ENDPOINT_ID, 'unexpected_divergence', f'branch {target.id}: {reason}')
         # The side open when the branch was solved, on the tree's own node, which later runs extend
         self.given_up.append((getattr(target, 'live', target), target.branched is None))
+
+    def reopen_given_up(self) -> bool:
+        """The endgame: the search is exhausted but for branches given up on after their solutions
+        kept missing them. While CPU time is left, take them back as candidates, each to be solved once
+        more with all of its failed solutions excluded (solve_retry); one that misses again is given up
+        on again, and comes back after the next exhaustion. So they take turns until one is reached,
+        no other solution is left (UNSAT: given up on for good), or the budget ends the run (UNKNOWN,
+        which an exhausted search with a given-up branch would have ended with anyway; UNKNOWN and a
+        timeout score the same). Nothing here can lead to SAFE that would not have been reached
+        otherwise: SAFE still needs every given-up branch's side reached (run()).
+        Returns whether any branch was taken back."""
+        if getattr(self.args, 'no_endgame', False) or not getattr(self, 'reopenable', None) or self.budget.cpu_exceeded.is_set():
+            return False
+        gids, self.reopenable = self.reopenable, set()
+        for gid in gids:
+            Database.instance().unretire_branch(gid)
+            Database.instance().drop_solution(gid)
+        self.endgame_reopens = getattr(self, 'endgame_reopens', 0) + 1
+        logger.info(f'[SVCOMP] Search exhausted with {len(gids)} given-up branch(es) and CPU time left: trying them again '
+                    f'(endgame round {self.endgame_reopens})')
+        return True
 
     def unreached_given_up_branches(self) -> list[Node]:
         """The given-up branches whose unexplored side no run has reached by now. A side reached
@@ -790,6 +824,13 @@ class SVCompDriver:
         logger.debug(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
         candidates = [b for b in possible_branches if StrategyService.is_symbolic_branch(b)]
         branch, sol, solver_gave_up = self.solve_candidates(candidates)
+        while branch is None and self.reopen_given_up():
+            # The endgame took given-up branches back: walk again, they are candidates now
+            possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance,
+                                                             search_order=getattr(self.args, 'search_order', 'coverage'))
+            candidates = [b for b in possible_branches if StrategyService.is_symbolic_branch(b)]
+            branch, sol, gave_up_again = self.solve_candidates(candidates)
+            solver_gave_up = solver_gave_up or gave_up_again
 
         if branch is None:
             if solver_gave_up:

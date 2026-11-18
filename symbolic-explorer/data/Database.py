@@ -317,6 +317,11 @@ class Database:
         with lock:
             self.retired_branches.add(branch_id)
 
+    def unretire_branch(self, branch_id: int):
+        """Makes a retired branch a candidate again (the endgame, SVCompDriver.reopen_given_up)."""
+        with lock:
+            self.retired_branches.discard(branch_id)
+
     def get_retired_branches(self):
         with lock:
             ret = set(self.retired_branches)
