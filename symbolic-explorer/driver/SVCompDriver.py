@@ -644,6 +644,20 @@ class SVCompDriver:
                     f'(endgame round {self.endgame_reopens})')
         return True
 
+    def lift_approximate_cap(self) -> bool:
+        """The endgame, once no given-up branch is left to try: a query over an approximate Math model
+        that ran out of its cap (--approximate-rlimit) left its branch undecided. With CPU time left,
+        lift the cap for the rest of the run, so that such queries get the time that would otherwise
+        go unused. Their branches never lead to SAFE (precision loss), and solver_gave_up stays set.
+        Returns whether the cap was lifted (at most once)."""
+        if getattr(self.args, 'no_endgame', False) or not getattr(self.args, 'approximate_rlimit', None) \
+                or self.budget.cpu_exceeded.is_set():
+            return False
+        logger.info(f'[SVCOMP] Search exhausted but for undecided queries and CPU time left: lifting the cap of '
+                    f'{self.args.approximate_rlimit} on queries over approximate models')
+        self.args.approximate_rlimit = None
+        return True
+
     def unreached_given_up_branches(self) -> list[Node]:
         """The given-up branches whose unexplored side no run has reached by now. A side reached
         later is in the tree, so the search covers what lies behind it like any other; so is one
@@ -824,8 +838,9 @@ class SVCompDriver:
         logger.debug(f'[SYMBOLIC EXPLORATION] Possible branch IDs: {[b.id for b in possible_branches]}')
         candidates = [b for b in possible_branches if StrategyService.is_symbolic_branch(b)]
         branch, sol, solver_gave_up = self.solve_candidates(candidates)
-        while branch is None and self.reopen_given_up():
-            # The endgame took given-up branches back: walk again, they are candidates now
+        while branch is None and (self.reopen_given_up() or (solver_gave_up and self.lift_approximate_cap())):
+            # The endgame took given-up branches back, or lifted the cap on approximate-model
+            # queries: walk again, they are candidates now
             possible_branches = StrategyService.select_branch(endpoint_id=ENDPOINT_ID, sa_node=self.sa_graph.entry_node, rank_by_distance=self.args.sa_rank_distance,
                                                              search_order=getattr(self.args, 'search_order', 'coverage'))
             candidates = [b for b in possible_branches if StrategyService.is_symbolic_branch(b)]

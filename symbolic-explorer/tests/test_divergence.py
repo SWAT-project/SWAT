@@ -179,13 +179,22 @@ class CheckDivergenceTest(DivergenceTestBase):
         self.driver.budget.cpu_exceeded.set()
         self.assertFalse(self.driver.reopen_given_up())
 
+    def test_endgame_lifts_the_approximate_cap_once(self):
+        self.driver.args.approximate_rlimit = 250000000
+        self.driver.budget = SimpleNamespace(cpu_exceeded=threading.Event())
+        self.assertTrue(self.driver.lift_approximate_cap())
+        self.assertIsNone(self.driver.args.approximate_rlimit)
+        self.assertFalse(self.driver.lift_approximate_cap())
+
     def test_endgame_can_be_turned_off(self):
         self.driver.divergence_retries = 0
         self.driver.args.no_endgame = True
+        self.driver.args.approximate_rlimit = 250000000
         self.driver.budget = SimpleNamespace(cpu_exceeded=threading.Event())
         self.aim(self.target, {'I_0': 1})
         self.check([trace_branch(7, False)])
         self.assertFalse(self.driver.reopen_given_up())
+        self.assertFalse(self.driver.lift_approximate_cap())
 
     def test_no_retries(self):
         self.driver.divergence_retries = 0
