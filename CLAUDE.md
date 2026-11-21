@@ -331,16 +331,16 @@ spot a walk that has fallen out of step with the execution.
 
 ```bash
 cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --categories valid-assert.prp
-./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --parallel-sa, --sa-rank-distance, --search-order, --solver-rlimit, --testcase-timeout-s ...
+./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --no-property-precheck, --parallel-sa, --sa-rank-distance, --search-order, --solver-rlimit, --testcase-timeout-s ...
 ```
 
 - **Runs without SA:** `--no-sa` only leaves out the graph (pruning, slicing, ranking, callback
   targets). Loop summaries and loop-head state matching are executor features that work without
-  it (the executor computes the loop facts itself), so a run with no SA features at all needs
-  `--no-sa --no-loop-summaries --config-file sv-comp-noSA.cfg` (`sv-comp-noSA.cfg` is
-  `sv-comp.cfg` with `loopStateMatching=false` and `loopSummaries=false`; `--no-loop-summaries`
-  makes `run_info` record it too). The property pre-check still runs: the harness has no flag
-  for the explorer's `--no-property-precheck`.
+  it (the executor computes the loop facts itself), and the property pre-check runs before and
+  apart from the graph. A run with no SA features at all needs
+  `--no-sa --no-loop-summaries --no-property-precheck --config-file sv-comp-noSA.cfg`
+  (`sv-comp-noSA.cfg` is `sv-comp.cfg` with `loopStateMatching=false` and `loopSummaries=false`;
+  `--no-loop-summaries` makes `run_info` record it too).
 - **Duration:** a full valid-assert run takes about 40 min with the default 900 s timeout, and
   much longer with `--testcase-timeout-s 3600`. Only compare runs made with the same timeout.
 - **Resource budget:** as in SV-COMP, the explorer and all executor JVMs share one memory and CPU
@@ -366,8 +366,10 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   about 0.2 s). A proof of no-runtime-exception or valid-assert gives SAFE without exploring
   (round 0 still runs as a cross-check). The jar comes from `--precheck-jar`, else from next to
   `symbolic-explorer/` (the SV-COMP archive), else `../cfg-extraction/build/libs/`; without it the
-  check is skipped (`missing_jar`). CI builds it at the cfg-extraction tag in `cfg-extraction.ref` (cfg-extraction is public, MIT)
-  and the archive ships it as `cfg-extraction/cfg-extractor-precheck.jar`. Its soundness gate is
+  check is skipped (`missing_jar`). Off with `--no-property-precheck` (explorer and harness;
+  `run_info.json` records `property_precheck`; not turned off by `--no-sa`). CI builds it at the
+  cfg-extraction tag in `cfg-extraction.ref` (cfg-extraction is public, MIT) and the archive ships
+  it as `cfg-extraction/cfg-extractor-precheck.jar`. Its soundness gate is
   `cfg-extraction/scripts/precheck_gate.py` (0 contradictions over sv-benchmarks).
 - **SV-COMP archive** (`scripts/package-svcomp.sh`, run by CI; `run-swat.sh` → `run_swat.py`):
   ships the extractor's fat jar as `cfg-extraction/cfg-extractor.jar`, built by CI at the same
