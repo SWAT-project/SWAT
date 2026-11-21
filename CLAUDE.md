@@ -244,7 +244,8 @@ branches are flagged only when it leaves through its head (`BackEdge` plans tell
 re-entries). `TaintCheck` drops a summary whose merged values could reach a call, a heap or array
 store, an array index or size, or a return, since a dropped constraint must not be needed where the
 executor concretizes (13 false SAFE before, via `Verifier.assume`). Ignoring a `merged` flag is
-always sound. Config `loopSummaries` (on in `sv-comp.cfg`), `--no-loop-summaries`. Results, limits,
+always sound. Config `loopSummaries` (on in `sv-comp.cfg`, off in `sv-comp-noSA.cfg`),
+`--no-loop-summaries`; not turned off by `--no-sa` (see "Runs without SA"). Results, limits,
 next steps: swat-benchmarks/RESULTS.md, "Loop summarization". The analysis' tests are in
 cfg-extraction (see loop facts above).
 
@@ -262,10 +263,10 @@ cfg-extraction (see loop facts above).
   (`JavaRemainder`) is exact where the quotient is at most 1 in magnitude. Both are declared
   approximate, so a branch over them is a precision loss and rules out SAFE. Before 2026-11-03
   `%` had no formula at all and silently gave false SAFE (PieSegment).
-- **Loop-head state matching** (`loopStateMatching`, executor `LoopStateMatcher`, heads from the
-  loop facts; explorer
-  `--no-loop-state-matching`): a branch below a state already reached at a smaller position is not
-  flipped. It is what makes nondet-guarded loops with a repeating concrete state SAFE (28 tasks of
+- **Loop-head state matching** (`loopStateMatching`, on in `sv-comp.cfg`, off in
+  `sv-comp-noSA.cfg`; executor `LoopStateMatcher`, heads from the loop facts; explorer
+  `--no-loop-state-matching`, which the harness does not pass; not turned off by `--no-sa`): a
+  branch below a state already reached at a smaller position is not flipped. It is what makes nondet-guarded loops with a repeating concrete state SAFE (28 tasks of
   sv-benchmarks valid-assert, 27 of them in `float_unboundedloop`, +56 points, with dfs and
   coverage alike; 2 in swat-benchmarks `dispatcher`). A run stops reporting states after any call
   into untracked code other than a whitelist (`isPureCall`): from 2026-10-19 to 2026-11-03
@@ -333,6 +334,13 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
 ./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --parallel-sa, --sa-rank-distance, --search-order, --solver-rlimit, --testcase-timeout-s ...
 ```
 
+- **Runs without SA:** `--no-sa` only leaves out the graph (pruning, slicing, ranking, callback
+  targets). Loop summaries and loop-head state matching are executor features that work without
+  it (the executor computes the loop facts itself), so a run with no SA features at all needs
+  `--no-sa --no-loop-summaries --config-file sv-comp-noSA.cfg` (`sv-comp-noSA.cfg` is
+  `sv-comp.cfg` with `loopStateMatching=false` and `loopSummaries=false`; `--no-loop-summaries`
+  makes `run_info` record it too). The property pre-check still runs: the harness has no flag
+  for the explorer's `--no-property-precheck`.
 - **Duration:** a full valid-assert run takes about 40 min with the default 900 s timeout, and
   much longer with `--testcase-timeout-s 3600`. Only compare runs made with the same timeout.
 - **Resource budget:** as in SV-COMP, the explorer and all executor JVMs share one memory and CPU
