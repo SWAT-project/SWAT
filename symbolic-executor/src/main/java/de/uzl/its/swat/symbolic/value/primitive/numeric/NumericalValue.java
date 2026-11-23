@@ -219,7 +219,7 @@ public abstract class NumericalValue<T extends Formula, K> extends Value<T, K> {
 
     @Override
     public boolean isSymbolic() {
-        return !context.getFormulaManager().extractVariables(formula).isEmpty();
+        return mentionsSymbol(context, formula);
     }
 
     @Override

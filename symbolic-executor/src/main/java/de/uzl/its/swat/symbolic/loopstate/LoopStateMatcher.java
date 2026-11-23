@@ -42,7 +42,9 @@ import java.util.Map;
  *       application code after it returns;
  *   <li>no shadow value of the head's locals, of the callers' live locals, of the other shadow
  *       frames, of a static field or of the shadow heap is symbolic. A concrete state is then the
- *       same on every execution that takes the same branches up to the head, whatever its inputs;
+ *       same on every execution that takes the same branches up to the head, whatever its inputs.
+ *       An allocated array's base symbol does not count here (only tracked code wrote to it, see
+ *       {@link Value#setAllocationBasesConcrete});
  *   <li>the reachable heap consists of application objects, enum constants of application enums,
  *       arrays and plain {@code Object}s only. Strings, boxed values and library objects are not
  *       hashed, since part of their identity (interning, caches) or content lies outside the
@@ -152,7 +154,13 @@ public final class LoopStateMatcher {
                     || !app.get(0).getMethodName().equals(head.method())) {
                 throw unhashable("other application frames on the stack");
             }
-            checkShadow(head, shadow, shadowStatics, callers);
+            // An array's own base symbol is no input here: only tracked code ran (see isPureCall)
+            Value.setAllocationBasesConcrete(true);
+            try {
+                checkShadow(head, shadow, shadowStatics, callers);
+            } finally {
+                Value.setAllocationBasesConcrete(false);
+            }
             String h = hash(head, inst.locals, callers);
             logger.debug("[LOOP STATE] {}: {}", inst.head, h);
             if (!seen.add(h)) {

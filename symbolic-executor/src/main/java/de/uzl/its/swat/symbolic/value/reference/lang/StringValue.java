@@ -1639,7 +1639,7 @@ public class StringValue extends ObjectValue<StringFormula, String> {
 
     @Override
     public boolean isSymbolic() {
-        return !context.getFormulaManager().extractVariables(formula).isEmpty();
+        return mentionsSymbol(context, formula);
     }
 
     @Override
