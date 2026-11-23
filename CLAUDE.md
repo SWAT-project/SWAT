@@ -235,7 +235,8 @@ its `.yml` (harness `--no-user-facts` overrides). Never for SV-COMP, which measu
   `tests.test_relevance` (`UserFactsTest`).
 
 **Loop summaries** (applied by executor `symbolic/summary`): diamonds (an int `if` whose sides are
-straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting loops
+straight-line int arithmetic on locals, also nested, also `/`/`%` by constants, also with `&&`/`||`
+conditions; locals declared inside a side are scratch and stay unmerged) and counting loops
 (`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged `merged` and
 `dfs` treats them as no decision, like sliced ones. A counting loop whose body does other things
 too (calls, heap) is flagged `mergedConditional`, honored only if `Relevance.summary_ok` (the loop
@@ -271,7 +272,12 @@ cfg-extraction (see loop facts above).
   coverage alike; 2 in swat-benchmarks `dispatcher`). A run stops reporting states after any call
   into untracked code other than a whitelist (`isPureCall`): from 2026-10-19 to 2026-11-03
   `Class.desiredAssertionStatus`, which every class with an `assert` calls, was missing, and the
-  feature did nothing in any valid-assert task.
+  feature did nothing in any valid-assert task. Until 2026-11-23 any array on the heap (a constant
+  table, too) made every state unhashable: an allocated array's formula starts from its base symbol
+  (`ARRAY_BASE`), which counted as symbolic. While the matcher checks a state
+  (`Value.setAllocationBasesConcrete`) that base no longer counts (only tracked code wrote the
+  array, since the run reports no state after an untracked call); `isSymbolic()` is unchanged
+  elsewhere. Agent test `LoopStateArraysAgentSpec`.
 - **Only live locals are hashed** (since 2026-11-11, cfg-extraction `LoopHeads`, loop facts
   version 2): a local dead at the head (written again before any read, exception edges included)
   is neither hashed nor required to be concrete. It changed no verdict on sv-benchmarks or
