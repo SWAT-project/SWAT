@@ -107,6 +107,11 @@ public final class Merger {
         java.util.Set<Integer> slots = new java.util.TreeSet<>(fall.written);
         slots.addAll(jump.written);
         for (int slot : slots) {
+            if (d.scratch().contains(slot)) {
+                // No int at the join (e.g. declared inside a side): nothing after it reads the
+                // local before writing it again, so it keeps what the executed side left
+                continue;
+            }
             IntValue j = jump.locals.get(slot);
             IntValue f = fall.locals.get(slot);
             if (j == null || f == null) {
