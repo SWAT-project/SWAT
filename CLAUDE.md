@@ -426,6 +426,12 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
     `beta` makes `1 / beta` -Infinity, `(int)` of it Integer.MIN_VALUE and `Math.pow` +Infinity,
     which times `lamda = 0` is NaN and throws, e.g. beta's nondet = -2.0722615e-317); not reported
     upstream yet.
+  - `argv-tasks/EquidistantConicProjection_true`: valid-assert is false (both standard latitudes
+    -Infinity: `Math.sin` gives NaN, and `assert n == Math.sin(standardLatitude2)` compares NaN
+    with NaN); not reported upstream yet.
+  - `objects/objects09`: valid-assert is false (`Factories.AFactory` returns null for inputs
+    outside 1..6, and `null instanceof A` is false, e.g. all inputs 0); no-runtime-exception stays
+    true; not reported upstream yet.
 - **Verdicts:** false SAFE (`violation -> safe`) is the outcome that matters most, and a pruning
   bug causes exactly that. Check any new one before trusting a run.
 - **String inputs:** the explorer passes solved Strings as `-Dswat.input...` escaped by
