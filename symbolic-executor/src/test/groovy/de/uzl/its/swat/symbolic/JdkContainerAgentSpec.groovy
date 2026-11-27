@@ -51,7 +51,7 @@ class JdkContainerAgentSpec extends Specification {
         trace.trace.any { !it.concreteOnly && it.constraint?.contains("String_${NondetInputs.ids(classes, "Main")[0]}".toString()) }
 
         where:
-        scenario << ["list", "iterator", "map", "array", "arraycopy", "typedArray", "sharedEmpty"]
+        scenario << ["list", "iterator", "map", "array", "arraycopy", "typedArray", "sharedEmpty", "symbolicKey"]
     }
 
     @Unroll
@@ -60,7 +60,7 @@ class JdkContainerAgentSpec extends Specification {
         run(scenario).symbolicContextLoss
 
         where:
-        scenario << ["contains", "symbolicKey", "heldByUnmodelled", "lambdaCallback", "appendCallback"]
+        scenario << ["contains", "symbolicKeyIterate", "heldByUnmodelled", "lambdaCallback", "appendCallback"]
     }
 
     def "a lambda that library code calls back runs without an executor error"() {

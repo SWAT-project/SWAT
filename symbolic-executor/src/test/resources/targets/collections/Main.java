@@ -112,6 +112,13 @@ public class Main {
         branch(m.get("k") == null ? "y" : "x");
         break;
       }
+      case "symbolicKeyIterate": {
+        Map<String, String> m = new HashMap<>();
+        m.put(s, "v");
+        m.put("k", "w");
+        branch(m.keySet().iterator().next());
+        break;
+      }
       case "heldByUnmodelled": {
         List<String> l = new ArrayList<>();
         l.add(s);
