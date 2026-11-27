@@ -165,6 +165,11 @@ CONFIGS="sa nosa" ./run_configs.sh --suite dispatcher   # TIMEOUT (300) and WORK
 ../../scripts/.venv/bin/python3 report.py ../../runs/run_SA ../../runs/run_NOSA --out ../report
 ```
 
+The `nosa` config passes only `--no-sa`: loop summaries, loop-head state matching and the
+property pre-check stay on. A run with no SA features at all needs `--no-sa --no-loop-summaries
+--no-property-precheck --config-file sv-comp-noSA.cfg` (see "Runs without SA" in
+`SWAT/CLAUDE.md`).
+
 `run_configs.sh` refuses to start while another SV-COMP run is live, builds first, and runs
 `svcomp test run --mode parallel --no-witness --categories valid-assert.prp --benchmark-dir
 swat-benchmarks` (paths relative to `targets/sv-comp`). `compare.py` prints, per task and run, the

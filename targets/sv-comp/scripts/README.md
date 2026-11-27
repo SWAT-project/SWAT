@@ -88,6 +88,10 @@ wit4java (reported as `Validated:`). A proper validator setup is tracked in #47.
 # Run single target
 ./svcomp test run --mode single --target "autostub/Boolean_..."
 
+# Run without any static-analysis feature: --no-sa alone leaves out only the graph;
+# loop summaries, loop-head state matching and the property pre-check need the others
+./svcomp test run --no-sa --no-loop-summaries --no-property-precheck --config-file sv-comp-noSA.cfg
+
 # Check port availability
 ./svcomp test validate-ports
 ```

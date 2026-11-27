@@ -28,6 +28,38 @@ public abstract class Value<T, K> {
     protected static int symbol = 0; // Number of the next symbol
     protected static final int inc = 1;
 
+    /**
+     * While true on this thread, the base symbol of an allocated array (SymbolRegistry.Kind
+     * ARRAY_BASE) does not make a value symbolic. The base stands for array contents nothing has
+     * written: an array's initial contents overwrite it for every element below its concrete size
+     * (a symbolic size is symbolic anyway), so it only shows through where code SWAT does not track
+     * wrote an element. Loop-state matching sets it while it checks a state (LoopStateMatcher): it
+     * reports no state after a call into untracked code, so every write to an array it sees was
+     * tracked, and an array (or an element read from it at a concrete index) whose formula mentions
+     * no other symbol holds concrete contents. Without it any array on the heap, a constant table
+     * too, kept every state from being hashed.
+     */
+    private static final ThreadLocal<Boolean> allocationBasesConcrete = ThreadLocal.withInitial(() -> false);
+
+    /** See {@link #allocationBasesConcrete}. */
+    public static void setAllocationBasesConcrete(boolean on) {
+        allocationBasesConcrete.set(on);
+    }
+
+    /** Whether the formula mentions a symbol (an allocated array's base only outside loop-state matching). */
+    protected static boolean mentionsSymbol(SolverContext context, org.sosy_lab.java_smt.api.Formula formula) {
+        Set<String> variables = context.getFormulaManager().extractVariables(formula).keySet();
+        if (!allocationBasesConcrete.get()) {
+            return !variables.isEmpty();
+        }
+        for (String variable : variables) {
+            if (SymbolRegistry.kindOf(variable) != SymbolRegistry.Kind.ARRAY_BASE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public T formula;
     public K concrete;
     public SolverContext context;

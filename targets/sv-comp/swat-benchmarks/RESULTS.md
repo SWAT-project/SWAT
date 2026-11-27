@@ -1089,3 +1089,23 @@ swat-benchmarks valid-assert `run_20261113_113642` 729, sv-benchmarks valid-asse
 `run_20261113_114227` 1100, no-runtime-exception `run_20261113_115750` 1302, all identical; no SA
 desync; tasks with context loss 12 -> 10 in swat-benchmarks (the two opencsv tasks), unchanged
 (54, 36) in sv-benchmarks.
+
+## Timeline of design changes
+
+When each part of the current design arrived, with the section above that has the measurements.
+How the parts work now is in the workspace and repo `CLAUDE.md` files.
+
+| date | change | branch / tag | section |
+|---|---|---|---|
+| 2026-10-15/16 | Extractor fixes for missing targets: static initializers, reflection, lambdas in fields (S1, S3, S4) | cfg-extraction | "Fixes (2026-10-15/16)" |
+| 2026-10-17 | Walk redesigned: branch keys, desync detection and resync, library callbacks masked, callback targets, CALL edges to every known target | both repos | "Branch keys, desync detection and resync", "Library callbacks", "Callback targets, ..." |
+| 2026-10-26 | Relevance (slicing): sv-benchmarks valid-assert 1013 (1011 without), `relevance` 26/26 (16/26 without) | `niklas/relevance-slicing` | "Relevance (slicing), 2026-10-26" |
+| 2026-10-26 | Loop summarization, small models, deadlock watchdog: valid-assert 1019, no-runtime-exception 1281 | `niklas/relevance-slicing` | "Loop summarization, 2026-10-26" |
+| 2026-10-27 | Relevance and loop summarization merged; extractor data-flow facts released | cfg-extraction `v0.2.0` | |
+| 2026-11-03 | `coverage` becomes the default search order | SWAT | `SWAT/CLAUDE.md`, "Search order" |
+| 2026-11-04 | Loop analyses (loop heads, diamonds, counting loops) move from the executor to cfg-extraction `de.uzl.its.cfg.loops`; `loop_facts.json` | `niklas/loop-facts` | |
+| 2026-11-11 | Class preparation: SWAT's semantic rewrites run once ahead of time, so the extractor and the executor see the same classes | `niklas/prepare` (both repos) | |
+| 2026-11-12 | Loop-state matching hashes only live locals | cfg-extraction `2930f8c` | "Loop-state matching with live locals only" |
+| 2026-11-12 | Hand-written facts (`@Irrelevant`, `@Target`, `@NotCalledBack`, library facts) in SWAT | `niklas/annotations` | "Hand-written facts (`user-facts`)" |
+| 2026-11-13 | Hand-written facts read by the extractor; loop-state matching across frames (call sites of callee heads) | `niklas/extractor-annotations` (both repos) | "Hand-written facts in the extractor", "Loop-state matching across frames" |
+| 2026-11-13 | `List.toArray(T[])` modelled, list element shadows kept in order | `niklas/executor-fixes` | "Hand-written facts on `real-tools`" |

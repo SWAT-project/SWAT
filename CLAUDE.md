@@ -7,6 +7,82 @@ Dynamic symbolic execution for Java:
   flip and calls the solver.
 - `targets/sv-comp/` holds the SV-COMP harness and benchmarks.
 
+## Build and test
+
+```bash
+./gradlew :symbolic-executor:copyJar        # agent jar -> symbolic-executor/lib/symbolic-executor.jar (what the explorer runs)
+./gradlew :symbolic-executor:test           # unit specs
+./gradlew :symbolic-executor:agentTest      # *AgentSpec: small targets run with the built agent, trace checked
+./gradlew :symbolic-executor:test --tests '<SpecName>'   # one spec
+cd targets/sv-comp && ./scripts/svcomp setup install-deps # creates the harness venv scripts/.venv
+```
+
+- Java 17. `copyJar` also rebuilds the bundled loop library (`cfgLoopsJar`) when its sources
+  change, from `-PcfgExtractionDir`, else `../cfg-extraction`, else a clone of the tag in
+  `cfg-extraction.ref`. The extractor's own jars are built in that repo.
+- Explorer tests use `unittest` (`pytest` is not installed). Most import the driver and need the
+  harness venv for z3 and fastapi. Run from `symbolic-explorer/`:
+
+```bash
+python3 -m unittest tests.test_sa_walk -v                                   # the walk, no SWAT run needed
+python3 tests/check_marking_on_graphs.py <graph.json>...                    # marking vs. an explicit search
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_divergence -v
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_relevance -v    # relevance and slicing
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_prefer_small -v # small models
+```
+
+- The SA modules are fully annotated and pass mypy (not in the venvs; install it into a scratch
+  venv), run from `symbolic-explorer/`:
+
+```bash
+mypy --explicit-package-bases --ignore-missing-imports --follow-imports=silent --check-untyped-defs \
+     --disallow-untyped-defs --disallow-any-generics strategy/DFS.py strategy/StrategyService.py \
+     data/StaticAnalysisGraph/*.py data/BinaryExecutionTree/*.py svcomp/StaticPreAnalysis.py
+```
+
+- End-to-end runs go through the SV-COMP harness, see "SV-COMP runs" below.
+
+## Regression testing
+
+"Test for regressions" means all of the steps below that the change can affect. Anything that can
+change a verdict (executor, explorer strategy or solver, SA, preparation, the extractor) needs the
+harness comparison (steps 3-5), not only the unit tests.
+
+1. **Unit tests** (a few minutes):
+   - `./gradlew :symbolic-executor:test :symbolic-executor:agentTest`;
+   - from `symbolic-explorer/`: `../targets/sv-comp/scripts/.venv/bin/python3 -m unittest discover
+     -s tests -q` (about 300 tests, 2 min);
+   - mypy on the SA modules if they changed (command under "Build and test");
+   - if cfg-extraction changed too, its own checks (cfg-extraction `CLAUDE.md`, "Regression
+     testing").
+2. **Invariants**, when the area changed:
+   - rewrites or `prepare/`: `scripts/check-prepare.py <bench dirs>` over all benchmark classes;
+   - property pre-check: cfg-extraction's `scripts/precheck_gate.py` (0 contradictions).
+3. **Baseline first.** Run the base commit with exactly the configuration of step 4 before
+   changing anything, unless a run of it with the same timeout, workers, search order and
+   benchmark suite exists. Scores of runs that differ in any of these are not comparable.
+4. **Harness runs**, one after the other (one run at a time; each can take up to about 40 min):
+   ```bash
+   cd targets/sv-comp
+   ./scripts/svcomp test run --mode parallel --workers 32 --no-witness --testcase-timeout-s 300 \
+     --search-order coverage --categories valid-assert.prp                               # sv-benchmarks
+   ./scripts/svcomp test run ... --categories valid-assert.prp --benchmark-dir swat-benchmarks
+   ./scripts/svcomp test run ... --categories no-runtime-exception.prp                 # if it can matter
+   ```
+   swat-benchmarks includes the soundness suites (`sa-soundness`, `relevance-soundness`,
+   `loop-summary-soundness`); for a quick first check run just those with `--suite <name>`.
+5. **Compare task by task:** `./scripts/svcomp analyze compare <new results.json> <baseline
+   results.json>` (files under `runs/run_<timestamp>/results/`). **Zero new false SAFE**
+   (`violation -> safe`) is a hard requirement; explain every changed verdict (a known flaky task,
+   a timeout near the limit, or a real change). Also check that SA desyncs (`[DFS] SA desync` in
+   `explorer.log`, `sa_desync`) and context loss (`analyze results <run dir>`) did not grow.
+   `scripts/compare_runs.py` plots timing differences.
+6. **Witnesses**, if the change touches violations or the driver: run a sample of violation tasks
+   without `--no-witness`, with validation.
+
+Record runs worth keeping (run ids, scores, verdict changes) in
+`targets/sv-comp/swat-benchmarks/RESULTS.md`.
+
 ## Static pre-analysis (SA)
 
 The explorer can prune its search with a control-flow graph from the extractor in
@@ -235,7 +311,8 @@ its `.yml` (harness `--no-user-facts` overrides). Never for SV-COMP, which measu
   `tests.test_relevance` (`UserFactsTest`).
 
 **Loop summaries** (applied by executor `symbolic/summary`): diamonds (an int `if` whose sides are
-straight-line int arithmetic on locals, also nested, also `/`/`%` by constants) and counting loops
+straight-line int arithmetic on locals, also nested, also `/`/`%` by constants, also with `&&`/`||`
+conditions; locals declared inside a side are scratch and stay unmerged) and counting loops
 (`i < b` or `i <= b`, step one) are merged into formulas; their branches are flagged `merged` and
 `dfs` treats them as no decision, like sliced ones. A counting loop whose body does other things
 too (calls, heap) is flagged `mergedConditional`, honored only if `Relevance.summary_ok` (the loop
@@ -244,7 +321,8 @@ branches are flagged only when it leaves through its head (`BackEdge` plans tell
 re-entries). `TaintCheck` drops a summary whose merged values could reach a call, a heap or array
 store, an array index or size, or a return, since a dropped constraint must not be needed where the
 executor concretizes (13 false SAFE before, via `Verifier.assume`). Ignoring a `merged` flag is
-always sound. Config `loopSummaries` (on in `sv-comp.cfg`), `--no-loop-summaries`. Results, limits,
+always sound. Config `loopSummaries` (on in `sv-comp.cfg`, off in `sv-comp-noSA.cfg`),
+`--no-loop-summaries`; not turned off by `--no-sa` (see "Runs without SA"). Results, limits,
 next steps: swat-benchmarks/RESULTS.md, "Loop summarization". The analysis' tests are in
 cfg-extraction (see loop facts above).
 
@@ -262,15 +340,20 @@ cfg-extraction (see loop facts above).
   (`JavaRemainder`) is exact where the quotient is at most 1 in magnitude. Both are declared
   approximate, so a branch over them is a precision loss and rules out SAFE. Before 2026-11-03
   `%` had no formula at all and silently gave false SAFE (PieSegment).
-- **Loop-head state matching** (`loopStateMatching`, executor `LoopStateMatcher`, heads from the
-  loop facts; explorer
-  `--no-loop-state-matching`): a branch below a state already reached at a smaller position is not
-  flipped. It is what makes nondet-guarded loops with a repeating concrete state SAFE (28 tasks of
+- **Loop-head state matching** (`loopStateMatching`, on in `sv-comp.cfg`, off in
+  `sv-comp-noSA.cfg`; executor `LoopStateMatcher`, heads from the loop facts; explorer
+  `--no-loop-state-matching`, which the harness does not pass; not turned off by `--no-sa`): a
+  branch below a state already reached at a smaller position is not flipped. It is what makes nondet-guarded loops with a repeating concrete state SAFE (28 tasks of
   sv-benchmarks valid-assert, 27 of them in `float_unboundedloop`, +56 points, with dfs and
   coverage alike; 2 in swat-benchmarks `dispatcher`). A run stops reporting states after any call
   into untracked code other than a whitelist (`isPureCall`): from 2026-10-19 to 2026-11-03
   `Class.desiredAssertionStatus`, which every class with an `assert` calls, was missing, and the
-  feature did nothing in any valid-assert task.
+  feature did nothing in any valid-assert task. Until 2026-11-23 any array on the heap (a constant
+  table, too) made every state unhashable: an allocated array's formula starts from its base symbol
+  (`ARRAY_BASE`), which counted as symbolic. While the matcher checks a state
+  (`Value.setAllocationBasesConcrete`) that base no longer counts (only tracked code wrote the
+  array, since the run reports no state after an untracked call); `isSymbolic()` is unchanged
+  elsewhere. Agent test `LoopStateArraysAgentSpec`.
 - **Only live locals are hashed** (since 2026-11-11, cfg-extraction `LoopHeads`, loop facts
   version 2): a local dead at the head (written again before any read, exception edges included)
   is neither hashed nor required to be concrete. It changed no verdict on sv-benchmarks or
@@ -345,28 +428,9 @@ cfg-extraction (see loop facts above).
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.
 
-Tests for the walk, runnable without a SWAT run:
-
-```bash
-cd symbolic-explorer && python3 -m unittest tests.test_sa_walk -v
-python3 tests/check_marking_on_graphs.py <graph.json>...   # checks marking against an explicit search
-../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_divergence -v   # needs the venv
-../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_relevance -v    # relevance and slicing
-../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_prefer_small -v # small models
-```
-
-The SA modules are fully annotated and pass mypy (not in the venvs; install it into a scratch
-venv), run from `symbolic-explorer/`:
-
-```bash
-mypy --explicit-package-bases --ignore-missing-imports --follow-imports=silent --check-untyped-defs \
-     --disallow-untyped-defs --disallow-any-generics strategy/DFS.py strategy/StrategyService.py \
-     data/StaticAnalysisGraph/*.py data/BinaryExecutionTree/*.py svcomp/StaticPreAnalysis.py
-```
-
-`dfs` only descends into real `data.BinaryExecutionTree.Node` instances. In tests, build them with
-`Node.__new__(Node)` and set the fields directly (the per-node flags have class defaults). `pytest`
-is not installed; use `unittest`.
+Tests for the walk are under "Build and test" at the top. `dfs` only descends into real
+`data.BinaryExecutionTree.Node` instances. In tests, build them with `Node.__new__(Node)` and set
+the fields directly (the per-node flags have class defaults).
 
 ## Decoding executor iids
 
@@ -383,9 +447,16 @@ spot a walk that has fallen out of step with the execution.
 
 ```bash
 cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --categories valid-assert.prp
-./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --parallel-sa, --sa-rank-distance, --search-order, --solver-rlimit, --testcase-timeout-s ...
+./scripts/svcomp test run --help      # --suite, --limit-nr-tests, --no-sa, --no-property-precheck, --parallel-sa, --sa-rank-distance, --search-order, --solver-rlimit, --testcase-timeout-s ...
 ```
 
+- **Runs without SA:** `--no-sa` only leaves out the graph (pruning, slicing, ranking, callback
+  targets). Loop summaries and loop-head state matching are executor features that work without
+  it (the executor computes the loop facts itself), and the property pre-check runs before and
+  apart from the graph. A run with no SA features at all needs
+  `--no-sa --no-loop-summaries --no-property-precheck --config-file sv-comp-noSA.cfg`
+  (`sv-comp-noSA.cfg` is `sv-comp.cfg` with `loopStateMatching=false` and `loopSummaries=false`;
+  `--no-loop-summaries` makes `run_info` record it too).
 - **Duration:** a full valid-assert run takes about 40 min with the default 900 s timeout, and
   much longer with `--testcase-timeout-s 3600`. Only compare runs made with the same timeout.
 - **Resource budget:** as in SV-COMP, the explorer and all executor JVMs share one memory and CPU
@@ -411,8 +482,10 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
   about 0.2 s). A proof of no-runtime-exception or valid-assert gives SAFE without exploring
   (round 0 still runs as a cross-check). The jar comes from `--precheck-jar`, else from next to
   `symbolic-explorer/` (the SV-COMP archive), else `../cfg-extraction/build/libs/`; without it the
-  check is skipped (`missing_jar`). CI builds it at the cfg-extraction tag in `cfg-extraction.ref` (cfg-extraction is public, MIT)
-  and the archive ships it as `cfg-extraction/cfg-extractor-precheck.jar`. Its soundness gate is
+  check is skipped (`missing_jar`). Off with `--no-property-precheck` (explorer and harness;
+  `run_info.json` records `property_precheck`; not turned off by `--no-sa`). CI builds it at the
+  cfg-extraction tag in `cfg-extraction.ref` (cfg-extraction is public, MIT) and the archive ships
+  it as `cfg-extraction/cfg-extractor-precheck.jar`. Its soundness gate is
   `cfg-extraction/scripts/precheck_gate.py` (0 contradictions over sv-benchmarks).
 - **SV-COMP archive** (`scripts/package-svcomp.sh`, run by CI; `run-swat.sh` → `run_swat.py`):
   ships the extractor's fat jar as `cfg-extraction/cfg-extractor.jar`, built by CI at the same
@@ -463,6 +536,12 @@ cd targets/sv-comp && ./scripts/svcomp test run --mode parallel --no-witness --c
     `beta` makes `1 / beta` -Infinity, `(int)` of it Integer.MIN_VALUE and `Math.pow` +Infinity,
     which times `lamda = 0` is NaN and throws, e.g. beta's nondet = -2.0722615e-317); not reported
     upstream yet.
+  - `argv-tasks/EquidistantConicProjection_true`: valid-assert is false (both standard latitudes
+    -Infinity: `Math.sin` gives NaN, and `assert n == Math.sin(standardLatitude2)` compares NaN
+    with NaN); not reported upstream yet.
+  - `objects/objects09`: valid-assert is false (`Factories.AFactory` returns null for inputs
+    outside 1..6, and `null instanceof A` is false, e.g. all inputs 0); no-runtime-exception stays
+    true; not reported upstream yet.
 - **Verdicts:** false SAFE (`violation -> safe`) is the outcome that matters most, and a pruning
   bug causes exactly that. Check any new one before trusting a run.
 - **String inputs:** the explorer passes solved Strings as `-Dswat.input...` escaped by

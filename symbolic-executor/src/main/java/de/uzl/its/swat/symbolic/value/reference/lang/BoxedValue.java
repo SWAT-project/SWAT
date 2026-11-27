@@ -64,7 +64,7 @@ public abstract class BoxedValue<V extends NumericalValue> extends ObjectValue<O
     @Override
     public boolean isSymbolic() {
         if (val == null) return false;
-        return !context.getFormulaManager().extractVariables((Formula) val.formula).isEmpty();
+        return mentionsSymbol(context, (Formula) val.formula);
     }
 
     @Override

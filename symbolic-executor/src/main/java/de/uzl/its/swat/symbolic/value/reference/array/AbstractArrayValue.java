@@ -269,7 +269,7 @@ public abstract class AbstractArrayValue<
 
     @Override
     public boolean isSymbolic() {
-        return !context.getFormulaManager().extractVariables(formula).isEmpty() || size.isSymbolic();
+        return size.isSymbolic() || mentionsSymbol(context, formula);
     }
 
     @Override
