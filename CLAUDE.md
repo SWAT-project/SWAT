@@ -7,6 +7,82 @@ Dynamic symbolic execution for Java:
   flip and calls the solver.
 - `targets/sv-comp/` holds the SV-COMP harness and benchmarks.
 
+## Build and test
+
+```bash
+./gradlew :symbolic-executor:copyJar        # agent jar -> symbolic-executor/lib/symbolic-executor.jar (what the explorer runs)
+./gradlew :symbolic-executor:test           # unit specs
+./gradlew :symbolic-executor:agentTest      # *AgentSpec: small targets run with the built agent, trace checked
+./gradlew :symbolic-executor:test --tests '<SpecName>'   # one spec
+cd targets/sv-comp && ./scripts/svcomp setup install-deps # creates the harness venv scripts/.venv
+```
+
+- Java 17. `copyJar` also rebuilds the bundled loop library (`cfgLoopsJar`) when its sources
+  change, from `-PcfgExtractionDir`, else `../cfg-extraction`, else a clone of the tag in
+  `cfg-extraction.ref`. The extractor's own jars are built in that repo.
+- Explorer tests use `unittest` (`pytest` is not installed). Most import the driver and need the
+  harness venv for z3 and fastapi. Run from `symbolic-explorer/`:
+
+```bash
+python3 -m unittest tests.test_sa_walk -v                                   # the walk, no SWAT run needed
+python3 tests/check_marking_on_graphs.py <graph.json>...                    # marking vs. an explicit search
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_divergence -v
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_relevance -v    # relevance and slicing
+../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_prefer_small -v # small models
+```
+
+- The SA modules are fully annotated and pass mypy (not in the venvs; install it into a scratch
+  venv), run from `symbolic-explorer/`:
+
+```bash
+mypy --explicit-package-bases --ignore-missing-imports --follow-imports=silent --check-untyped-defs \
+     --disallow-untyped-defs --disallow-any-generics strategy/DFS.py strategy/StrategyService.py \
+     data/StaticAnalysisGraph/*.py data/BinaryExecutionTree/*.py svcomp/StaticPreAnalysis.py
+```
+
+- End-to-end runs go through the SV-COMP harness, see "SV-COMP runs" below.
+
+## Regression testing
+
+"Test for regressions" means all of the steps below that the change can affect. Anything that can
+change a verdict (executor, explorer strategy or solver, SA, preparation, the extractor) needs the
+harness comparison (steps 3-5), not only the unit tests.
+
+1. **Unit tests** (a few minutes):
+   - `./gradlew :symbolic-executor:test :symbolic-executor:agentTest`;
+   - from `symbolic-explorer/`: `../targets/sv-comp/scripts/.venv/bin/python3 -m unittest discover
+     -s tests -q` (about 300 tests, 2 min);
+   - mypy on the SA modules if they changed (command under "Build and test");
+   - if cfg-extraction changed too, its own checks (cfg-extraction `CLAUDE.md`, "Regression
+     testing").
+2. **Invariants**, when the area changed:
+   - rewrites or `prepare/`: `scripts/check-prepare.py <bench dirs>` over all benchmark classes;
+   - property pre-check: cfg-extraction's `scripts/precheck_gate.py` (0 contradictions).
+3. **Baseline first.** Run the base commit with exactly the configuration of step 4 before
+   changing anything, unless a run of it with the same timeout, workers, search order and
+   benchmark suite exists. Scores of runs that differ in any of these are not comparable.
+4. **Harness runs**, one after the other (one run at a time; each can take up to about 40 min):
+   ```bash
+   cd targets/sv-comp
+   ./scripts/svcomp test run --mode parallel --workers 32 --no-witness --testcase-timeout-s 300 \
+     --search-order coverage --categories valid-assert.prp                               # sv-benchmarks
+   ./scripts/svcomp test run ... --categories valid-assert.prp --benchmark-dir swat-benchmarks
+   ./scripts/svcomp test run ... --categories no-runtime-exception.prp                 # if it can matter
+   ```
+   swat-benchmarks includes the soundness suites (`sa-soundness`, `relevance-soundness`,
+   `loop-summary-soundness`); for a quick first check run just those with `--suite <name>`.
+5. **Compare task by task:** `./scripts/svcomp analyze compare <new results.json> <baseline
+   results.json>` (files under `runs/run_<timestamp>/results/`). **Zero new false SAFE**
+   (`violation -> safe`) is a hard requirement; explain every changed verdict (a known flaky task,
+   a timeout near the limit, or a real change). Also check that SA desyncs (`[DFS] SA desync` in
+   `explorer.log`, `sa_desync`) and context loss (`analyze results <run dir>`) did not grow.
+   `scripts/compare_runs.py` plots timing differences.
+6. **Witnesses**, if the change touches violations or the driver: run a sample of violation tasks
+   without `--no-witness`, with validation.
+
+Record runs worth keeping (run ids, scores, verdict changes) in
+`targets/sv-comp/swat-benchmarks/RESULTS.md`.
+
 ## Static pre-analysis (SA)
 
 The explorer can prune its search with a control-flow graph from the extractor in
@@ -299,28 +375,9 @@ cfg-extraction (see loop facts above).
   application threads all wait forever, and `ResourceBudget` has a wall-clock deadline (default:
   the CPU limit), so a hang ends UNKNOWN instead of being killed by the harness.
 
-Tests for the walk, runnable without a SWAT run:
-
-```bash
-cd symbolic-explorer && python3 -m unittest tests.test_sa_walk -v
-python3 tests/check_marking_on_graphs.py <graph.json>...   # checks marking against an explicit search
-../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_divergence -v   # needs the venv
-../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_relevance -v    # relevance and slicing
-../targets/sv-comp/scripts/.venv/bin/python3 -m unittest tests.test_prefer_small -v # small models
-```
-
-The SA modules are fully annotated and pass mypy (not in the venvs; install it into a scratch
-venv), run from `symbolic-explorer/`:
-
-```bash
-mypy --explicit-package-bases --ignore-missing-imports --follow-imports=silent --check-untyped-defs \
-     --disallow-untyped-defs --disallow-any-generics strategy/DFS.py strategy/StrategyService.py \
-     data/StaticAnalysisGraph/*.py data/BinaryExecutionTree/*.py svcomp/StaticPreAnalysis.py
-```
-
-`dfs` only descends into real `data.BinaryExecutionTree.Node` instances. In tests, build them with
-`Node.__new__(Node)` and set the fields directly (the per-node flags have class defaults). `pytest`
-is not installed; use `unittest`.
+Tests for the walk are under "Build and test" at the top. `dfs` only descends into real
+`data.BinaryExecutionTree.Node` instances. In tests, build them with `Node.__new__(Node)` and set
+the fields directly (the per-node flags have class defaults).
 
 ## Decoding executor iids
 
